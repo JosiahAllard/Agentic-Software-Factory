@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from kitlib import hubvalidate
-from kitlib.hubsite import api, push, schema, serve, skilledits
+from kitlib.hubsite import api, push, schema, serverepos, skilledits
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
 from tests.scrub import test_no_cites
@@ -412,15 +412,15 @@ class KitCheckoutTest(unittest.TestCase):
         def run(args, cwd):
             calls.append((args, cwd))
             return (data, None) if args[-1] == want else (b'other', None)
-        with mock.patch.object(serve, 'kit_checkout', lambda kit_root=None: 'C:/kit'):
-            kt = serve._kit_text(run=run)
+        with mock.patch.object(serverepos, 'kit_checkout', lambda kit_root=None: 'C:/kit'):
+            kt = serverepos._kit_text(run=run)
             self.assertEqual(kt(want), '---\nname: builder\n---\nx\n')
             self.assertIsNone(kt('b' * 40))             # bytes that are not that blob
             self.assertIsNone(kt('not a blob'))         # git is not asked
         self.assertEqual(calls, [(['cat-file', 'blob', want], 'C:/kit'),
                                  (['cat-file', 'blob', 'b' * 40], 'C:/kit')])
-        with mock.patch.object(serve, 'kit_checkout', lambda kit_root=None: None):
-            self.assertIsNone(serve._kit_text(run=run)(want))
+        with mock.patch.object(serverepos, 'kit_checkout', lambda kit_root=None: None):
+            self.assertIsNone(serverepos._kit_text(run=run)(want))
 
     def test_the_served_blob_is_the_text_as_git_stores_it_not_a_crlf_files_bytes(self):
         from kitlib.hubsite import derived
@@ -438,8 +438,8 @@ class KitCheckoutTest(unittest.TestCase):
         def run(args, cwd):
             calls.append((args, cwd))
             return ('a' * 40, None) if args[-1].startswith('kit/b:') else (None, 'unknown')
-        with mock.patch.object(serve, 'kit_checkout', lambda kit_root=None: 'C:/kit'):
-            kb = serve._kit_blob(run=run)
+        with mock.patch.object(serverepos, 'kit_checkout', lambda kit_root=None: 'C:/kit'):
+            kb = serverepos._kit_blob(run=run)
             self.assertEqual(kb('kit/b', 'content/skills/builder/SKILL.md'), 'a' * 40)
             self.assertIsNone(kb('kit/none', 'content/skills/builder/SKILL.md'))
         self.assertEqual(calls[0], (['rev-parse', '--verify', '--quiet',
@@ -447,18 +447,18 @@ class KitCheckoutTest(unittest.TestCase):
         self.assertTrue(all(a[0] == 'rev-parse' for a, _ in calls))
 
     def test_no_kit_checkout_or_a_non_blob_answer_reads_as_none(self):
-        with mock.patch.object(serve, 'kit_checkout', lambda kit_root=None: None):
-            self.assertIsNone(serve._kit_blob(run=lambda a, c: ('a' * 40, None))('b', 'p'))
-        with mock.patch.object(serve, 'kit_checkout', lambda kit_root=None: 'C:/kit'):
-            self.assertIsNone(serve._kit_blob(run=lambda a, c: ('not a blob', None))('b', 'p'))
+        with mock.patch.object(serverepos, 'kit_checkout', lambda kit_root=None: None):
+            self.assertIsNone(serverepos._kit_blob(run=lambda a, c: ('a' * 40, None))('b', 'p'))
+        with mock.patch.object(serverepos, 'kit_checkout', lambda kit_root=None: 'C:/kit'):
+            self.assertIsNone(serverepos._kit_blob(run=lambda a, c: ('not a blob', None))('b', 'p'))
 
     def test_kit_key_is_the_configured_name_of_the_kit_checkouts_remote(self):
-        with mock.patch.object(serve, 'kit_checkout', lambda kit_root=None: 'C:/kit'):
-            key = serve._kit_key(lambda rid: {'rid-1': 'the-kit'}.get(rid),
+        with mock.patch.object(serverepos, 'kit_checkout', lambda kit_root=None: 'C:/kit'):
+            key = serverepos._kit_key(lambda rid: {'rid-1': 'the-kit'}.get(rid),
                                  lambda root: ('rid-1',))
             self.assertEqual(key(), 'the-kit')
-            self.assertEqual(serve._kit_key(lambda rid: None, lambda root: ('rid-1',))(), '')
-            self.assertEqual(serve._kit_key(lambda rid: 'x', lambda root: (None,))(), '')
+            self.assertEqual(serverepos._kit_key(lambda rid: None, lambda root: ('rid-1',))(), '')
+            self.assertEqual(serverepos._kit_key(lambda rid: 'x', lambda root: (None,))(), '')
 
 
 class SkillEditsUnitTest(unittest.TestCase):

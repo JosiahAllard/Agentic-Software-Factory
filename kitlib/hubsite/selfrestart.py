@@ -193,7 +193,7 @@ def self_check(kit_root=None, make_settings=None, make_sources=None):
     import shutil
     import tempfile
     from kitlib.hubclient import token as hubtoken
-    from kitlib.hubsite import api, serve
+    from kitlib.hubsite import api, serve, servesources
     from kitlib.hubclient import settings as hub_settings
     kit_root = kit_root or KIT_ROOT
     for folder in serve.code_folders():
@@ -212,7 +212,7 @@ def self_check(kit_root=None, make_settings=None, make_sources=None):
                                              push=False, access=hub_settings.Access())
 
     def machine_sources(tmp):
-        src = serve.machine_sources(sync=False)
+        src = servesources.machine_sources(sync=False)
         src.tokens = os.path.join(tmp, 'tokens')
         src.backlog = src.lock = src.push = src.push_dir = None
         src.jobs = []

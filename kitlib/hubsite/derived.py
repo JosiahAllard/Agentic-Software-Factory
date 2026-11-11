@@ -2,7 +2,7 @@
 
 Pure read functions, each taking its source (a folder, a config dict, a line reader) and where
 needed a clock. They write nothing, start no thread and open no socket; the server calls them on
-each request and caches none of them (kitlib.hubsite.serve SiteViews: each GET snapshot reads
+each request and caches none of them (kitlib.hubsite.serveviews SiteViews: each GET snapshot reads
 usage and agents again).
 
   notices(notice_dir)           -> [doc]    lock-window notices, oldest first

@@ -17,7 +17,7 @@
   off on this server`), `backlog <repo>: fetched X ago`, `code: current` or `code: stale: ` and the
   restart ("Stale code" below), `jobs: ` with each timed job's `<name> runs R, failures F`, `, running`
   while it runs, and its error while it is failing or else its last note (cut to 60 characters,
-  `serve.JOB_NOTE_MAX`), or `jobs: none` (docs/hub-push.md "Timed jobs" under push notifications), the tunnel line, and
+  `servehealth.JOB_NOTE_MAX`), or `jobs: none` (docs/hub-push.md "Timed jobs" under push notifications), the tunnel line, and
   `unavailable: ...` for a view the server could not read. A server older than the `code` or `jobs`
   field prints no such line. The tunnel line is `tunnel: on` (the Access keys were fetched),
   `tunnel: bound, keys not fetched` (until the first request with a token; a failed fetch adds ` (reason)`,

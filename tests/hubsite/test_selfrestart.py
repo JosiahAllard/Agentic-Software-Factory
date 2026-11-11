@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib.hubsite import autostart, selfrestart, serve
+from kitlib.hubsite import autostart, selfrestart, serve, servesources
 from kitlib.hubclient import settings as hub_settings
 from kitlib.hubclient import localask
 from kitlib.proc import spawn
@@ -488,7 +488,7 @@ class SelfCheckCase(unittest.TestCase):
 
     def make_sources(self, tmp):
         self.made.append(tmp)
-        return serve.Sources(tokens=os.path.join(tmp, 'tokens'),
+        return servesources.Sources(tokens=os.path.join(tmp, 'tokens'),
                              static_dir=os.path.join(tmp, 'web'))
 
     def run_self_check(self):
@@ -504,7 +504,7 @@ class SelfCheckCase(unittest.TestCase):
 
         def machine_sources(**kw):
             asked.append(kw)
-            return serve.Sources(tokens=os.path.join(tempfile.gettempdir(), 'machine-tokens'),
+            return servesources.Sources(tokens=os.path.join(tempfile.gettempdir(), 'machine-tokens'),
                                  backlog=object(), lock=object(), push=object(),
                                  push_dir='push', jobs=[object()])
 
@@ -515,7 +515,7 @@ class SelfCheckCase(unittest.TestCase):
             built.append((settings, src))
             raise Built()
         with mock.patch.object(settings_module, 'load', lambda: machine), \
-                mock.patch.object(serve, 'machine_sources', machine_sources), \
+                mock.patch.object(servesources, 'machine_sources', machine_sources), \
                 mock.patch.object(serve, 'build', build), \
                 mock.patch.object(sys, 'path', list(sys.path)):
             with self.assertRaises(Built):

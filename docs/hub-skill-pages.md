@@ -48,7 +48,7 @@ The routes ("Skill edits" in the `kitlib/hubsite/apiskills.py` docstring):
   `superseded` with `source_blob`, and so does a fail whose `current_blob` (the blob on main the worker
   read) is not base_blob. The owner re-applies it: an edit of a superseded or failed edit is put on the
   source at its `source_blob` when the server can read that blob's text in the kit checkout (`git
-  cat-file`, a read; `kitlib.hubsite.serve._kit_text`) and the page shows that text, else on the source
+  cat-file`, a read; `kitlib.hubsite.serverepos._kit_text`) and the page shows that text, else on the source
   as the server serves it now; base_blob becomes that blob and the edit goes back to draft, or to
   submitted. So a re-apply onto the blob on main is not superseded again while the served copy lags:
   submitting is superseded only when base_blob is neither the served blob nor the blob of the source on
@@ -56,7 +56,7 @@ The routes ("Skill edits" in the `kitlib/hubsite/apiskills.py` docstring):
   the server cannot read main).
 - Done: the blob must be the git blob of the edit's text as UTF-8, else `invalid` (field `blob`). The
   server also reads the blob of the source on `branch` in this machine's kit checkout with `git
-  rev-parse` (a read; `kitlib.hubsite.serve._kit_blob`) and refuses a branch it cannot read or whose
+  rev-parse` (a read; `kitlib.hubsite.serverepos._kit_blob`) and refuses a branch it cannot read or whose
   blob differs (field `branch`), so an agent cannot mark committed a text it never wrote.
 - Pending and push: a submitted edit is a pending item of kind `skill_edit` with no `from`: it is for the
   kit's coordinator (`Api.kit_session_key`: the sessions.json key of the agent session on the kit

@@ -250,16 +250,16 @@ class AgentsTests(Tmp):
 
     def test_the_server_reads_the_selected_hosts_rendered_agents(self):
         from kitlib.host import registry
-        from kitlib.hubsite import serve
+        from kitlib.hubsite import servesources
         for name in registry.names():
             with self.subTest(host=name):
-                want = os.path.join(serve.pmstart.KIT_ROOT, os.path.normpath(registry.host(name).shell), 'agents')
-                self.assertEqual(serve.agents_dir({registry.ENV: name}), want)
+                want = os.path.join(servesources.pmstart.KIT_ROOT, os.path.normpath(registry.host(name).shell), 'agents')
+                self.assertEqual(servesources.agents_dir({registry.ENV: name}), want)
         default = registry.host(registry.default()).shell
-        got = derived.agents(serve.agents_dir({}))
+        got = derived.agents(servesources.agents_dir({}))
         self.assertTrue(got['available'], (default, got))
         self.assertIn('worker', [a['name'] for a in got['agents']])
-        self.assertIsNone(serve.agents_dir({registry.ENV: 'no-such-host'}))
+        self.assertIsNone(servesources.agents_dir({registry.ENV: 'no-such-host'}))
 
 
 class SkillsTests(Tmp):
@@ -295,15 +295,15 @@ class SkillsTests(Tmp):
         self.assertIn('reason', got)
 
     def test_the_server_reads_the_kits_content_skills_never_a_rendered_copy(self):
-        from kitlib.hubsite import serve
-        got = derived.skills(serve.skills_dir())
+        from kitlib.hubsite import servesources
+        got = derived.skills(servesources.skills_dir())
         self.assertTrue(got['available'], got)
-        self.assertEqual(serve.skills_dir(), os.path.join(serve.pmstart.KIT_ROOT, 'content', 'skills'))
+        self.assertEqual(servesources.skills_dir(), os.path.join(servesources.pmstart.KIT_ROOT, 'content', 'skills'))
         by = {s['name']: s for s in got['skills']}
         self.assertIn('builder', by)
         self.assertEqual(sorted(by['builder']), ['description', 'name'])
         self.assertTrue(by['builder']['description'])
-        one = derived.skill(serve.skills_dir(), 'builder')
+        one = derived.skill(servesources.skills_dir(), 'builder')
         self.assertTrue(one['body'].startswith('# Builder'))
         self.assertNotIn('name: builder', one['body'])
 

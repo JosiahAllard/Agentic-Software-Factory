@@ -14,7 +14,7 @@ import unittest
 from unittest import mock
 
 from kitlib.git import cmd as gitcmd
-from kitlib.hubsite import api, approvals, backlog, push, serve, store as store_mod
+from kitlib.hubsite import api, approvals, backlog, push, serverepos, servesources, store as store_mod
 from kitlib.hubsite.api import AGENT, BASE
 from kitlib.hubsite.store import Store
 from tests.gitfixture import own_git
@@ -272,18 +272,18 @@ class PushCase(Clocked):
 
 
 class RepoNameCase(unittest.TestCase):
-    """serve._repo_name names the configured repository whose origin remote is the repo_id."""
+    """serverepos._repo_name names the configured repository whose origin remote is the repo_id."""
 
     def test_by_origin_remote(self):
         views = mock.Mock()
         views.repos.return_value = [('other', 'root-other'), ('kit', 'root-kit')]
         ids = {'root-other': ('example.org/team/other', None), 'root-kit': (REPO, None)}
         with mock.patch.object(approvals, 'remote_id', side_effect=lambda root: ids[root]):
-            name = serve._repo_name(views)
+            name = serverepos._repo_name(views)
             self.assertEqual(name(REPO), 'kit')
             self.assertIsNone(name('example.org/team/none'))
-            self.assertEqual(serve._checkout(views)(REPO), 'root-kit')
-        self.assertIsNone(serve._repo_name(None)(REPO))
+            self.assertEqual(serverepos._checkout(views)(REPO), 'root-kit')
+        self.assertIsNone(serverepos._repo_name(None)(REPO))
 
     def test_two_names_on_one_origin_name_the_session_key(self):
         """The kit's folder name sorts before its coordinator's key and shares its remote: the
@@ -291,19 +291,19 @@ class RepoNameCase(unittest.TestCase):
         views = mock.Mock()
         views.repos.return_value = [('Folder-Kit', 'root-kit'), ('kit', 'root-kit')]
         with mock.patch.object(approvals, 'remote_id', return_value=(REPO, None)):
-            self.assertEqual(serve._repo_name(views, lambda: {'kit', 'zeta'})(REPO), 'kit')
-            self.assertEqual(serve._repo_name(views, lambda: {'zeta'})(REPO), 'Folder-Kit')
-            self.assertEqual(serve._repo_name(views)(REPO), 'Folder-Kit')
+            self.assertEqual(serverepos._repo_name(views, lambda: {'kit', 'zeta'})(REPO), 'kit')
+            self.assertEqual(serverepos._repo_name(views, lambda: {'zeta'})(REPO), 'Folder-Kit')
+            self.assertEqual(serverepos._repo_name(views)(REPO), 'Folder-Kit')
 
             def broken():
                 raise OSError('unreadable')
-            self.assertEqual(serve._repo_name(views, broken)(REPO), 'Folder-Kit')
+            self.assertEqual(serverepos._repo_name(views, broken)(REPO), 'Folder-Kit')
 
     def test_a_name_with_no_checkout_is_never_asked_of_git(self):
         views = mock.Mock()
         views.repos.return_value = [('gone', None), ('kit', 'root-kit')]
         asked = []
-        found = serve._configured(views, REPO, lambda root: asked.append(root) or (REPO, None))
+        found = serverepos._configured(views, REPO, lambda root: asked.append(root) or (REPO, None))
         self.assertEqual(found, [('kit', 'root-kit')])
         self.assertEqual(asked, ['root-kit'])
 
@@ -338,7 +338,7 @@ def git_repo(path, url):
 
 
 class RoutingGitCase(unittest.TestCase):
-    """Decided approvals routed on real checkouts (serve._repo_pairs, serve._repo_name): once
+    """Decided approvals routed on real checkouts (servesources._repo_pairs, serverepos._repo_name): once
     each folder's top level and each root's remote are known, pending reads and the waits that
     writes wake start no git (KIT-HUB-CLICK-LAG), and a changed remote still routes anew."""
 
@@ -353,12 +353,12 @@ class RoutingGitCase(unittest.TestCase):
         with open(sessions, 'w', encoding='utf-8') as f:
             json.dump({'k': {'repo': 'kit'}, 'o': {'repo': 'other'}}, f)
         self.now = 0.0
-        self.views = backlog.Views(serve._repo_pairs({'sessions_file': sessions}))
+        self.views = backlog.Views(servesources._repo_pairs({'sessions_file': sessions}))
         self.store = Store.open(os.path.join(self.root, 'store'))
         self.addCleanup(self.store.close)
         self.api = api.Api(self.store, session_keys=lambda: {'kit', 'other'},
-                           repo_name=serve._repo_name(
-                               self.views, remote_ids=serve._RemoteIds(clock=lambda: self.now)))
+                           repo_name=serverepos._repo_name(
+                               self.views, remote_ids=serverepos._RemoteIds(clock=lambda: self.now)))
         now = datetime.datetime.now(datetime.timezone.utc).timestamp()
         for n in range(1, 4):
             self.store.put('approvals', 'A-00%d' % n, decided(when=now - 60))
@@ -398,7 +398,7 @@ class RoutingGitCase(unittest.TestCase):
 
 
 class RemoteIdsCase(unittest.TestCase):
-    """serve._RemoteIds: a remembered remote serves while the repository's config (a linked
+    """serverepos._RemoteIds: a remembered remote serves while the repository's config (a linked
     worktree's: the common dir's) is unchanged, and for at most REMOTE_TTL_S; a failure for at
     most REMOTE_MISS_TTL_S."""
 
@@ -411,7 +411,7 @@ class RemoteIdsCase(unittest.TestCase):
                               lambda root: self.asked.append(root) or (REPO, None))
         p.start()
         self.addCleanup(p.stop)
-        self.ids = serve._RemoteIds(clock=lambda: self.now)
+        self.ids = serverepos._RemoteIds(clock=lambda: self.now)
 
     def config(self, text):
         os.makedirs(os.path.join(self.root, '.git'), exist_ok=True)
@@ -430,10 +430,10 @@ class RemoteIdsCase(unittest.TestCase):
     def test_the_ttl_ends_a_remembered_remote(self):
         self.config('[remote "origin"]\n\turl = a\n')
         self.ids(self.root)
-        self.now = serve.REMOTE_TTL_S - 1
+        self.now = serverepos.REMOTE_TTL_S - 1
         self.ids(self.root)
         self.assertEqual(len(self.asked), 1)
-        self.now = serve.REMOTE_TTL_S
+        self.now = serverepos.REMOTE_TTL_S
         self.ids(self.root)
         self.assertEqual(len(self.asked), 2)
 
@@ -442,10 +442,10 @@ class RemoteIdsCase(unittest.TestCase):
         with open(os.path.join(self.root, '.git'), 'w', encoding='utf-8') as f:
             f.write('gitdir: elsewhere\n')
         self.ids(self.root)
-        self.now = serve.REMOTE_TTL_S - 1
+        self.now = serverepos.REMOTE_TTL_S - 1
         self.ids(self.root)
         self.assertEqual(len(self.asked), 1)
-        self.now = serve.REMOTE_TTL_S
+        self.now = serverepos.REMOTE_TTL_S
         self.ids(self.root)
         self.assertEqual(len(self.asked), 2)
 
@@ -476,13 +476,13 @@ class RemoteIdsCase(unittest.TestCase):
         with mock.patch.object(approvals, 'remote_id',
                                lambda root: self.asked.append(root) or (None, 'no origin')):
             self.assertEqual(self.ids(self.root), (None, 'no origin'))
-            self.now = serve.REMOTE_MISS_TTL_S - 0.1
+            self.now = serverepos.REMOTE_MISS_TTL_S - 0.1
             self.assertEqual(self.ids(self.root), (None, 'no origin'))
             self.assertEqual(len(self.asked), 1)
-            self.now = serve.REMOTE_MISS_TTL_S
+            self.now = serverepos.REMOTE_MISS_TTL_S
             self.ids(self.root)
             self.assertEqual(len(self.asked), 2)
-        self.assertLess(serve.REMOTE_MISS_TTL_S, serve.REMOTE_TTL_S)
+        self.assertLess(serverepos.REMOTE_MISS_TTL_S, serverepos.REMOTE_TTL_S)
 
 
 if __name__ == '__main__':

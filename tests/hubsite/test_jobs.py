@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib import hubjobs
-from kitlib.hubsite import jobs, push, serve
+from kitlib.hubsite import jobs, push, serve, servesources
 from tests.home import pm_repo
 from tests.hubsite.httpfix import get
 from tests.hubsite.test_push import PushCase
@@ -362,17 +362,17 @@ class MachineJobsTest(unittest.TestCase):
     def test_machine_sources_gives_every_discovered_job_only_with_sync(self):
         from kitlib.hubsite import plugin_job
         pm_repo(self, record=False)
-        src = serve.machine_sources(self.home, jobs=hubjobs.makers())
+        src = servesources.machine_sources(self.home, jobs=hubjobs.makers())
         found = [m.module for m in hubjobs.makers()]
         self.assertIn('kitlib.hubjobs.plugin_refresh', found)
         self.assertEqual([m.module for m in src.jobs], found,
                          'the server runs the jobs it is handed, no list of its own')
         self.assertEqual(src.home, self.home)
-        self.assertEqual(serve.machine_sources(self.home).jobs, [], 'none handed, none run')
-        self.assertEqual(serve.machine_sources(self.home, sync=False,
+        self.assertEqual(servesources.machine_sources(self.home).jobs, [], 'none handed, none run')
+        self.assertEqual(servesources.machine_sources(self.home, sync=False,
                                                jobs=hubjobs.makers()).jobs, [],
                          'a scratch store runs no job')
-        self.assertEqual(serve.Sources().jobs, [])
+        self.assertEqual(servesources.Sources().jobs, [])
         maker = src.jobs[found.index('kitlib.hubjobs.plugin_refresh')]
         job = maker(src)
         self.assertEqual((job.name, job.every_s), (plugin_job.NAME, plugin_job.EVERY_S))

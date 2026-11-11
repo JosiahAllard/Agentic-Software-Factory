@@ -9,31 +9,32 @@ the jobs.
                           `maker.module` is the module's full name, `maker.folder` the
                           folder it is in
   machine_sources(home=None, sync=True)
-                          serve.machine_sources handed makers(): the Sources
+                          servesources.machine_sources handed makers(): the Sources
                           `tools/hub.py serve` builds the server from
 
 The hub server is handed its jobs and never imports this package: machine_sources here gives
-makers() to serve.machine_sources(jobs=), which puts them in Sources.jobs for the machine's server
-(a scratch store, sync=False, gets none), and serve.build calls each maker: a module that fails
-to import, or a make that raises, is a line in the hub's start-up notes and the hub serves
-without that job; a make that returns None is left out silently. The hub's stale-code check
-(serve.code_stamp) reads each maker's folder too, so a job added or changed on disk asks for a
-restart like hub code does.
+makers() to servesources.machine_sources(jobs=), which puts them in Sources.jobs for the
+machine's server (a scratch store, sync=False, gets none), and serve.build calls each maker: a
+module that fails to import, or a make that raises, is a line in the hub's start-up notes and
+the hub serves without that job; a make that returns None is left out silently. The hub's
+stale-code check (serve.code_stamp) reads each maker's folder too, so a job added or changed on
+disk asks for a restart like hub code does.
 
 Adding a job: write one module here, `kitlib/hubjobs/<name>.py`, with `make(sources)` returning
 `jobs.Job(NAME, EVERY_S, run)` (kitlib.hubsite.jobs docstring: what run(ctx) returns, Skip,
 ctx.event(word, detail=None)), and its tests in `tests/hubjobs/`. Nothing else changes: no
-registration line, no list in a shared file. `sources` is serve.Sources (its `home`, the
+registration line, no list in a shared file. `sources` is servesources.Sources (its `home`, the
 machine config's folders). The job's name must be unique among the jobs: a second job of a
 name already made is left out, with a note. A module whose name starts with '_' is not a job
-(a helper several jobs share).
+(a helper several jobs share, or one job's own part: _crossover_decide holds the usage
+crossover's decisions).
 """
 import importlib
 import os
 import pkgutil
 import sys
 
-from kitlib.hubsite import serve
+from kitlib.hubsite import servesources
 
 
 def makers(package=None):
@@ -56,6 +57,7 @@ def _maker(module, folder):
 
 
 def machine_sources(home=None, sync=True):
-    """This machine's serve.Sources under `home` (serve.machine_sources), handed this package's
-    makers() as its timed jobs; sync=False (a scratch store) gets no git sync and no job."""
-    return serve.machine_sources(home, sync=sync, jobs=makers())
+    """This machine's servesources.Sources under `home` (servesources.machine_sources), handed
+    this package's makers() as its timed jobs; sync=False (a scratch store) gets no git sync and
+    no job."""
+    return servesources.machine_sources(home, sync=sync, jobs=makers())

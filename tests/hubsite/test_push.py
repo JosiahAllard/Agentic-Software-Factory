@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib.config.user import HomeFenced
-from kitlib.hubsite import api, auth, push, serve, store as store_mod
+from kitlib.hubsite import api, auth, push, serve, servesources, store as store_mod
 from kitlib.hubclient import settings as hub_settings
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
@@ -858,7 +858,7 @@ class ThreadTest(unittest.TestCase):
 
     def test_the_hub_runs_the_worker_and_closes_it_around_the_store(self):
         fake = FakePush()
-        hub = serve.build(self.settings, serve.Sources(tokens=self.tokens, push=fake,
+        hub = serve.build(self.settings, servesources.Sources(tokens=self.tokens, push=fake,
                                                        push_dir=self.folder,
                                                        static_dir=os.path.join(self.root, 'web')),
                           log=lambda level, text: self.lines.append((level, text)))
@@ -893,13 +893,13 @@ class ThreadTest(unittest.TestCase):
             self.assertIn('question:', f.read())
 
     def test_no_push_without_a_folder(self):
-        hub = serve.build(self.settings, serve.Sources(tokens=self.tokens, push=FakePush(),
+        hub = serve.build(self.settings, servesources.Sources(tokens=self.tokens, push=FakePush(),
                                                        static_dir=os.path.join(self.root, 'web')))
         self.addCleanup(hub.close)
         self.assertIsNone(hub.push)
 
     def test_a_worker_that_will_not_start_leaves_the_hub_serving(self):
-        hub = serve.build(self.settings, serve.Sources(tokens=self.tokens, push=FakePush(),
+        hub = serve.build(self.settings, servesources.Sources(tokens=self.tokens, push=FakePush(),
                                                        push_dir=self.folder,
                                                        static_dir=os.path.join(self.root, 'web')),
                           log=lambda level, text: self.lines.append((level, text)))

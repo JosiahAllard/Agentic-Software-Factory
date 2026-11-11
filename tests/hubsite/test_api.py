@@ -15,7 +15,7 @@ from unittest import mock
 
 from kitlib import hubvalidate
 from kitlib.backlog import store as smod
-from kitlib.hubsite import api, apipages, approvals, derived, push, recordwrite, schema, serve
+from kitlib.hubsite import api, apipages, approvals, derived, push, recordwrite, schema, serve, serverepos, servesources, serveviews
 from kitlib.hubvalidate import todosteps
 from kitlib.hubsite import backlog as hbacklog
 from kitlib.hubsite.api import AGENT, BASE, OWNER
@@ -930,7 +930,7 @@ class PendingReadsTest(ApiCase):
             return {'kit': {}, 'zeta': {}}
         self.patch(mock.patch.object(api.lsettings, 'load', lambda home=None: object()))
         self.patch(mock.patch.object(api.lstate, 'read_sessions', read_sessions))
-        repo_name = serve._repo_name(Repos(), api.launcher_keys,
+        repo_name = serverepos._repo_name(Repos(), api.launcher_keys,
                                      remote_ids=lambda root: ('github.com/x/kit', None))
         self.api = api.Api(self.store, clock=CLOCK, repo_name=repo_name,
                            kit_key=lambda: repo_name('github.com/x/kit'))
@@ -2386,7 +2386,7 @@ class IdGuardTest(ApiCase):
 
 
 class RecordViews(object):
-    """The two record views as kitlib.hubsite.serve.SiteViews gives them: known names answer, the
+    """The two record views as kitlib.hubsite.serveviews.SiteViews gives them: known names answer, the
     rest raise the HubErrors SiteViews maps kitlib.hubsite.backlog's refusals to."""
 
     def __init__(self):
@@ -4348,7 +4348,7 @@ class FindingsSourceTest(unittest.TestCase):
         self.result('kit', [self.row(), self.row(fingerprint=FP2)])
         store = Store.open(os.path.join(self.root, 'store'), clock=CLOCK)
         self.addCleanup(store.close)
-        views = serve.SiteViews(store, serve.Sources(findings=self.root))
+        views = serveviews.SiteViews(store, servesources.Sources(findings=self.root))
         self.assertEqual(views.findings(), derived.findings(self.root))
         a = api.Api(store, views=views, clock=CLOCK)
         status, obj = a.call('POST', BASE + '/finding_marks', OWNER,
@@ -4357,7 +4357,7 @@ class FindingsSourceTest(unittest.TestCase):
         status, obj = a.call('GET', BASE + '/findings', AGENT)
         self.assertEqual([f['fingerprint'] for f in obj['items']], [FP2])
         # a server with no findings folder (no pm_data) shows none
-        self.assertEqual(serve.SiteViews(store, serve.Sources()).findings(), [])
+        self.assertEqual(serveviews.SiteViews(store, servesources.Sources()).findings(), [])
 
     def test_site_views_show_each_lint_run_in_the_findings_runs(self):
         """KIT-HUB-FINDINGS-LINT-RUNS: the lint folder's runs reach GET findings' runs."""
@@ -4368,14 +4368,14 @@ class FindingsSourceTest(unittest.TestCase):
                         now=datetime.datetime(2026, 1, 9, 3, 0, tzinfo=datetime.timezone.utc))
         store = Store.open(os.path.join(self.root, 'store'), clock=CLOCK)
         self.addCleanup(store.close)
-        a = api.Api(store, views=serve.SiteViews(store, serve.Sources(findings=self.root)),
+        a = api.Api(store, views=serveviews.SiteViews(store, servesources.Sources(findings=self.root)),
                     clock=CLOCK)
         status, obj = a.call('GET', BASE + '/findings', AGENT)
         self.assertEqual(status, 200, obj)
         self.assertEqual(obj['runs'], [{'repo': 'kit', 'started': '2026-01-02T03:04:05Z',
                                         'ledger': None, 'skipped': {
                                             'reason': 'busy', 'at': '2026-01-09T03:00:00Z'}}])
-        bare = api.Api(store, views=serve.SiteViews(store, serve.Sources()), clock=CLOCK)
+        bare = api.Api(store, views=serveviews.SiteViews(store, servesources.Sources()), clock=CLOCK)
         self.assertEqual(bare.call('GET', BASE + '/findings', AGENT)[1]['runs'], [])
 
     def test_the_machine_sources_read_the_pm_data_lint_folder(self):
@@ -4383,11 +4383,11 @@ class FindingsSourceTest(unittest.TestCase):
         os.makedirs(home)
         pm = os.path.join(self.root, 'pm')
         pm_repo(self, record=False)          # the hub's token folder needs the PM-repo pointer
-        with mock.patch.object(serve.pmdata, 'machine_settings', lambda h: {'path': pm}):
-            src = serve.machine_sources(home, sync=False)
+        with mock.patch.object(servesources.pmdata, 'machine_settings', lambda h: {'path': pm}):
+            src = servesources.machine_sources(home, sync=False)
         self.assertEqual(src.findings, os.path.join(pm, lint_result.FOLDER))
-        with mock.patch.object(serve.pmdata, 'machine_settings', lambda h: None):
-            self.assertIsNone(serve.machine_sources(home, sync=False).findings)
+        with mock.patch.object(servesources.pmdata, 'machine_settings', lambda h: None):
+            self.assertIsNone(servesources.machine_sources(home, sync=False).findings)
 
 
 class UnblockStoreTest(trw.Case):
@@ -4441,7 +4441,7 @@ class UnblockStoreTest(trw.Case):
             def record(self, repo, rid):
                 return {'repo': repo, 'id': rid}
 
-        views = serve.SiteViews(None, serve.Sources(), backlog_views=Backlog())
+        views = serveviews.SiteViews(None, servesources.Sources(), backlog_views=Backlog())
         out = views.record_unblock('r', 'FOO', None, None)
         self.assertEqual(out['record'], {'repo': 'r', 'id': 'FOO'})
         self.assertEqual(reread, [('r', root)])
@@ -5145,7 +5145,7 @@ class AnswerStoreTest(trw.Case):
                 return {'repo': repo, 'id': rid, 'where': 'open'}
 
         self.backlog = Backlog()
-        self.views = serve.SiteViews(None, serve.Sources(), backlog_views=self.backlog)
+        self.views = serveviews.SiteViews(None, servesources.Sources(), backlog_views=self.backlog)
         hub = tempfile.mkdtemp(prefix='kit-hubapi-')
         self.addCleanup(shutil.rmtree, hub, True)
         self.store = Store.open(hub, clock=CLOCK)
@@ -5212,7 +5212,7 @@ class AnswerNoStoreTest(trw.Case):
             def record(self, repo, rid):
                 return {'repo': repo, 'id': rid, 'where': 'open'}
 
-        self.views = serve.SiteViews(None, serve.Sources(), backlog_views=Backlog())
+        self.views = serveviews.SiteViews(None, servesources.Sources(), backlog_views=Backlog())
         hub = tempfile.mkdtemp(prefix='kit-hubapi-')
         self.addCleanup(shutil.rmtree, hub, True)
         self.store = Store.open(hub, clock=CLOCK)

@@ -293,7 +293,8 @@ from kitlib.hubclient import client, settings                      # noqa: E402
 from kitlib.hubclient import token as hubtoken                     # noqa: E402
 from kitlib.hubclient import errors as huberrors                   # noqa: E402
 from kitlib.hubclient import localask                              # noqa: E402
-from kitlib.hubsite import access, api, auth, httpd, serve, tunnel   # noqa: E402
+from kitlib.hubsite import access, api, auth, gitsync, httpd, serve   # noqa: E402
+from kitlib.hubsite import servehealth, tunnel                     # noqa: E402
 from kitlib.hubsite import approvals                               # noqa: E402
 from kitlib.hubsite import autostart as hub_autostart              # noqa: E402
 from kitlib.hubsite import control                                 # noqa: E402
@@ -875,11 +876,11 @@ def _say(text, stream=None):
 
 def _log(level, text):
     """The server's error and note lines, to stderr; a request line is not printed. Every line
-    goes through serve.scrub: a listener's error line may quote a remote URL as git gave it."""
+    goes through gitsync.scrub: a listener's error line may quote a remote URL as git gave it."""
     word = LEVELS.get(level)
     if word is None:
         return
-    _say('%s: %s' % (word, serve.scrub(text)), sys.stderr)   # closed console: a handler goes on
+    _say('%s: %s' % (word, gitsync.scrub(text)), sys.stderr)   # closed console: a handler goes on
 
 
 def _push_delivery():
@@ -937,7 +938,7 @@ def _serve(a, stop):
 
 def _refused(port, status, obj):
     err = obj.get('error') if isinstance(obj.get('error'), dict) else {}
-    print(serve.scrub('REFUSED: the server on port %d answered %d %s: %s' % (
+    print(gitsync.scrub('REFUSED: the server on port %d answered %d %s: %s' % (
         port, status, err.get('code') or '', err.get('message') or 'not the expected answer')),
         file=sys.stderr)
     return 1
@@ -952,7 +953,7 @@ def _status(a, stop):
     if status != 200 or obj.get('ok') is not True:
         return _refused(port, status, obj)
     print('hub server on http://%s:%d' % (httpd.LOOPBACK, port))
-    for line in serve.status_lines(obj):
+    for line in servehealth.status_lines(obj):
         print(line)
     return 0
 
@@ -1214,7 +1215,7 @@ def _stop(a, stop):
     except control.Refused as e:
         return _refused(e.port, e.status, e.answer)
     except control.TimedOut as e:
-        print(serve.scrub('TIMED OUT: %s' % e), file=sys.stderr)
+        print(gitsync.scrub('TIMED OUT: %s' % e), file=sys.stderr)
         return client.TIMED_OUT
     _stopped(port, got)
     return 0
@@ -1231,12 +1232,12 @@ def _restart(a, stop):
     except control.StartFailed as e:
         # the stop went through: say so, then why nothing was started and how to start it
         _stopped(port, e.stopped)
-        print(serve.scrub('%s could not be started: %s' % (
+        print(gitsync.scrub('%s could not be started: %s' % (
             _job() if _linux() else 'the scheduled task', e.reason)), file=sys.stderr)
         print(task_advice(None), file=sys.stderr)
         return 1
     except control.TimedOut as e:
-        print(serve.scrub('TIMED OUT: %s' % e), file=sys.stderr)
+        print(gitsync.scrub('TIMED OUT: %s' % e), file=sys.stderr)
         if e.phase == control.ANSWER_PHASE:
             # the task was started and its server never answered: why is in its start-up lines
             print(NO_CONSOLE_LINUX if _linux() else NO_CONSOLE, file=sys.stderr)
@@ -1273,7 +1274,7 @@ def _validate(a, stop):
 def _put(text):
     """One line to stdout: `text` on one line, with no user or password of a URL, and with a
     character the console cannot show written as its escape."""
-    line = serve.scrub(' '.join(str(text).split()))
+    line = gitsync.scrub(' '.join(str(text).split()))
     try:
         print(line)
     except UnicodeEncodeError:
@@ -1284,7 +1285,7 @@ def _put(text):
 def _show(a, obj, lines):
     """The answer `obj` of the server: as one JSON line with --json, else `lines`."""
     if getattr(a, 'json', False):
-        print(serve.scrub(json.dumps(obj, sort_keys=True)))     # ASCII; a `"` ends a URL's user
+        print(gitsync.scrub(json.dumps(obj, sort_keys=True)))     # ASCII; a `"` ends a URL's user
     else:
         for line in lines:
             _put(line)
@@ -1760,7 +1761,7 @@ VERBS = {'serve': _serve, 'status': _status, 'setup': _setup, 'open': _open,
 
 def main(argv=None, stop=None):
     """`stop`: a threading.Event that ends `serve` when set (default: Ctrl+C only). The
-    `machine config:` and `REFUSED` lines go through serve.scrub, as the server's log lines
+    `machine config:` and `REFUSED` lines go through gitsync.scrub, as the server's log lines
     do: a reason may quote a remote URL."""
     p = parser()
     a = p.parse_args(argv)
@@ -1777,21 +1778,21 @@ def main(argv=None, stop=None):
     try:
         return VERBS[a.verb](a, stop)
     except ConfigError as e:
-        print(serve.scrub('machine config: %s' % e), file=sys.stderr)
+        print(gitsync.scrub('machine config: %s' % e), file=sys.stderr)
         return client.USAGE
     except huberrors.NotRunning as e:
         print('%s; start it with: %s' % (e, START), file=sys.stderr)
         return client.exit_code(e)
     except client.Refused as e:         # the server's own refusal: its code, then its words
         if getattr(a, 'json', False):
-            print(serve.scrub(json.dumps(e.body, sort_keys=True)))
-        print(serve.scrub('REFUSED %s: %s' % (e.code, ' '.join(e.message.split()))),
+            print(gitsync.scrub(json.dumps(e.body, sort_keys=True)))
+        print(gitsync.scrub('REFUSED %s: %s' % (e.code, ' '.join(e.message.split()))),
               file=sys.stderr)
         if e.field == 'record':         # a --record the hub would not take: the form that it does
             sys.stderr.write(example_line('hub.py %s %s' % (a.verb, getattr(a, 'sub', None) or '')))
         return client.exit_code(e)
     except (huberrors.ServeError, auth.TokenFileError) as e:
-        print(serve.scrub('REFUSED: %s' % e), file=sys.stderr)
+        print(gitsync.scrub('REFUSED: %s' % e), file=sys.stderr)
         return client.REFUSED
     except KeyboardInterrupt:           # not in a server's close: _serve answers that one
         print(INTERRUPTED, file=sys.stderr)

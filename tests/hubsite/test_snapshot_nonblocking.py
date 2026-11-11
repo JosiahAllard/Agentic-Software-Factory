@@ -14,7 +14,7 @@ import threading
 import unittest
 from unittest import mock
 
-from kitlib.hubsite import api, backlog, serve
+from kitlib.hubsite import api, backlog, serve, servesources, serveviews
 from kitlib.hubsite.store import Store
 
 WAIT = 30           # seconds a test waits for a thread it released before it fails
@@ -107,8 +107,8 @@ class SnapshotCase(unittest.TestCase):
         self.pause = Pause()
         self.views_b = backlog.Views(pairs, refresh_s=refresh_s, opener=self.opener,
                                      reuse_s=reuse_s, wait=self.pause)
-        self.views = serve.SiteViews(self.store, serve.Sources(tokens=self.root), self.views_b)
-        serve._follow_rounds(self.views_b, self.views)
+        self.views = serveviews.SiteViews(self.store, servesources.Sources(tokens=self.root), self.views_b)
+        serveviews._follow_rounds(self.views_b, self.views)
         self.api = api.Api(self.store, self.views)
         status, obj = self.api.call('POST', api.BASE + '/questions', api.AGENT,
                                     {'title': 'a question', 'repo': 'kit', 'options': OPTIONS,
@@ -153,8 +153,8 @@ class WithTimer(SnapshotCase):
         self.assertTrue(self.opener.entered.acquire(timeout=WAIT))     # the round is in git
         snap = self.snapshot()
         self.assertEqual((snap['views']['backlog'], snap['views']['completed']), (None, None))
-        self.assertEqual(snap['unavailable']['backlog'], serve.NotReadYet.__name__)
-        self.assertEqual(snap['unavailable']['completed'], serve.NotReadYet.__name__)
+        self.assertEqual(snap['unavailable']['backlog'], serveviews.NotReadYet.__name__)
+        self.assertEqual(snap['unavailable']['completed'], serveviews.NotReadYet.__name__)
         self.assertQuestions(snap)
         self.assertEqual(self.opener.outside_timer(), [])          # no git in the request thread
         h = self.views.health()

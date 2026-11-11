@@ -21,6 +21,7 @@ from unittest import mock
 from kitlib.config.types import ConfigError
 from kitlib.hubclient import client
 from kitlib.hubsite import access, auth, backlog, gitsync, httpd, selfrestart, serve
+from kitlib.hubsite import servehealth, servesources, serveviews
 from kitlib.hubsite import tunnel
 from kitlib.hubclient import settings as hub_settings
 from kitlib.hubclient import token as hubtoken
@@ -267,7 +268,7 @@ class ServeCase(unittest.TestCase):
     def build(self, settings=None, **src):
         src.setdefault('tokens', self.tokens)
         src.setdefault('static_dir', os.path.join(self.root, 'web'))
-        hub = serve.build(settings or self.settings, serve.Sources(**src), log=self.log)
+        hub = serve.build(settings or self.settings, servesources.Sources(**src), log=self.log)
         self.addCleanup(hub.close)
         self.hub = hub
         self.owner = auth.read_token(self.tokens, auth.OWNER)
@@ -290,7 +291,7 @@ class BuildCase(ServeCase):
         self.assertIs(self.build(lock=door).api.lock, door)
         self.hub.close()
         self.assertIsNone(self.build().api.lock)
-        self.assertIsNone(serve.Sources().lock)
+        self.assertIsNone(servesources.Sources().lock)
 
     def test_the_api_reads_the_approval_key_and_finds_a_checkout_by_its_remote(self):
         from kitlib.hubsite import approvals
@@ -454,7 +455,7 @@ class BuildCase(ServeCase):
         first = self.build()
         self.assertTrue(self.locked())
         with self.assertRaises(huberrors.ServeError) as cm:
-            serve.build(self.settings, serve.Sources(tokens=self.tokens), log=self.log)
+            serve.build(self.settings, servesources.Sources(tokens=self.tokens), log=self.log)
         self.assertIn('another hub server has this store open', str(cm.exception))
         self.assertIn(os.path.abspath(self.store_dir), str(cm.exception))
         # the refusal took nothing from the first: it still serves, and its close frees the store
@@ -467,10 +468,10 @@ class BuildCase(ServeCase):
 
     def test_no_store_folder_is_refused(self):
         with self.assertRaises(huberrors.ServeError) as cm:
-            serve.build(self.settings._replace(store=None), serve.Sources(tokens=self.tokens))
+            serve.build(self.settings._replace(store=None), servesources.Sources(tokens=self.tokens))
         self.assertIn('no store folder', str(cm.exception))
         with self.assertRaises(huberrors.ServeError):
-            serve.build(self.settings, serve.Sources())
+            serve.build(self.settings, servesources.Sources())
         self.assertFalse(os.path.exists(self.store_dir))
 
     def test_a_token_file_that_cannot_serve_is_refused_and_the_store_is_released(self):
@@ -479,7 +480,7 @@ class BuildCase(ServeCase):
         with open(bad, 'w', encoding='utf-8'):
             pass
         with self.assertRaises(huberrors.ServeError) as cm:
-            serve.build(self.settings, serve.Sources(tokens=self.tokens), log=self.log)
+            serve.build(self.settings, servesources.Sources(tokens=self.tokens), log=self.log)
         self.assertIn(bad, str(cm.exception))
         self.assertFalse(self.locked())
         self.assertEqual(httpfix.http_threads(), [])
@@ -498,7 +499,7 @@ class BuildCase(ServeCase):
         with open(bad, 'w', encoding='ascii') as f:
             f.write(auth.read_token(self.tokens, auth.OWNER))   # the owner's token is no key
         with self.assertRaises(huberrors.ServeError) as cm:
-            serve.build(self.settings, serve.Sources(tokens=self.tokens), log=self.log)
+            serve.build(self.settings, servesources.Sources(tokens=self.tokens), log=self.log)
         self.assertIn(bad, str(cm.exception))
         self.assertFalse(self.locked())
         self.assertEqual(httpfix.http_threads(), [])
@@ -508,7 +509,7 @@ class BuildCase(ServeCase):
         other = os.path.join(self.root, 'other')
         with self.assertRaises(huberrors.ServeError) as cm:
             serve.build(self.settings._replace(port=first.port, store=other),
-                        serve.Sources(tokens=self.tokens), log=self.log)
+                        servesources.Sources(tokens=self.tokens), log=self.log)
         self.assertIn(str(first.port), str(cm.exception))
         self.assertFalse(self.locked(other))
         self.assertTrue(self.locked())
@@ -568,7 +569,7 @@ class SyncCase(ServeCase):
         hub.start()
         r = get(hub.port, HEALTH, self.owner)
         self.assertEqual(r.status, 200)
-        self.assertEqual(r.json()['git'], {'running': False, 'off': serve.SYNC_REFUSED})
+        self.assertEqual(r.json()['git'], {'running': False, 'off': serveviews.SYNC_REFUSED})
         self.assertNotIn('somewhere', r.body.decode('utf-8'))      # health may not
         self.assertEqual(post(hub.port, BASE + '/todos', {'title': 't'}, self.owner).status, 200)
         self.assertIs(hub.close(), True)
@@ -577,7 +578,7 @@ class SyncCase(ServeCase):
     def test_no_sync_source_is_a_server_with_sync_off(self):
         hub = self.build()
         self.assertEqual((hub.sync, hub.notes), (None, []))
-        self.assertEqual(hub.views.health()['git'], {'running': False, 'off': serve.SYNC_OFF})
+        self.assertEqual(hub.views.health()['git'], {'running': False, 'off': serveviews.SYNC_OFF})
 
     def test_health_shows_the_syncs_status_without_gits_own_words(self):
         hub = self.build(sync=self.sync_factory())
@@ -906,7 +907,7 @@ class ViewsCase(ServeCase):
             self.assertEqual(r.json()['error']['field'], 'views')
         self.assertEqual(get(hub.port, BASE + '/notices', self.owner).json()['items'], [])
         usage = get(hub.port, BASE + '/usage', self.owner).json()['items']
-        self.assertEqual((usage['available'], usage['reason']), (False, serve.NO_USAGE_SOURCE))
+        self.assertEqual((usage['available'], usage['reason']), (False, serveviews.NO_USAGE_SOURCE))
         r = get(hub.port, BASE + '/snapshot', self.owner)
         self.assertEqual(r.status, 200)
         self.assertEqual(sorted(r.json()['unavailable']), ['agents', 'backlog', 'completed',
@@ -931,15 +932,15 @@ class ViewsCase(ServeCase):
         hub.start()
         r = get(hub.port, BASE + '/usage', self.owner)
         self.assertEqual((r.json()['items']['available'], r.json()['items']['reason']),
-                         (False, serve.USAGE_FAILED))
+                         (False, serveviews.USAGE_FAILED))
         self.assertNotIn('somewhere', r.body.decode('utf-8'))
         r = get(hub.port, BASE + '/agents', self.owner)
         self.assertEqual((r.json()['items']['available'], r.json()['items']['reason']),
-                         (False, serve.AGENTS_FAILED))
+                         (False, serveviews.AGENTS_FAILED))
         self.assertNotIn('no-agents-here', r.body.decode('utf-8'))
         r = get(hub.port, BASE + '/skills', self.owner)
         self.assertEqual((r.json()['items']['available'], r.json()['items']['reason']),
-                         (False, serve.SKILLS_FAILED))
+                         (False, serveviews.SKILLS_FAILED))
         self.assertNotIn('no-skills-here', r.body.decode('utf-8'))
         r = get(hub.port, BASE + '/repos', self.owner)
         self.assertEqual(r.json()['items'], [{'name': 'alpha', 'aliases': []}])
@@ -976,10 +977,10 @@ class RecordViewsCase(ServeCase):
     def site(self, raises=None):
         source = RecordBacklog([])
         source.raises = raises
-        return serve.SiteViews(None, serve.Sources(), source), source
+        return serveviews.SiteViews(None, servesources.Sources(), source), source
 
     def test_the_record_views_are_bound_only_with_a_backlog(self):
-        bare = serve.SiteViews(None, serve.Sources())
+        bare = serveviews.SiteViews(None, servesources.Sources())
         self.assertFalse(hasattr(bare, 'record'))
         self.assertFalse(hasattr(bare, 'record_template'))
         views, source = self.site()
@@ -1030,7 +1031,7 @@ class RecordViewsCase(ServeCase):
                           ('record', 'Alpha', 'A-404')])
 
     def test_the_record_writes_are_bound_only_with_a_backlog(self):
-        bare = serve.SiteViews(None, serve.Sources())
+        bare = serveviews.SiteViews(None, servesources.Sources())
         for name in ('record_add', 'record_edit', 'record_delete'):
             self.assertFalse(hasattr(bare, name))
             self.assertTrue(callable(getattr(self.site()[0], name)))
@@ -1041,7 +1042,7 @@ class RecordViewsCase(ServeCase):
 
         def fake(name):
             return lambda *a: seen.append((name,) + a) or {'lines': [name]}
-        with mock.patch.multiple(serve.recordwrite, add=fake('add'), edit=fake('edit'),
+        with mock.patch.multiple(serveviews.recordwrite, add=fake('add'), edit=fake('edit'),
                                  delete=fake('delete')):
             self.assertEqual(views.record_add('alpha', 'A-2', 's', ['x'], None, None),
                              {'lines': ['add'], 'record': {'repo': 'Alpha', 'id': 'A-2',
@@ -1059,7 +1060,7 @@ class RecordViewsCase(ServeCase):
 
     def test_a_bad_id_or_a_repository_not_configured_is_refused_before_any_write(self):
         views, _ = self.site()
-        with mock.patch.object(serve.recordwrite, 'add') as add:
+        with mock.patch.object(serveviews.recordwrite, 'add') as add:
             for repo, rid, want in (('Alpha', 'A..B', ('invalid', backlog.BAD_ID, 'id')),
                                     ('beta', 'A-2', ('not_found', backlog.NO_REPO, 'repo'))):
                 with self.subTest(repo=repo, rid=rid):
@@ -1100,7 +1101,7 @@ class ReasonCase(ServeCase):
                 ('someone@example.test wrote it', 'someone@example.test wrote it'),
                 (SECRET, SECRET),
                 ('', '')):
-            self.assertEqual(serve.scrub(text), want, text)
+            self.assertEqual(gitsync.scrub(text), want, text)
 
     def test_scrub_takes_out_a_password_that_holds_a_quote(self):
         host = 'https://git.example.test/x'
@@ -1118,15 +1119,15 @@ class ReasonCase(ServeCase):
                 # the scp form of a remote has no password to take out
                 ('git@git.example.test:team/data.git', 'git@git.example.test:team/data.git'),
                 ("'git@git.example.test:team/data.git'", "'git@git.example.test:team/data.git'")):
-            self.assertEqual(serve.scrub(text), want, text)
+            self.assertEqual(gitsync.scrub(text), want, text)
 
     def test_scrub_takes_too_much_rather_than_leave_a_password_that_holds_quotes_and_a_comma(self):
         # a password may hold `','`, so that text does not end the user part of a URL ...
-        self.assertEqual(serve.scrub("https://someone:s3','cret@git.example.test/x"),
+        self.assertEqual(gitsync.scrub("https://someone:s3','cret@git.example.test/x"),
                          'https://git.example.test/x')
         # ... and two quoted words with no space between lose what stands before the `@`: the
-        # known price (serve._USERINFO), text that held no password
-        self.assertEqual(serve.scrub("'https://h','x@y'"), "'https://y'")
+        # known price (gitsync._USERINFO), text that held no password
+        self.assertEqual(gitsync.scrub("'https://h','x@y'"), "'https://y'")
 
     def test_health_gives_no_reason_when_the_failing_step_changed_between_its_two_reads(self):
         hub = self.failing()
@@ -1156,7 +1157,7 @@ class ReasonCase(ServeCase):
         r = get(hub.port, HEALTH, self.owner)
         self.assertEqual(r.status, 200, r.body)
         git = r.json()['git']
-        self.assertEqual((git['failed'], git['detail']), ('push', serve.scrub(WHY)))
+        self.assertEqual((git['failed'], git['detail']), ('push', gitsync.scrub(WHY)))
         self.assertIn('git.example.test/team/data.git', git['detail'])
         self.clean(r.body.decode('utf-8'))
         # the agent learns that it failed and at which step, never why
@@ -1174,7 +1175,7 @@ class ReasonCase(ServeCase):
                 self.assertNotIn(word, r.body.decode('utf-8'))
         # the view itself holds no reason: only the listener's route adds it, by role
         self.assertNotIn('detail', hub.views.health()['git'])
-        self.assertEqual(hub.views.git_failure(), ('push', serve.scrub(WHY)))
+        self.assertEqual(hub.views.git_failure(), ('push', gitsync.scrub(WHY)))
 
     def test_the_owners_session_gets_the_reason_and_a_failure_with_none_has_no_detail(self):
         hub = self.failing()
@@ -1182,7 +1183,7 @@ class ReasonCase(ServeCase):
         r = get(hub.port, post(hub.port, httpd.PAIR_ROUTE, {}, self.owner).json()['path'])
         cookie = r.header('Set-Cookie')[0].split(';')[0]
         git = get(hub.port, HEALTH, headers=[('Cookie', cookie)]).json()['git']
-        self.assertEqual(git['detail'], serve.scrub(WHY))
+        self.assertEqual(git['detail'], gitsync.scrub(WHY))
         self.sync.state = {'failed': 'fetch', 'detail': ''}
         git = get(hub.port, HEALTH, self.owner).json()['git']
         self.assertEqual(git['failed'], 'fetch')
@@ -1193,7 +1194,7 @@ class ReasonCase(ServeCase):
         hub.watch()
         hub.watch()
         self.assertEqual(self.lines, [('error', 'the git sync failed at push: '
-                                       + serve.scrub(WHY))])
+                                       + gitsync.scrub(WHY))])
         self.sync.state = {'failed': 'fetch', 'detail': ''}
         hub.watch()
         hub.watch()
@@ -1458,7 +1459,7 @@ class ReasonCase(ServeCase):
                 runner.join(TIMEOUT)
         # a last pass that failed is logged and is no unclean close: the next start tries again
         self.assertEqual(out, [True])
-        why = serve.scrub(WHY)
+        why = gitsync.scrub(WHY)
         self.assertEqual(self.errors(), [
             'the git sync failed at push: ' + why,
             'the last git sync pass failed at push: %s; the next start tries again' % why])
@@ -1471,14 +1472,14 @@ class ReasonCase(ServeCase):
         hub.start()
         start = 'git: running, branch data, pending: a push, the last pass failed at push'
         status, obj = localask.ask(hub.port, 'GET', HEALTH, self.owner)
-        self.assertEqual(serve.status_lines(obj, NOW)[2], '%s: %s' % (start, serve.scrub(WHY)))
+        self.assertEqual(servehealth.status_lines(obj, NOW)[2], '%s: %s' % (start, gitsync.scrub(WHY)))
         status, obj = localask.ask(hub.port, 'GET', HEALTH, self.agent)
-        self.assertEqual(serve.status_lines(obj, NOW)[1], start)
+        self.assertEqual(servehealth.status_lines(obj, NOW)[1], start)
         # the client scrubs what it prints too, whatever answered it
-        lines = serve.status_lines({'revision': 1, 'backlog': None, 'git': {
+        lines = servehealth.status_lines({'revision': 1, 'backlog': None, 'git': {
             'running': True, 'failed': 'fetch', 'detail': WHY}}, NOW)
         self.assertEqual(lines[1], 'git: running, nothing pending, the last pass failed at '
-                                   'fetch: ' + serve.scrub(WHY))
+                                   'fetch: ' + gitsync.scrub(WHY))
 
     def test_a_refused_syncs_note_holds_no_credentials(self):
         def make(store_dir, every, remote=None, branch=None, push=True):
@@ -1792,7 +1793,7 @@ class TimerCase(ServeCase):
         self.assertEqual(h['backlog'], [{'repo': 'alpha', 'fetched_at': None,
                                          'error': backlog.NO_CHECKOUT}])
         self.assertEqual((h['backlog_error'], h['backlog_timer']), (None, None))
-        self.assertEqual(serve.status_lines(h, NOW)[2],
+        self.assertEqual(servehealth.status_lines(h, NOW)[2],
                          'backlog alpha: never fetched; ' + backlog.NO_CHECKOUT)
         # the real timer goes through the clean close and leaves no thread
         self.assertEqual(self.threads(), ['hub-backlog-refresh'])
@@ -1827,7 +1828,7 @@ class TimerCase(ServeCase):
         self.assertIs(source.wait(stop, 1), True)      # the pause after a round: serve's wrap
         self.assertEqual(len(self.errors()), 1, self.lines)
         line = self.errors()[0]
-        self.assertTrue(line.startswith(serve.ROUND_FAILED % ('TypeError', '')), line)
+        self.assertTrue(line.startswith(serveviews.ROUND_FAILED % ('TypeError', '')), line)
         self.assertIn("unexpected keyword argument 'stop'", line)
         self.assertIn('health does not follow the timer', line)
         self.assertEqual(hub.views.health()['backlog'], [])    # what it said before: nothing
@@ -1836,7 +1837,7 @@ class TimerCase(ServeCase):
         self.assertEqual(self.errors(), [line])
         source.get = lambda fresh=False, stop=None: {}['repos']
         source.wait(stop, 1)
-        self.assertEqual(self.errors(), [line, serve.ROUND_FAILED % ('KeyError', "'repos'")])
+        self.assertEqual(self.errors(), [line, serveviews.ROUND_FAILED % ('KeyError', "'repos'")])
         # a read that works again, then the first failure: said again
         source.get = lambda fresh=False, stop=None: copy.deepcopy(ANSWER)
         source.wait(stop, 1)
@@ -1861,7 +1862,7 @@ class TimerCase(ServeCase):
             self.assertNotIn(word, self.errors()[0])
         self.assertIn('git.example.test', self.errors()[0])
         # a log that raises does not reach the timer's thread
-        views = serve.SiteViews(None, serve.Sources(tokens=self.tokens), Broken(self.calls),
+        views = serveviews.SiteViews(None, servesources.Sources(tokens=self.tokens), Broken(self.calls),
                                 log=lambda level, text: {}['gone'])
         self.assertIsNone(views.after_round(threading.Event()))
 
@@ -1892,7 +1893,7 @@ class RealSyncCase(gitcase.Case):
         tokens = os.path.join(gitcase.tmpdir(self), 'tokens')
         cfg = hub_settings.settings(None)._replace(port=0, store=self.hub, push=True,
                                                    commit_every_s=3600)
-        server = serve.build(cfg, serve.Sources(
+        server = serve.build(cfg, servesources.Sources(
             tokens=tokens, static_dir=os.path.join(gitcase.tmpdir(self), 'web'), sync=make,
             pm_data={'path': self.wt, 'branch': 'pmdata', 'remote': 'origin'}),
             log=lambda level, text: lines.append((level, text)))
@@ -1974,7 +1975,7 @@ class RealSyncCase(gitcase.Case):
         tokens = os.path.join(gitcase.tmpdir(self), 'tokens')
         cfg = hub_settings.settings(None)._replace(port=0, store=self.hub, push=True,
                                                    commit_every_s=3600)
-        server = serve.build(cfg, serve.Sources(
+        server = serve.build(cfg, servesources.Sources(
             tokens=tokens, static_dir=os.path.join(gitcase.tmpdir(self), 'web'), sync=make,
             pm_data={'path': self.wt, 'branch': 'pmdata', 'remote': 'origin'}),
             log=lambda level, text: lines.append((level, text)))
@@ -2019,23 +2020,23 @@ class MachineCase(unittest.TestCase):
             user.forget()
             self.addCleanup(user.forget)
             with self.assertRaises(ConfigError) as got:
-                serve.machine_sources(self.home)
+                servesources.machine_sources(self.home)
         self.assertIn('--pm-repo', str(got.exception))
         self.assertEqual(os.listdir(self.home), [], 'reading the sources wrote something')
 
     def test_a_machine_with_no_config_serves_on_defaults(self):
         pm = pm_repo(self, record=False)
-        src = serve.machine_sources(self.home)
+        src = servesources.machine_sources(self.home)
         self.assertEqual(os.path.normcase(src.tokens),
                          os.path.normcase(os.path.join(pm, user.DIR_NAME, hubtoken.FOLDER_NAME)))
         self.assertEqual((src.pm_data, src.notices, src.repos, src.usage, src.backlog),
                          (None, None, None, None, None))
         self.assertIs(src.sync, gitsync.GitSync)
-        self.assertEqual(src.static_dir, serve.STATIC_DIR)
-        self.assertEqual(os.path.basename(serve.STATIC_DIR), 'web')
+        self.assertEqual(src.static_dir, servesources.STATIC_DIR)
+        self.assertEqual(os.path.basename(servesources.STATIC_DIR), 'web')
         self.assertEqual(os.path.split(src.agents)[1], 'agents')
-        self.assertEqual(src.skills, os.path.join(serve.pmstart.KIT_ROOT, 'content', 'skills'))
-        self.assertIsNone(serve.machine_sources(self.home, sync=False).sync)
+        self.assertEqual(src.skills, os.path.join(servesources.pmstart.KIT_ROOT, 'content', 'skills'))
+        self.assertIsNone(servesources.machine_sources(self.home, sync=False).sync)
         # the machine lock's door, made now and opened on its first read (none here)
         from kitlib.hubsite import lockdoor
         self.assertIsInstance(src.lock, lockdoor.LockDoor)
@@ -2046,7 +2047,7 @@ class MachineCase(unittest.TestCase):
         self.config({'pm_start': {'sessions_file': os.path.join(self.home, 'pm', 's.json'),
                                   'repo_paths': {'alpha': 'somewhere'}},
                      'machine_lock': {'notice': {'dir': notices}}})
-        src = serve.machine_sources(self.home)
+        src = servesources.machine_sources(self.home)
         self.assertEqual(src.notices, notices)
         self.assertTrue(callable(src.repos))
         views = src.backlog(77)
@@ -2065,10 +2066,10 @@ class MachineCase(unittest.TestCase):
             listed.append((names, pm_root, paths))
             return [(n, None) for n in names]
 
-        with mock.patch.object(serve.hubbacklog, 'git', git), \
-                mock.patch.object(serve.pmconfig, 'known_repos', lambda c, **kw: ['a', 'b']), \
-                mock.patch.object(serve.backlog, 'repo_list', repo_list):
-            pairs = serve._repo_pairs(cfg)
+        with mock.patch.object(servesources.hubbacklog, 'git', git), \
+                mock.patch.object(servesources.pmconfig, 'known_repos', lambda c, **kw: ['a', 'b']), \
+                mock.patch.object(servesources.backlog, 'repo_list', repo_list):
+            pairs = servesources._repo_pairs(cfg)
             self.assertEqual(asked, [])
             self.assertEqual(pairs(), [('a', None), ('b', None)])
             self.assertEqual(pairs(), [('a', None), ('b', None)])
@@ -2078,7 +2079,7 @@ class MachineCase(unittest.TestCase):
 
     def test_an_unreadable_sessions_file_gives_no_repo_names_and_a_write_still_lands(self):
         self.config({'pm_start': {'sessions_file': os.path.join(self.home, 'missing', 's.json')}})
-        src = serve.machine_sources(self.home)
+        src = servesources.machine_sources(self.home)
         self.assertEqual(src.known_repos(), ())
         root = os.path.join(self.home, 'store')
         store = Store.open(root, known_repos=src.known_repos)
@@ -2108,8 +2109,8 @@ class MachineCase(unittest.TestCase):
             asked.append(folder)
             return 'pmrepo' if folder == os.path.dirname(path) else 'kitrepo'
 
-        with mock.patch.object(serve.pmconfig, '_toplevel', toplevel):
-            src = serve.machine_sources(self.home)
+        with mock.patch.object(servesources.pmconfig, '_toplevel', toplevel):
+            src = servesources.machine_sources(self.home)
             self.assertEqual(asked, [], 'reading the sources ran git')
             names = ['extra', 'Gamerepo', 'kitrepo', 'pmrepo']
             want = names + ['g']                    # the session's key is an alias
@@ -2143,15 +2144,15 @@ class MachineCase(unittest.TestCase):
                          ['add', '-A'], ['-c', 'user.name=t', '-c', 'user.email=t@t.test', 'commit', '-q', '-m', 'i']):
                 out, why = cmd.run(args, root)
                 self.assertIsNotNone(out, why)
-            src = serve.machine_sources(self.home)
+            src = servesources.machine_sources(self.home)
             got = {r['name']: r for r in src.repos([])}['webrepo']
         self.assertEqual((got['web'], got['branch'], got['top']), ('https://github.com/o/r', 'main', ['docs']))
         self.assertEqual(got['aliases'], ['w'])
 
     def test_a_session_key_is_an_alias_of_its_repo_so_its_tag_has_no_warning(self):
         self.sessions(json.dumps({'kit': {'repo': 'kitrepo'}, 'pm-kit': {'repo': 'kitrepo'}}))
-        with mock.patch.object(serve.pmconfig, '_toplevel', lambda d: 'kitrepo'):
-            src = serve.machine_sources(self.home)
+        with mock.patch.object(servesources.pmconfig, '_toplevel', lambda d: 'kitrepo'):
+            src = servesources.machine_sources(self.home)
             store = self.store(src)
             for tag in ('kit', 'PM-KIT'):
                 self.assertEqual(store.add('questions', question(repo=tag)).warnings, [])
@@ -2162,16 +2163,16 @@ class MachineCase(unittest.TestCase):
 
     def test_a_missing_sessions_file_leaves_the_session_keys_out(self):
         self.config({'pm_start': {'sessions_file': os.path.join(self.home, 'missing', 's.json')}})
-        src = serve.machine_sources(self.home)
+        src = servesources.machine_sources(self.home)
         self.assertEqual(src.known_repos(), ())
-        self.assertEqual(serve._session_aliases({'sessions_file': os.path.join(self.home, 'x')}), {})
+        self.assertEqual(servesources._session_aliases({'sessions_file': os.path.join(self.home, 'x')}), {})
         r = self.store(src).add('questions', question(repo='kit'))      # the write still lands
         self.assertEqual([f.code for f in r.warnings], ['repo-alias'])   # today's behaviour
 
     def test_a_sessions_file_whose_json_is_not_an_object_gives_no_repo_names(self):
         for text in ('[]', 'null', '5', '"s"'):
             self.sessions(text)
-            src = serve.machine_sources(self.home)
+            src = servesources.machine_sources(self.home)
             self.assertEqual(src.known_repos(), (), text)
         store = self.store(src)
         r = store.add('questions', question(repo='gamerepo'))      # the write still lands
@@ -2181,7 +2182,7 @@ class MachineCase(unittest.TestCase):
         for text, repos in (('not json', None), ('{}', 'gamerepo'), ('{}', [''])):
             kw = {} if repos is None else {'repos': repos}
             self.sessions(text, **kw)
-            src = serve.machine_sources(self.home)
+            src = servesources.machine_sources(self.home)
             self.assertEqual(src.known_repos(), (), (text, repos))
         store = self.store(src)
         r = store.add('questions', question(repo='gamerepo'))      # the write still lands
@@ -2190,7 +2191,7 @@ class MachineCase(unittest.TestCase):
 
     def test_a_sessions_file_that_is_not_a_path_gives_no_repo_names(self):
         self.config({'pm_start': {'sessions_file': ['not', 'a', 'path']}})
-        self.assertEqual(serve.machine_sources(self.home).known_repos(), ())
+        self.assertEqual(servesources.machine_sources(self.home).known_repos(), ())
 
     def test_with_no_git_the_names_are_what_the_sessions_file_says(self):
         self.sessions(json.dumps({'g': {'repo': 'Gamerepo'}}), repos=['extra'])
@@ -2201,7 +2202,7 @@ class MachineCase(unittest.TestCase):
             raise FileNotFoundError('git')
 
         with mock.patch('kitlib.git.cmd.subprocess_run', no_git):
-            src = serve.machine_sources(self.home)
+            src = servesources.machine_sources(self.home)
             self.assertEqual(src.known_repos(), ['extra', 'Gamerepo', 'g'])
             self.assertEqual(self.store(src).add('questions', question(repo='gamerepo')).warnings,
                              [])
@@ -2213,15 +2214,15 @@ class MachineCase(unittest.TestCase):
         def toplevel(folder):
             asked.append(folder)
             return answers[folder]
-        with mock.patch.object(serve.pmconfig, '_toplevel', toplevel):
-            tops = serve._toplevels(clock=lambda: now[0])
+        with mock.patch.object(servesources.pmconfig, '_toplevel', toplevel):
+            tops = servesources._toplevels(clock=lambda: now[0])
             for _ in range(3):
                 self.assertEqual((tops('pm'), tops('gone')), ('pmrepo', None))
             self.assertEqual(asked, ['pm', 'gone'])
-            now[0] = serve.TOPLEVEL_MISS_S
+            now[0] = servesources.TOPLEVEL_MISS_S
             answers['gone'] = 'found-later'
             self.assertEqual((tops('pm'), tops('gone')), ('pmrepo', 'found-later'))
-            now[0] = 10 * serve.TOPLEVEL_MISS_S
+            now[0] = 10 * servesources.TOPLEVEL_MISS_S
             self.assertEqual((tops('pm'), tops('gone')), ('pmrepo', 'found-later'))
         self.assertEqual(asked, ['pm', 'gone', 'gone'])
 
@@ -2231,7 +2232,7 @@ class MachineCase(unittest.TestCase):
         # which `hub.py serve` reads before machine_sources.
         pm = os.path.dirname(self.config({'pm_data': {'path': os.path.join(self.home, 'pm')}}))
         self.config('{"pm_data": 5}')
-        self.assertEqual(serve.machine_sources(self.home).pm_data,
+        self.assertEqual(servesources.machine_sources(self.home).pm_data,
                          {'path': pm, 'branch': 'main', 'remote': 'origin'})
         with self.assertRaises(ConfigError) as cm:
             hub_settings.load(home=self.home)
@@ -2320,19 +2321,19 @@ class ClientCase(ServeCase):
                               {'repo': 'beta', 'fetched_at': None, 'error': 'git timed out'}],
                   'backlog_at': '2026-01-10T12:00:00+00:00', 'backlog_error': None,
                   'backlog_timer': None, 'unavailable': {'health': 'KeyError'}}
-        self.assertEqual(serve.status_lines(health, NOW), [
+        self.assertEqual(servehealth.status_lines(health, NOW), [
             'revision 7',
             'store the/store',
             'git: running, branch data, pending: a push, the last pass failed at push',
             'backlog alpha: fetched 60 min ago',
             'backlog beta: never fetched; git timed out',
             'unavailable: health (KeyError)'])
-        self.assertEqual(serve.status_lines({'revision': 0, 'git': {'running': False,
-                                                                     'off': serve.SYNC_OFF},
+        self.assertEqual(servehealth.status_lines({'revision': 0, 'git': {'running': False,
+                                                                     'off': serveviews.SYNC_OFF},
                                              'backlog': None}, NOW),
-                         ['revision 0', 'git: ' + serve.SYNC_OFF,
+                         ['revision 0', 'git: ' + serveviews.SYNC_OFF,
                           'backlog: no source on this server'])
-        self.assertEqual(serve.status_lines({'revision': 1, 'git': None, 'backlog': [],
+        self.assertEqual(servehealth.status_lines({'revision': 1, 'git': None, 'backlog': [],
                                              'backlog_at': None}, NOW),
                          ['revision 1', 'git: no answer', 'backlog: not read yet'])
 
@@ -2340,10 +2341,10 @@ class ClientCase(ServeCase):
         from kitlib.hubclient import codestale
         base = {'revision': 2, 'git': None, 'backlog': None, 'tunnel': 'on'}
         health = dict(base, code=codestale.state(False), jobs=None)
-        self.assertEqual(serve.status_lines(health, NOW)[3:],
+        self.assertEqual(servehealth.status_lines(health, NOW)[3:],
                          ['code: current', 'jobs: none', 'tunnel: on'])
         health['code'] = codestale.state(True)
-        self.assertEqual(serve.status_lines(health, NOW)[3], 'code: stale: ' + codestale.text())
+        self.assertEqual(servehealth.status_lines(health, NOW)[3], 'code: stale: ' + codestale.text())
         long_note = 'n' * 100
         health['jobs'] = {
             'zeta': {'runs': 4, 'failures': 2, 'running': True, 'note': 'old note',
@@ -2351,13 +2352,13 @@ class ClientCase(ServeCase):
             'alpha': {'runs': 1, 'failures': 0, 'running': False, 'note': long_note,
                       'error': None},
             'beta': {'runs': 0, 'failures': 0, 'running': False, 'note': None, 'error': None}}
-        self.assertEqual(serve.status_lines(health, NOW)[4], 'jobs: ' + '; '.join([
-            'alpha runs 1, failures 0: ' + 'n' * (serve.JOB_NOTE_MAX - 3) + '...',
+        self.assertEqual(servehealth.status_lines(health, NOW)[4], 'jobs: ' + '; '.join([
+            'alpha runs 1, failures 0: ' + 'n' * (servehealth.JOB_NOTE_MAX - 3) + '...',
             'beta runs 0, failures 0',
             'zeta runs 4, failures 2, running: RefreshFailed: exited 1 at '
             'https://example.invalid/x']))
         # an older server's answer, without the fields: neither line
-        self.assertEqual(serve.status_lines(base, NOW),
+        self.assertEqual(servehealth.status_lines(base, NOW),
                          ['revision 2', 'git: no answer', 'backlog: no source on this server',
                           'tunnel: on'])
 
@@ -2432,13 +2433,13 @@ class TunnelCase(ServeCase):
         self.assertEqual(len(hub.notes), 1, hub.notes)
         self.assertTrue(hub.notes[0].startswith(
             'the tunnel listener is off: cannot listen on 127.0.0.1:%d: ' % port), hub.notes[0])
-        self.assertEqual(hub.tunnel, 'off: ' + serve.TUNNEL_BIND)
+        self.assertEqual(hub.tunnel, 'off: ' + servehealth.TUNNEL_BIND)
         hub.start()
         # health says it in fixed words, to the agent as to the owner
         for token in (self.owner, self.agent):
             r = get(hub.port, HEALTH, token)
             self.assertEqual((r.status, r.json()['tunnel']),
-                             (200, 'off: ' + serve.TUNNEL_BIND))
+                             (200, 'off: ' + servehealth.TUNNEL_BIND))
         self.assertEqual(post(hub.port, BASE + '/todos', {'title': 't'}, self.owner).status, 200)
         self.assertIs(hub.close(), True)
         self.assertFalse(self.locked())
@@ -2502,7 +2503,7 @@ class TunnelCase(ServeCase):
                 mock.patch.object(serve, 'Hub', side_effect=RuntimeError('no hub')):
             with self.assertRaises(RuntimeError):
                 serve.build(self.tunnelled,
-                            serve.Sources(tokens=self.tokens, access_keys=self.keys),
+                            servesources.Sources(tokens=self.tokens, access_keys=self.keys),
                             log=self.log)
         self.assertEqual(len(made), 1)
         self.assertEqual(made[0]._server.socket.fileno(), -1, 'the tunnel port was left bound')
@@ -2527,7 +2528,7 @@ class TunnelCase(ServeCase):
         # the owner at the local listener is given the reason as before, without credentials
         r = get(local.port, HEALTH, self.owner)
         git = r.json()['git']
-        self.assertEqual((git['failed'], git['detail']), ('push', serve.scrub(WHY)))
+        self.assertEqual((git['failed'], git['detail']), ('push', gitsync.scrub(WHY)))
         self.assertEqual(r.json()['store'], os.path.abspath(self.store_dir))
         for word in CREDENTIALS:
             self.assertNotIn(word, r.body.decode('utf-8'))
@@ -2580,7 +2581,7 @@ class TunnelCase(ServeCase):
             if thread.name == 'hub-access-keys':
                 thread.join(TIMEOUT)
                 self.assertFalse(thread.is_alive(), 'the key fetch thread never ended')
-        # was assertEqual(hub.tunnel, serve.TUNNEL_BOUND): a closed hub says it is closed
+        # was assertEqual(hub.tunnel, servehealth.TUNNEL_BOUND): a closed hub says it is closed
         self.assertEqual(hub.tunnel, 'closed')
 
     def test_the_strong_pairing_route_is_served_on_the_tunnel_port_alone(self):
@@ -2604,7 +2605,7 @@ class TunnelCase(ServeCase):
         self.assertEqual(self.through(tunnelled.port, HEALTH).json()['tunnel'], 'on')
         self.assertIs(hub.close(), True)
         self.assertEqual(hub.tunnel, 'closed')
-        self.assertEqual(serve.TUNNEL_CLOSED, 'closed')
+        self.assertEqual(servehealth.TUNNEL_CLOSED, 'closed')
         self.assertIs(hub.close(), True)            # a second close: the same word
         self.assertEqual(hub.tunnel, 'closed')
         # a source with no keys yet: `bound` while it runs, `closed` after
@@ -2625,7 +2626,7 @@ class TunnelCase(ServeCase):
         port = self.taken_port()
         hub = self.build(self.tunnelled._replace(tunnel_port=port))
         self.assertIs(hub.close(), True)
-        self.assertEqual(hub.tunnel, 'off: ' + serve.TUNNEL_BIND)
+        self.assertEqual(hub.tunnel, 'off: ' + servehealth.TUNNEL_BIND)
 
     def test_status_lines_print_what_a_running_servers_health_says_of_the_tunnel(self):
         # the health answer of a real hub, not a dict written here: a wrong health text for a
@@ -2633,7 +2634,7 @@ class TunnelCase(ServeCase):
         def lines(hub, token):
             r = get(hub.port, HEALTH, token)
             self.assertEqual(r.status, 200, r.body)
-            return serve.status_lines(r.json(), NOW)
+            return servehealth.status_lines(r.json(), NOW)
 
         taken = self.taken_port()
         for src, settings, line in (
@@ -2650,7 +2651,7 @@ class TunnelCase(ServeCase):
                  'tunnel: bound, keys not fetched'),
                 ({}, self.settings, 'tunnel: off: ' + tunnel.UNSET),
                 ({}, self.tunnelled._replace(tunnel_port=taken),
-                 'tunnel: off: ' + serve.TUNNEL_BIND)):
+                 'tunnel: off: ' + servehealth.TUNNEL_BIND)):
             with self.subTest(line=line):
                 hub = self.build(settings, **src)
                 hub.start()
@@ -2665,32 +2666,32 @@ class TunnelCase(ServeCase):
         self.assertEqual(self.errors(), [])
 
     def test_status_lines_say_the_tunnel_after_the_backlog_and_before_what_is_unavailable(self):
-        health = {'revision': 3, 'git': {'running': False, 'off': serve.SYNC_OFF},
+        health = {'revision': 3, 'git': {'running': False, 'off': serveviews.SYNC_OFF},
                   'backlog': None, 'backlog_error': 'the list could not be read',
                   'tunnel': 'on', 'unavailable': {'usage': 'KeyError'}}
-        self.assertEqual(serve.status_lines(health, NOW), [
-            'revision 3', 'git: ' + serve.SYNC_OFF, 'backlog: no source on this server',
+        self.assertEqual(servehealth.status_lines(health, NOW), [
+            'revision 3', 'git: ' + serveviews.SYNC_OFF, 'backlog: no source on this server',
             'backlog: the list could not be read', 'tunnel: on',
             'unavailable: usage (KeyError)'])
         health['tunnel'] = 'off: ' + tunnel.NO_AUD
-        self.assertEqual(serve.status_lines(health, NOW)[4], 'tunnel: off: ' + tunnel.NO_AUD)
+        self.assertEqual(servehealth.status_lines(health, NOW)[4], 'tunnel: off: ' + tunnel.NO_AUD)
         # bound, and the Access keys not fetched: the server's words as they are
-        why = serve.TUNNEL_BOUND_WHY % 'keys-fetch'
-        self.assertEqual((serve.TUNNEL_ON, serve.TUNNEL_BOUND, why),
+        why = servehealth.TUNNEL_BOUND_WHY % 'keys-fetch'
+        self.assertEqual((servehealth.TUNNEL_ON, servehealth.TUNNEL_BOUND, why),
                          ('on', 'bound, keys not fetched', 'bound, keys not fetched (keys-fetch)'))
-        for said in (serve.TUNNEL_BOUND, why):
+        for said in (servehealth.TUNNEL_BOUND, why):
             health['tunnel'] = said
-            self.assertEqual(serve.status_lines(health, NOW)[4], 'tunnel: ' + said)
+            self.assertEqual(servehealth.status_lines(health, NOW)[4], 'tunnel: ' + said)
         # what is printed never holds the user part of a URL, whatever a server answered
         health['tunnel'] = 'off: https://someone:s3cret@hub.example.invalid'
-        self.assertEqual(serve.status_lines(health, NOW)[4],
+        self.assertEqual(servehealth.status_lines(health, NOW)[4],
                          'tunnel: off: https://hub.example.invalid')
         # a server that says nothing of a tunnel (an earlier one), or nothing usable: no line
         for value in (None, '', 7, ['on'], {'on': True}):
             health['tunnel'] = value
-            self.assertEqual(len(serve.status_lines(health, NOW)), 5, value)
+            self.assertEqual(len(servehealth.status_lines(health, NOW)), 5, value)
         del health['tunnel']
-        self.assertEqual(len(serve.status_lines(health, NOW)), 5)
+        self.assertEqual(len(servehealth.status_lines(health, NOW)), 5)
 
 
 if __name__ == '__main__':

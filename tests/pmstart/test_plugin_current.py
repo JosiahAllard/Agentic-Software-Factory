@@ -164,6 +164,13 @@ class StartCheckTest(unittest.TestCase):
         self.assertEqual(len(lines), 1, lines)
         self.assertIn("in the managed settings is %s" % self.elsewhere, lines[0])
 
+    def test_a_failing_machine_managed_read_is_one_line_never_a_raise(self):
+        acct = self.account("a")
+        with mock.patch.object(accounts, "account_folders", return_value=[acct]), \
+                mock.patch("kitlib.machinesetup.extras.Host.managed_path", side_effect=ValueError("x")):
+            lines = pmstart.plugin_current(settings=self.s, kit=self.k.kit)
+        self.assertEqual(lines, ["could not check the pm-kit marketplace paths: ValueError: x"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,15 +15,18 @@ phrases, and the reasons of the derived views are replaced by fixed phrases here
       names the commit it was read at (backlog.Views does not give it). `days` narrows the
       window backlog.Views was built with and cannot widen it.
       Called with no argument (GET snapshot's call: api.snapshot; the backlog and completed
-      routes pass every argument) while the backlog timer runs (backlog.Views.timer_running),
-      both answer from what the timer's reads left (backlog.Views.held), however old, and start
-      no git: the page's one load never waits on a repository's read. A repository the first
+      routes pass every argument), both answer from what the reads so far left
+      (backlog.Views.held), however old, and start no git, whether or not the backlog timer
+      runs: the page's one load never waits on a repository's read. A repository the first
       round has not come to yet is an entry with "error" backlog.NOT_READ; with none read yet
-      both raise NotReadYet, which the snapshot shows in `unavailable`. With no timer running
-      (backlog_refresh_s unset, or the timer not started or ended) they read as the routes do.
+      both raise NotReadYet, which the snapshot shows in `unavailable`. Only a source with no
+      `held` (a stand-in) reads as the routes do.
   notices() repos() usage() agents() skills() skill(name) skill_source(name) findings()
                                           kitlib.hubsite.derived's answers
-  health()    {git, backlog, backlog_at, backlog_error, backlog_timer}. `git` is GitSync.status()
+  health()    {git, backlog, backlog_at, backlog_error, backlog_timer, backlog_timer_running}:
+      backlog_timer is the class of what the timer's last round or pause raised, or null;
+      backlog_timer_running is true while its thread is alive (null with no backlog source, or
+      one with no timer_running). `git` is GitSync.status()
       without `detail`, or {"running": false, "off": phrase}. `backlog` is null with no backlog
       source, else [{repo, fetched_at, error}] as the last backlog read gave it (`backlog_at`:
       when; null and an empty list before the first read): health starts no git. A read is a
@@ -57,9 +60,9 @@ class NoRepoList(Exception):
 
 
 class NotReadYet(Exception):
-    """GET snapshot's backlog or completed view while the backlog timer runs and no read has
-    answered yet (backlog.NOT_READ): its first round is still in git. The Api shows the class
-    name only."""
+    """GET snapshot's backlog or completed view when no read has answered yet
+    (backlog.NOT_READ): the timer's first round is still in git, or no timer ever read. The Api
+    shows the class name only."""
 
     def __init__(self):
         Exception.__init__(self, backlog.NOT_READ)
@@ -142,13 +145,13 @@ class SiteViews(object):
             self.skill_source = self._skill_source
 
     def _held(self):
-        """The backlog source's held answer (backlog.Views.held) while its timer runs, or None
-        to read as before: no timer running (none configured, not started, or ended) or a
-        source with no held answer (a stand-in). Raises NotReadYet when the timer runs and no
-        read has answered yet."""
-        running = getattr(self._backlog, 'timer_running', None)
+        """The backlog source's held answer (backlog.Views.held), whether or not its timer
+        runs: GET snapshot never reads git (a timer that ended leaves the views as its last
+        reads left them, and health says it is not running). None, to read as the routes do,
+        only for a source with no held answer (a stand-in). Raises NotReadYet when no read has
+        answered yet."""
         held = getattr(self._backlog, 'held', None)
-        if not callable(running) or not callable(held) or not running():
+        if not callable(held):
             return None
         got = held()
         if got is None:
@@ -158,8 +161,8 @@ class SiteViews(object):
     def _read(self, fresh=False, stop=None, held=False):
         """The backlog source's entries, kept for health. With `stop` (an Event; the timer's
         own read gives its) the source may answer None, a read it cut short: None then, and
-        health keeps what it had. `held` (GET snapshot's): while the timer runs, what its reads
-        left, with no git started and health left as it was (_held); with no timer running, a
+        health keeps what it had. `held` (GET snapshot's): what the reads so far left, with no
+        git started and health left as it was (_held); for a source with no held answer, a
         read as without it."""
         got = self._held() if held else None
         if got is not None:
@@ -370,13 +373,15 @@ class SiteViews(object):
 
     def health(self):
         out = {'git': self._git(), 'backlog': None, 'backlog_at': None, 'backlog_error': None,
-               'backlog_timer': None}
+               'backlog_timer': None, 'backlog_timer_running': None}
         if self._backlog is not None:
             last = self._last
             out['backlog'] = [dict(r) for r in last['repos']] if last else []
             out['backlog_at'] = last['at'] if last else None
             out['backlog_error'] = last['error'] if last else None
             out['backlog_timer'] = getattr(self._backlog, 'timer_error', None)
+            running = getattr(self._backlog, 'timer_running', None)
+            out['backlog_timer_running'] = bool(running()) if callable(running) else None
         return out
 
 

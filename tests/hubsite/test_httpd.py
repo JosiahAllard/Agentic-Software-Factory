@@ -2,6 +2,7 @@
 talks to it over a real socket, and stops what it started."""
 import gzip
 import http.client
+import itertools
 import json
 import os
 import socket
@@ -1204,6 +1205,29 @@ class LogCase(httpfix.ListenerCase):
         r = get(lis.port, '/' + 'a' * 5000, self.owner)
         self.assertEqual(r.status, 404)
         self.assertLess(len(self.lines[0][1]), 300)
+
+    def slow_lines(self, step, timer=None):
+        """The 'slow' lines of two GET health requests on a listener whose clock moves `step`
+        seconds a reading (two readings a request); `timer` gives each request's timer state."""
+        ticks = itertools.count(0, step)
+        states = iter(timer or ())
+        lis = self.listener(clock=lambda: next(ticks),
+                            timer=(lambda: next(states)) if timer else None)
+        for _ in range(2):
+            self.assertEqual(get(lis.port, HEALTH + '?q=' + self.owner, self.owner).status, 200)
+        lis.stop(TIMEOUT)               # every handler has ended: its line is written
+        return [text for level, text in self.lines if level == 'slow']
+
+    def test_a_slow_request_is_one_line_with_its_time_and_the_timer(self):
+        self.assertEqual(self.slow_lines(httpd.SLOW_S + 1, timer=[True, False]), [
+            'slow GET %s %.2fs timer=running' % (HEALTH, httpd.SLOW_S + 1),
+            'slow GET %s %.2fs timer=stopped' % (HEALTH, httpd.SLOW_S + 1)])
+
+    def test_a_request_under_slow_s_and_one_with_no_timer(self):
+        self.assertEqual(self.slow_lines(httpd.SLOW_S / 2), [])
+        self.lines[:] = []
+        self.assertEqual(self.slow_lines(httpd.SLOW_S),
+                         ['slow GET %s %.2fs timer=-' % (HEALTH, httpd.SLOW_S)] * 2)
 
     def test_with_no_log_nothing_is_written(self):
         lis = self.listener(log=None)

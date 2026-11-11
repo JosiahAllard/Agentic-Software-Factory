@@ -217,6 +217,8 @@ def status_lines(health, now=None):
     for key, what in (('backlog_error', 'backlog'), ('backlog_timer', 'backlog timer')):
         if health.get(key):
             lines.append('%s: %s' % (what, health[key]))
+    if health.get('backlog_timer_running') is False:    # null or absent: no timer to say of
+        lines.append('backlog timer: not running')
     code = health.get('code')
     if isinstance(code, dict):
         stale = codestale.notice(code)

@@ -650,8 +650,9 @@ class Views(object):
     through a round started after it arrived takes that round's result instead of fetching again.
     `start()` runs a round at once and then every `refresh_s`, on a daemon thread, until `stop()`.
     `held()` answers from what the reads so far left, however old, and starts no git, reads no
-    repository list and takes no lock (GET snapshot's answer while `timer_running()`:
-    kitlib.hubsite.serveviews).
+    repository list and takes no lock (GET snapshot's answer, whether or not the timer runs:
+    kitlib.hubsite.serveviews). A round or a pause between two that raises is `timer_error`,
+    and the timer goes on.
 
     The answer is {"at", "repos", "error"}: "error" None, or NO_REPOS with the list's failure when
     the `repos` callable raised ("repos" is then the last good answer's). Each repository's entry
@@ -838,6 +839,9 @@ class Views(object):
             return True
 
     def _run(self, stop):
+        """The timer's thread. A round or a pause that raises is `timer_error` and the thread
+        goes on: a pause that raised is made again as a plain event_wait, so a failing `wait`
+        (the one build() wraps: serveviews._follow_rounds) never ends the timer."""
         while not stop.is_set():
             try:
                 with self._fetching:
@@ -845,8 +849,13 @@ class Views(object):
                 self.timer_error = None
             except Exception as exc:
                 self.timer_error = exc.__class__.__name__
-            if self.wait(stop, self.refresh_s):
-                return
+            try:
+                if self.wait(stop, self.refresh_s):
+                    return
+            except Exception as exc:
+                self.timer_error = exc.__class__.__name__
+                if event_wait(stop, self.refresh_s):
+                    return
 
     def stop(self, timeout=None):
         """End the timer and wait up to `timeout` seconds (None: until it ended) for its thread:

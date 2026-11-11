@@ -12,7 +12,11 @@
       the close has no git to wait for (--store, a sync refused at start-up, or its last two
       steps: the store and the handler threads), Ctrl+C again ends the close itself: one line
       says that the close was interrupted and that the store lock is released, and the exit
-      code is 1. No line of these holds the user or password of a URL, and neither does a
+      code is 1. The notes and errors, and a 'slow' line for each request that took
+      httpd.SLOW_S seconds or longer, also go to the hub log, hub.log in the token folder, one
+      UTC-stamped line each, rotated to hub.log.1 at hublog.LOG_MAX (kitlib.hubsite.hublog); a
+      --store run writes none. No line of these holds the user or password of a URL, and
+      neither does a
       `REFUSED:` or a `machine config:` line of any verb. A console that was closed while the
       server served loses the lines, never the exit code.
       The port is hub.port of the machine config (default 8790); --port 0 takes a free one,
@@ -68,12 +72,13 @@
       stop: the STOPPED line, why, and the start command, exit 1. --timeout S covers the whole
       restart: exit 4 as for stop (the console advice only when the new server never answered).
 """
+import functools
 import os
 
 from kitlib.hubclient import client, localask, settings
 from kitlib.hubclient import errors as huberrors
 from kitlib.hubclient import token as hubtoken
-from kitlib.hubsite import api, auth, control, gitsync, httpd, servehealth
+from kitlib.hubsite import api, auth, control, gitsync, httpd, hublog, servehealth
 from kitlib.hubsite import serve as hubserve
 from kitlib.hubsite.cli import common, task
 from kitlib.launcher import pushdelivery
@@ -112,6 +117,18 @@ def log(out, level, text):
     out.say('%s: %s' % (word, gitsync.scrub(text)), err=True)   # closed console: a handler goes on
 
 
+def file_log(out, folder):
+    """The server's log(level, text): every line to log() (the console), and the 'error',
+    'note' and 'slow' lines also to the hub log, hublog.LOG_NAME in the token folder `folder`
+    (None: a scratch store's run, which files nothing: the machine's server owns that file)."""
+    def printed(level, text):
+        log(out, level, text)
+    if not folder:
+        return printed
+    return functools.partial(hublog.HubLog(os.path.join(folder, hublog.LOG_NAME)).filed,
+                             out=printed)
+
+
 def push_delivery(out, adapter_module):
     """(delivery, folder) for push notifications (docs/hub-push.md "Push notifications"): the
     host adapter's push() and the launcher's state folder, or (None, None) with one note line
@@ -126,8 +143,7 @@ def serve(a, out, stop=None, *, machine_sources, adapter_module):
     binds); `adapter_module`: as for push_delivery."""
     # First, so every git call it starts runs at normal too: the autostart task's default
     # priority is below normal, and a server below the agents' runs starved under load.
-    if process.raise_to_normal() == 'failed':
-        log(out, 'note', PRIORITY_FAILED)
+    priority = process.raise_to_normal()
     s = settings.load()
     if a.port is not None:
         s = s._replace(port=a.port)
@@ -135,13 +151,16 @@ def serve(a, out, stop=None, *, machine_sources, adapter_module):
     if scratch:
         s = s._replace(store=os.path.abspath(a.store), push=False)
     sources = machine_sources(sync=not scratch)
+    say = file_log(out, None if scratch else sources.tokens)
+    if priority == 'failed':
+        say('note', PRIORITY_FAILED)
     if not scratch:
         sources.push, sources.push_dir = push_delivery(out, adapter_module)
-    hub = hubserve.build(s, sources, log=lambda level, text: log(out, level, text))
+    hub = hubserve.build(s, sources, log=say)
 
     def started(h):
         for note in h.notes:
-            log(out, 'note', note)
+            say('note', note)
         out.say('hub serving %s on %s (Ctrl+C stops it); to pair a browser run: %s'
             % (h.store.root, h.url, common.OPEN))
 

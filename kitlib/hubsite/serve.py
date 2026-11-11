@@ -78,7 +78,8 @@ the strong owner; the code is redeemed on the local listener), and no Host rule,
 with httpd's agent_words), so none names the store folder; the local listener's rules are what
 they were with no tunnel, and it never reads the Access header.
 
-The log. `log(level, text)` gets the listeners' lines (httpd: 'access', 'error'), the tunnel
+The log. `log(level, text)` gets the listeners' lines (httpd: 'access', 'error', and the local
+listener's 'slow', which says whether the backlog timer runs), the tunnel
 gate's ('note' or 'error' for a request it refused, at most one a reason a minute:
 kitlib.hubsite.tunnel), the tunnel listener's 'error' tunnel.HOST_LINE for a write refused
 because its Origin host is not its Host (httpd's origin_refused, tunnel.host_note: at most one
@@ -397,7 +398,7 @@ def build(settings, sources, log=None):
         try:
             local = httpd.Listener((httpd.LOOPBACK, settings.port), api, None,
                                    static_dir=sources.static_dir, host_rule=httpd.local_hosts,
-                                   log=log)
+                                   log=log, timer=getattr(views_b, 'timer_running', None))
         except httpd.BindRefused as e:
             raise ServeError('%s: is a hub server running already?' % e)
         listeners.append(local)

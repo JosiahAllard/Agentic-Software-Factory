@@ -290,6 +290,31 @@ class SweepOpenClaim(SweepCase):
         self.assertFalse(os.path.exists(path))
 
 
+class SweepEvidenceBranch(SweepCase):
+    """An evidence-named tree on a branch is E, but its branch is unlanded work: among unlanded
+    work the sweep abandons only a stale-marked branch, so it leaves this one to the coordinator's
+    hand-run `--classify --apply` (classify.sweep_plan)."""
+
+    CONFIG = {'backlog': {'store': 'main'}}
+
+    def test_a_clean_unclaimed_unlanded_evidence_branch_is_kept(self):
+        path = self.workstream('agent-7')
+        rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('skipped   %s: E, on branch kit/agent-7: an evidence branch is the'
+                      ' coordinator\'s `--classify --apply`' % path, out)
+        self.assertIn('summary   removed 0, would remove 0, skipped 1, failed 0', out)
+        self.assertTrue(os.path.isdir(path))
+        self.assertIn('kit/agent-7', self.branches())
+        self.assertEqual(self.git('tag', '-l', 'archive/*'), '')
+
+    def test_the_dry_run_says_it_would_skip_it(self):
+        path = self.workstream('agent-7')
+        rc, out = self.sweep()
+        self.assertEqual(rc, 0, out)
+        self.assertIn('would     skip %s: E, on branch kit/agent-7' % path, out)
+
+
 MARKS_FILE = 'kit-stale-marks.json'      # kitlib.worktree.marks.FILE_NAME, spelled out: see StaleMarkCase
 
 

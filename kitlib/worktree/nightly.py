@@ -4,9 +4,11 @@ the sweep acts on its list. A dry run unless `apply`. Returns Outcome(code, line
 Run-wide, each failing closed (exit 1, nothing removed), in this order: the landing lock free
 (sweep.landing_hold: a landing moves the base, so it is read before anything is fetched); `git
 fetch` of the base (sweep.fetch_base); the machine lock readable (sweep.machine_lock_entries).
-Then `classify._classify` runs on the fetched base: every tree it calls A, E or O goes through
-the remove path `--classify --apply` uses (classify.plan_tree, classify.apply_tree), each making
-its own checks again, and B, C and L trees are never touched. Classify reads the landing lock and
+Then `classify.sweep_run` runs on the fetched base: every tree it calls A, O, or E with no
+branch goes through the remove path `--classify --apply` uses (classify.sweep_plan, which is
+plan_tree's route; classify.apply_tree), each making its own checks again. An E tree on a branch
+(an evidence-named branch: unlanded work) is skipped, left for the coordinator's hand-run
+`--classify --apply`; B, C and L trees are never touched. Classify reads the landing lock and
 the machine lock again before each tree; a landing lock taken mid-run stops it (deferred, exit 1).
 A run-wide probe classify cannot read makes every tree L, and the sweep defers (exit 1).
 
@@ -89,17 +91,14 @@ def _sweep(ctx, apply, now, machine, idle_s, procs, environ):
     if held is None:
         ctx.say('deferred  the machine lock cannot be read (%s); nothing was removed' % why)
         return REFUSED
-    if apply:
-        def act(entry, row, base):
-            return classify.apply_tree(ctx, entry, row, base, environ)
-    else:
-        def act(entry, row, base):
-            plan = classify.plan_tree(ctx, entry, row, base, environ)
-            if 'result' in plan:
-                return dict(plan, result='would skip')
-            return {'result': 'would remove', 'why': plan['how'], 'lines': []}
-    got = classify._classify(ctx, now, machine, procs, idle_s, act=act, environ=environ,
-                             fetched=True)
+    def act(entry, row, base):
+        plan = classify.sweep_plan(ctx, entry, row, base, environ)
+        if apply:
+            return classify.apply_tree(ctx, entry, row, base, environ, plan=plan)
+        if 'result' in plan:
+            return dict(plan, result='would skip')
+        return {'result': 'would remove', 'why': plan['how'], 'lines': []}
+    got = classify.sweep_run(ctx, now, machine, procs, idle_s, act, environ)
     data = got.data
     if 'error' in data:
         return REFUSED

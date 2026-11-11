@@ -433,6 +433,7 @@ def judge(ctx, entry, base, chain, ancestors, claims=(None, 'not read')):
             keep = landed_keep(entry, claims)
             if keep:
                 fields['note'] = 'landed; kept: %s' % keep
+                fields['landed'] = True
                 return 'C', fields
             return 'A', fields
     outside = not remove_checks.is_workstream(ctx, path)
@@ -853,13 +854,35 @@ def plan_tree(ctx, entry, row, base, environ=None):
     return reflog_skip(ctx, path, head) or plan
 
 
-def apply_tree(ctx, entry, row, base, environ=None, today=None):
-    """Send one A, E or O tree through the existing remove path plan_tree names, each making its
-    own checks again (a tree held or changed since it was classified is refused there). Returns
-    {'result': removed|failed|skipped, 'why', 'lines': the path's own}. A tree removed whose
-    branch then stayed (or any other later refusal) is failed."""
+def sweep_plan(ctx, entry, row, base, environ=None):
+    """The nightly sweep's route for one A, E or O tree (kitlib.worktree.nightly): plan_tree's,
+    except that an E tree on a branch is skipped. An evidence-named branch is unlanded work, and
+    among unlanded work the sweep abandons only a stale-marked branch (docs/worktree-remove.md
+    "Stale marks"): it is left for the coordinator's hand-run `--classify --apply`. Read-only, so
+    kitlib.maintlint.worktrees asks it what the sweep leaves."""
+    if row['class'] == 'E' and entry['branch']:
+        return {'result': 'skipped', 'why': 'E, on branch %s: an evidence branch is the'
+                ' coordinator\'s `--classify --apply`, never the nightly sweep\'s'
+                % entry['branch'], 'lines': []}
+    return plan_tree(ctx, entry, row, base, environ)
+
+
+def sweep_run(ctx, now, machine, procs, dead_after_s, act, environ=None):
+    """The nightly sweep's classify run (kitlib.worktree.nightly) on a base it fetched: `act(entry,
+    row, base)` acts on, or plans, each A, E and O tree; the sweep says its own summary."""
+    return _classify(ctx, now, machine, procs, dead_after_s, act=act, environ=environ,
+                     fetched=True)
+
+
+def apply_tree(ctx, entry, row, base, environ=None, today=None, plan=None):
+    """Send one A, E or O tree through the existing remove path plan_tree (or the given `plan`,
+    sweep_plan's) names, each making its own checks again (a tree held or changed since it was
+    classified is refused there). Returns {'result': removed|failed|skipped, 'why', 'lines': the
+    path's own}. A tree removed whose branch then stayed (or any other later refusal) is
+    failed."""
     path = row['path']
-    plan = plan_tree(ctx, entry, row, base, environ)
+    if plan is None:
+        plan = plan_tree(ctx, entry, row, base, environ)
     if 'result' in plan:
         return plan
     how, verb = plan['how'], plan['verb']

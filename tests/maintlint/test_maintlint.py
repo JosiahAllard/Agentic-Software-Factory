@@ -230,33 +230,56 @@ class ScopeChecks(unittest.TestCase):
 
 
 class WorktreeChecks(unittest.TestCase):
-    """Only what the nightly sweep (kitlib.worktree.sweep) leaves is reported."""
+    """Only what the nightly sweep (kitlib.worktree.nightly) leaves is reported."""
 
-    def found(self, *rows):
-        res = mock.Mock(data={'trees': list(rows)}, lines=[])
-        with mock.patch.object(worktrees.remove_checks, 'open_ctx', return_value=(None, None)):
+    def found(self, *rows, ctx=None, plans=None):
+        res = mock.Mock(data={'trees': list(rows), 'base': 'b' * 40}, lines=[])
+        with mock.patch.object(worktrees.remove_checks, 'open_ctx', return_value=(ctx, None)), \
+                mock.patch.object(worktrees.remove_checks, 'handle', lambda c, p: p), \
+                mock.patch.object(worktrees.cmod, 'sweep_plan',
+                                  lambda c, e, row, base: (plans or {})[row['path']]):
             got, _ = worktrees.findings('top', classify=lambda top: res)
         return got
 
     def test_reported_classes_and_a_landed_tree_still_holding_a_pull(self):
         got = self.found({'class': 'L', 'path': 'w/live', 'branch': 'b1', 'claims': []},
-                         {'class': 'A', 'path': 'w/done', 'branch': 'b2', 'claims': ['AAA'],
+                         {'class': 'C', 'path': 'w/done', 'branch': 'b2', 'claims': ['AAA'],
+                          'landed': True, 'note': 'landed; kept: claimed by AAA',
                           'idle_s': 3 * 86400},
-                         {'class': 'O', 'path': 'w/orphan', 'branch': None,
+                         {'class': 'C', 'path': 'w/half', 'branch': 'b3', 'claims': ['BBB']},
+                         {'class': 'O', 'path': 'w/orphan', 'branch': None, 'unsaved': 1,
                           'claims': 'unknown: x'},
                          {'class': 'E', 'path': 'w/ev', 'branch': 'b5', 'claims': []})
         self.assertEqual([(f.check, f.key) for f in got],
-                         [('worktree-A', 'w/done'), ('landed-still-pulled', 'AAA'),
-                          ('worktree-O', 'w/orphan'), ('worktree-E', 'w/ev')])
+                         [('worktree-C', 'w/done'), ('landed-still-pulled', 'AAA'),
+                          ('worktree-C', 'w/half'), ('worktree-O', 'w/orphan'),
+                          ('worktree-E', 'w/ev')])
         self.assertIn('release AAA --reason "landed"', got[1].fix)
         self.assertEqual(got[0].age, 'idle 3d')
 
-    def test_an_a_tree_no_record_claims_is_the_sweeps_to_remove(self):
+    def test_what_the_sweep_removes_itself_is_not_reported(self):
+        """No repository to ask: only what the row shows. An A tree, a detached E tree and an O
+        tree that keeps nothing are the sweep's own."""
         got = self.found({'class': 'A', 'path': 'w/a1', 'branch': 'b1', 'claims': []},
                          {'class': 'A', 'path': 'w/a2', 'branch': 'b2', 'claims': None},
-                         {'class': 'A', 'path': 'w/a3', 'branch': 'b3',
-                          'claims': 'unknown: store unreadable'})
+                         {'class': 'E', 'path': 'w/ev', 'branch': None},
+                         {'class': 'O', 'path': 'w/o', 'branch': None, 'unsaved': 0,
+                          'outside': None})
         self.assertEqual(got, [])
+
+    def test_the_sweeps_own_route_decides_a_e_and_o(self):
+        """With the repository open, classify.sweep_plan answers: a skip is left, so reported."""
+        skip = {'result': 'skipped', 'why': 'its HEAD reflog holds 1 commit(s)', 'lines': []}
+        got = self.found({'class': 'A', 'path': 'w/a1', 'branch': 'b1', 'claims': []},
+                         {'class': 'A', 'path': 'w/a2', 'branch': 'b2', 'claims': []},
+                         {'class': 'E', 'path': 'w/ev', 'branch': 'kit/agent-x', 'claims': []},
+                         {'class': 'O', 'path': 'w/o', 'branch': None, 'unsaved': 0},
+                         ctx=mock.Mock(),
+                         plans={'w/a1': {'how': 'A, plain remove', 'verb': 'plain'},
+                                'w/a2': skip, 'w/ev': dict(skip, why='E, on branch'),
+                                'w/o': {'how': 'O', 'verb': 'orphan'}})
+        self.assertEqual([(f.check, f.key) for f in got],
+                         [('worktree-A', 'w/a2'), ('worktree-E', 'w/ev')])
 
     def test_a_b_or_c_tree_whose_stale_mark_holds_is_the_sweeps_to_abandon(self):
         mark = {'at': 't', 'why': 'w', 'by': 'pm', 'tip': 'abc', 'void': None}

@@ -20,7 +20,8 @@ so a session keeps them.
 
 A home belongs to one session name, and the launcher refuses to start a name that is already
 running (kitlib.launcher.start home_folder), so ensure() never moves a home under a running
-session. Detached and locked: the nightly sweep never takes one (kitlib.worktree.sweep sweep_skip), and
+session. Detached and locked: the nightly sweep never takes one (classify calls a locked tree L,
+kitlib.worktree.classify live_reason), and
 `git worktree remove` refuses a locked worktree; only remove() takes one, on the owner's command,
 and never while its session runs (kitlib.launcher.start homes). A dirty home (a stray write landed
 there) is left as it is and named, never cleaned, and remove() refuses it.

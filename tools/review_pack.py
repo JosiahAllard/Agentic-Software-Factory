@@ -11,8 +11,8 @@ signals (printed only). --diff PATH prints that
 file's diff against the merge-base. --base defaults to docs/gate-run.md "Default base".
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.reviewpack, prints and exits.
-Exit codes: 0 nothing to stop a landing, 1 an owner-only trailer problem, a commit the trailers
-rule fails or a failing doc budget, 2 usage, no merge-base, a failed git read or the configuration.
+Exit codes: 0 nothing to stop a landing (a commit with no Co-Authored-By trailer is listed, never
+a failure), 1 an owner-only trailer problem or a failing doc budget, 2 usage, no merge-base, a failed git read or the configuration.
 """
 import argparse
 import os

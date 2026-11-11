@@ -10,8 +10,8 @@ from .rules_gitcore import _opts, git_call_judged
 
 
 # git verbs that make a commit, each refused for an agent session in a linked worktree
-# (git_plain_commit): plain git writes no Co-Authored-By trailer, so the gate's trailer check fails
-# the branch. Known limits, none read here:
+# (git_plain_commit): plain git writes no Co-Authored-By trailer (the gate's trailer check warns on
+# it); commit.py writes it. Known limits, none read here:
 # - a git alias from git's config files (an inline -c alias.<name> is expanded);
 # - a verb the shell computes or a script runs;
 # - commit-tree and rebase;
@@ -160,8 +160,8 @@ def commit_scan(sub, args):
 
 def git_plain_commit(event, ctx, cmd, inv, cwd, role):
     """A git verb that makes a commit (COMMIT_VERBS, commit_scan), run by an agent session
-    (agent_session) in a linked worktree: plain git writes no Co-Authored-By trailer, so the gate's
-    trailer check fails the branch. It runs after every other shell rule, so a refusal another
+    (agent_session) in a linked worktree: plain git writes no Co-Authored-By trailer (the gate's
+    trailer check warns on it); commit.py writes it. It runs after every other shell rule, so a refusal another
     rule owns (owner-identity, write-jail and the rest) stands. The alternative is the kit tool
     that does the job with the trailer: commit.py for a commit or a sequence's next step,
     sync_base.py for a merge or pull, the verb's --no-commit form (its -m, -X and --strategy kept) and then commit.py
@@ -179,8 +179,8 @@ def git_plain_commit(event, ctx, cmd, inv, cwd, role):
     alt = commit_alternative(ctx, gc, place.top)
     if alt is None:
         return None
-    why = '`%s` makes a commit with plain git, which writes no Co-Authored-By trailer: the gate\'s trailer check ' \
-          'then fails the branch. ' % bare(cmd)
+    why = '`%s` makes a commit with plain git, which writes no Co-Authored-By trailer (the gate\'s trailer ' \
+          'check warns on it); the kit tool writes it. ' % bare(cmd)
     return refuse('git-plain-commit', role, why + alt[0], alt[1])
 
 

@@ -140,7 +140,7 @@ Off with no file, each switched on by its key: `repo.push_block` (a push to main
 - `preflight.udp_ports` (list of 2 int from 0 to 65535): [low, high] ports checked free
 - `redfirst.runners` (list of {glob, kind, pythonpath, dir, project, csproj, command, result, no_test, assertion, args, lock}, default [{"glob": "tests/*test_*.py", "kind": "python"}]): which runner takes a test file, first match wins; none written: this default, then <tools_dir>/*test_*.py as python with the tools folder as pythonpath, unless tools_dir is . or that glob is listed (docs/redfirst.md); a runner's lock is the kinds-table kind the run books around its command (unset: build for a command runner, else the kind of the heavy-list entry the command matches)
 - `redfirst.hold_wait` (int >= 0, default 60): seconds a held throwaway tree is re-checked before it is left
-- `review_pack.coauthor` (bool, default false): list the branch's commits with no Co-Authored-By trailer, judged by the trailers rule; a failing one blocks
+- `review_pack.coauthor` (bool, default false): list the branch's commits with no Co-Authored-By trailer, judged by the trailers rule; a warning, never a block
 - `testlist.junit` (list of string, default ["**/build/test-results/**/*.xml"]): JUnit result globs
 - `testlist.trx` (list of string, default ["**/*.trx"]): .NET result globs
 - `tool_tests.mentions` (path|tokens, default "path"): how a tool mention is found

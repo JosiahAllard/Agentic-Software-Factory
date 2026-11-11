@@ -166,7 +166,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `tools/plugin_refresh.py` | export pushed kit main and refresh the plugin in every account folder (`docs/plugin-source.md`) | kw: plugin_refresh, plugin
 - `tools/pieces.py` | the path-to-piece table (`docs/repo-checks.md`) | kw: pieces
 - `tools/pm_data.py` | make or re-link the PM-data branch (`docs/pm-data-branch.md`) | kw: pm_data
-- `tools/trailers.py` | fail a commit with no agent trailer (`docs/repo-checks.md`) | kw: trailers
+- `tools/trailers.py` | warn on a commit with no agent trailer (`docs/repo-checks.md`) | kw: trailers
 - `tools/worktree_paths.py` | which path a worktree write may go to (`docs/worktree-paths.md`) | kw: worktree_paths
 - `tools/worktree_sweep_task.py` | nightly worktree sweep scheduled task (`docs/worktree-remove.md`) | kw: worktree_sweep_task, sweep
 - `tools/auto_tasks.py` | start the hub's due schedules, run every 15 minutes by the `kit-automatic-tasks` task (`docs/machine-setup.md` "Extras") | kw: auto_tasks, tick, schedules, kit-automatic-tasks

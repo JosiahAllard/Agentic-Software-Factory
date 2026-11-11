@@ -216,7 +216,8 @@ def git_elsewhere(ctx, cmd, gc, where, agent):
         return plain
     alt = commit_alternative(ctx, gc, place.top)
     if alt is not None:
-        return ('plain git writes no Co-Authored-By trailer, which the gate\'s trailer check fails. ' + alt[0],
+        return ('plain git writes no Co-Authored-By trailer (the gate\'s trailer check warns on it); '
+                'the kit tool writes it. ' + alt[0],
                 alt[1])
     if gc.sub == 'stash' and stash_shared(gc):
         how, instead = stash_alternative(ctx, place.top)

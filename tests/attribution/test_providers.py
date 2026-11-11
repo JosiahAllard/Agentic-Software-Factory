@@ -37,7 +37,7 @@ class Providers(unittest.TestCase):
                       'Codex <noreply@openai.com>', accepted + ' extra'):
             with self.subTest(value=value):
                 self.assertIsNone(trailers.AGENT_TRAILER.fullmatch(value))
-        c = trailers.BranchCommit('a', False, 'work', [accepted], [], 9999999999, [], 'agent@example.invalid')
+        c = trailers.BranchCommit('a', False, 'work', [accepted], [], [],'agent@example.invalid')
         self.assertEqual(trailers.classify(c, Rules()), trailers.TRAILERED)
         self.assertEqual(trailers.classify(c._replace(coauthors=[], approved=['AGENTS.md']), Rules()), trailers.MISSING)
 

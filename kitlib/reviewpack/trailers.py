@@ -1,11 +1,10 @@
-"""The trailers rule: which branch commits lack an agent's Co-Authored-By trailer, and which of those
-stop a landing (from the PM kit's tools/gate.py, `branch_commits` and `classify_commit`; moved here
-so review_pack judges commits by a rule it owns, and a later gate step can call the same one).
+"""The trailers rule: which branch commits lack an agent's Co-Authored-By trailer (from the PM kit's
+tools/gate.py, `branch_commits` and `classify_commit`; moved here so review_pack judges commits by
+a rule it owns, and the gate's trailers step calls the same one).
 
 A value counts only in the address form the commit rule names (`<name> <noreply@anthropic.com>`),
 and only where git's own trailer parser finds it (the message's last paragraph). A branch commit
-made since TRAILER_FAIL_SINCE (committer date, UTC) without one FAILs; an older one could only be
-fixed by a rewrite, so it is listed and does not fail.
+without one is MISSING: listed as a warning, never a failure - no caller refuses a commit for it.
 
 An owner claim - `Owner-Approved: <path>`, or `Owner-Authored: yes` - excuses a commit
 only when its AUTHOR email is the owner's (`kitlib.config.owner.Rules.is_owner`). Anyone can type a
@@ -17,37 +16,32 @@ into `approval` for the row to show, and is never an owner claim: gate land and 
 check it against the hub (kitlib.guard.ownercommits), and this rule judges the commit by its
 Co-Authored-By as any other.
 """
-import calendar
 import collections
-import re
 
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
 from kitlib.attribution import AGENT_TRAILER
 
-TRAILER_FAIL_SINCE = calendar.timegm((2026, 10, 2, 0, 0, 0))
 OWNER_APPROVED = 'Owner-Approved'
 OWNER_AUTHORED = 'Owner-Authored'
 OWNER_AUTHORED_VALUE = 'yes'
 OWNER_APPROVAL = 'Owner-Approval'       # kitlib.guard.ownercommits.TRAILER
 
 # One branch commit as the rule reads it: the Co-Authored-By, Owner-Approved and Owner-Authored
-# values git's trailer parser finds, `committed` the committer date in epoch seconds (or None),
-# `author` the author email, and `approval` the Owner-Approval values (no claim; shown only).
+# values git's trailer parser finds, `author` the author email, and `approval` the Owner-Approval
+# values (no claim; shown only).
 BranchCommit = collections.namedtuple(
-    'BranchCommit', 'hash merge subject coauthors approved committed authored author approval',
+    'BranchCommit', 'hash merge subject coauthors approved authored author approval',
     defaults=((),))
 
-TRAILERED, LANDER, OWNER, OLD, MISSING, UNDATED = (
-    'trailered', 'lander-merge', 'owner-approved', 'old', 'missing', 'undated')
-FAILED_VERDICTS = frozenset((MISSING, UNDATED))
+TRAILERED, LANDER, OWNER, MISSING = 'trailered', 'lander-merge', 'owner-approved', 'missing'
 
 _SEP, _END = '\x1f', '\x1e'
 
 
 def log_format(approved_key=OWNER_APPROVED):
     """The `git log --format` parse_log() reads; `approved_key` is the owner's approval trailer."""
-    return _SEP.join(('%H', '%P', '%ct', '%ae', '%(trailers:key=Co-Authored-By,valueonly)',
+    return _SEP.join(('%H', '%P', '%ae', '%(trailers:key=Co-Authored-By,valueonly)',
                       '%(trailers:key=' + approved_key + ',valueonly)',
                       '%(trailers:key=' + OWNER_AUTHORED + ',valueonly)',
                       '%(trailers:key=' + OWNER_APPROVAL + ',valueonly)', '%s')) + _END
@@ -65,15 +59,11 @@ def parse_log(out):
         record = record.strip('\n')
         if not record:
             continue
-        (h, parents, ct, author, coauthors, approved, authored, approval,
-         subject) = record.split(_SEP, 8)
-        try:
-            committed = int(ct.strip())
-        except ValueError:
-            committed = None
+        (h, parents, author, coauthors, approved, authored, approval,
+         subject) = record.split(_SEP, 7)
         commits.append(BranchCommit(h, len(parents.split()) > 1, subject, _values(coauthors),
-                                    _values(approved), committed, _values(authored),
-                                    author.strip(), _values(approval)))
+                                    _values(approved), _values(authored), author.strip(),
+                                    _values(approval)))
     return commits
 
 
@@ -119,29 +109,22 @@ def unproven_claim(c, rules):
     return 'authored by %s, not the owner' % (c.author or '?')
 
 
-def classify(c, rules, exempt=(), since=None):
+def classify(c, rules, exempt=()):
     """The rule for one BranchCommit. Pure. In order: a matching Co-Authored-By -> TRAILERED; a
-    hash in `exempt` -> LANDER; an owner claim on a commit the owner authored -> OWNER; no
-    readable committer date -> UNDATED (fail closed); older than `since` -> OLD; else MISSING."""
-    since = TRAILER_FAIL_SINCE if since is None else since
+    hash in `exempt` -> LANDER; an owner claim on a commit the owner authored -> OWNER; else
+    MISSING."""
     if any(AGENT_TRAILER.match(v) for v in c.coauthors):
         return TRAILERED
     if c.hash in exempt:
         return LANDER
     if claims_owner(c) and rules.is_owner(c.author):
         return OWNER
-    if c.committed is None:
-        return UNDATED
-    if c.committed < since:
-        return OLD
     return MISSING
 
 
 def label(c, verdict):
-    """The row label: FAIL for a failing verdict; an OWNER commit with no Owner-Approved value is
-    `owner-authored` (the `Owner-Authored: yes` marker alone); any other verdict as given."""
-    if verdict in FAILED_VERDICTS:
-        return 'FAIL'
+    """The row label: an OWNER commit with no Owner-Approved value is `owner-authored` (the
+    `Owner-Authored: yes` marker alone); any other verdict as given."""
     if verdict == OWNER and not c.approved:
         return 'owner-authored'
     return verdict

@@ -102,6 +102,15 @@ A merge of approved changes: a sync merge of two branches that each changed the 
 - every commit on either side that changes it is the owner's or carries an approval the hub verifies, judged by `kitlib.ownerfiles.rules.violations`: MERGE_HEAD against HEAD (`non_owner_paths`), and HEAD against MERGE_HEAD (each approval is judged on the commit that carries it, so each side's are checked, never the result's blob). Commits on `<remote>/<main>` as last fetched are not judged again.
 An octopus merge carries nothing. The merge commit itself then changes nothing beyond the clean merge, so `gate land` judges only the two approved commits, as before. The hub's apply refuses while a merge is in progress in the worktree. `sync_base.py` applies the same rule through `merge_owner_refusal` before it commits a clean merge (docs/sync-base.md).
 
+A merge that only deletes: when both sides deleted lines of the same owner-only file and the merge conflicts on it, the agent may resolve it and commit it, named, with no new approval, when the staged copy only combines the two sides' deletions. Each of the following refuses it:
+- a line neither side had;
+- a line either side deleted;
+- a line both kept, dropped;
+- a line moved;
+- a line one side added, dropped.
+
+Lines are compared as bytes split after each LF, so a changed line end (CRLF for LF) or a dropped last line end is a change and refuses. With `"commit".merge_fold` on and one MERGE_HEAD, `tools/commit.py` takes such a path when every commit on either side that changes it is the owner's or approved (as above: `non_owner_paths`, `ours_unapproved`). It then judges the staged copy (`staged_deletion_merges`, `kitlib.ownerfiles.rules.deletion_merge`). The file must be a regular file of one mode at HEAD, MERGE_HEAD, every merge base and the staged copy; a NUL byte, no merge base, an octopus merge and any git failure refuse. `gate land` and the pre-push hook pass the merge commit by the same predicate (`violations`) and still judge every commit on either side on its own. Any other resolution needs an approval.
+
 Known limit: the signature binds each path's blob, not its mode. The hub's commit keeps HEAD's mode for a path HEAD holds and writes a new file as 100644 (`apply._target`). The landing check (`approvals.delta_error`) refuses a mode change whenever the parent holds the file; it accepts either regular mode only for a new file (no file at the parent).
 
 Elsewhere the trailer is shown and claims nothing. The review pack's co-author section shows `| owner approval hub:A-<n>` on the commit's row (`kitlib.reviewpack.coauthor_section`). Neither it nor `tools/trailers.py` reads the trailer as an owner claim (`kitlib.trailerscheck.trailers`), and `"owner".trailer` may not be `Owner-Approval` in any case (`kitlib.config.owner.trailer_problem`).

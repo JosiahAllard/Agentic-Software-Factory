@@ -32,6 +32,9 @@ them, so the commits judged are the ones that leave). Renames are not followed: 
 delete and an add, and both paths count. Any git failure is `(None, why)`: the caller refuses.
 A `"owner".shrink_only` path (rules.is_shrink_only) does not count for a one-parent commit
 whose change to it only deletes lines (deletes_only); each commit is judged on its own.
+An owner-only path does not count for a two-parent commit whose copy of it only combines the
+deletions of its parents (deletion_merge: no line either parent lacks, none either parent deleted,
+none both kept dropped, nothing moved); every commit on either side is still judged on its own.
 
 The author email is what the committer says it is (`--author`, GIT_AUTHOR_EMAIL): this check
 stops a plain agent commit, not an agent that forges the owner's identity. The guard's
@@ -379,6 +382,13 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
             if shrinks is None:
                 return None, why
             locked = [q for q in locked if q != p or not shrinks]
+        for p in (list(locked) if len(parents) == 2 else []):
+            known, row = tree_entry(root, sha, p, env, noreplace=True)
+            joins, why = (deletion_merge(root, p, parents[0], parents[1], row, env) if known else
+                          (None, 'git ls-tree could not list %s at %s' % (p, sha[:10])))
+            if joins is None:
+                return None, why
+            locked = [q for q in locked if q != p or not joins]
         if not locked:
             continue
         refusal, why = approval_refusal(root, sha, parents, values, paths, approvals, env)
@@ -406,10 +416,10 @@ def describe(rules, bad, limit=5):
                    '.kit.json); ask the owner to make the change')
 
 
-def run_git(root, *args, timeout=None):
+def run_git(root, *args, timeout=None, env=None):
     """`(rc, stdout text unstripped, stderr text)`; rc None when git did not run."""
     kw = {} if timeout is None else {'timeout': timeout}
-    r = cmd.call(list(args), root, **kw)
+    r = cmd.call(list(args), root, env=env, **kw)
     return r.rc, r.out.decode('utf-8', 'replace'), r.err
 
 
@@ -453,10 +463,12 @@ def index_entry(root, path):
     return True, (rows[0][0], rows[0][1])
 
 
-def tree_entry(root, rev, path):
+def tree_entry(root, rev, path, env=None, noreplace=False):
     """`(known, entry)`: `path`'s entry in commit `rev` as `(mode, oid)`, or None when the commit
-    has none (it deleted the path). `known` is False when git cannot say."""
-    rc, out, _ = run_git(root, 'ls-tree', '-z', rev, '--', path)
+    has none (it deleted the path). `known` is False when git cannot say. `noreplace` reads it
+    with --no-replace-objects, as violations reads every commit."""
+    rc, out, _ = run_git(root, *((NOREPLACE if noreplace else []) +
+                                 ['ls-tree', '-z', rev, '--', path]), env=env)
     if rc != 0:
         return False, None
     rows = _entries(out, path)
@@ -467,11 +479,12 @@ def tree_entry(root, rev, path):
     return True, (rows[0][0], rows[0][2])
 
 
-def merge_bases(root, head):
-    """Every merge base of HEAD and `head`, or None when git cannot say (or finds none)."""
-    rc, out, _ = run_git(root, 'merge-base', '--all', 'HEAD', head)
-    bases = out.split() if rc == 0 else []
-    return bases or None
+def merge_bases(root, head, rev='HEAD', env=None, noreplace=False):
+    """Every merge base of `rev` and `head`; [] when they have none, None when git cannot say.
+    `noreplace` as for tree_entry."""
+    rc, out, _ = run_git(root, *((NOREPLACE if noreplace else []) + ['merge-base', '--all', rev,
+                                                                    head]), env=env)
+    return out.split() if rc == 0 else [] if rc == 1 and not out.strip() else None
 
 
 def carries_merged_copy(root, path, head, bases):
@@ -599,8 +612,83 @@ def clean_owner_merge(root, rules, paths, head, bases, landed=()):
             fit.add(p)
     if not fit:
         return set(), None
-    ours, why = _unapproved_paths(root, rules, 'HEAD', [head] + list(landed), 'this branch\'s')
+    ours, why = ours_unapproved(root, rules, head, landed)
     return (None, why) if ours is None else (fit - ours, None)
+
+
+def ours_unapproved(root, rules, head, landed=()):
+    """`(paths, None)`: the owner-only paths a commit of HEAD's side of the merge in progress of
+    `head` (one reachable neither from `head` nor from `landed`) changes without the owner as its
+    author or an approval the hub verifies (non_owner_paths, the other way round); or
+    `(None, why)`."""
+    return _unapproved_paths(root, rules, 'HEAD', [head] + list(landed), 'this branch\'s')
+
+
+def _lines(data):
+    """The lines of `data` (bytes) split after each LF, each with its line end: a CR before the LF
+    is part of the line, and a last line with no LF is a line of its own."""
+    parts = data.split(b'\n')
+    return [p + b'\n' for p in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
+
+
+def _subsequence(short, long):
+    rest = iter(long)
+    return all(line in rest for line in short)
+
+
+def combines_deletions(ours, theirs, result, bases):
+    """True when `result` (bytes) only combines the deletions `ours` and `theirs` made from every
+    one of `bases`, compared line by line (_lines: a changed line end is a changed line): `result`
+    is in order a part of each parent (no new line, none moved), holds each line as often as the
+    parent holding it fewer times (none both kept is dropped, none one deleted comes back), and
+    each line the parents hold a different number of times is held at least that often by every
+    base (the difference is a deletion, never an addition the merge drops). No base, or a NUL
+    byte in any copy (not text), is False."""
+    copies = [ours, theirs, result] + list(bases)
+    if not bases or any(b'\0' in c for c in copies):
+        return False
+    o, t, r = _lines(ours), _lines(theirs), _lines(result)
+    if not (_subsequence(r, o) and _subsequence(r, t)):
+        return False
+    co, ct, cr = collections.Counter(o), collections.Counter(t), collections.Counter(r)
+    if any(cr[line] != min(co[line], ct[line]) for line in set(co) | set(ct) | set(cr)):
+        return False
+    differ = [line for line in set(co) | set(ct) if co[line] != ct[line]]
+    for base in bases:
+        cb = collections.Counter(_lines(base))
+        if any(cb[line] < max(co[line], ct[line]) for line in differ):
+            return False
+    return True
+
+
+def deletion_merge(root, path, one, two, result, env=None):
+    """`(True, None)` when `result`, the `(mode, oid)` entry a merge of the commits `one` and `two`
+    gives `path` (its tree's, or the index's), only combines their deletions (combines_deletions,
+    against every `git merge-base --all` of the two) and the path is a regular file of that one
+    mode at `one`, `two` and every base; `(False, None)` otherwise (no base, a rename, an add, a
+    mode change, a result that is no regular file); `(None, why)` when git cannot tell."""
+    if not result or result[0] not in REGULAR_MODES:
+        return False, None
+    bases = merge_bases(root, two, one, env, noreplace=True)
+    if bases is None:
+        return None, 'git merge-base --all failed for %s and %s' % (one[:10], two[:10])
+    if not bases:
+        return False, None
+    oids = []
+    for rev in [one, two] + bases:
+        known, entry = tree_entry(root, rev, path, env, noreplace=True)
+        if not known:
+            return None, 'git ls-tree could not list %s at %s' % (path, rev[:10])
+        if not entry or entry[0] != result[0]:     # result[0] is a regular mode: a blob
+            return False, None
+        oids.append(entry[1])
+    data = []
+    for oid in oids + [result[1]]:
+        r = cmd.call(NOREPLACE + ['cat-file', 'blob', oid], root, env=env)
+        if r.rc != 0:
+            return None, 'git cat-file failed for %s: %s' % (oid[:10], r.err or 'exit %s' % r.rc)
+        data.append(r.out)
+    return combines_deletions(data[0], data[1], data[-1], data[2:-1]), None
 
 
 def non_owner_paths(root, rules, head, landed=()):

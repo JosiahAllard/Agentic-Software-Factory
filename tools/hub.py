@@ -291,6 +291,8 @@ from kitlib.config import copies, user                             # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
 from kitlib.hubclient import client, settings                      # noqa: E402
 from kitlib.hubclient import token as hubtoken                     # noqa: E402
+from kitlib.hubclient import errors as huberrors                   # noqa: E402
+from kitlib.hubclient import localask                              # noqa: E402
 from kitlib.hubsite import access, api, auth, httpd, serve, tunnel   # noqa: E402
 from kitlib.hubsite import approvals                               # noqa: E402
 from kitlib.hubsite import autostart as hub_autostart              # noqa: E402
@@ -843,7 +845,7 @@ def parser():
                        help='give up after about this many seconds, ending nothing (default: '
                             '%d); a request in flight may run past it by up to %d s, a read of '
                             "the task's state by up to %d s"
-                            % (control.DEFAULT_TIMEOUT_S, serve.ASK_TIMEOUT_S,
+                            % (control.DEFAULT_TIMEOUT_S, localask.ASK_TIMEOUT_S,
                                hub_autostart.TASK_TIMEOUT_S))
     _client_verbs(sub)
     return p
@@ -946,7 +948,7 @@ def _status(a, stop):
     folder = hubtoken.folder()
     token = (hubtoken.read_token(folder, hubtoken.OWNER)
              or hubtoken.read_token(folder, hubtoken.AGENT))
-    status, obj = serve.ask(port, 'GET', HEALTH, token)
+    status, obj = localask.ask(port, 'GET', HEALTH, token)
     if status != 200 or obj.get('ok') is not True:
         return _refused(port, status, obj)
     print('hub server on http://%s:%d' % (httpd.LOOPBACK, port))
@@ -1005,7 +1007,7 @@ def _setup(a, stop):
     if a.check:
         return _check()
     if (a.autostart or a.whatif) and not settings.load().store:
-        raise serve.ServeError('no store folder is set, so a server started at sign-in would '
+        raise huberrors.ServeError('no store folder is set, so a server started at sign-in would '
                                'fail: set hub.store or pm_data in the machine config; '
                                'nothing registered or written')
     if a.whatif:
@@ -1020,7 +1022,7 @@ def _setup(a, stop):
     try:
         paths = auth.ensure_tokens(folder)
     except OSError as e:
-        raise serve.ServeError('cannot write the token files in %s: %s' % (folder, e))
+        raise huberrors.ServeError('cannot write the token files in %s: %s' % (folder, e))
     for role in (auth.OWNER, auth.AGENT):
         print('%s token: %s' % (role, paths[role]))
     if s.store:
@@ -1051,8 +1053,8 @@ def _open(a, stop):
     folder = hubtoken.folder()
     token = hubtoken.read_token(folder, hubtoken.OWNER)
     if not token:
-        raise serve.ServeError('no owner token in %s: run hub.py setup' % folder)
-    status, obj = serve.ask(port, 'POST', httpd.PAIR_ROUTE, token)
+        raise huberrors.ServeError('no owner token in %s: run hub.py setup' % folder)
+    status, obj = localask.ask(port, 'POST', httpd.PAIR_ROUTE, token)
     path = obj.get('path')
     if status != 200 or not isinstance(path, str) or not path.startswith('/'):
         return _refused(port, status, obj)
@@ -1062,7 +1064,7 @@ def _open(a, stop):
         return 0
     import webbrowser                       # here: 50 ms the other verbs do not pay
     if not webbrowser.open(url):
-        raise serve.ServeError('no browser could be opened: use hub.py open --print')
+        raise huberrors.ServeError('no browser could be opened: use hub.py open --print')
     print('opened the hub page in the browser')
     return 0
 
@@ -1072,23 +1074,23 @@ def _unpair(a, stop):
     folder = hubtoken.folder()
     token = hubtoken.read_token(folder, hubtoken.OWNER)
     if not token:
-        raise serve.ServeError('no owner token in %s: run hub.py setup' % folder)
+        raise huberrors.ServeError('no owner token in %s: run hub.py setup' % folder)
     try:
-        status, obj = serve.ask(port, 'POST', httpd.UNPAIR_ROUTE, token)
-    except serve.NotRunning as e:
+        status, obj = localask.ask(port, 'POST', httpd.UNPAIR_ROUTE, token)
+    except huberrors.NotRunning as e:
         # no server holds the sessions in memory: the file the next one reads is emptied here
         failed = []
         creds = auth.Credentials(folder, port=port, persist=True,
                                  log=lambda level, text: failed.append(text))
         creds.unpair_all()
         if failed:
-            raise serve.ServeError(failed[0])
+            raise huberrors.ServeError(failed[0])
         print('%s: unpaired every browser in %s, the sessions file the server on that port '
               'reads at its start' % (e, creds.path))
         # a server may have bound the port and read the file between the first ask and the write
         try:
-            status, obj = serve.ask(port, 'POST', httpd.UNPAIR_ROUTE, token)
-        except serve.NotRunning:
+            status, obj = localask.ask(port, 'POST', httpd.UNPAIR_ROUTE, token)
+        except huberrors.NotRunning:
             return 0
     if status != 200 or obj.get('ok') is not True:
         return _refused(port, status, obj)
@@ -1190,7 +1192,7 @@ def _owner_token():
     folder = hubtoken.folder()
     token = hubtoken.read_token(folder, hubtoken.OWNER)
     if not token:
-        raise serve.ServeError('no owner token in %s: run hub.py setup' % folder)
+        raise huberrors.ServeError('no owner token in %s: run hub.py setup' % folder)
     return token
 
 
@@ -1251,7 +1253,7 @@ def _restart(a, stop):
 def _store_root(a):
     root = os.path.abspath(a.store) if a.store is not None else settings.load().store
     if not root:
-        raise serve.ServeError('no store folder is set: set hub.store or pm_data in the machine '
+        raise huberrors.ServeError('no store folder is set: set hub.store or pm_data in the machine '
                                'config, or give --store PATH')
     return root
 
@@ -1260,7 +1262,7 @@ def _validate(a, stop):
     try:
         findings = storecheck.validate(_store_root(a))
     except storecheck.StoreReadError as e:
-        raise serve.ServeError(str(e))
+        raise huberrors.ServeError(str(e))
     for line in storecheck.validate_lines(findings):
         _put(line)
     return 1 if any(f.level == hubvalidate.ERROR for f in findings) else 0
@@ -1290,7 +1292,7 @@ def _show(a, obj, lines):
 
 
 def _hub(a):
-    return client.Client(getattr(a, 'port', None) or settings.load().port, ask=serve.ask)
+    return client.Client(getattr(a, 'port', None) or settings.load().port, ask=localask.ask)
 
 
 def _item(d, state=None, version=False):
@@ -1336,7 +1338,7 @@ def _text_of(path, what):
         with open(path, encoding='utf-8') as f:
             return f.read()
     except (OSError, ValueError) as e:
-        raise serve.ServeError('cannot read the %s file %s: %s' % (what, path, type(e).__name__))
+        raise huberrors.ServeError('cannot read the %s file %s: %s' % (what, path, type(e).__name__))
 
 
 def _json_of(path, what):
@@ -1345,7 +1347,7 @@ def _json_of(path, what):
         with open(path, encoding='utf-8-sig') as f:
             return json.load(f)
     except (OSError, ValueError) as e:
-        raise serve.ServeError('cannot read the %s file %s: %s' % (what, path, type(e).__name__))
+        raise huberrors.ServeError('cannot read the %s file %s: %s' % (what, path, type(e).__name__))
 
 
 def _body(**fields):
@@ -1412,7 +1414,7 @@ def _question(a):
         if d.get('id') == a.id:
             break
     else:
-        raise serve.ServeError('%s is not a question the hub holds' % a.id)
+        raise huberrors.ServeError('%s is not a question the hub holds' % a.id)
     if getattr(a, 'json', False):
         return _show(a, d, [])
     lines = [_item(d, version=True)]
@@ -1438,7 +1440,7 @@ def _todo(a):
         if d.get('id') == a.id:
             break
     else:
-        raise serve.ServeError('%s is not a to-do the hub holds' % a.id)
+        raise huberrors.ServeError('%s is not a to-do the hub holds' % a.id)
     if getattr(a, 'json', False):
         return _show(a, d, [])
     lines = [_item(d, version=True)]
@@ -1572,7 +1574,7 @@ def _pages(a, stop):
         html = _text_of(a.html_file, 'html')
         why = pagecheck.check(html)
         if why:
-            raise serve.ServeError('the page check refuses %s: %s' % (a.html_file, why))
+            raise huberrors.ServeError('the page check refuses %s: %s' % (a.html_file, why))
         got = hub.post('/pages', client.AGENT, _body(
             id=a.id, title=a.title, html=html, repo=getattr(a, 'repo', None), summary=a.summary,
             refs=a.refs, kind=a.kind, folder=a.folder, if_version=a.if_version,
@@ -1591,7 +1593,7 @@ def _pages(a, stop):
                 with open(a.out, 'w', encoding='utf-8', newline='') as f:
                     f.write(html)
             except OSError as e:
-                raise serve.ServeError('cannot write %s: %s' % (a.out, type(e).__name__))
+                raise huberrors.ServeError('cannot write %s: %s' % (a.out, type(e).__name__))
             return _show(a, {'ok': True, 'id': got.get('id'), 'version': got.get('version'),
                              'out': a.out}, ['WROTE %s' % a.out])
         if getattr(a, 'json', False):
@@ -1612,7 +1614,7 @@ def _blob_at(checkout, rev, skill):
     out, why = cmd.run_text(['rev-parse', '--verify', '--quiet', '%s:%s' % (rev, path)],
                             checkout)
     if not skilledits.is_blob(out):
-        raise serve.ServeError('cannot read %s at %s in %s: %s'
+        raise huberrors.ServeError('cannot read %s at %s in %s: %s'
                                % (path, rev, checkout, why or 'not found'))
     return out
 
@@ -1641,7 +1643,7 @@ def _skill_edit(a, stop):
                 with open(a.out, 'w', encoding='utf-8', newline='') as f:
                     f.write(text)
             except OSError as e:
-                raise serve.ServeError('cannot write %s: %s' % (a.out, type(e).__name__))
+                raise huberrors.ServeError('cannot write %s: %s' % (a.out, type(e).__name__))
             return _show(a, {'ok': True, 'id': d.get('id'), 'version': d.get('version'),
                              'out': a.out}, ['WROTE %s' % a.out])
         return _show(a, got, ['%s v%s %s skill %s base %s' % (
@@ -1671,7 +1673,7 @@ def _approvals(a, stop):
                                     repo=getattr(a, 'repo', None), head=a.head, reason=a.reason,
                                     record=a.record)
         except hubapprove.RequestError as e:
-            raise serve.ServeError(e.message)
+            raise huberrors.ServeError(e.message)
         got = hubapprove.request(_hub(a), body)
         return _wrote(a, got, 'REQUESTED %s' % got.get('id'))
     docs = (_hub(a).get('/snapshot', client.ANY, {'collections': 'approvals'}).get('collections') or {}).get('approvals') or {}
@@ -1682,7 +1684,7 @@ def _approvals(a, stop):
     if a.sub == 'show':
         d = next((d for d in items if d['id'] == a.id), None)
         if d is None:
-            raise serve.ServeError('no approval %s' % a.id)
+            raise huberrors.ServeError('no approval %s' % a.id)
         lines = [_item(d), 'head %s' % d.get('head')] + (
             ['reason %s' % d['reason']] if d.get('reason') else [])
         note = d.get('superseded')
@@ -1777,7 +1779,7 @@ def main(argv=None, stop=None):
     except ConfigError as e:
         print(serve.scrub('machine config: %s' % e), file=sys.stderr)
         return client.USAGE
-    except serve.NotRunning as e:
+    except huberrors.NotRunning as e:
         print('%s; start it with: %s' % (e, START), file=sys.stderr)
         return client.exit_code(e)
     except client.Refused as e:         # the server's own refusal: its code, then its words
@@ -1788,7 +1790,7 @@ def main(argv=None, stop=None):
         if e.field == 'record':         # a --record the hub would not take: the form that it does
             sys.stderr.write(example_line('hub.py %s %s' % (a.verb, getattr(a, 'sub', None) or '')))
         return client.exit_code(e)
-    except (serve.ServeError, auth.TokenFileError) as e:
+    except (huberrors.ServeError, auth.TokenFileError) as e:
         print(serve.scrub('REFUSED: %s' % e), file=sys.stderr)
         return client.REFUSED
     except KeyboardInterrupt:           # not in a server's close: _serve answers that one

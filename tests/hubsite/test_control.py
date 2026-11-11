@@ -5,7 +5,9 @@ import inspect
 import unittest
 from unittest import mock
 
-from kitlib.hubsite import api, autostart, control, httpd, serve
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
+from kitlib.hubsite import api, autostart, control, httpd
 
 HEALTH = api.BASE + '/health'
 PORT, NEW_PORT = 8790, 8792
@@ -33,7 +35,7 @@ class Clock(object):
 
 
 class Asker(object):
-    """A fake serve.ask: for each (method, path, port) the answers in turn, the last one again
+    """A fake localask.ask: for each (method, path, port) the answers in turn, the last one again
     and again; an exception instance is raised. Every call goes to `said` as well."""
 
     def __init__(self, said, answers):
@@ -91,7 +93,7 @@ class Case(unittest.TestCase):
 class StopTest(Case):
     def test_a_stop_asks_once_waits_for_the_port_then_for_the_process(self):
         ask = self.asker({stop_key(): [STOPPING],
-                          health_key(): [HEALTHY, HEALTHY, serve.NotRunning(PORT)]})
+                          health_key(): [HEALTHY, HEALTHY, huberrors.NotRunning(PORT)]})
         alive = self.alive(True, True, False)
         got = self.stop(ask, alive)
         self.assertEqual(got, control.Stopped(True, PID, False))
@@ -102,7 +104,7 @@ class StopTest(Case):
         self.assertTrue(all(p == control.POLL_S for p in self.clock.pauses))
 
     def test_nothing_listening_is_nothing_to_stop(self):
-        ask = self.asker({stop_key(): [serve.NotRunning(PORT)]})
+        ask = self.asker({stop_key(): [huberrors.NotRunning(PORT)]})
         alive = self.alive(True)
         self.assertEqual(self.stop(ask, alive), control.Stopped(False, None, False))
         self.assertEqual(len(ask.calls), 1)
@@ -119,26 +121,26 @@ class StopTest(Case):
                     self.stop(ask, alive)
                 self.assertEqual((cm.exception.port, cm.exception.status, cm.exception.answer),
                                  (PORT, answer[0], answer[1]))
-                self.assertIsInstance(cm.exception, serve.ServeError)
+                self.assertIsInstance(cm.exception, huberrors.ServeError)
                 self.assertEqual(len(ask.calls), 1)
                 self.assertEqual(alive.calls, [])
 
     def test_what_is_not_the_hub_on_the_port_is_a_serve_error(self):
-        ask = self.asker({stop_key(): [serve.ServeError('port 8790 did not answer as the hub')]})
-        with self.assertRaises(serve.ServeError):
+        ask = self.asker({stop_key(): [huberrors.ServeError('port 8790 did not answer as the hub')]})
+        with self.assertRaises(huberrors.ServeError):
             self.stop(ask)
         self.assertEqual(len(ask.calls), 1)
 
     def test_a_server_already_closing_is_waited_for_on_its_port_alone(self):
-        ask = self.asker({stop_key(): [CLOSING], health_key(): [HEALTHY, serve.NotRunning(PORT)]})
+        ask = self.asker({stop_key(): [CLOSING], health_key(): [HEALTHY, huberrors.NotRunning(PORT)]})
         alive = self.alive(True)
         self.assertEqual(self.stop(ask, alive), control.Stopped(True, None, True))
         self.assertEqual(alive.calls, [])
 
     def test_a_cut_connection_while_closing_is_still_closing(self):
         ask = self.asker({stop_key(): [STOPPING],
-                          health_key(): [serve.ServeError('ConnectionResetError'),
-                                         serve.NotRunning(PORT)]})
+                          health_key(): [huberrors.ServeError('ConnectionResetError'),
+                                         huberrors.NotRunning(PORT)]})
         self.assertEqual(self.stop(ask), control.Stopped(True, PID, False))
         self.assertEqual(len(ask.calls), 3)
 
@@ -156,7 +158,7 @@ class StopTest(Case):
         self.assertEqual(alive.calls, [])
 
     def test_a_process_that_outlives_the_timeout_times_out_and_nothing_is_killed(self):
-        ask = self.asker({stop_key(): [STOPPING], health_key(): [serve.NotRunning(PORT)]})
+        ask = self.asker({stop_key(): [STOPPING], health_key(): [huberrors.NotRunning(PORT)]})
         with self.assertRaises(control.TimedOut) as cm:
             self.stop(ask, self.alive(True), timeout=3)
         self.assertEqual(cm.exception.phase, control.PROCESS_PHASE)
@@ -168,15 +170,15 @@ class StopTest(Case):
                       {'pid': PID}):
             with self.subTest(extra=extra):
                 answer = (200, dict({'ok': True, 'stopping': True}, **extra))
-                ask = self.asker({stop_key(): [answer], health_key(): [serve.NotRunning(PORT)]})
+                ask = self.asker({stop_key(): [answer], health_key(): [huberrors.NotRunning(PORT)]})
                 alive = self.alive(True)
                 self.assertEqual(self.stop(ask, alive).ran, True)
                 self.assertEqual(alive.calls, [])
 
     def test_the_real_ask_and_alive_are_looked_up_when_called(self):
-        ask = self.asker({stop_key(): [STOPPING], health_key(): [serve.NotRunning(PORT)]})
+        ask = self.asker({stop_key(): [STOPPING], health_key(): [huberrors.NotRunning(PORT)]})
         alive = self.alive(False)
-        with mock.patch.object(control.serve, 'ask', ask), \
+        with mock.patch.object(control.localask, 'ask', ask), \
                 mock.patch.object(control.process, 'alive', alive):
             got = control.stop(PORT, TOKEN, 300, clock=self.clock, pause=self.clock.pause)
         self.assertEqual(got, control.Stopped(True, PID, False))
@@ -198,8 +200,8 @@ class RestartTest(Case):
                                start_task=self.start, clock=self.clock, pause=self.clock.pause)
 
     def test_the_task_s_server_is_stopped_the_task_ends_then_starts_and_the_new_one_answers(self):
-        ask = self.asker({stop_key(): [STOPPING], health_key(): [serve.NotRunning(PORT)],
-                          health_key(NEW_PORT): [serve.NotRunning(NEW_PORT), HEALTHY]})
+        ask = self.asker({stop_key(): [STOPPING], health_key(): [huberrors.NotRunning(PORT)],
+                          health_key(NEW_PORT): [huberrors.NotRunning(NEW_PORT), HEALTHY]})
         got = self.restart(ask, ['Running', 'Running', 'Running', 'Ready'])
         self.assertEqual(got, control.Restarted(control.Stopped(True, PID, False),
                                                 control.RESTARTED, NEW_PORT))
@@ -213,7 +215,7 @@ class RestartTest(Case):
         for state in ('Ready', 'Queued'):
             with self.subTest(state=state):
                 self.said[:] = []
-                ask = self.asker({stop_key(): [serve.NotRunning(PORT)],
+                ask = self.asker({stop_key(): [huberrors.NotRunning(PORT)],
                                   health_key(NEW_PORT): [HEALTHY]})
                 got = self.restart(ask, [state])
                 self.assertEqual(got, control.Restarted(control.Stopped(False, None, False),
@@ -221,7 +223,7 @@ class RestartTest(Case):
                 self.assertEqual(len(self.start.calls), 1)
 
     def test_a_server_started_by_hand_is_stopped_and_never_started_again(self):
-        ask = self.asker({stop_key(): [STOPPING], health_key(): [serve.NotRunning(PORT)]})
+        ask = self.asker({stop_key(): [STOPPING], health_key(): [huberrors.NotRunning(PORT)]})
         got = self.restart(ask, ['Ready'])
         self.assertEqual(got, control.Restarted(control.Stopped(True, PID, False),
                                                 control.HAND_STARTED, NEW_PORT))
@@ -229,24 +231,24 @@ class RestartTest(Case):
         self.assertEqual(len(self.states.calls), 1)
 
     def test_with_no_task_nothing_is_started(self):
-        for answer, ran in ((STOPPING, True), (serve.NotRunning(PORT), False)):
+        for answer, ran in ((STOPPING, True), (huberrors.NotRunning(PORT), False)):
             with self.subTest(ran=ran):
-                ask = self.asker({stop_key(): [answer], health_key(): [serve.NotRunning(PORT)]})
+                ask = self.asker({stop_key(): [answer], health_key(): [huberrors.NotRunning(PORT)]})
                 got = self.restart(ask, [None])
                 self.assertEqual((got.stopped.ran, got.outcome), (ran, control.NO_TASK))
                 self.assertEqual(self.start.calls, [])
 
     def test_a_disabled_task_is_not_started(self):
-        for answer, ran in ((STOPPING, True), (serve.NotRunning(PORT), False)):
+        for answer, ran in ((STOPPING, True), (huberrors.NotRunning(PORT), False)):
             with self.subTest(ran=ran):
-                ask = self.asker({stop_key(): [answer], health_key(): [serve.NotRunning(PORT)]})
+                ask = self.asker({stop_key(): [answer], health_key(): [huberrors.NotRunning(PORT)]})
                 got = self.restart(ask, ['Disabled'])
                 self.assertEqual((got.stopped.ran, got.outcome), (ran, control.DISABLED))
                 self.assertEqual(self.start.calls, [])
 
     def test_a_running_task_with_nothing_on_the_port_is_refused_and_nothing_started(self):
-        ask = self.asker({stop_key(): [serve.NotRunning(PORT)]})
-        with self.assertRaises(serve.ServeError) as cm:
+        ask = self.asker({stop_key(): [huberrors.NotRunning(PORT)]})
+        with self.assertRaises(huberrors.ServeError) as cm:
             self.restart(ask, ['Running'])
         self.assertNotIsInstance(cm.exception, control.TimedOut)
         said = str(cm.exception)
@@ -259,7 +261,7 @@ class RestartTest(Case):
 
     def test_a_queued_task_s_server_is_waited_for_and_started_again(self):
         # Queued is the task's as Running is: not a server started by hand
-        ask = self.asker({stop_key(): [STOPPING], health_key(): [serve.NotRunning(PORT)],
+        ask = self.asker({stop_key(): [STOPPING], health_key(): [huberrors.NotRunning(PORT)],
                           health_key(NEW_PORT): [HEALTHY]})
         got = self.restart(ask, ['Queued', 'Queued', 'Running', 'Ready'])
         self.assertEqual(got.outcome, control.RESTARTED)
@@ -268,7 +270,7 @@ class RestartTest(Case):
         self.assertEqual(len(self.states.calls), 4)
 
     def test_a_task_state_that_fails_after_the_stop_carries_what_was_stopped(self):
-        ask = self.asker({stop_key(): [STOPPING], health_key(): [serve.NotRunning(PORT)]})
+        ask = self.asker({stop_key(): [STOPPING], health_key(): [huberrors.NotRunning(PORT)]})
         with self.assertRaises(control.StartFailed) as cm:
             self.restart(ask, ['Running', autostart.AutostartError('powershell exit 1')])
         self.assertIsInstance(cm.exception, autostart.AutostartError)
@@ -285,7 +287,7 @@ class RestartTest(Case):
         self.assertEqual(self.start.calls, [])
 
     def test_a_start_that_fails_is_its_autostart_error(self):
-        ask = self.asker({stop_key(): [serve.NotRunning(PORT)]})
+        ask = self.asker({stop_key(): [huberrors.NotRunning(PORT)]})
         start = Script(self.said, 'start_task', [autostart.AutostartError('no access')])
         with self.assertRaises(control.StartFailed) as cm:
             self.restart(ask, ['Ready'], start=start)
@@ -295,7 +297,7 @@ class RestartTest(Case):
         self.assertEqual(ask.calls, [('POST', httpd.STOP_ROUTE, PORT, TOKEN)])
 
     def test_a_task_that_never_ends_times_out_and_is_not_started(self):
-        ask = self.asker({stop_key(): [STOPPING], health_key(): [serve.NotRunning(PORT)]})
+        ask = self.asker({stop_key(): [STOPPING], health_key(): [huberrors.NotRunning(PORT)]})
         with self.assertRaises(control.TimedOut) as cm:
             self.restart(ask, ['Running'], timeout=4)
         self.assertEqual(cm.exception.phase, control.TASK_PHASE)
@@ -304,9 +306,9 @@ class RestartTest(Case):
         self.assertEqual(self.start.calls, [])
 
     def test_a_new_server_that_never_answers_times_out(self):
-        ask = self.asker({stop_key(): [serve.NotRunning(PORT)],
-                          health_key(NEW_PORT): [serve.NotRunning(NEW_PORT), (403, {}),
-                                                 serve.ServeError('cut')]})
+        ask = self.asker({stop_key(): [huberrors.NotRunning(PORT)],
+                          health_key(NEW_PORT): [huberrors.NotRunning(NEW_PORT), (403, {}),
+                                                 huberrors.ServeError('cut')]})
         with self.assertRaises(control.TimedOut) as cm:
             self.restart(ask, ['Ready'], timeout=4)
         self.assertEqual(cm.exception.phase, control.ANSWER_PHASE)
@@ -317,15 +319,15 @@ class RestartTest(Case):
         # the stop takes 3 of the 4 seconds; the new server's wait gets what is left
         ask = self.asker({stop_key(): [STOPPING],
                           health_key(): [HEALTHY] * int(3 / control.POLL_S)
-                          + [serve.NotRunning(PORT)],
-                          health_key(NEW_PORT): [serve.NotRunning(NEW_PORT)]})
+                          + [huberrors.NotRunning(PORT)],
+                          health_key(NEW_PORT): [huberrors.NotRunning(NEW_PORT)]})
         with self.assertRaises(control.TimedOut) as cm:
             self.restart(ask, ['Running', 'Ready'], timeout=4)
         self.assertEqual(cm.exception.phase, control.ANSWER_PHASE)
         self.assertLess(self.clock.now, 1004.0 + 2 * control.POLL_S)
 
     def test_the_task_functions_are_looked_up_when_called(self):
-        ask = self.asker({stop_key(): [serve.NotRunning(PORT)],
+        ask = self.asker({stop_key(): [huberrors.NotRunning(PORT)],
                           health_key(NEW_PORT): [HEALTHY]})
         states = Script(self.said, 'task_state', ['Ready'])
         start = Script(self.said, 'start_task', [None])
@@ -337,7 +339,7 @@ class RestartTest(Case):
         self.assertEqual((len(states.calls), len(start.calls)), (1, 1))
 
     def test_the_new_port_defaults_to_the_old_one(self):
-        ask = self.asker({stop_key(): [serve.NotRunning(PORT)], health_key(): [HEALTHY]})
+        ask = self.asker({stop_key(): [huberrors.NotRunning(PORT)], health_key(): [HEALTHY]})
         states = Script(self.said, 'task_state', ['Ready'])
         got = control.restart(PORT, TOKEN, 300, ask=ask, alive=self.alive(False),
                               task_state=states, start_task=Script(self.said, 's', [None]),

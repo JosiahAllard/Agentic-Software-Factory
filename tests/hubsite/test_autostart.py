@@ -11,7 +11,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 from kitlib import pluginsource
-from kitlib.hubsite import autostart, serve
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubsite import autostart
 from kitlib.proc import spawn
 from tests.hubsite.test_hub_cli import HUB, CliCase
 
@@ -153,7 +154,7 @@ class Install(unittest.TestCase):
         self.assertIn('Access is denied.', str(cm.exception))
 
     def test_the_error_is_a_serve_error_so_hub_py_prints_it_as_refused(self):
-        self.assertTrue(issubclass(autostart.AutostartError, serve.ServeError))
+        self.assertTrue(issubclass(autostart.AutostartError, huberrors.ServeError))
 
 
 @mock.patch('kitlib.platform.NAME', 'windows')   # the Windows form, on any machine

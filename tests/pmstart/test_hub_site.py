@@ -17,7 +17,6 @@ from kitlib.pmstart import fglock
 from kitlib.hubclient import client as hubclient
 from kitlib.hubclient import errors, settings
 from kitlib.hubclient import token as hubtoken
-from kitlib.hubsite import serve
 from tests.home import machine_config, pm_repo
 from tests.pmstart import HANDOFF_FAKE, keep_off_launcher_repos, keep_off_session_job
 
@@ -163,13 +162,13 @@ class HubSiteTest(unittest.TestCase):
                                  "watcher up (beat ?s ago)")
 
     def test_nothing_listening_is_hub_server_down(self):
-        out = site(FakeClient(error=serve.NotRunning(4321)))
+        out = site(FakeClient(error=errors.NotRunning(4321)))
         self.assertEqual(len(out), 1)
         self.assertTrue(out[0].startswith("hub: hub server down (nothing listens on port 4321)"), out[0])
         self.assertTrue(out[0].endswith('hub.py" serve'), out[0])
 
     def test_any_other_failure_is_one_line_naming_the_class_only(self):
-        for err in (serve.ServeError("secret detail"), hubclient.Refused(403, {}), OSError("x"),
+        for err in (errors.ServeError("secret detail"), hubclient.Refused(403, {}), OSError("x"),
                     ValueError("y")):
             out = site(FakeClient(error=err))
             self.assertEqual(out, ["hub: server did not answer as the hub does (%s)" % type(err).__name__])
@@ -190,7 +189,7 @@ class HubSiteTest(unittest.TestCase):
         class Half(FakeClient):
             def get(self, path, *a, **k):
                 if path == "/pending":
-                    raise serve.ServeError("late")
+                    raise errors.ServeError("late")
                 return FakeClient.get(self, path, *a, **k)
         out = site(Half())
         self.assertEqual(out, ["hub: server up on port 4321, pending not asked (ServeError)"])
@@ -343,7 +342,7 @@ class RealSettingsTest(unittest.TestCase):
         self.write({})
         self.assertEqual(pmstart.hub_settings().port, settings.PORT)
         self.assertEqual(settings.PORT, 8790)
-        out = pmstart.hub_site(make_client=lambda port: FakeClient(error=serve.NotRunning(port)))
+        out = pmstart.hub_site(make_client=lambda port: FakeClient(error=errors.NotRunning(port)))
         self.assertEqual(len(out), 1)
         self.assertTrue(out[0].startswith("hub: hub server down (nothing listens on port 8790)"), out)
 
@@ -388,7 +387,7 @@ class RealSettingsTest(unittest.TestCase):
     def test_a_pm_data_key_in_the_machine_config_is_named_and_its_value_never_shown(self):
         # pm_data is derived from the PM-repo pointer (kitlib.config.user.locate): a pm_data key
         # left in config.json makes the machine config unreadable, and no line shows its value
-        down = dict(make_client=lambda port: FakeClient(error=serve.NotRunning(port)))
+        down = dict(make_client=lambda port: FakeClient(error=errors.NotRunning(port)))
         for hub in (None, {"port": 4322}):
             with self.subTest(hub=hub):
                 folder = self.write({"hub": hub} if hub else {})
@@ -411,7 +410,7 @@ class RealSettingsTest(unittest.TestCase):
         # the kit_sync check reads pm_data through kitlib.pmdata's own check (check_settings), whose
         # PmDataError echoes the rejected value: the "could not check" line takes it out
         # (pmstart._failure_text)
-        down = dict(make_client=lambda port: FakeClient(error=serve.NotRunning(port)))
+        down = dict(make_client=lambda port: FakeClient(error=errors.NotRunning(port)))
         for bad, rule in (({"path": "C:\\SECRETPATH", "branch": "SECRET BR", "remote": 7654321},
                            "pm_data: branch must be a branch or remote name; "
                            "remote must be a branch or remote name"),
@@ -438,7 +437,7 @@ class RealSettingsTest(unittest.TestCase):
     def test_without_a_hub_key_the_checklist_shows_the_site_lines_on_port_8790(self):
         self.write({})
         txt = pmstart.checklist({}, NOW, procs=[], hub_site={
-            "make_client": lambda port: FakeClient(error=serve.NotRunning(port))}, **FAKES)
+            "make_client": lambda port: FakeClient(error=errors.NotRunning(port))}, **FAKES)
         self.assertIn("- hub: hub server down (nothing listens on port 8790)", txt)
         self.assertNotIn("could not check hub", txt)
         for old in ("republish", "Action Hub", "Artifact", "claude.ai"):
@@ -449,7 +448,7 @@ class ChecklistTest(unittest.TestCase):
 
     def test_with_a_hub_key_the_checklist_shows_the_site_lines_on_its_port(self):
         txt = pmstart.checklist({}, NOW, procs=[], hub_site={"load": lambda: SET,
-                                "make_client": lambda port: FakeClient(error=serve.NotRunning(port))},
+                                "make_client": lambda port: FakeClient(error=errors.NotRunning(port))},
                                 **FAKES)
         self.assertIn("- hub: hub server down (nothing listens on port 4321)", txt)
         self.assertNotIn("Action Hub", txt)
@@ -627,7 +626,7 @@ class FiledDigestTest(unittest.TestCase):
         def where():
             raise AssertionError("the stamp was looked up")
         out = pmstart.hub_site(load=lambda: SET,
-                               make_client=lambda port: FiledClient(error=serve.NotRunning(port)),
+                               make_client=lambda port: FiledClient(error=errors.NotRunning(port)),
                                stamp=where, now=AT)
         self.assertEqual(len(out), 1)
         self.assertFalse(os.path.exists(self.stamp))

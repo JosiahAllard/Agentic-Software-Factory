@@ -8,8 +8,8 @@ import datetime
 import unittest
 
 from kitlib import hubvalidate
+from kitlib.hubclient import errors as huberrors
 from kitlib.hubsite import approvals as ap
-from kitlib.hubsite import serve
 from kitlib.hubsite.api import AGENT
 from kitlib.hubclient.client import Refused
 from tests.gitfixture import TempRepo
@@ -558,8 +558,8 @@ class VerifierTest(unittest.TestCase):
             'A-1', URL, HEAD, {}), (False, ap.WHY_FILES))
 
     def test_an_error_of_the_call_fails_closed(self):
-        for error in (serve.NotRunning(1), Refused(404, {'ok': False, 'code': 'not_found'}),
-                      serve.ServeError('odd'), OSError('reset'), ValueError('json'),
+        for error in (huberrors.NotRunning(1), Refused(404, {'ok': False, 'code': 'not_found'}),
+                      huberrors.ServeError('odd'), OSError('reset'), ValueError('json'),
                       RuntimeError('anything')):
             ok, why = ap.Verifier(FakeClient(error=error)).verify('A-1', URL, HEAD, {})
             self.assertEqual((ok, why), (False, ap.WHY_SERVER % type(error).__name__))

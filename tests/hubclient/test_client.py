@@ -8,7 +8,9 @@ import unittest
 
 from kitlib import hubvalidate
 from kitlib.hubclient import client
-from kitlib.hubsite import api, auth, httpd, serve
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
+from kitlib.hubsite import api, auth, httpd
 from tests.hubsite import httpfix
 # a ledger id, built so no file holds a ruling id (tests/scrub)
 RULING = 'R-' + '0007'
@@ -100,7 +102,7 @@ class RefusalCase(ClientCase):
         self.assertEqual(e.body['error']['code'], 'invalid')
         self.assertIs(e.body['ok'], False)
         self.assertEqual(str(e), 'invalid: ' + e.message)
-        self.assertIsInstance(e, serve.ServeError)
+        self.assertIsInstance(e, huberrors.ServeError)
         self.assertEqual(client.exit_code(e), client.REFUSED)
         with self.assertRaises(client.Refused) as c:
             self.hub.post('/questions/Q-404/log', client.AGENT, {'if_version': 1})
@@ -122,7 +124,7 @@ class RefusalCase(ClientCase):
         self.assertEqual(self.hub.token(client.ANY), self.agent)
         os.remove(os.path.join(self.tokens, auth.TOKEN_FILES[auth.AGENT]))
         self.assertEqual(self.hub.token(client.ANY), self.owner)
-        with self.assertRaises(serve.ServeError) as c:
+        with self.assertRaises(huberrors.ServeError) as c:
             self.hub.post('/todos/T-1/ack', client.AGENT)
         self.assertNotIsInstance(c.exception, client.Refused)
         self.assertIn('no agent token in %s: run hub.py setup' % self.tokens, str(c.exception))
@@ -158,13 +160,13 @@ class DownCase(unittest.TestCase):
         hub = client.Client(self.port, ask=None, tokens=self.folder())
         for call in (hub.pending, lambda: hub.wait(timeout=0),      # a refused connect is slow
                      lambda: hub.post('/todos', client.AGENT, {'title': 't'})):
-            with self.assertRaises(serve.NotRunning) as c:
+            with self.assertRaises(huberrors.NotRunning) as c:
                 call()
             self.assertEqual(client.exit_code(c.exception), 3)
             self.assertIn('port %d' % self.port, str(c.exception))
         self.assertEqual((client.OK, client.REFUSED, client.USAGE, client.NOT_RUNNING,
                           client.TIMED_OUT), (0, 1, 2, 3, 4))
-        self.assertEqual(client.exit_code(serve.ServeError('x')), 1)
+        self.assertEqual(client.exit_code(huberrors.ServeError('x')), 1)
 
     def folder(self):
         case = httpfix.ListenerCase('setUp')
@@ -287,11 +289,11 @@ IDLE = {'timed_out': True, 'revision': 7, 'changes': [], 'pending': []}
 
 class RestartCase(StandIn):
     """A hub restart seen by a wait that has had an answered poll: the port closed
-    (serve.NotRunning) or the store not available (Refused `store`) is asked again; every other
+    (huberrors.NotRunning) or the store not available (Refused `store`) is asked again; every other
     refusal ends the wait, and so does either one on the wait's first poll."""
 
     def test_a_wait_asks_a_restarting_hub_again_and_ends_on_its_answer(self):
-        hub = self.hub([IDLE, STORE_DOWN, serve.NotRunning(1), serve.NotRunning(1), HIT], 0)
+        hub = self.hub([IDLE, STORE_DOWN, huberrors.NotRunning(1), huberrors.NotRunning(1), HIT], 0)
         self.assertEqual(hub.wait(since=5, pending=True, for_key='pm'), HIT)
         self.assertEqual(self.slept, [client.RETRY_PAUSE_S] * 3)
         poll = api.BASE + '/wait?for=pm&pending=1&since=%d&timeout=' + '%g' % hubvalidate.WAIT_MAX_S
@@ -299,10 +301,10 @@ class RestartCase(StandIn):
         self.assertEqual([a[1] for a in self.asked], [poll % 5] + [poll % 7] * 4)
 
     def test_a_hub_that_was_never_up_ends_the_wait_at_once(self):
-        for down in (serve.NotRunning(1), STORE_DOWN):
+        for down in (huberrors.NotRunning(1), STORE_DOWN):
             for kw in ({}, {'timeout': 60}):
                 self.asked = []
-                with self.assertRaises(serve.ServeError) as c:
+                with self.assertRaises(huberrors.ServeError) as c:
                     self.hub([down, HIT], 0).wait(since=5, pending=True, for_key='pm', **kw)
                 self.assertIsInstance(c.exception, type(down) if isinstance(down, Exception)
                                       else client.Refused)
@@ -310,7 +312,7 @@ class RestartCase(StandIn):
 
     def test_a_hub_still_down_when_the_timeout_ends_raises_the_last_reason(self):
         with self.assertRaises(client.Refused) as c:
-            self.hub([IDLE, serve.NotRunning(1), STORE_DOWN], 0).wait(since=5, timeout=2.5)
+            self.hub([IDLE, huberrors.NotRunning(1), STORE_DOWN], 0).wait(since=5, timeout=2.5)
         self.assertEqual((c.exception.code, c.exception.status), ('store', 503))
         self.assertIn('not available', c.exception.message)
         # pauses of 1, 1 and the 0.5 left, then one last poll of 0 s begun at the end
@@ -318,18 +320,18 @@ class RestartCase(StandIn):
         self.assertEqual(self.asked[-1][1], api.BASE + '/wait?since=7&timeout=0')
         self.assertEqual(len(self.asked), 5)
         self.now[0], self.asked = 0.0, []
-        with self.assertRaises(serve.NotRunning):
-            self.hub([IDLE, STORE_DOWN, serve.NotRunning(1)], 0).wait(since=5, timeout=1)
+        with self.assertRaises(huberrors.NotRunning):
+            self.hub([IDLE, STORE_DOWN, huberrors.NotRunning(1)], 0).wait(since=5, timeout=1)
         self.assertEqual((len(self.asked), self.slept), (3, [1.0]))
 
     def test_a_wait_with_no_timeout_ends_when_the_hub_stays_down_too_long(self):
-        with self.assertRaises(serve.NotRunning):
-            self.hub([IDLE, serve.NotRunning(1)], 0).wait(since=5, pending=True)
+        with self.assertRaises(huberrors.NotRunning):
+            self.hub([IDLE, huberrors.NotRunning(1)], 0).wait(since=5, pending=True)
         self.assertEqual(len(self.slept), client.RESTART_WAIT_S / client.RETRY_PAUSE_S)
         self.assertEqual(self.now[0], client.RESTART_WAIT_S)
         # an answer in between starts the count again
         self.now[0], self.asked = 0.0, []
-        downs = [serve.NotRunning(1)] * int(client.RESTART_WAIT_S - 1)
+        downs = [huberrors.NotRunning(1)] * int(client.RESTART_WAIT_S - 1)
         hub = self.hub([IDLE] + downs + [dict(IDLE)] + downs + [HIT], 0)
         self.assertEqual(hub.wait(since=5, pending=True), HIT)
 
@@ -347,7 +349,7 @@ class RestartCase(StandIn):
         # write made meanwhile; the answered turn gave one, so the retry starts there
         for kw in ({}, {'pending': True}, {'pending': True, 'for_key': 'pm'}):
             self.asked = []
-            self.assertEqual(self.hub([IDLE, serve.NotRunning(1), HIT], 0).wait(**kw), HIT)
+            self.assertEqual(self.hub([IDLE, huberrors.NotRunning(1), HIT], 0).wait(**kw), HIT)
             self.assertNotIn('since=', self.asked[0][1])
             self.assertEqual(['since=7' in a[1] for a in self.asked[1:]], [True, True], kw)
 
@@ -384,8 +386,8 @@ class WireCase(unittest.TestCase):
         t.join(httpfix.TIMEOUT)
         head = seen[0].split('\r\n')
         self.assertEqual(head[0], 'GET %s/pending HTTP/1.1' % api.BASE)
-        self.assertIn('User-Agent: ' + serve.USER_AGENT, head)
-        self.assertEqual(serve.USER_AGENT, 'hub-client')
+        self.assertIn('User-Agent: ' + localask.USER_AGENT, head)
+        self.assertEqual(localask.USER_AGENT, 'hub-client')
         self.assertIn('Host: %s:%d' % (httpd.LOOPBACK, port), head)
         self.assertIn('Authorization: Bearer ' + case.agent, head)
         self.assertEqual([h for h in head if h.lower().startswith('user-agent')],

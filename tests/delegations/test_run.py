@@ -22,7 +22,7 @@ from kitlib.delegations import schema
 from kitlib.hubsite import approvals as hubapprovals
 from kitlib.hubclient import client as hubclient
 from kitlib.hubsite import push as hubpush
-from kitlib.hubsite import serve as hubserve
+from kitlib.hubclient import errors as huberrors
 from kitlib.ledger import write as lwrite
 from tests import gitfixture
 from tests.platforms import windows_only
@@ -479,7 +479,7 @@ class HubTrigger(Fixture):
         self.assertIn('Source: under H-kit-0002: D-001 Q-1001', self.text())
 
     def test_a_hub_that_does_not_answer_is_refused(self):
-        self.deny('cannot read Q-1001 from the hub', hub=Hub(error=hubserve.NotRunning(8765)))
+        self.deny('cannot read Q-1001 from the hub', hub=Hub(error=huberrors.NotRunning(8765)))
         self.assertNotIn('delegated', self.text())
 
     def test_the_question_runs_once(self):
@@ -1026,7 +1026,7 @@ class HubApproval(Fixture):
                 self.assertEqual(self.events, ['verify'])
 
     def test_a_hub_that_cannot_answer_is_refused(self):
-        self.hub.verify_error = hubserve.ServeError('down')
+        self.hub.verify_error = huberrors.ServeError('down')
         msg = self.refused_approval('the hub cannot be reached: ')
         self.assertIn('nothing was run', msg)
         self.assertEqual(self.events, ['verify'])
@@ -1047,7 +1047,7 @@ class HubApproval(Fixture):
         self.assertEqual(self.events, ['verify', 'precondition'])
 
     def test_a_consume_that_fails_runs_and_logs_nothing(self):
-        for error in (hubserve.ServeError('409 conflict'), OSError('reset'), ValueError('bad')):
+        for error in (huberrors.ServeError('409 conflict'), OSError('reset'), ValueError('bad')):
             with self.subTest(error=error):
                 self.events.clear()
                 self.cwds.clear()
@@ -1215,7 +1215,7 @@ class Request(Fixture):
         self.refused_request('no hub to ask on', hub=None)
 
     def test_a_hub_refusal_is_refused(self):
-        for error in (hubserve.ServeError('409 invalid line'), OSError('down'),
+        for error in (huberrors.ServeError('409 invalid line'), OSError('down'),
                       ValueError('not json')):
             with self.subTest(error=type(error).__name__):
                 self.refused_request('the hub did not take the request',

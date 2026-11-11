@@ -446,7 +446,7 @@ class Server:
             return (special(a) if special else self._route(name, a)), False
         except ToolError as e:
             return {"ok": False, "error": e.error}, True
-        except hubclient.Refused as e:
+        except huberrors.Refused as e:
             return _error(e.code, e.message, e.field, status=e.status)
         except NoAgentToken as e:
             return _error("no_agent_token", str(e))

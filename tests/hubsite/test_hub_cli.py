@@ -20,6 +20,8 @@ from unittest import mock
 
 from kitlib.hubclient import settings as hub_settings
 from kitlib.hubclient import token as hubtoken
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
 from kitlib.hubsite import approvals, auth, httpd, schema, serve, tunnel
 from kitlib.hubvalidate import todosteps
 from kitlib.hubsite.store import Store, StoreBusy
@@ -496,7 +498,7 @@ class ServeCase(CliCase):
             return raise_it
 
         for at, name, exc, code, line in (
-                (HUB.serve, 'build', serve.ServeError('the remote %s cannot be used' % remote),
+                (HUB.serve, 'build', huberrors.ServeError('the remote %s cannot be used' % remote),
                  1, 'REFUSED: the remote %s cannot be used' % bare),
                 (HUB.serve, 'build', auth.TokenFileError("a token file beside '%s'" % remote),
                  1, "REFUSED: a token file beside '%s'" % bare),
@@ -507,7 +509,7 @@ class ServeCase(CliCase):
                 self.assertEqual((got, out, err), (code, '', line + '\n'))
         # the answer of a server that is not as expected: its message is another process's text
         answer = (500, {'error': {'code': 'internal', 'message': "cannot reach '%s'" % remote}})
-        with mock.patch.object(HUB.serve, 'ask', lambda *args, **kw: answer):
+        with mock.patch.object(HUB.localask, 'ask', lambda *args, **kw: answer):
             got, out, err = self.run_cli('status', '--port', '8790')
         self.assertEqual((got, out, err), (
             1, '', "REFUSED: the server on port 8790 answered 500 internal: cannot reach '%s'\n"
@@ -962,12 +964,12 @@ class ClientCase(CliCase):
         def ask(p, method, path, token=None, **kw):
             asked.append((p, method, path))
             if len(asked) == 1:
-                raise serve.NotRunning(p)
+                raise huberrors.NotRunning(p)
             if isinstance(second, Exception):
                 raise second
             return second
 
-        with mock.patch.object(HUB.serve, 'ask', ask):
+        with mock.patch.object(HUB.localask, 'ask', ask):
             got = self.run_cli('unpair', '--port', str(port))
         self.assertEqual(asked, [(port, 'POST', httpd.UNPAIR_ROUTE)] * 2)
         return port, got
@@ -984,7 +986,7 @@ class ClientCase(CliCase):
         self.assertIn('REFUSED: the server on port %d answered 403' % port, err)
 
     def test_unpair_with_still_no_server_at_the_second_ask_is_the_file_alone(self):
-        port, (code, out, err) = self.unpair_racing_a_start(serve.NotRunning(self.dead_port()))
+        port, (code, out, err) = self.unpair_racing_a_start(huberrors.NotRunning(self.dead_port()))
         self.assertEqual((code, err), (0, ''))
         self.assertIn(auth.sessions_file(port), out)
         self.assertNotIn('of the hub server', out)
@@ -2112,7 +2114,7 @@ class RecordArgumentCase(CliCase):
         return 200, {'ok': True, 'id': 'Q-1000', 'version': 2, 'revision': 3, 'warnings': []}
 
     def run_asking(self, *argv):
-        with mock.patch.object(serve, 'ask', self.ask):
+        with mock.patch.object(localask, 'ask', self.ask):
             return self.run_cli(*(argv + ('--port', '8791')))
 
     def test_record_is_sent_as_repo_and_id(self):
@@ -2226,9 +2228,9 @@ class ArgumentCase(CliCase):
     def test_every_verb_that_asks_is_exit_3_with_the_start_command_when_no_server_runs(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
         def down(port, *args, **kw):            # a real refused connect is slow here (test_client.DownCase)
-            raise serve.NotRunning(port)
+            raise huberrors.NotRunning(port)
 
-        with mock.patch.object(serve, 'ask', down):
+        with mock.patch.object(localask, 'ask', down):
             for argv in self.VERBS:
                 for more in ((), ('--json',)):
                     code, out, err = self.run_cli(*(argv + more + ('--port', '8791')))
@@ -2249,9 +2251,9 @@ class ArgumentCase(CliCase):
 
         def down(port, *args, **kw):
             asked.append(port)
-            raise serve.NotRunning(port)
+            raise huberrors.NotRunning(port)
 
-        with mock.patch.object(serve, 'ask', down):
+        with mock.patch.object(localask, 'ask', down):
             self.assertEqual(self.run_cli('pending')[0], 3)
             self.assertEqual(self.run_cli('questions', '--port', '8794')[0], 3)
             self.assertEqual(self.run_cli('questions', '--port', '8794', 'log', 'Q-001',
@@ -2267,7 +2269,7 @@ class ArgumentCase(CliCase):
             seen.append((method, path[len(HUB.api.BASE):], body))
             return 200, {'ok': True, 'id': 'X-1'}
 
-        with mock.patch.object(serve, 'ask', ask):
+        with mock.patch.object(localask, 'ask', ask):
             got = self.run_cli(*(argv + ('--port', '8791')))
         return got, seen
 
@@ -2360,7 +2362,7 @@ class ArgumentCase(CliCase):
 
     def test_a_verb_with_no_token_file_is_refused_before_it_asks(self):
         asked = []
-        with mock.patch.object(serve, 'ask', lambda *a, **kw: asked.append(a)):
+        with mock.patch.object(localask, 'ask', lambda *a, **kw: asked.append(a)):
             code, out, err = self.run_cli('pending', '--port', '8791')
             self.assertEqual((code, out), (1, ''))
             self.assertIn('REFUSED: no agent or owner token in %s: run hub.py setup'
@@ -2387,7 +2389,7 @@ class ArgumentCase(CliCase):
                                                              {'id': 'S-001', 'version': 4}]}
 
         base = HUB.api.BASE
-        with mock.patch.object(serve, 'ask', ask):
+        with mock.patch.object(localask, 'ask', ask):
             for argv, want in (
                     (('answer', 'Q-001', '--choice', '0'), ('POST', '/questions/Q-001/answer', 'owner')),
                     (('todos', 'done', 'T-001'), ('POST', '/todos/T-001/done', 'owner')),
@@ -2431,7 +2433,7 @@ class ArgumentCase(CliCase):
             seen.append(path)
             return 200, {'ok': True}
 
-        with mock.patch.object(serve, 'ask', ask):
+        with mock.patch.object(localask, 'ask', ask):
             self.assertEqual(self.run_cli('todos', 'ack', '../stories/S-001?x=1#y', '--port',
                                           '8791')[0], 0)
         self.assertEqual(seen, [HUB.api.BASE + '/todos/..%2Fstories%2FS-001%3Fx%3D1%23y/ack'])

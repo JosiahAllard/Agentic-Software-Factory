@@ -1,6 +1,6 @@
-"""kitlib.hubclient.token.folder with no PM-repo pointer: a refusal that names the pointer step, never
-a token folder in the home folder, so `hub.py setup` on a fresh machine writes nothing there. All
-under a temp home and a temp PM repository; no token file of this machine is read."""
+"""kitlib.hubclient.token.folder with no PM-repo pointer: a refusal that names the pointer step,
+never a token folder in the home folder, so `hub.py setup` on a fresh machine writes nothing
+there. All under a temp home and a temp PM repository; no token file of this machine is read."""
 import contextlib
 import importlib.util
 import io

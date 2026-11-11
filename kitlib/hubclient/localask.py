@@ -1,9 +1,8 @@
 """kitlib.hubclient.localask: one request to the hub server on this machine.
 
 What the client (client.py) needs to ask the loopback listener, so it does not import the
-server. kitlib/hubsite/serve.py re-exports ask and its constants (serve.ask, serve.ASK_TIMEOUT_S,
-serve.VIA_CLI, serve.VIA_MCP and the rest), and kitlib/hubsite/httpd.py takes LOOPBACK, JSON and
-VIA_HEADER from here: the one object, reached by either module.
+server. The server's listener (kitlib/hubsite/httpd.py) takes LOOPBACK, JSON and VIA_HEADER
+from here: the one object on both sides.
 
   ask(port, method, path, token=None, body=None, timeout=ASK_TIMEOUT_S, via=VIA_CLI)
       -> (status, object); raises the errors of kitlib.hubclient.errors

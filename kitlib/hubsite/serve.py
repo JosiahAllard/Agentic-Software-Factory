@@ -18,9 +18,8 @@
   health_route(api, views, tunnel='', fixed=False)
                                                 a listener's route for GET health (below)
   scrub(text)                                   `text` without the `user:password@` of any URL
-  ask(port, method, path, token=None, body=None, timeout=ASK_TIMEOUT_S) -> (status, object)
   status_lines(health, now=None)                what `hub status` prints for a GET health answer
-  ServeError, NotRunning
+  ServeError                                    kitlib.hubclient.errors's, raised here too
 
 build() takes its parts from a Sources, so a test serves a temp store on port 0 with stand-ins
 and never reads the machine config, a real repository or the network. Nothing here reads a
@@ -216,11 +215,9 @@ pass failed, WORD_UNKNOWN when the Api gave no git status. An answer of the Api 
 leaves as its status and error code with the message HEALTH_REFUSED, never the Api's own
 message.
 
-ask() is the one request every local client makes (`hub status`, `hub open`, and
-kitlib.hubclient.client for the other verbs): to the loopback listener through http.client,
-which uses no proxy, so a token never leaves this machine. It names itself USER_AGENT. It lives in
-kitlib.hubclient.localask, its errors in kitlib.hubclient.errors (the client imports them without
-this server), and they are re-exported here.
+The request every local client makes (`hub status`, `hub open`, and kitlib.hubclient.client for
+the other verbs) is kitlib.hubclient.localask.ask, its errors kitlib.hubclient.errors: neither
+is this server's.
 """
 import datetime
 import functools
@@ -235,9 +232,7 @@ from kitlib.config import user
 from kitlib.config.types import ConfigError
 from kitlib.hubclient import codestale
 from kitlib.hubclient import token as _token
-from kitlib.hubclient.errors import NoAnswer, NotRunning, ServeError     # noqa: F401
-from kitlib.hubclient.localask import (ASK_TIMEOUT_S, MAX_ANSWER, USER_AGENT, VIA_CLI,  # noqa: F401
-                                       VIA_MCP, ask)
+from kitlib.hubclient.errors import ServeError
 from kitlib.proc import process
 
 from . import api as _api
@@ -1772,12 +1767,6 @@ def run(hub, started=None, stop=None):
     finally:
         clean = hub.close()
     return clean
-
-
-# ------------------------------------------------------------------ the local client
-
-#   ask() and its constants (kitlib.hubclient.localask) and its errors (ServeError, NotRunning,
-#   NoAnswer: kitlib.hubclient.errors), imported at the top and re-exported here.
 
 
 def _age(text, now):

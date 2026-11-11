@@ -126,7 +126,7 @@ WATCHER_STALE_S) or 'none' (no heartbeat readable), age its seconds (null with n
 that raises is 'down' with a null age.
 
 Code. GET snapshot and GET health carry `code`: null when this hub gives none, else {"stale",
-"restart"} from Hub.code_state (kitlib.hubsite.codestale): stale is true once the hub code on disk
+"restart"} from Hub.code_state (kitlib.hubclient.codestale): stale is true once the hub code on disk
 is newer than this process, restart the owner's to-do text then (null otherwise). The server sets
 Api.code_status when it is built; a status that raises or is not an object gives null. The
 tunnel's health holds fixed words only and carries none.

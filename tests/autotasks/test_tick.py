@@ -14,7 +14,7 @@ from unittest import mock
 from kitlib.autotasks import tick as T
 from kitlib.config import pointer
 from kitlib.fs.treelock import TreeLock
-from kitlib.hubsite import serve
+from kitlib.hubclient import errors as huberrors
 from tests import gitfixture
 from tests.home import machine_config, temp_home
 from tests.realgit import real_git
@@ -376,7 +376,7 @@ class Tick(Base):
 class HubDown(Base):
     def test_nothing_listening_starts_nothing_and_exits_clean_with_one_line(self):
         def down():
-            raise serve.NotRunning(1)
+            raise huberrors.NotRunning(1)
         code, lines = self.go(fetch=down)
         self.assertEqual(code, T.EXIT_OK)
         self.assertEqual(len(lines), 1)

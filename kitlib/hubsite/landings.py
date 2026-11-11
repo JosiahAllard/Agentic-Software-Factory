@@ -62,10 +62,10 @@ def default_client(timeout=POST_TIMEOUT_S):
 
 
 def _why(e, timeout):
-    from kitlib.hubclient import client, errors      # here: as default_client
+    from kitlib.hubclient import errors      # here: as default_client
     if isinstance(e, KeyboardInterrupt):
         return 'Ctrl+C'
-    if isinstance(e, client.Refused) and e.status == 404:
+    if isinstance(e, errors.Refused) and e.status == 404:
         return 'the hub has no %s route (a hub older than this kit; restart it)' % PATH
     if isinstance(e, errors.NotRunning):
         return 'no hub is running'

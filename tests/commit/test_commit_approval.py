@@ -28,7 +28,7 @@ from kitlib.guard import ownercommits as oc
 from kitlib.hubsite import api as hubapi
 from kitlib.hubsite import approvals as ap
 from kitlib.hubclient import client as hubclient
-from kitlib.hubsite import serve
+from kitlib.hubclient import errors as huberrors
 from kitlib.hubsite import store as hubstore
 from tests import gitfixture
 from tests.commit import test_commit as tc
@@ -90,7 +90,7 @@ class Hub(object):
 
 class Down(object):
     def get(self, *a, **kw):
-        raise serve.NotRunning(1)
+        raise huberrors.NotRunning(1)
 
     post = get
 
@@ -313,7 +313,7 @@ class TheApprovedChangeOnANewerBase(ApprovalCase):
     def test_a_failed_consume_of_the_merged_commit_is_retried_the_same_way(self):
         self.approve({'CLAUDE.md': self.TEXT.replace('two', 'TWO')})
         moved = self.owner_edit(self.TEXT.replace('five', 'FIVE'))
-        self.hub.consume_fails = serve.NotRunning(1)
+        self.hub.consume_fails = huberrors.NotRunning(1)
         code, out = self.approved_commit('CLAUDE.md')
         self.assertEqual(code, 1, out)
         head = self.head()
@@ -656,7 +656,7 @@ class TheConsume(ApprovalCase):
 
     def test_a_failed_consume_leaves_the_commit_and_names_the_retry(self):
         self.approve({'CLAUDE.md': 'new rules\n'})
-        self.hub.consume_fails = serve.NotRunning(1)
+        self.hub.consume_fails = huberrors.NotRunning(1)
         code, out = self.approved_commit('CLAUDE.md')
         self.assertEqual(code, 1, out)
         head = self.head()
@@ -679,7 +679,7 @@ class TheConsume(ApprovalCase):
         self.put('a.py', 'x\n')
         self.git('add', '--', 'a.py')
         self.git('commit', '-q', '-m', 'later')
-        self.hub.consume_fails = serve.NotRunning(1)
+        self.hub.consume_fails = huberrors.NotRunning(1)
         code, out = self.approved_commit('CLAUDE.md')
         self.assertEqual(code, 1, out)
         head = self.head()

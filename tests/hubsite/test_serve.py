@@ -24,6 +24,8 @@ from kitlib.hubsite import access, auth, backlog, gitsync, httpd, selfrestart, s
 from kitlib.hubsite import tunnel
 from kitlib.hubclient import settings as hub_settings
 from kitlib.hubclient import token as hubtoken
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
 from kitlib.hubsite.api import BASE
 from kitlib.hubsite.store import Store, StoreBusy
 from kitlib.proc import process
@@ -451,7 +453,7 @@ class BuildCase(ServeCase):
     def test_a_second_server_on_the_same_store_is_refused_at_once(self):
         first = self.build()
         self.assertTrue(self.locked())
-        with self.assertRaises(serve.ServeError) as cm:
+        with self.assertRaises(huberrors.ServeError) as cm:
             serve.build(self.settings, serve.Sources(tokens=self.tokens), log=self.log)
         self.assertIn('another hub server has this store open', str(cm.exception))
         self.assertIn(os.path.abspath(self.store_dir), str(cm.exception))
@@ -464,10 +466,10 @@ class BuildCase(ServeCase):
         self.assertIs(again.close(), True)
 
     def test_no_store_folder_is_refused(self):
-        with self.assertRaises(serve.ServeError) as cm:
+        with self.assertRaises(huberrors.ServeError) as cm:
             serve.build(self.settings._replace(store=None), serve.Sources(tokens=self.tokens))
         self.assertIn('no store folder', str(cm.exception))
-        with self.assertRaises(serve.ServeError):
+        with self.assertRaises(huberrors.ServeError):
             serve.build(self.settings, serve.Sources())
         self.assertFalse(os.path.exists(self.store_dir))
 
@@ -476,7 +478,7 @@ class BuildCase(ServeCase):
         bad = os.path.join(self.tokens, auth.TOKEN_FILES[auth.OWNER])
         with open(bad, 'w', encoding='utf-8'):
             pass
-        with self.assertRaises(serve.ServeError) as cm:
+        with self.assertRaises(huberrors.ServeError) as cm:
             serve.build(self.settings, serve.Sources(tokens=self.tokens), log=self.log)
         self.assertIn(bad, str(cm.exception))
         self.assertFalse(self.locked())
@@ -495,7 +497,7 @@ class BuildCase(ServeCase):
         bad = os.path.join(self.tokens, auth.APPROVAL_FILE)
         with open(bad, 'w', encoding='ascii') as f:
             f.write(auth.read_token(self.tokens, auth.OWNER))   # the owner's token is no key
-        with self.assertRaises(serve.ServeError) as cm:
+        with self.assertRaises(huberrors.ServeError) as cm:
             serve.build(self.settings, serve.Sources(tokens=self.tokens), log=self.log)
         self.assertIn(bad, str(cm.exception))
         self.assertFalse(self.locked())
@@ -504,7 +506,7 @@ class BuildCase(ServeCase):
     def test_a_taken_port_is_refused_and_the_store_is_released(self):
         first = self.build()
         other = os.path.join(self.root, 'other')
-        with self.assertRaises(serve.ServeError) as cm:
+        with self.assertRaises(huberrors.ServeError) as cm:
             serve.build(self.settings._replace(port=first.port, store=other),
                         serve.Sources(tokens=self.tokens), log=self.log)
         self.assertIn(str(first.port), str(cm.exception))
@@ -661,8 +663,8 @@ class CloseCase(ServeCase):
                                       'sync.sync_once'])
         self.assertEqual(httpfix.http_threads(), [])
         self.assertFalse(self.locked())
-        with self.assertRaises(serve.NotRunning):
-            serve.ask(hub.port, 'GET', HEALTH, self.owner)
+        with self.assertRaises(huberrors.NotRunning):
+            localask.ask(hub.port, 'GET', HEALTH, self.owner)
 
     def test_ctrl_c_is_a_clean_close(self):
         hub = self.build(sync=self.sync_factory())
@@ -686,7 +688,7 @@ class CloseCase(ServeCase):
             serve.run(hub, started)
         self.assertFalse(self.locked())
         self.assertEqual(httpfix.http_threads(), [])
-        with self.assertRaises(serve.ServeError):
+        with self.assertRaises(huberrors.ServeError):
             serve.run(hub)
 
 
@@ -724,8 +726,8 @@ class StopCase(ServeCase):
                                       'sync.sync_once'])
         self.assertEqual(httpfix.http_threads(), [])
         self.assertFalse(self.locked())
-        with self.assertRaises(serve.NotRunning):
-            serve.ask(hub.port, 'GET', HEALTH, self.owner)
+        with self.assertRaises(huberrors.NotRunning):
+            localask.ask(hub.port, 'GET', HEALTH, self.owner)
         self.assertIn(('note', serve.STOP_ASKED), self.lines)
         self.assertEqual(self.errors(), [])
 
@@ -1447,9 +1449,9 @@ class ReasonCase(ServeCase):
         hub = self.failing()
         hub.start()
         start = 'git: running, branch data, pending: a push, the last pass failed at push'
-        status, obj = serve.ask(hub.port, 'GET', HEALTH, self.owner)
+        status, obj = localask.ask(hub.port, 'GET', HEALTH, self.owner)
         self.assertEqual(serve.status_lines(obj, NOW)[2], '%s: %s' % (start, serve.scrub(WHY)))
-        status, obj = serve.ask(hub.port, 'GET', HEALTH, self.agent)
+        status, obj = localask.ask(hub.port, 'GET', HEALTH, self.agent)
         self.assertEqual(serve.status_lines(obj, NOW)[1], start)
         # the client scrubs what it prints too, whatever answered it
         lines = serve.status_lines({'revision': 1, 'backlog': None, 'git': {
@@ -2219,46 +2221,46 @@ class ClientCase(ServeCase):
     def test_ask_reads_and_writes_as_the_listener_requires(self):
         hub = self.build()
         hub.start()
-        status, obj = serve.ask(hub.port, 'GET', HEALTH, self.owner)
+        status, obj = localask.ask(hub.port, 'GET', HEALTH, self.owner)
         self.assertEqual((status, obj['ok']), (200, True))
-        status, obj = serve.ask(hub.port, 'GET', HEALTH)
+        status, obj = localask.ask(hub.port, 'GET', HEALTH)
         self.assertEqual((status, obj['error']['code']), (403, 'forbidden'))
-        status, obj = serve.ask(hub.port, 'POST', httpd.PAIR_ROUTE, self.owner)
+        status, obj = localask.ask(hub.port, 'POST', httpd.PAIR_ROUTE, self.owner)
         self.assertEqual(status, 200, obj)
         self.assertTrue(obj['path'].startswith('/pair?code='))
-        status, obj = serve.ask(hub.port, 'POST', BASE + '/todos', self.owner, {'title': 'x'})
+        status, obj = localask.ask(hub.port, 'POST', BASE + '/todos', self.owner, {'title': 'x'})
         self.assertEqual(status, 200, obj)
         self.assertEqual([d.get('via') for d in hub.store.docs('todos').values()],
-                         [serve.VIA_CLI])
+                         [localask.VIA_CLI])
         self.assertEqual(self.errors(), [])
 
     def test_ask_names_the_via_it_is_given_and_a_client_passes_its_own(self):
         hub = self.build()
         hub.start()
-        status, obj = serve.ask(hub.port, 'POST', BASE + '/todos', self.owner, {'title': 'a'},
-                                via=serve.VIA_MCP)
+        status, obj = localask.ask(hub.port, 'POST', BASE + '/todos', self.owner, {'title': 'a'},
+                                via=localask.VIA_MCP)
         self.assertEqual(status, 200, obj)
-        c = client.Client(hub.port, tokens=self.tokens, via=serve.VIA_MCP)
+        c = client.Client(hub.port, tokens=self.tokens, via=localask.VIA_MCP)
         c.post('/inbox', client.AGENT, {'text': 'b'})
         self.assertEqual([d.get('via') for d in hub.store.docs('todos').values()],
-                         [serve.VIA_MCP])
+                         [localask.VIA_MCP])
         self.assertEqual([d.get('via') for d in hub.store.docs('inbox').values()],
-                         [serve.VIA_MCP])
+                         [localask.VIA_MCP])
         self.assertEqual(self.errors(), [])
 
     def test_ask_tells_a_server_that_is_not_running_from_one_that_is_not_the_hub(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((httpd.LOOPBACK, 0))         # bound, never listening: nothing answers there
             port = s.getsockname()[1]
-            with self.assertRaises(serve.NotRunning) as cm:
-                serve.ask(port, 'GET', HEALTH, 'token', timeout=TIMEOUT)
+            with self.assertRaises(huberrors.NotRunning) as cm:
+                localask.ask(port, 'GET', HEALTH, 'token', timeout=TIMEOUT)
             self.assertEqual(cm.exception.port, port)
-            self.assertIsInstance(cm.exception, serve.ServeError)
+            self.assertIsInstance(cm.exception, huberrors.ServeError)
         for answer in (b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nhi',
                        b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n[]', b''):
-            with self.assertRaises(serve.ServeError) as cm:
-                serve.ask(self.stranger(answer), 'GET', HEALTH, timeout=TIMEOUT)
-            self.assertNotIsInstance(cm.exception, serve.NotRunning)
+            with self.assertRaises(huberrors.ServeError) as cm:
+                localask.ask(self.stranger(answer), 'GET', HEALTH, timeout=TIMEOUT)
+            self.assertNotIsInstance(cm.exception, huberrors.NotRunning)
             self.assertNotIn('Traceback', str(cm.exception))
 
     def stranger(self, answer):

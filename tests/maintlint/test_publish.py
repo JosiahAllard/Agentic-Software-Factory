@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from kitlib.hubclient import client
-from kitlib.hubsite import serve
+from kitlib.hubclient import errors as huberrors
 from kitlib.hubvalidate import pagecheck
 from kitlib.maintlint import page, publish
 
@@ -78,7 +78,7 @@ class Publish(unittest.TestCase):
 
     def test_a_hub_that_is_not_running_is_a_note(self):
         hub = FakeHub()
-        hub.listing = mock.Mock(side_effect=serve.NotRunning(4321))
+        hub.listing = mock.Mock(side_effect=huberrors.NotRunning(4321))
         line, notes = publish.publish(RES, html(), hub)
         self.assertIsNone(line)
         self.assertEqual(notes, ['hub page NOT CHECKED: no hub server is listening on port 4321'])

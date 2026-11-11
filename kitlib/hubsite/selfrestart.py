@@ -54,6 +54,7 @@ import time
 
 from kitlib import platform
 from kitlib.proc import spawn
+from kitlib.hubclient import localask
 
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HUB_TOOL = os.path.join(KIT_ROOT, 'tools', 'hub.py')
@@ -225,7 +226,7 @@ def self_check(kit_root=None, make_settings=None, make_sources=None):
         try:
             if not hub.start():
                 raise SelfCheckError('the scratch hub did not start')
-            status, obj = serve.ask(hub.port, 'GET', api.BASE + '/health',
+            status, obj = localask.ask(hub.port, 'GET', api.BASE + '/health',
                                     token=hubtoken.read_token(src.tokens, hubtoken.AGENT))
             if status != 200 or obj.get('ok') is not True:
                 raise SelfCheckError('the scratch hub answered GET health with %d' % status)

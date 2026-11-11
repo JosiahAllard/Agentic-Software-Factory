@@ -10,8 +10,8 @@ from unittest import mock
 
 from kitlib.config import owner
 from kitlib.guard import ownercommits as oc
+from kitlib.hubclient import errors as huberrors
 from kitlib.hubsite import approvals as ap
-from kitlib.hubsite import serve
 from tests import gitfixture
 from tests.realgit import real_git
 
@@ -613,7 +613,7 @@ class VerifyRoute(object):
 
 class Down(object):
     def get(self, *a, **kw):
-        raise serve.NotRunning(1)
+        raise huberrors.NotRunning(1)
 
 
 def approval_message(subject, *values):

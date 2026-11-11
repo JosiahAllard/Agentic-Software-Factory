@@ -274,11 +274,6 @@ Known limits:
 
 There is no second queue for things one caller holds at a time: a landing books `kitlib.lock.run.book(..., resource="landing:<git common dir>", priority="land")`, one entry in `queue.json` (Run resources and landing priority; docs/gate-landing.md "The landing queue"). A run's `resource` lives in the run's queue entry and is held only while that run is.
 
-- `join(store, resource, label)` puts a `Turn` at the back; `try_take()` returns `[]` when the caller holds the resource, else the live entries ahead of it, holder first; `wait(timeout_s)` repeats it for `timeout_s` from the first look that finds entries ahead; `leave()` gives the turn up and never raises. `entries(store, resource)` reads the queue without writing.
-- First come, first served: the lowest ticket for a resource holds it, nothing goes ahead of an earlier entry, and nothing takes a resource from its holder.
-- An entry stands while its process holds the entry's run mutex (`store.run_mutex`), as a run's queue entry does; a caller that dies leaves an entry the next look drops (`store.run_dead`).
-- It is read and written only under the store mutex `resources`. A file that exists and cannot be read raises `ResourceUnreadable` after `settings.queue_read_s`; it is never read as an empty queue.
-
 ## Repository kinds
 
 A repository may name its own run kinds in its `.kit.json` `kinds` section (docs/kit-json.md), beside the kit's (`kitlib/lock/kinds.json`), so a repository-specific heavy run (a world graph build, a model evaluation) books by its own name without a kit change. Each entry is a kinds.json entry plus a required `why`: `{"cpu": <1..agent_cap | "medium" | "heavy">, "gpu": 0 | "pool", "share": false, "warn_min": 60, "why": "..."}` (`gpu`, `share` and `warn_min` optional, with those defaults). A kind name is `[a-z][a-z0-9-]*`. The section is always inline in `.kit.json`, never a file beside it.

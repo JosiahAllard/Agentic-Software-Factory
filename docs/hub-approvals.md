@@ -159,20 +159,24 @@ agent, docs/guard-owner.md). The steps are `kitlib/ownerfiles/apply.py`'s docstr
   has, or a request with no `branch` is refused.
 - Checks, read-only and in order: the approval is signed, approved, unconsumed and unexpired for that
   worktree's repository (`approvals.check`), and the branch is the one it names (the signature covers
-  it); the worktree's HEAD is the branch, with no merge, cherry-pick, revert or rebase in progress; no
-  approved path is a render source of a kit checkout (the hub's commit renders nothing); each approved
-  file of the work tree is HEAD's copy and the approved change applies on HEAD by the delta rule
-  (`prewrite`, docs/commit.md "Owner approval" for the rule); the worktree's filters (`.gitattributes`,
-  `core.autocrlf`: `git hash-object --path`) keep each approved file as its approved blob; nothing is
-  staged, on an approved path or any other; the backlog's narrowed-scope check passes on the paths
-  (docs/commit.md "A narrowed record").
+  it); the worktree's HEAD is the branch, with no merge, cherry-pick, revert or rebase in progress;
+  every approved path is one an owner approval may carry, by the request's own check
+  (`request.owner_paths_error`: no render source of a kit checkout, since the hub's commit renders
+  nothing, and no path the owner rules below, read at HEAD, leave unlocked), which the hub's POST of
+  a request does not run; each approved file of the work tree is HEAD's copy and the approved change
+  applies on HEAD by the delta rule (`prewrite`, docs/commit.md "Owner approval" for the rule); the
+  worktree's filters (`.gitattributes`, `core.autocrlf`: `git hash-object --path`) keep each approved
+  file as its approved blob; nothing is staged, on an approved path or any other; the backlog's
+  narrowed-scope check passes on the paths (docs/commit.md "A narrowed record").
 - The commit: made on a private index from HEAD's tree and the approved blobs (hashed as they are,
   no filters), one parent, the request's title and reason and `Owner-Approval: hub:A-<n>`, author and
   committer `PM kit hub <hub@pm-kit.invalid>` (`apply.AUTHOR`, never the owner), no hook. The
   owner-file rules (`kitlib.ownerfiles.rules.violations`) must pass it before the branch moves, read
   as `gate land` reads them (`kitlib.gate.land` `owner_refusal`): the config the commit holds merged
   with main's (`<remote>/<main>` as last fetched, else the main checkout's HEAD), never the work
-  tree's `.kit.json`, so an uncommitted edit there cannot loosen them.
+  tree's `.kit.json`, so an uncommitted edit there cannot loosen them. A main checkout that is not on
+  its main branch is refused, as `gate land` refuses it: another branch's `.kit.json` would choose
+  the rules.
 - The branch is moved by compare-and-swap from the HEAD the checks read, then the approved files are
   written and their index entries set to the commit's. The decision (for an approve), `commit`,
   `consumed_at` and `applied` are one write pinned to the version the caller gave.

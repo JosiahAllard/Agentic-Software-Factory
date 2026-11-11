@@ -3184,6 +3184,16 @@ class ApprovalRouteTest(ApiCase):
         self.assertEqual(doc['status'], 'approved')
         self.assertNotIn('commit', doc)
 
+    def test_no_agent_consumes_a_change_approval_by_args(self):
+        # the op form of the route (args_sha256) refuses a change approval: the kind is checked
+        doc_id = self.add()['id']
+        self.decide(doc_id)
+        self.refused('conflict', 'kind', 'POST', '/approvals/%s/consume' % doc_id, AGENT,
+                     {'args_sha256': 'a' * 64, 'if_version': 2})
+        doc = self.store.get('approvals', doc_id)
+        self.assertEqual((doc['status'], doc['version']), ('approved', 2))
+        self.assertNotIn('consumed_at', doc)
+
     def test_verify_answers_the_check_and_never_the_sig(self):
         doc_id = self.add()['id']
         self.decide(doc_id)

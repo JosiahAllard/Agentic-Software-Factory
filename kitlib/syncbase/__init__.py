@@ -318,7 +318,7 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
     # (someone's unpushed commit, a local base ahead of the remote; a landing never leaves one,
     # as it moves local base only after its push is verified) may never reach the remote; merged
     # in here, it stays in this branch as a base commit the remote never gets - a trailerless
-    # "branch commit" a gate's trailer check then fails for good.
+    # "branch commit" a gate's trailer check then warns on at every gate and landing.
     for name in (remote, base):
         if gitrefs.bad_rev(name):
             return done(USAGE, '%s: refused: %s' % (TOOL, gitrefs.bad_rev(name)))

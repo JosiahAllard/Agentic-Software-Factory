@@ -89,6 +89,8 @@ class Branch(TrailersCase):
         self.git('merge', '--no-ff', '-q', '-m', 'sync main', 'main')
         code, out = self.run_tool('--base', 'main')
         self.assert_warned(code, out, 'merge "sync main"')
+        self.assertIn('merge "sync main" has no Co-Authored-By trailer (sync merges go through '
+                      'tools/sync_base.py); name it in your report', out)
 
     def test_the_default_base_is_main_here(self):
         self.commit('1', 'work')

@@ -136,6 +136,8 @@ def check(root, base=None, cfg=None, merged=False):
         if v == trailers.OWNER:
             head += ' - %s' % ('owner-authored' if not c.approved
                                else 'carries Owner-Approved from the owner')
+        elif c.merge:
+            head += ' (sync merges go through tools/sync_base.py)'
         lines.append('WARNING: %s; name it in your report' % head)
         claim = trailers.unproven_claim(c, rules)
         if claim:

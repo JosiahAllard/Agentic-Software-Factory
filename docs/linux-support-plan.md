@@ -189,7 +189,7 @@ Not yet namespace-aware (each safe today; a later record). A pid is a number in 
 a lock run record names its wrapper's namespace (`pidns`) and a run nested in a W1 job names the
 job's (`jobns`); contain.py's docstring (W1, NsJob) says how they are read. Queue entries and background runs
 carry no `pidns` and no `jobns` (on Linux the run lock decides a queue entry; bg_ancestor fails
-closed); resource.py, giveback.py and the lock status (api.py: tree, GPU memory) read a record's pid
+closed); giveback.py and the lock status (api.py: tree, GPU memory) read a record's pid
 as this namespace's; the holders search does not look inside a W1 job.
 
 ### 2.4 Lock hardware detection on Linux

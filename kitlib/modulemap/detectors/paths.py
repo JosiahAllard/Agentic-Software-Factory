@@ -20,8 +20,8 @@ import re
 from . import ROOT, Crossing, inside_repo, line_of
 
 NAME = 'paths'
-CODE_EXT = ('.cs', '.java', '.kt', '.kts', '.groovy', '.py', '.js', '.mjs', '.cjs', '.ts', '.gd')
-SINGLE_QUOTED = ('.py', '.js', '.mjs', '.cjs', '.ts', '.gd')
+CODE_EXT = ('.cs', '.java', '.kt', '.kts', '.groovy', '.py', '.pyw', '.js', '.mjs', '.cjs', '.ts', '.gd')
+SINGLE_QUOTED = ('.py', '.pyw', '.js', '.mjs', '.cjs', '.ts', '.gd')
 DQ = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 SQ = re.compile(r"'((?:[^'\\\n]|\\.)*)'")
 ROOT_FILE = re.compile(r'(?i)^[^/]+\.(sln|slnx)$|^settings\.gradle(\.kts)?$')

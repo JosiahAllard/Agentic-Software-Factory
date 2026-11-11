@@ -1,6 +1,6 @@
 """python: imports of another module's code.
 
-Reads every `.py` file a module holds (parsed with ast; a file that does not parse is skipped).
+Reads every `.py` and `.pyw` file a module holds (parsed with ast; a file that does not parse is skipped).
 Each `import a.b` and `from a.b import c` that resolves to a file or folder in the tree is a build
 crossing when that path is in another module. A relative import (`from . import x`,
 `from ..a import b`) resolves from the file's package. An absolute one resolves from, first match
@@ -86,7 +86,7 @@ def imports(node):
 def detect(files, mm, read):
     tree = Tree(files)
     for f in files:
-        if not f.lower().endswith('.py'):
+        if not f.lower().endswith(('.py', '.pyw')):
             continue
         src, modroot = mm.module_of(f)
         if src == ROOT:

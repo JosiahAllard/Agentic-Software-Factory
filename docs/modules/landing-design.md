@@ -1,6 +1,6 @@
 # Landing design
 
-Low-level design of `kitlib/landing`. The high-level design is ARCHITECTURE.md ("Contracts": Landing, What a landing runs, Owner files) and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-023, W-024, W-025).
+Low-level design of `kitlib/landing`. The high-level design is ARCHITECTURE.md ("Contracts": Landing, What a landing runs, Owner files) and wins on a conflict.
 
 ## Contract
 

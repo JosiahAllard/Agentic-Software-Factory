@@ -1,6 +1,6 @@
 # Test tools design
 
-Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/testlist`, `kitlib/ci` and `kitlib/redfirst`. The high-level design is ARCHITECTURE.md ("Testing") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-018, W-022).
+Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/testlist`, `kitlib/ci` and `kitlib/redfirst`. The high-level design is ARCHITECTURE.md ("Testing") and wins on a conflict.
 
 ## Contract
 

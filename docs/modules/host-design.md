@@ -1,6 +1,6 @@
 # Host design
 
-Low-level design of `kitlib/host`, `kitlib/attribution`, the host folders `hosts/<name>/` and `boot/`. The high-level design is ARCHITECTURE.md ("Hosts", "Host contract") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-007, W-011, W-030).
+Low-level design of `kitlib/host`, `kitlib/attribution`, the host folders `hosts/<name>/` and `boot/`. The high-level design is ARCHITECTURE.md ("Hosts", "Host contract") and wins on a conflict.
 
 ## Contract
 

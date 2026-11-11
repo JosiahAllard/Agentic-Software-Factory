@@ -1,6 +1,6 @@
 # Commit design
 
-Low-level design of `kitlib/commit`, `kitlib/syncbase` and `kitlib/reviewpack`. The high-level design is ARCHITECTURE.md ("Contracts": Trailers, Owner files, Backlog claims) and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-011, W-015, W-027, W-029).
+Low-level design of `kitlib/commit`, `kitlib/syncbase` and `kitlib/reviewpack`. The high-level design is ARCHITECTURE.md ("Contracts": Trailers, Owner files, Backlog claims) and wins on a conflict.
 
 ## Contract
 

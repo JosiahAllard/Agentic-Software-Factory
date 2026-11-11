@@ -1,6 +1,6 @@
 # PM kit architecture
 
-The kit's one high-level design, and the top authority on its shape: every module, what it owns, what it may depend on, and the contracts between them. It describes the end goal, not today's tree. Where the code differs, the code changes; `docs/redesign-work.md` lists those changes. Each module's low-level design is in `docs/modules/` and loses to this file on a conflict; the reference docs (`docs/INDEX.md`) say how to run a tool and lose to both. An item that waits on the owner is marked **OPEN** where it applies and listed under "Open items". This file changes by an ordinary reviewed commit; the owner's approval is needed only for the owner-only paths (`owner.paths`; docs/kit-json.md).
+The kit's one high-level design, and the top authority on its shape: every module, what it owns, what it may depend on, and the contracts between them. It describes the end goal, not today's tree. Where the code differs, the code changes. Each module's low-level design is in `docs/modules/` and loses to this file on a conflict; the reference docs (`docs/INDEX.md`) say how to run a tool and lose to both. An item that waits on the owner is marked **OPEN** where it applies and listed under "Open items". This file changes by an ordinary reviewed commit; the owner's approval is needed only for the owner-only paths (`owner.paths`; docs/kit-json.md).
 
 ## System
 

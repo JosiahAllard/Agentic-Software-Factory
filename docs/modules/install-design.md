@@ -1,6 +1,6 @@
 # Install design
 
-Low-level design of `kitlib/pluginsource`, `kitlib/allowrules`, `kitlib/machinesetup`, `kitlib/stackskill`, `kitlib/kitcmd`, `kitlib/pmdata`, and the `installer/` and `templates/` folders. The high-level design is ARCHITECTURE.md ("Packaging") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-005, W-019, W-020, W-036, W-041, W-042, W-043).
+Low-level design of `kitlib/pluginsource`, `kitlib/allowrules`, `kitlib/machinesetup`, `kitlib/stackskill`, `kitlib/kitcmd`, `kitlib/pmdata`, and the `installer/` and `templates/` folders. The high-level design is ARCHITECTURE.md ("Packaging") and wins on a conflict.
 
 ## Contract
 

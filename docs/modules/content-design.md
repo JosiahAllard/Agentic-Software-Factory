@@ -1,6 +1,6 @@
 # Content design
 
-Low-level design of `kitlib/content`, `kitlib/githooks` and the `content/` folder. The high-level design is ARCHITECTURE.md ("Content") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-008).
+Low-level design of `kitlib/content`, `kitlib/githooks` and the `content/` folder. The high-level design is ARCHITECTURE.md ("Content") and wins on a conflict.
 
 ## Contract
 

@@ -1,6 +1,6 @@
 # Records design
 
-Low-level design of `kitlib/records` and `kitlib/landed`. The high-level design is ARCHITECTURE.md ("Contracts": Gate-OK record; "Data ownership") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-012).
+Low-level design of `kitlib/records` and `kitlib/landed`. The high-level design is ARCHITECTURE.md ("Contracts": Gate-OK record; "Data ownership") and wins on a conflict.
 
 ## Contract
 

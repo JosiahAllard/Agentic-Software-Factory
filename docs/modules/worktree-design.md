@@ -1,6 +1,6 @@
 # Worktree design
 
-Low-level design of `kitlib/worktree`, `kitlib/preflight` and `kitlib/strayrestore`. The high-level design is ARCHITECTURE.md ("System"; "Layers", work) and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-010, W-021, W-022, W-037).
+Low-level design of `kitlib/worktree`, `kitlib/preflight` and `kitlib/strayrestore`. The high-level design is ARCHITECTURE.md ("System"; "Layers", work) and wins on a conflict.
 
 ## Contract
 

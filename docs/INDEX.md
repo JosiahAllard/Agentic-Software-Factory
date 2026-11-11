@@ -14,7 +14,6 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `AGENTS.md` | kit repo rules for every agent host (canonical) | always | kw: rules, agents
 - `README.md` | what the kit is | first look | kw: readme, overview
 - `ARCHITECTURE.md` | the kit's high-level design, the top authority: layers, every package and what it owns, dependency rules, contracts, data ownership | before any design or change | kw: architecture, contract, design, target, layers, modules, hld
-- `docs/redesign-work.md` | the work list that brings the code to the design: one entry per change (W-001 ...), the doc audit, order and lanes | building or reviewing the redesign batch | kw: redesign, work-list, plan, batch
 - `docs/modules/base-design.md` | low-level design: platform, proc, fs, schedtask, the wires, root files | changing OS, process or file code | kw: design, lld, base, platform, proc, fs, schedtask
 - `docs/modules/git-design.md` | low-level design: git and the fake git | changing git access | kw: design, lld, git, fake-git
 - `docs/modules/host-design.md` | low-level design: host contract, registry, attribution, host folders, boot | changing a host adapter or the contract | kw: design, lld, host, adapter, hosts.json, attribution

@@ -1,6 +1,6 @@
 # Guard design
 
-Low-level design of `kitlib/guard`, `kitlib/hookrun` and `kitlib/agentview`. The high-level design is ARCHITECTURE.md ("Contracts": Guard rules, Roles, Hook entry; "Security") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-002, W-015, W-017, W-030, W-031).
+Low-level design of `kitlib/guard`, `kitlib/hookrun` and `kitlib/agentview`. The high-level design is ARCHITECTURE.md ("Contracts": Guard rules, Roles, Hook entry; "Security") and wins on a conflict.
 
 ## Contract
 

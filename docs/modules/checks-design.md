@@ -1,6 +1,6 @@
 # Checks design
 
-Low-level design of the doc tools (`kitlib/docs`), the repo checks (`forbidden`, `scrub`, `machinepaths`, `pieces`, `trailerscheck`), the module map (`modulemap`) and the maintenance lint (`maintlint`). The high-level design is ARCHITECTURE.md ("Dependency rules", "Security") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-012, W-029, W-038, W-039).
+Low-level design of the doc tools (`kitlib/docs`), the repo checks (`forbidden`, `scrub`, `machinepaths`, `pieces`, `trailerscheck`), the module map (`modulemap`) and the maintenance lint (`maintlint`). The high-level design is ARCHITECTURE.md ("Dependency rules", "Security") and wins on a conflict.
 
 ## Contract
 

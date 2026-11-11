@@ -1,6 +1,6 @@
 # Machine lock design
 
-Low-level design of `kitlib/lock`, `kitlib/lockui` and `kitlib/lockmcp`. The high-level design is ARCHITECTURE.md ("Contracts": Booking, Kinds; "Scheduler UI") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-017, W-037, W-040).
+Low-level design of `kitlib/lock`, `kitlib/lockui` and `kitlib/lockmcp`. The high-level design is ARCHITECTURE.md ("Contracts": Booking, Kinds; "Scheduler UI") and wins on a conflict.
 
 ## Contract
 

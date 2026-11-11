@@ -1,6 +1,6 @@
 # Config design
 
-Low-level design of `kitlib/config`. The high-level design is ARCHITECTURE.md ("Layers", facts; "Data ownership") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-009).
+Low-level design of `kitlib/config`. The high-level design is ARCHITECTURE.md ("Layers", facts; "Data ownership") and wins on a conflict.
 
 ## Contract
 

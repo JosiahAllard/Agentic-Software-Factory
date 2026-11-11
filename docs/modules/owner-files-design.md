@@ -1,6 +1,6 @@
 # Owner files design
 
-Low-level design of `kitlib/ownerfiles` and `kitlib/delegations`. The high-level design is ARCHITECTURE.md ("Contracts": Owner files; "Security") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-015, W-016, W-028).
+Low-level design of `kitlib/ownerfiles` and `kitlib/delegations`. The high-level design is ARCHITECTURE.md ("Contracts": Owner files; "Security") and wins on a conflict.
 
 ## Contract
 

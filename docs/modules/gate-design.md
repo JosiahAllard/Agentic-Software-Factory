@@ -1,6 +1,6 @@
 # Gate design
 
-Low-level design of `kitlib/gate`, `kitlib/loadnode` and `kitlib/dailyfull`. The high-level design is ARCHITECTURE.md ("Contracts": Gate-OK record, Result record, What a landing runs; "Testing") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-012, W-022, W-023, W-025).
+Low-level design of `kitlib/gate`, `kitlib/loadnode` and `kitlib/dailyfull`. The high-level design is ARCHITECTURE.md ("Contracts": Gate-OK record, Result record, What a landing runs; "Testing") and wins on a conflict.
 
 ## Contract
 

@@ -1,6 +1,6 @@
 # Action Hub design
 
-Low-level design of `kitlib/hubvalidate`, `kitlib/hubclient`, `kitlib/hubsite`, `kitlib/hubjobs`, `kitlib/hubbacklog`, `kitlib/hubmcp` and `kitlib/autotasks`. The high-level design is ARCHITECTURE.md ("Action Hub") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-013, W-014, W-016, W-032, W-033, W-034).
+Low-level design of `kitlib/hubvalidate`, `kitlib/hubclient`, `kitlib/hubsite`, `kitlib/hubjobs`, `kitlib/hubbacklog`, `kitlib/hubmcp` and `kitlib/autotasks`. The high-level design is ARCHITECTURE.md ("Action Hub") and wins on a conflict.
 
 ## Contract
 

@@ -1,6 +1,6 @@
 # Base design
 
-Low-level design of the base layer: `platform`, `proc`, `fs`, `schedtask`, the wires (`mcpwire`, `hostrpc`), `verdict` and the root files. The high-level design is ARCHITECTURE.md ("Layers", base) and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-001 to W-006).
+Low-level design of the base layer: `platform`, `proc`, `fs`, `schedtask`, the wires (`mcpwire`, `hostrpc`), `verdict` and the root files. The high-level design is ARCHITECTURE.md ("Layers", base) and wins on a conflict.
 
 ## Contract
 

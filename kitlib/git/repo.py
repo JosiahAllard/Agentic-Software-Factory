@@ -180,7 +180,7 @@ def main_checkout_toplevel(path, place=None):
         if not wts:
             return None
         first = wts[0].path
-        if wts[0].bare or (same_path(first, place.common) and os.path.basename(first).lower() != '.git'):
+        if wts[0].bare or (real(first) == real(place.common) and os.path.basename(first).lower() != '.git'):
             out, _why = cmd.run_text(['config', '--get', 'core.worktree'], place.common)
             if not out:
                 return None

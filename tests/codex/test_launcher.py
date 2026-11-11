@@ -23,6 +23,10 @@ class Launcher(unittest.TestCase):
         assigned.parent.mkdir(parents=True)
         original.rename(assigned)
         self.world.wt = str(assigned)
+        # World is a folder layout with no git behind it: the main checkout git would name is its main.
+        patch = mock.patch("kitlib.git.repo.main_checkout_toplevel", return_value=self.world.main)
+        self.main_of = patch.start()
+        self.addCleanup(patch.stop)
         self.brief = Path(self.world.wt) / "brief.txt"
         self.brief.write_text('Exact brief\n$(literal); "quoted"\n', encoding="utf-8")
         self.codex_exe = Path(self.world.wt) / "codex.exe"
@@ -35,6 +39,7 @@ class Launcher(unittest.TestCase):
     def test_worker_uses_existing_worktree_and_inherits_model(self):
         result = self.build()
         self.assertEqual(result.cwd, self.world.wt)
+        self.main_of.assert_called_once()
         self.assertNotIn("--model", result.argv)
         self.assertNotIn("--worktree", result.argv)
         self.assertIn("--no-daemon", result.argv)
@@ -53,6 +58,11 @@ class Launcher(unittest.TestCase):
         for role in ("worker", "analyst", "test-runner"):
             with self.subTest(role=role), self.assertRaisesRegex(ValueError, ".codex/worktrees"):
                 plan(role, other, "task-1", self.brief, classify=lambda _: place, codex_exe=self.codex_exe)
+
+    def test_a_worktree_whose_main_checkout_git_cannot_tell_is_refused(self):
+        self.main_of.return_value = None
+        with self.assertRaisesRegex(ValueError, "cannot verify the main checkout"):
+            self.build()
 
     def test_reader_can_inspect_main_and_lander_requires_main(self):
         self.assertEqual(self.build("analyst", self.world.main).role, "analyst")

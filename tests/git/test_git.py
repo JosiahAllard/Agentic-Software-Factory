@@ -255,6 +255,15 @@ class SeparateGitDirTest(unittest.TestCase):
         gitfixture.own_git(['config', 'core.worktree', os.path.join(self.gitdir, 'gone')], self.gitdir)
         self.assertIsNone(git.main_checkout_toplevel(self.wt))
 
+    def test_a_bare_repositorys_linked_worktree_has_no_main_checkout(self):
+        bare = os.path.join(os.path.dirname(self.top), 'bare.git')
+        bwt = os.path.join(os.path.dirname(self.top), 'barewt')
+        for args, where in ((['clone', '-q', '--bare', self.top, bare], os.path.dirname(self.top)),
+                            (['worktree', 'add', '-q', bwt], bare)):
+            done = gitfixture.own_git(args, where)
+            self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIsNone(git.main_checkout_toplevel(bwt))
+
     def test_a_deleted_folder_of_a_gone_repository_is_none(self):
         gone = os.path.join(os.path.dirname(self.top), 'gone-repo', 'deep')
         self.assertIsNone(git.main_checkout_toplevel(gone))

@@ -213,7 +213,7 @@ class Unblock(RestoreCase):
 
     def off_main_base(self):
         """A commit off main that added area/foo/shared.py, and one on it that changed the file:
-        both branches below are cut from the first, as retribution's are from an off-main merge."""
+        both branches below are cut from the first, as a real repository's can be after an off-main merge."""
         self.repo.git('checkout', '-q', '-b', 'off-main', 'main')
         self.repo.write('area/foo/shared.py', 'v1\n')
         self.repo.git('add', '-A')

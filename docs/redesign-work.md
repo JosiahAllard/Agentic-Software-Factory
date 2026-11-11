@@ -320,7 +320,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 - Serves: "Layers", "Dependency rules" 1; docs/modules/checks-design.md.
 - Files: `docs/module-map.json`, `docs/module-ceilings.json`, `docs/module-architecture.md` (generated), `.kit.json` (the `module-map` step loses `"warn": true`).
 - Change: one module per package as ARCHITECTURE.md's tables name them, each with its layer; the edges are exactly the allowed ones; the ratchets list is empty and the ceilings file holds none; the "same layer, any direction" entries go. The page is regenerated.
-- Done when: `python tools/module_map.py -C . --check` prints `module_map: OK`; the map's `ratchets` list is empty; new test `tests/modulemap/test_kit_map.py` passes (every edge in the kit's map goes to a lower layer, or to a same-layer package ARCHITECTURE.md's row names).
+- Done when: `python tools/module_map.py -C . --check` prints `module_map: OK`; the map's `ratchets` list is empty; the existing test `tests/modulemap/test_kit_map.py`, extended, passes (every edge in the kit's map goes to a lower layer, or to a same-layer package ARCHITECTURE.md's row names).
 - Risk and tier: Medium. strong-worker.
 - Owner: `docs/module-map.json`, `.kit.json`. After: every other code item.
 

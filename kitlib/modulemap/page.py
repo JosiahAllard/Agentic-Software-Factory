@@ -1,10 +1,11 @@
 """The architecture page generated from the module map (docs/module-map.md "The architecture
 page").
 
-The page lists the modules (with their layers when the map names them), the messaging modules, the allowed edges and the ratchets, each with
-the owner's reason, so planning starts from the map. It holds nothing but the map (no counts, no
-ceilings), so it changes only when the map does. `.kit.json` "modules".page names the file;
-`--page --write` writes it and `--check` fails when it does not match the map.
+The page lists the modules (with their layers when the map names them), the messaging modules,
+the allowed edges and the ratchets, each with the owner's reason, so planning starts from the
+map. It holds nothing but the map (no counts, no ceilings), so it changes only when the map
+does. `.kit.json` "modules".page names the file; `--page --write` writes it and `--check` fails
+when it does not match the map.
 """
 from .load import ROOT
 

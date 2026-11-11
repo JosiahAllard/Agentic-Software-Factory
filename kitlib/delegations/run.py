@@ -52,6 +52,7 @@ import subprocess
 
 from kitlib.config import user as kuser
 from kitlib.fs import writelock
+from kitlib.git import lockplace
 from kitlib.hubsite import approvals
 from kitlib.hubsite import client as hubclient
 from kitlib.hubsite import serve as hubserve
@@ -694,8 +695,8 @@ def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
     else:
         answer = "the owner's ruling %s orders this run" % order.anchor
     try:
-        with writelock.locked(os.path.join(folder, LOCK_NAME), LOCK_PREFIX, lock_wait,
-                              what='delegated run'):
+        with writelock.locked(lockplace.lock_path(os.path.join(folder, LOCK_NAME), LOCK_PREFIX),
+                              lock_wait, what='delegated run'):
             prior = used(ledger_texts(found), order.anchor, order.trigger)
             if prior:
                 raise RunRefused('%s already ran on %s (%s): each order runs once'
@@ -716,7 +717,7 @@ def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
                     before()
                 added = lwrite.add(path, col, PROV, q, answer, line, source,
                                    when=when, repos=repos, split=split, others=others)
-    except writelock.WriteLockError as e:
+    except (writelock.WriteLockError, lockplace.NoPlace) as e:
         raise RunRefused('cannot take the runner lock: %s' % e)
     except (LedgerRefused, LedgerUsage) as e:
         raise RunRefused('the ledger refused the run entry: %s' % e)

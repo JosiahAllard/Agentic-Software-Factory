@@ -10,9 +10,10 @@ Pure over text (`parse`, `add`, `done`, `edit`, `open_items`) plus `read_raw`, `
 
 One writer at a time: a change holds `locked(path)` from its read to its write (tools/pending.py
 holds it over prepare, read, write and commit), so two writers never number two items alike and
-neither replace drops the other's change. The lock is kitlib.fs.writelock's, named LOCK_PREFIX; a
-busy lock is waited on for LOCK_WAIT seconds, then refused with nothing written. write_atomic's
-replace retries a PermissionError (a reader holding the file open) for kitlib.fs.replace.WAIT s.
+neither replace drops the other's change. The lock is kitlib.fs.writelock's, its file placed by
+kitlib.git.lockplace under LOCK_PREFIX; a busy lock is waited on for LOCK_WAIT seconds, then
+refused with nothing written. write_atomic's replace retries a PermissionError (a reader holding
+the file open) for kitlib.fs.replace.WAIT s.
 """
 import collections
 import contextlib
@@ -21,6 +22,7 @@ import re
 
 from kitlib.fs import atomic
 from kitlib.fs import writelock
+from kitlib.git import lockplace
 from kitlib.ledger.errors import Refused, Usage
 
 LOCK_WAIT = 30.0             # seconds a writer waits for another writer's lock before it is refused
@@ -56,12 +58,12 @@ def locked(path, wait=None):
     and the block never runs."""
     wait = LOCK_WAIT if wait is None else wait
     try:
-        with writelock.locked(path, LOCK_PREFIX, wait, what='pending write'):
+        with writelock.locked(lockplace.lock_path(path, LOCK_PREFIX), wait, what='pending write'):
             yield
     except writelock.Busy as e:
         raise Refused('%s is being written by another process: its write lock %s is %s; waited %s s, '
                       'nothing was written. Try again.' % (path, e.lock, e.holder, e.wait))
-    except writelock.WriteLockError as e:
+    except (writelock.WriteLockError, lockplace.NoPlace) as e:
         raise Refused('cannot take the write lock of %s: %s; nothing was written' % (path, e))
 
 

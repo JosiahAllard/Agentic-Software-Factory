@@ -134,7 +134,7 @@ Every deny the guard's hook answers adds one JSON line to `<pm_data>/audit/refus
 Design points that are not code facts:
 
 - The hook writes the line after its answer text and before it exits. The host reads the answer only when the hook exits, so the log's time (up to `refusal_log.BOUND`, about 1.55 s) is added to the hook's.
-- Appends hold an OS lock (`kitlib.fs.treelock`) on `.refusals.lock` beside the log. Nothing on the log's way starts a process, so a slow or hung git cannot hold a deny up; `kitlib.fs.writelock` would ask git where the checkout is first.
+- Appends hold an OS lock (`kitlib.fs.treelock`) on `.refusals.lock` beside the log. Nothing on the log's way starts a process, so a slow or hung git cannot hold a deny up; `kitlib.git.lockplace`, which places a write lock, would ask git where the checkout is first.
 - The `repo` field logs `-` for any layout but `<checkout>/.git`, for a checkout that is the user-profile folder and for one whose name equals `USERNAME` (ignoring case). Nothing else is screened, so a folder name that merely contains the account name logs as it is. The log stays on this machine and is never committed.
 - The folder is the backlog audit log's (docs/backlog.md "Audit log"), made on the first write; the guard refuses agents' own edits there (`pm-data-audit`), and the hook's own append is not a tool call.
 - Only the kit guard's denies are logged: not the host's own permission system or classifier, an ask the owner then declines, or a kit tool's own REFUSED exit. No kit tool reads or tallies the log yet. A block before kitlib loads (`boot/hook.py`, `boot/kitboot.py`) writes no line.

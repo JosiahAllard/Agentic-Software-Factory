@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from kitlib import pluginsource
+from kitlib.host import registry
 from kitlib.launcher import accounts
 
 
@@ -24,7 +25,7 @@ class InstallsCase(unittest.TestCase):
         if text is not None or records is not None:
             with open(os.path.join(folder, *accounts.INSTALLED), 'w', encoding='utf-8') as f:
                 f.write(text if text is not None else json.dumps(
-                    {'version': 2, 'plugins': {pluginsource.PLUGIN_ID: records}}))
+                    {'version': 2, 'plugins': {registry.PLUGIN_ID: records}}))
         return folder
 
     def path(self, *parts):

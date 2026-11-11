@@ -731,13 +731,14 @@ def plugin_enabled(settings=None, folders=None, load_settings=None):
     config (plugin_settings); a loader that gives None checks nothing. None for `folders`: this
     machine's account folders (kitlib.pluginsource.account_folders)."""
     from kitlib import pluginsource
+    from kitlib.host import registry
     from kitlib.machinesetup import plugin
     s = (load_settings or plugin_settings)() if settings is None else settings
     if s is None:
         return []
     lines, absent = [], []
     for d in pluginsource.account_folders() if folders is None else folders:
-        have = plugin.enabled(os.path.join(d, "settings.json"), pluginsource.PLUGIN_ID)
+        have = plugin.enabled(os.path.join(d, "settings.json"), registry.PLUGIN_ID)
         if have is None:
             lines.append("could not check the pm-kit plugin in %s: its settings.json is not a JSON object" % d)
         elif have is plugin.ABSENT:

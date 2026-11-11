@@ -10,6 +10,7 @@ import unittest
 from unittest import mock
 
 from kitlib import pluginsource as P
+from kitlib.host import registry
 from kitlib.launcher import accounts
 from tests.platforms import posix_only, windows_only
 from tests.pluginsource import FakeProc, Kit, MANIFEST, read_json
@@ -318,7 +319,7 @@ class CachePruneAfterRefreshTest(Base):
             os.makedirs(os.path.join(cache, v, 'tools'))
             os.utime(os.path.join(cache, v), (old + i * 60, old + i * 60))
         with open(os.path.join(f, 'plugins', 'installed_plugins.json'), 'w', encoding='utf-8') as fh:
-            json.dump({'version': 2, 'plugins': {P.PLUGIN_ID: [
+            json.dump({'version': 2, 'plugins': {registry.PLUGIN_ID: [
                 {'scope': 'user', 'installPath': os.path.join(cache, installed)}]}}, fh)
         if seed:
             self.k.seed_migrated([f])

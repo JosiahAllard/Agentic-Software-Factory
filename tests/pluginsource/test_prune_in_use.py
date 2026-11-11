@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib import pluginsource as P
+from kitlib.host import registry
 from tests.platforms import posix_only, windows_only
 
 NOW = datetime.datetime(2026, 10, 11, 9, 0)
@@ -209,7 +210,7 @@ class CachePruneTest(unittest.TestCase):
             os.makedirs(os.path.join(p, 'tools'))
             os.utime(p, (self.old + i * 60, self.old + i * 60))
         if record:
-            recs = {} if installed is None else {P.PLUGIN_ID: [
+            recs = {} if installed is None else {registry.PLUGIN_ID: [
                 {'scope': 'user', 'installPath': os.path.join(cache, installed)}]}
             with open(os.path.join(acct, 'plugins', 'installed_plugins.json'), 'w', encoding='utf-8') as fh:
                 json.dump({'version': 2, 'plugins': recs}, fh)

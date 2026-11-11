@@ -56,9 +56,8 @@ from kitlib import kitroot
 from kitlib import platform as kitplatform
 from kitlib.fs import replace as fsreplace
 from kitlib.git import batch, cmd, refs, repo
+from kitlib.host import registry
 
-NAME = 'pm-kit'                      # the marketplace's and the plugin's name
-PLUGIN_ID = 'pm-kit@pm-kit'
 MAIN = 'main'
 DEFAULT_REMOTE = 'origin'
 MARKER = '.pm-kit-export'            # in every export folder: this tool made it (prune reads it)
@@ -568,10 +567,10 @@ def write_marketplace(root, folder):
     A host with a marketplace file of its own writes it in its copy step (docs/plugin-source.md
     "Codex")."""
     _write_json(marketplace_path(root), {
-        'name': NAME,
+        'name': registry.PLUGIN_NAME,
         'description': 'The PM kit\'s plugin, exported from pushed kit main (docs/plugin-source.md).',
         'owner': {'name': 'PM kit'},
-        'plugins': [{'name': NAME, 'source': './%s' % folder,
+        'plugins': [{'name': registry.PLUGIN_NAME, 'source': './%s' % folder,
                      'description': 'The PM kit: agents, skills and the machine lock and hub MCP servers.'}],
     })
 
@@ -630,7 +629,7 @@ def current_folder(root):
         with open(marketplace_path(root), encoding='utf-8-sig') as fh:
             data = json.load(fh)
         for p in data.get('plugins') or []:
-            if p.get('name') == NAME and isinstance(p.get('source'), str):
+            if p.get('name') == registry.PLUGIN_NAME and isinstance(p.get('source'), str):
                 src = p['source']
                 return src[2:] if src.startswith('./') else src
     except (OSError, ValueError, AttributeError, TypeError):
@@ -846,7 +845,8 @@ def in_use_sha12s(u):
 
 def _version_named(u, version):
     """True when a text of `u` names <...>\\pm-kit\\pm-kit\\<version> (a plugins cache folder)."""
-    pat = re.compile(r'[\\/]%s[\\/]%s[\\/]%s' % (NAME, NAME, re.escape(version.lower())) + _ENDS)
+    name = registry.PLUGIN_NAME
+    pat = re.compile(r'[\\/]%s[\\/]%s[\\/]%s' % (name, name, re.escape(version.lower())) + _ENDS)
     return any(pat.search(t) for t in u.texts)
 
 
@@ -967,7 +967,7 @@ def prune(root, keep=KEEP, now=None, young_days=None, in_use=None, out=None, poi
 def cache_dir(folder):
     """Account folder `folder`'s plugins cache of the kit: <folder>\\plugins\\cache\\pm-kit\\pm-kit,
     one <version> folder per install Claude Code copied there."""
-    return os.path.join(folder, 'plugins', 'cache', NAME, NAME)
+    return os.path.join(folder, 'plugins', 'cache', registry.PLUGIN_NAME, registry.PLUGIN_NAME)
 
 
 def prune_caches(folders, in_use, apply=False, now=None):
@@ -1020,7 +1020,7 @@ def prune_caches(folders, in_use, apply=False, now=None):
                 why = 'a link or junction lies on the way to %s' % cache
             elif installed is None:
                 why = ('the install record %s is missing, cannot be read or names no %s install'
-                       % (os.path.join(f, 'plugins', 'installed_plugins.json'), PLUGIN_ID))
+                       % (os.path.join(f, 'plugins', 'installed_plugins.json'), registry.PLUGIN_ID))
             elif _under(installed, p):
                 why = 'the install record names it'
             elif _CLAIMED.match(n):
@@ -1185,15 +1185,15 @@ def old_cache(config_dir, version):
     """Where an install of the kit checkout as its own marketplace kept its copy: the plugins
     cache of `config_dir`, marketplace pm-kit, plugin pm-kit, `version`. A path made from names,
     never looked up on disk."""
-    return os.path.join(config_dir, 'plugins', 'cache', NAME, NAME, version)
+    return os.path.join(config_dir, 'plugins', 'cache', registry.PLUGIN_NAME, registry.PLUGIN_NAME, version)
 
 
-UPDATE_STEPS = (['plugin', 'marketplace', 'update', NAME], ['plugin', 'update', PLUGIN_ID])
+UPDATE_STEPS = (['plugin', 'marketplace', 'update', registry.PLUGIN_NAME], ['plugin', 'update', registry.PLUGIN_ID])
 
 
 def migrate_steps(root):
-    return (['plugin', 'marketplace', 'remove', NAME], ['plugin', 'marketplace', 'add', root],
-            ['plugin', 'install', PLUGIN_ID, '-s', 'user'])
+    return (['plugin', 'marketplace', 'remove', registry.PLUGIN_NAME], ['plugin', 'marketplace', 'add', root],
+            ['plugin', 'install', registry.PLUGIN_ID, '-s', 'user'])
 
 
 def folder_key(folder):

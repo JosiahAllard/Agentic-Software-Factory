@@ -31,6 +31,8 @@ import difflib
 import json
 import os
 
+from kitlib.host import registry
+
 from . import settings
 from .common import free_name
 
@@ -56,7 +58,7 @@ def enabled(path, pid):
 def survey(plan, ctx):
     from kitlib import pluginsource as ps
     from kitlib.config import ConfigError
-    pid = ps.PLUGIN_ID
+    pid = registry.PLUGIN_ID
     candidates = []
     for d in ctx.config_dirs:
         path = os.path.join(d, 'settings.json')
@@ -125,8 +127,7 @@ def owns_settings(d, path, ctx):
     """True when this step owns the kit SessionStart entries in `d`'s settings.json at `path`: `d` is
     in the refresh set and enabledPlugins[pm-kit] there is absent or true (the settings step then
     leaves them a twin note of its own)."""
-    from kitlib import pluginsource as ps
-    have = enabled(path, ps.PLUGIN_ID)
+    have = enabled(path, registry.PLUGIN_ID)
     if have is not ABSENT and have is not True:
         return False
     return bool(_split([(d, path, have)], ctx.home)[0])

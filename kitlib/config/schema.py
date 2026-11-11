@@ -260,7 +260,7 @@ SECTIONS = {
                             required=('match',), what='{match, excuse, expect}'),
                         None, 'error-line policy'),
         'kind': Field(Str(pattern=NAME_RE, what='a kind name'), 'test', 'the kinds-table kind a gate run books (gate.py and gate.py land)'),
-        'smoke_steps': Field(ListOf(Str(pattern=NAME_RE, what='a step name')), None, 'steps a default (not --full) branch gate runs whatever changed; a landing takes such a gate\'s record for a tip once these steps passed in it (docs/gate-landing.md "Landing"); unset: a landing needs a --full record'),
+        'smoke_steps': Field(ListOf(Str(pattern=NAME_RE, what='a step name')), None, 'steps a default (not --full) gate runs whatever changed, a branch gate and a landing\'s merged gate alike (docs/gate-landing.md "Landing"); unset: none, only the steps the change selects'),
         'docs_only': Field(DOCS_ONLY, None, 'a change whose every path is docs: the branch gate runs only its steps, and a landing takes that record (docs/gate-run.md "Docs-only changes"); unset: no change is docs-only'),
     },
     'guard': {
@@ -275,9 +275,6 @@ SECTIONS = {
         'reuse_max_age_h': Field(Int(0, 168), 24, 'hours a pass stored in the gate cache serves a branch gate rerun or a landing; 0: no gate reads or stores a step result'),
         'reuse_never': Field(Strs, [], 'globs of paths whose change makes a gate (branch or landing) read and store no step result in the gate cache'),
         'in_flight': Field(IN_FLIGHT, None, 'how tools/new_worktree.py and tools/sync_base.py see a landing in flight before they fetch, and wait for it (unset: off; {}: the kit landing lock; wait_s unset: 100, inferred not measured; docs/new-worktree.md "Waiting for a landing in flight")'),
-        # Not in "gate": a key there is in every gate-OK record's gate_config hash (gate_ok.gate_config).
-        'shared_paths': Field(ListOf(Str(pattern=r'(?s).*[^/\\]', what='whole-path glob (a folder is "api/*", never "api/")'), nonempty=True), None, 'globs of the repo\'s shared code: a landing takes a default-mode (scoped) record of a tip that changes none of them, no strict path and no gate config file, without "gate".smoke_steps; a tip that changes one of those needs a --full record, whatever "gate".smoke_steps or "gate".docs_only say (docs/gate-run.md "Shared paths"); unset: a landing needs a --full record unless "gate".smoke_steps or "gate".docs_only take it'),
-        'gate_once': Field(Bool(), True, 'a landing takes a default-mode (scoped) record of any tip that changes no gate config file, shared and strict paths included, and its merged gate runs --full (each step\'s full_cmd) once on the merged or batched tree; a docs-only merge stays docs-only (docs/gate-run.md "Gate once at landing"); false (the opt-out): "landing".shared_paths, "gate".smoke_steps and "gate".docs_only decide alone'),
     },
     'ledger': {
         'pre_commit_check': Field(Bool(), False, 'githooks/pre-commit runs tools/ledger.py check --base HEAD before each commit that changes the ledger file or its standing digest (opt-in; docs/ledger.md "Pre-commit check")'),
@@ -388,8 +385,9 @@ MAPS = {
 
 
 # Keys no tool reads any more, per section. A config that still carries one loads: the key is
-# dropped unchecked (not an unknown-key refusal), so an install written before the removal works.
-RETIRED = {'landing': ('lanes', 'lock_file')}
+# dropped unchecked (not an unknown-key refusal), so an install written before the removal works,
+# and the Config names it (Config.retired) for gate.py and land.py to warn about once a run.
+RETIRED = {'landing': ('lanes', 'lock_file', 'shared_paths', 'gate_once')}
 
 
 def section_type(name):

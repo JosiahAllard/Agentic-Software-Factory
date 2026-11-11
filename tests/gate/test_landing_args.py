@@ -21,14 +21,14 @@ TIP, TIP2, MAIN = 'c' * 40, 'd' * 40, 'b' * 40
 
 
 def ns(**over):
-    a = dict(expect_main=None, summary=None, wait=None, log_dir=None, full=False, fresh=False,
+    a = dict(expect_main=None, summary=None, wait=None, log_dir=None, fresh=False,
              keep_branch=False, wait_result=False)
     a.update(over)
     return types.SimpleNamespace(**a)
 
 
-EVERYTHING = dict(expect_main=MAIN, summary='a title', wait=30, log_dir='logs', full=True,
-                  fresh=True, keep_branch=True)
+EVERYTHING = dict(expect_main=MAIN, summary='a title', wait=30, log_dir='logs', fresh=True,
+                  keep_branch=True)
 
 
 class GateLandArgs(unittest.TestCase):
@@ -43,14 +43,14 @@ class GateLandArgs(unittest.TestCase):
             submit.again_args(submit.GATE_TOOL, ns(**EVERYTHING), ROOT, ['kit/x'], [TIP]),
             ['land', 'kit/x', '-C', FWD, '--expect-tip', TIP, '--expect-main', MAIN,
              '--summary', 'a title', '--wait', '30', '--log-dir', 'logs',
-             '--full', '--fresh', '--keep-branch'])
+             '--fresh', '--keep-branch'])
 
     def test_child_args_everything_root_and_log_dir_absolute(self):
         self.assertEqual(
             submit.child_args(submit.GATE_TOOL, ns(**EVERYTHING), ROOT, ['kit/x'], [TIP]),
             ['land', 'kit/x', '-C', ROOT, '--expect-tip', TIP, '--expect-main', MAIN,
              '--summary', 'a title', '--wait', '30', '--log-dir', os.path.abspath('logs'),
-             '--full', '--fresh', '--keep-branch'])
+             '--fresh', '--keep-branch'])
 
     def test_wait_zero_is_written(self):
         self.assertEqual(submit.child_args(submit.GATE_TOOL, ns(wait=0), ROOT, ['kit/x'], [TIP]),
@@ -67,7 +67,7 @@ class LandToolArgs(unittest.TestCase):
             submit.again_args(submit.LAND_TOOL, a, ROOT, ['kit/x', 'kit/y'], [TIP, TIP2]),
             ['-C', FWD, 'kit/x', 'kit/y', '--expect-tip', TIP, '--expect-tip', TIP2,
              '--expect-main', MAIN, '--summary', 'a title', '--wait', '30', '--log-dir', 'logs',
-             '--full', '--fresh', '--keep-branch', '--wait-result'])
+             '--fresh', '--keep-branch', '--wait-result'])
 
     def test_child_args_everything_never_wait_result(self):
         a = ns(wait_result=True, **EVERYTHING)
@@ -75,7 +75,7 @@ class LandToolArgs(unittest.TestCase):
             submit.child_args(submit.LAND_TOOL, a, ROOT, ['kit/x', 'kit/y'], [TIP, TIP2]),
             ['-C', ROOT, '--expect-main', MAIN, '--expect-tip', TIP, '--expect-tip', TIP2,
              '--summary', 'a title', '--wait', '30', '--log-dir', os.path.abspath('logs'),
-             '--full', '--fresh', '--keep-branch', 'kit/x', 'kit/y'])
+             '--fresh', '--keep-branch', 'kit/x', 'kit/y'])
 
     def test_bare(self):
         self.assertEqual(submit.again_args(submit.LAND_TOOL, ns(), ROOT, ['kit/x'], [TIP]),

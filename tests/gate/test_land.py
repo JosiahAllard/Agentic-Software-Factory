@@ -29,11 +29,9 @@ KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 
 class LandCase(fixtures.GateRepoCase):
-    # "landing".gate_once opted out: these cases pin the record check and merged gate of a base
-    # without it; the default (on) has its own cases (GateOnce*, test_land_fold_off.Default). A
-    # subclass that writes its own "landing" section writes the opt-out itself where it needs it.
-    KIT = {'landing': {'gate_once': False}}
-    # lander() gives each tip the full-gate OK record a landing requires (fixtures.gate_full);
+    # the base's .kit.json beside its "gate" section; a subclass adds what its case needs
+    KIT = {}
+    # lander() gives each tip a --full gate-OK record, which a landing takes (fixtures.gate_full);
     # a test of that check itself sets it False and gates its tips (test_land_tip_gated)
     GATE_TIPS = True
     REVIEW_TIPS = True      # fixtures.queue_review: each branch without an entry gets a verdict
@@ -284,10 +282,10 @@ class HookFromMain(LandCase):
 
 
 class NoStepSelected(LandCase):
-    # The merged gate selects every step that is not manual (tests/gate/test_land_select.py). Two
-    # steps that each drop the other (skip_if_selected) leave it nothing, as all-manual steps do:
-    # the base is refused before the merge (Lander.no_full_step), and the merged gate itself, met
-    # anyway, refuses with the advice for --full (runner.NO_STEP_FULL), not the one for paths.
+    # Two steps that each drop the other (skip_if_selected) leave a gate nothing, as all-manual
+    # steps do: the base is refused before the merge (Lander.no_full_step), and the merged gate
+    # itself, met anyway in full (a merge that changes a gate config file), refuses with the
+    # advice for --full (runner.NO_STEP_FULL), not the one for paths.
     GATE = {'steps': [{'name': 'unit', 'always': True, 'cmd': fixtures.RED_AWARE,
                        'pass': '^ok$', 'skip_if_selected': ['other']},
                       {'name': 'other', 'always': True, 'cmd': fixtures.RED_AWARE,
@@ -307,7 +305,7 @@ class NoStepSelected(LandCase):
 
     def test_the_merged_gate_refuses_with_the_full_advice(self):
         out = runner.merged_gate(self.repo.root, kconfig.load(self.repo.root), self.main,
-                                 log_dir=self.logs, book_kw=self.book_kw)
+                                 full=True, log_dir=self.logs, book_kw=self.book_kw)
         self.assertEqual(out.code, G.REFUSED, out.lines)
         self.assertEqual(out.lines[0], runner.NO_STEP_FULL)   # then the gate's source label
         self.assertEqual(self.book_calls, [])             # refused before it booked
@@ -341,10 +339,18 @@ class QueueTime(LandCase):
         self.assertGreaterEqual(rec['finished_at'], stamps['booked'], (rec, stamps))
 
 
-class GateOnceLedger(LandCase):
-    """A base that sets "landing".gate_once: the land record and its land ledger line say so,
-    and say whether once_escalate made the merged gate --full (docs/gate-records.md "Result record")."""
-    KIT = dict(LandCase.KIT, landing={'gate_once': True})
+class EscalatedLedger(LandCase):
+    """The land record and its land ledger line say whether config_escalate made the merged gate
+    --full (`escalated`); `gate_once` is retired and always null (docs/gate-records.md "Result
+    record"). The hook module is a gate config file a branch may change without the owner."""
+    KIT = dict(LandCase.KIT, hook={'module': 'kit_hooks'})
+    HOOKS = 'GATE_CHECKS = {}\n'
+
+    def setUp(self):
+        LandCase.setUp(self)
+        self.repo.write('tools/kit_hooks.py', self.HOOKS)
+        self.main = self.repo.commit('hook module', 'tools/kit_hooks.py')
+        self.repo.git('push', '-q', 'origin', 'main')
 
     def ledger(self):
         with open(result.ledger_path(self.repo.root), encoding='utf-8') as f:
@@ -353,37 +359,38 @@ class GateOnceLedger(LandCase):
     def once_of(self, rec):
         return rec['gate_once'], rec['escalated']
 
-    def test_an_escalated_landing_records_escalated_true(self):
-        _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+    def test_a_config_landing_records_escalated_true(self):
+        _, tip = self.branch('feature', {'tools/kit_hooks.py': '# changed\n' + self.HOOKS})
         said = []
         out = self.lander(BRANCH, self.main, tip, say=said.append).run()
         self.assertEqual(out.code, G.OK, out.lines)
-        self.assertTrue(any(l.startswith('GATE ONCE: ') for l in said), said)
+        self.assertEqual(len([l for l in said if l.startswith('GATE CONFIG: ')]), 1, said)
         rec = result.read(self.repo.root, BRANCH, 'land')[0]
-        self.assertEqual(self.once_of(rec), (True, True))
+        self.assertEqual(self.once_of(rec), (None, True))
         line, = self.ledger()
         self.assertEqual((line['verdict'], line['tip'], line['run_id']),
                          ('pass', tip, rec['run_id']))
-        self.assertEqual(self.once_of(line), (True, True))
+        self.assertEqual(self.once_of(line), (None, True))
 
-    def test_a_red_escalated_landing_records_escalated_true(self):
-        _, tip = self.branch('feature', {'RED': 'x\n'})
+    def test_a_red_config_landing_records_escalated_true(self):
+        _, tip = self.branch('feature', {'tools/kit_hooks.py': '# changed\n' + self.HOOKS,
+                                         'RED': 'x\n'})
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.FAILED, out.lines)
         line, = self.ledger()
         self.assertEqual((line['verdict'], line['code']), ('fail', G.FAILED))
-        self.assertEqual(self.once_of(line), (True, True))
+        self.assertEqual(self.once_of(line), (None, True))
 
-    def test_a_full_landing_is_not_escalated(self):
+    def test_a_plain_landing_is_not_escalated(self):
         _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
         said = []
-        out = self.lander(BRANCH, self.main, tip, full=True, say=said.append).run()
+        out = self.lander(BRANCH, self.main, tip, say=said.append).run()
         self.assertEqual(out.code, G.OK, out.lines)
-        self.assertFalse(any(l.startswith('GATE ONCE: ') for l in said), said)
+        self.assertFalse(any(l.startswith('GATE CONFIG: ') for l in said), said)
         line, = self.ledger()
-        self.assertEqual(self.once_of(line), (True, False))
+        self.assertEqual(self.once_of(line), (None, False))
         self.assertEqual(self.once_of(result.read(self.repo.root, BRANCH, 'land')[0]),
-                         (True, False))
+                         (None, False))
 
 
 class TakeTurns(LandCase):

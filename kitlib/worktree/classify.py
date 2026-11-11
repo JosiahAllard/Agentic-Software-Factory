@@ -226,11 +226,11 @@ def evidence_name(path):
     return any(fnmatch.fnmatchcase(name, glob) for glob in EVIDENCE_GLOBS)
 
 
-def gate_state(main, head, cfg=None):
-    """'green' (a gate-OK record from a --full gate that git agrees with: gate_ok.verify_full;
-    or a default-mode one when `cfg`, the main checkout's Config, has "landing".gate_once on:
-    docs/gate-run.md "Gate once at landing"), 'none', 'not full: <why>' (a record git agrees with,
-    from a gate run without --full), or 'unknown: <why>'."""
+def gate_state(main, head):
+    """'green' (a gate-OK record git agrees with from a --full or a default-mode gate, either of
+    which a landing takes: gate_ok.verify_full, gate_ok.mode_of; docs/gate-landing.md
+    "Landing"), 'none', 'not full: <why>' (a record git agrees with from a docs-only gate, which
+    lands only a docs-only change, or of an unknown mode), or 'unknown: <why>'."""
     rec, why = gate_ok.verify_full(main, head)
     if rec is not None:
         return 'green'
@@ -238,8 +238,7 @@ def gate_state(main, head, cfg=None):
         return 'none'
     scoped = gate_ok.verify(main, head)[0]
     if scoped is not None:
-        if (cfg is not None and cfg.section('landing').get('gate_once') is True
-                and gate_ok.mode_of(scoped) == 'select'):
+        if gate_ok.mode_of(scoped) == 'select':
             return 'green'
         return 'not full: %s' % why
     return 'unknown: %s' % why
@@ -475,7 +474,7 @@ def work_class(ctx, entry, base, ancestors, own, claims, dirt, landed, fields):
         return ('C' if keep else 'A'), fields
     rc, count, err = git(ctx.main, 'rev-list', '--count', '%s..%s' % (base, head))
     fields['ahead'] = int(count) if rc == 0 and count.isdigit() else None
-    fields['gate'] = gate_state(ctx.main, head, ctx.cfg)
+    fields['gate'] = gate_state(ctx.main, head)
     if not dirt and fields['gate'] == 'green':
         return 'B', fields
     return 'C', fields

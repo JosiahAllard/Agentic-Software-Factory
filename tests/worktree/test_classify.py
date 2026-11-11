@@ -153,22 +153,9 @@ class Classes(ClassifyCase):
         self.assertEqual((row['class'], row['branch']), ('E', None), row)
         self.assertIn('detached', out)
 
-    def test_a_record_from_a_gate_without_full_is_c_not_full(self):
-        self.configure({'landing': {'gate_once': False}})     # on by default: green then
-        path = self.workstream('half')
-        head = self.git('rev-parse', 'HEAD', cwd=path)
-        gate_ok.record_pass(self.repo, head, {}, {'version': 'test'}, 'r', gate_ok.utc(), [],
-                            full=False)
-        rc, out, data = self.run_classify()
-        row = self.row(data, path)
-        self.assertEqual((row['class'], row['gate']),
-                         ('C', 'not full: the record for %s is from a gate run without --full'
-                          % head), row)
-
-    def test_a_scoped_record_is_green_when_the_base_sets_gate_once(self):
-        """"landing".gate_once (docs/gate-run.md "Gate once at landing"): a landing takes a
-        default-mode record, so the tree is as finished as with a --full one."""
-        self.configure({'landing': {'gate_once': True}})
+    def test_a_default_mode_record_is_green(self):
+        """A landing takes a default-mode record (docs/gate-landing.md "Landing"), so the tree is
+        as finished as with a --full one; no base setting decides it."""
         path = self.workstream('scoped')
         head = self.git('rev-parse', 'HEAD', cwd=path)
         gate_ok.record_pass(self.repo, head, {}, {'version': 'test'}, 'r', gate_ok.utc(), [],
@@ -177,16 +164,16 @@ class Classes(ClassifyCase):
         row = self.row(data, path)
         self.assertEqual((row['class'], row['gate']), ('B', 'green'), row)
 
-    def test_a_docs_record_is_not_green_under_gate_once(self):
-        self.configure({'landing': {'gate_once': True}})
+    def test_a_docs_record_is_c_not_full(self):
         path = self.workstream('docs')
         head = self.git('rev-parse', 'HEAD', cwd=path)
         gate_ok.record_pass(self.repo, head, {}, {'version': 'test'}, 'r', gate_ok.utc(), [],
                             full=False, mode='docs')
         rc, out, data = self.run_classify()
         row = self.row(data, path)
-        self.assertEqual(row['class'], 'C', row)
-        self.assertTrue(row['gate'].startswith('not full: '), row)
+        self.assertEqual((row['class'], row['gate']),
+                         ('C', 'not full: the record for %s is from a gate run without --full'
+                          % head), row)
 
     def test_the_backlog_store_is_opened_once_for_every_tree(self):
         self.configure({'backlog': {'store': 'main'}})

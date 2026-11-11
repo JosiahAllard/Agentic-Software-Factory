@@ -667,7 +667,7 @@ class StandDown(unittest.TestCase):
             json.dump({'backlog': backlog}, f)
 
     def reason(self, queued, idle):
-        return W.standdown(self.top, survey=lambda top, cfg: (queued, idle))
+        return W.standdown(self.top, survey=lambda top: (queued, idle))
 
     def test_the_keys_default_to_three_queued_and_two_idle(self):
         self.assertEqual(W.read_limits(self.top), (3, 2))
@@ -685,7 +685,7 @@ class StandDown(unittest.TestCase):
     def test_fill_queued_max_zero_is_off_without_a_survey(self):
         self.kit({'fill_queued_max': 0})
 
-        def survey(top, cfg):
+        def survey(top):
             raise AssertionError('surveyed')
         self.assertEqual(W.standdown(self.top, survey=survey), 'off')
 
@@ -709,7 +709,7 @@ def tree(branch, klass, head=None, gate=None, reason=None, idle_s=None):
 
 
 class Survey(unittest.TestCase):
-    """read_survey(top, cfg): (queued, idle) from the verdict queue and one --classify read."""
+    """read_survey(top): (queued, idle) from the verdict queue and one --classify read."""
 
     def setUp(self):
         self.entries = []
@@ -749,10 +749,10 @@ class Survey(unittest.TestCase):
                                   lambda c, e, m: 'landed' if e['branch'] in self.expired else None), \
                 mock.patch.object(classify, 'classify', fake_classify), \
                 mock.patch.object(classify, 'gate_state',
-                                  lambda main, head, cfg=None: 'green' if head in self.green
+                                  lambda main, head: 'green' if head in self.green
                                   else 'none'), \
                 mock.patch.object(refs, 'is_ancestor', is_ancestor):
-            return W.read_survey('/top', None)
+            return W.read_survey('/top')
 
     def test_queued_is_unexpired_verdicts_and_green_tips_not_in_main_once_each(self):
         self.entries = ['kit/a', 'kit/b', 'kit/gone']

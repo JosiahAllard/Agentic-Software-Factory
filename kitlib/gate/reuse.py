@@ -39,7 +39,7 @@ Fail closed. Anything that raises means every step runs. Nothing is read or stor
   - in a --full run, a branch gate's --only, or when "landing".reuse_max_age_h is 0;
   - when the change touches `.kit.json`, a config section file, the hook module, a path matching
     "landing".reuse_never, or a strict path (kitlib.gate.strict_defaults.STRICT_DEFAULTS);
-  - in a landing: --fresh; a result record that cannot be read; a land record of a tip (it got
+  - in a landing: --fresh (a strict branch's landing too); a result record that cannot be read; a land record of a tip (it got
     past its locked checks and did not land); a gate record of a tip that did not pass; a landing
     tree (kitlib.gate.land.TREE_NAME) that is not clean.
 A step's result is stored only when its key (inputs, kit, program, config, toolchain) is the

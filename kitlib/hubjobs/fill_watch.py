@@ -24,7 +24,7 @@ the hub pulls for it (stage 3); the nudge names the auto-pull stand-down when on
   standdown(top, survey=None)        the stand-down reason of the repository whose main checkout is
                                      `top`, or None; StandDownUnread when it cannot be read
   read_limits(top, cfg=None)         (backlog.fill_queued_max, backlog.fill_idle_max) of `top`
-  read_survey(top, cfg)              (queued, idle) of `top`; StandDownUnread when unread
+  read_survey(top)                   (queued, idle) of `top`; StandDownUnread when unread
   read_hold(path)                    the PM's holds (fill-hold.json), {} when none; StandDownUnread
   hold_reason(data, repo, now)       `hold machine`, `hold repo` or None
   set_hold(path, repo, reason, until, now), clear_hold(path, repo)
@@ -312,10 +312,10 @@ def read_limits(top, cfg=None):
     return backlog['fill_queued_max'], backlog['fill_idle_max']
 
 
-def read_survey(top, cfg):
-    """(queued, idle) of the repository whose main checkout is `top` (module docstring), `cfg` its
-    Config (gate_state's gate_once). Read-only. StandDownUnread when main as fetched, the git
-    common dir, the verdict queue or the worktrees cannot be read."""
+def read_survey(top):
+    """(queued, idle) of the repository whose main checkout is `top` (module docstring). Read-only.
+    StandDownUnread when main as fetched, the git common dir, the verdict queue or the worktrees
+    cannot be read."""
     from kitlib.coordstate import render
     from kitlib.gate import verdicts
     from kitlib.records import verdict_entry
@@ -352,7 +352,7 @@ def read_survey(top, cfg):
             idle += 1                   # not in main, or git cannot tell: idle
         if t['class'] in ('A', 'E', 'O') or not t.get('branch') or t['branch'] in queued:
             continue
-        gate = t.get('gate') or classify.gate_state(top, t['head'], cfg)
+        gate = t.get('gate') or classify.gate_state(top, t['head'])
         if gate != 'green':
             continue
         landed, _why = refs.is_ancestor(t['head'], main, top)
@@ -375,13 +375,13 @@ def _dead(t):
 
 def standdown(top, survey=None):
     """The reason auto-pull stands down for the repository whose main checkout is `top`, or None
-    (module docstring): `off`, `queued N>=MAX` or `idle N>=MAX`. `survey(top, cfg)` -> (queued,
+    (module docstring): `off`, `queued N>=MAX` or `idle N>=MAX`. `survey(top)` -> (queued,
     idle) is a test seam (default read_survey). StandDownUnread when anything cannot be read."""
     cfg = _config(top)
     queued_max, idle_max = read_limits(top, cfg)
     if queued_max == 0:
         return OFF
-    queued, idle = (survey or read_survey)(top, cfg)
+    queued, idle = (survey or read_survey)(top)
     if queued >= queued_max:
         return 'queued %d>=%d' % (queued, queued_max)
     if idle >= idle_max:

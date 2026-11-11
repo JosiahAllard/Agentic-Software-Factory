@@ -94,7 +94,7 @@ class ConfigUnit(FoldCase):
 
 
 class StrictByDefault(FoldCase):
-    """With no "landing" key (folding and gate_once on by default) a strict branch still lands
+    """With no "landing" key (folding on by default) a strict branch still lands
     alone: it is never folded, and a strict landing folds nothing."""
     KIT = {}
     test_a_strict_unit_is_left = Left.test_a_strict_unit_is_left

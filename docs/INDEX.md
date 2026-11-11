@@ -13,7 +13,29 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `CLAUDE.md` | Claude's pointer: imports AGENTS.md | always | kw: rules, claude
 - `AGENTS.md` | kit repo rules for every agent host (canonical) | always | kw: rules, agents
 - `README.md` | what the kit is | first look | kw: readme, overview
-- `ARCHITECTURE.md` | kit tool architecture (the contract) | before changing a tool | kw: architecture, contract, design, target
+- `ARCHITECTURE.md` | the kit's high-level design, the top authority: layers, every package and what it owns, dependency rules, contracts, data ownership | before any design or change | kw: architecture, contract, design, target, layers, modules, hld
+- `docs/redesign-work.md` | the work list that brings the code to the design: one entry per change (W-001 ...), the doc audit, order and lanes | building or reviewing the redesign batch | kw: redesign, work-list, plan, batch
+- `docs/modules/base-design.md` | low-level design: platform, proc, fs, schedtask, the wires, root files | changing OS, process or file code | kw: design, lld, base, platform, proc, fs, schedtask
+- `docs/modules/git-design.md` | low-level design: git and the fake git | changing git access | kw: design, lld, git, fake-git
+- `docs/modules/host-design.md` | low-level design: host contract, registry, attribution, host folders, boot | changing a host adapter or the contract | kw: design, lld, host, adapter, hosts.json, attribution
+- `docs/modules/content-design.md` | low-level design: roles and skills written once, render, roster, githooks | changing how content renders | kw: design, lld, content, roles, skills, render
+- `docs/modules/config-design.md` | low-level design: .kit.json, machine config, pointer, PM-data record, PM settings | changing config | kw: design, lld, config, kit-json, machine-config
+- `docs/modules/lock-design.md` | low-level design: the machine lock, its API and UIs | changing the lock | kw: design, lld, lock, machine-lock, lockui, lockmcp
+- `docs/modules/records-design.md` | low-level design: gate-OK record, landing lock, in flight, verdict entry, landed | changing a record's format or place | kw: design, lld, records, gate-ok, landing-lock, landed
+- `docs/modules/hub-design.md` | low-level design: hub client, shapes, server, jobs, MCP, automatic tasks | changing the Action Hub | kw: design, lld, hub, hubclient, hubsite, hubjobs
+- `docs/modules/owner-files-design.md` | low-level design: owner-only paths, approvals and who applies them, the delegation list | changing owner-file rules | kw: design, lld, owner-files, approval, owner-only, delegations
+- `docs/modules/ledger-design.md` | low-level design: rulings ledger, rulebooks, pending steps | changing the ledger | kw: design, lld, ledger, rulebook, pending
+- `docs/modules/checks-design.md` | low-level design: doc tools, repo checks, module map, maintenance lint | changing a check | kw: design, lld, checks, docs, scrub, module-map, maint-lint
+- `docs/modules/tests-design.md` | low-level design: test selection, runners, red-first, the ratchet | changing test tools | kw: design, lld, tests, kit_tests, selection, redfirst
+- `docs/modules/sessions-design.md` | low-level design: launcher, watcher, session starts, coordinator state | changing sessions or a start | kw: design, lld, sessions, launcher, pmstart, pmwatch
+- `docs/modules/backlog-design.md` | low-level design: records, scope and claims, plans, narrowing, roles | changing the backlog | kw: design, lld, backlog, scope, narrowing, claims
+- `docs/modules/worktree-design.md` | low-level design: worktrees, classify, remove, sweep, scratch trees, preflight | changing worktree tools | kw: design, lld, worktree, sweep, preflight, scratch
+- `docs/modules/commit-design.md` | low-level design: commit, sync base, review pack | changing commit checks | kw: design, lld, commit, sync-base, review-pack
+- `docs/modules/gate-design.md` | low-level design: the gate, reuse, rerun, load nodes, daily full run | changing the gate | kw: design, lld, gate, reuse, rerun, daily-full, load-nodes
+- `docs/modules/landing-design.md` | low-level design: verdict queue, landing steps, what a landing runs, batch, cleanup | changing landing | kw: design, lld, landing, verdict, merged-gate, strict
+- `docs/modules/guard-design.md` | low-level design: guard rules, parser, role policy, hook runner, agent view | changing the guard or a hook | kw: design, lld, guard, hookrun, role-policy
+- `docs/modules/install-design.md` | low-level design: kit export, machine setup, installers, templates | changing install or refresh | kw: design, lld, install, pluginsource, machine-setup, export
+- `docs/modules/extras-design.md` | low-level design: Blender bridge and the optional packages | changing an optional package | kw: design, lld, extras, optional, blender, bridge
 - `docs/agent-profile.md` | this repo's profile for worker agents | starting a task | kw: profile, branches, build, test
 - `.claude/agent-profile.md` | stub: the profile moved to docs/agent-profile.md | an agent names the old path | kw: profile
 - `.claude/coordinator-profile.md` | this repo's coordinator profile: risk map pointer, agent types, owner decisions | coordinating the kit | kw: coordinator, profile
@@ -95,7 +117,6 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/review-pack.md` | review_pack | preparing a review | kw: review-pack, review
 - `docs/shipping.md` | what ships | changing the shipped set | kw: shipping, ships
 - `docs/specialty-skills.md` | decided and built spec: specialties as skills, merged read and docs agent types (analyst, docs-writer) | changing the roster or a specialty skill | kw: specialty, skills, roster, roles, merge
-- `docs/subtraction-audit.md` | kit subtraction audit: code, tools and config to remove or shrink, kept items, owner decisions | planning removals | kw: subtraction-audit, audit, removal
 - `docs/sync-base.md` | sync_base | main moved | kw: sync-base, merge
 - `docs/test-tools.md` | testlist, tool_deps, pytests | test selection | kw: testlist, tool_deps, pytests, tests
 - `docs/windows-token-leak.md` | Windows token leak: slow process launches | slow launches | kw: windows, token-leak

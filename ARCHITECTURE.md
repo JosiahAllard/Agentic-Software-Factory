@@ -1,72 +1,239 @@
-# Kit tool architecture
+# PM kit architecture
 
-The shape every kit tool follows. Change this file only by an ordinary reviewed commit; the owner's approval is needed only for the owner-only paths (`owner.paths`; docs/kit-json.md).
+The kit's one high-level design, and the top authority on its shape: every module, what it owns, what it may depend on, and the contracts between them. It describes the end goal, not today's tree. Where the code differs, the code changes; `docs/redesign-work.md` lists those changes. Each module's low-level design is in `docs/modules/` and loses to this file on a conflict; the reference docs (`docs/INDEX.md`) say how to run a tool and lose to both. An item that waits on the owner is marked **OPEN** where it applies and listed under "Open items". This file changes by an ordinary reviewed commit; the owner's approval is needed only for the owner-only paths (`owner.paths`; docs/kit-json.md).
+
+## System
+
+Several AI agent sessions work on several repositories on one machine. The kit keeps them from stepping on each other:
+
+- **One branch, one worktree.** No agent edits a main checkout; work reaches main only by a landing.
+- **One machine lock.** Every heavy run books a slot; nothing heavy runs beside it unbooked.
+- **One gate, one landing at a time.** A branch is gated, reviewed and landed in turn; main never holds an ungated merge.
+- **One guard.** Every tool call of every agent passes the same read-only rules, which refuse with the command to use instead.
+- **One backlog, one ledger.** Work is a record with a scope; an owner ruling is a ledger entry; the standing rules are a rulebook.
+- **One hub.** The owner answers questions, approves owner-only changes and reads pages in one place.
+
+The kit is Python on the standard library, for Windows and Linux. It runs from its own folder, an export of pushed main; a repository holds a `.kit.json` and nothing of the kit. Each AI host plugs in through a thin adapter.
 
 ## Layers
 
-| Layer | What | Rule |
-|---|---|---|
-| `kitlib/` (library) | Foundations: `git` (repo, worktree, main-checkout detection), `proc` (pid shield, job objects, tree kills), `lock` (machine-lock mechanism, `book()`, `slot()`), `records` (landing lock, gate-OK record), `config` (kit defaults, `.kit.json`, roles, kinds table, heavy programs), `fs` (tree and write locks, os.replace retried on Windows, atomic whole-file write, forced rmtree), `platform` (the one place that knows the OS), `ci`. Policy: `gate` (gate and landing), `guard`, `host`, `content`, `roster`, `attribution`. Features, one package each, such as `backlog`, `commit`, `worktree`, `ledger`, `hubsite`, `launcher`, `pmstart`, `machinesetup`. The complete list: `python <kit>/tools/codemap.py`. | No command lines, no printing to the user, no `sys.exit`. Standard library only. All logic lives here once. |
-| Entry points | Gate and landing: `gate.py`, `land.py`. Heavy runs and the lock: `machine_lock.py`. Git work: `commit.py`, `new_worktree.py`, `worktree_remove.py`, `sync_base.py`, `review_pack.py`, `preflight.py`. Records: `backlog.py`, `ledger.py`, `pending.py`. Docs: `doc_index.py`, `doc_budget.py`, `codemap.py`. Content: `render_content.py`. Sessions and hub: `launch.py`, `hub.py` (serves the Action Hub site and is its CLI). Machine setup: `machine_setup.py` (with `installer/machine-setup.ps1`, or `installer/machine-setup.sh` on Linux; `installer/new-repo.ps1` bootstraps a repo). The complete list: `python <kit>/tools/doc_index.py --tools`. | Parse arguments, call the library, print, exit. Paths and exit codes stay stable; subcommands change by ordinary reviewed commits. |
-| Host contract | `kitlib/host/`: the neutral `Action`/`Decision` types, `HostAdapter`, `HostProfile`, `SessionHost`, `CommandHost`, `ContentRenderer`, `hookmain` (the one hook runner and the hook command lines) and `header` (the kit header every session and subagent gets) | Protocols and data only. Names no host and imports nothing from `hosts/` or `optional/`. |
-| Hosts | `hosts.json` (registry: adapter module, shell folder, platforms, capabilities, hook data, tier → model map) and one `hosts/<name>/` per platform: `adapter/` (Python, implements `HostAdapter`) and `shell/` (manifests, hook registration, rendered agents; Codex's hooks are its fixed-bytes `shell/hooks-plugin/`, not rendered); every host's hooks run the one entry `boot/hook.py <host> <event>` | A host name appears only in `hosts.json`, its own folder, `optional/bridge/hosts/<name>/`, the bridge's peer list `optional/bridge/peers.json` and tests. A host adds no hook script (Codex's hooks plugin stub only runs the one entry of the installed kit). Adding a host changes no other folder (docs/new-host.md). |
-| Content | `content/roles/` and `content/skills/`: every role and skill written once, rendered into each host's shell by `python tools/render_content.py --write`; `content/default-profile.md`, the host-neutral agent profile a role reads when its repository has none (never rendered) | Every role exists on every host. Skill text is identical on every host: each host loads `content/skills/` itself (Claude from the kit, Codex from the export). Rendered files are committed, and each one that can hold a comment opens with a generated-file line naming its source. `tools/commit.py` renders when a source is committed, the guard refuses a hand edit, and a test fails on drift. |
-| Optional | `optional/bridge/` (agent-to-agent messaging: core, service, MCP frontend, and each host's half under `optional/bridge/hosts/<name>/`) and the other `optional/` packages (`agenttemp`, `comfy`, `loadnode`, `procwatch`, `usage`) | Installed on demand. The core never imports them. |
-| Guards | each host's guard hook (`boot/hook.py <host> <tool event>`; every tool a rule can refuse, its `hosts.json` `hook.guarded_tools`), judged once by `kitlib.guard` over a neutral `Action`, and the kit git `pre-push` hook plus the opt-in `pre-commit` ledger check (inert unless `.kit.json` sets `ledger.pre_commit_check`) | Read-only checks of real state. They deny with the exact command to use instead. |
-| Repo layer | `.kit.json` (data, optional: with none, the defaults of docs/kit-json.md "With no file") plus at most one repo hook module the kit calls | Repos hold no copies of the kit and no stubs of its tools: skills and roles run `<kit>/tools/<x>.py -C <checkout>` (docs/multi-host-plan.md decision 21). |
+`kitlib/` holds all logic, one package per module, in six layers. A package imports only packages in the layers below it, and in its own layer only the ones its row names. Entry points sit on top and hold no logic. The module map (`docs/module-map.json`) is these tables as data; the "Design" column names the low-level design, `docs/modules/<name>-design.md`.
+
+**1. Base** knows the operating system and nothing of repositories, hosts or kit features.
+
+| Package | Owns | Same layer | Design |
+|---|---|---|---|
+| `platform` | Every operating-system call, behind one contract (`api`) with a complete Windows backend and a complete Linux backend. Nothing above it tests the OS. | - | base |
+| `proc` | Processes: start with no window, job containment (pin, measure, kill as a tree), the process list, named pipes, the console guard. | `platform` | base |
+| `fs` | File primitives no feature owns: atomic write, retried replace, forced rmtree, tree lock, write lock. | `platform`, `proc` | base |
+| `schedtask` | The kit's scheduled tasks on either OS: the interpreter a task runs, its command line, register, read, remove. | `platform`, `proc` | base |
+| `mcpwire`, `hostrpc` | The stdio JSON-RPC wires the MCP servers and the host adapters share. | - | base |
+| `verdict` | One judgement rule for a tool that runs a tool and prints its verdict. | - | base |
+| root files | `clock` (time fences), `ident` (bounded ids), `kitroot` (where this kit is); `__init__` installs the console guard and nothing else. | `platform`, `proc` | base |
+
+**2. Facts** say which repository, which host and what is configured. They read; they change nothing but their own files.
+
+| Package | Owns | Same layer | Design |
+|---|---|---|---|
+| `git` | Safe git invocation, repository, worktree and main-checkout detection, refs and ancestry, batched reads, where a lock file goes; `git/fake`, the in-process git the tests run on. | - | git |
+| `host` | `hosts.json` read as data, the host contract and content contract types, agent names, the session mark. Names no host. | - | host |
+| `attribution` | Who made a commit: the agent trailer, the model name, the co-author line. | `host` | host |
+| `content` | Roles and skills written once: the model, the render into each host's files, the roster, render on commit. | `git`, `host` | content |
+| `config` | What is configured: `.kit.json` (schema, load, policy, owner paths), the machine config, the PM-repo pointer, the PM-data record, the PM's settings and known repositories. | `git`, `host`, `content` | config |
+
+**3. Services** hold the machine-wide state and rules that many features share.
+
+| Package | Owns | Same layer | Design |
+|---|---|---|---|
+| `lock` | The machine lock: store, queue, holds, runs, kinds, layout, the one API, the names of its owner-only tools. | - | lock |
+| `lockui` | The schedule window's model and actions, over `lock.api` only. | `lock` | lock |
+| `records` | A repository's records outside its checkouts: landing lock, gate-OK record, landing in flight, a verdict-queue entry, and where each lives. | - | records |
+| `landed` | Has a commit landed: one read-only look. | `records` | records |
+| `hubvalidate` | The Action Hub's data shapes: field tables, constants, the page check, to-do steps. Pure. | - | hub |
+| `hubclient` | Talking to the hub server on this machine: settings, token, client, errors, push result words, the stale-code notice. | `hubvalidate` | hub |
+| `ownerfiles` | Owner-only paths: which commits and merges touch them, the approval record and how long it holds, asking for and verifying an approval. | `hubvalidate`, `hubclient` | owner-files |
+| `ledger`, `pending` | The rulings ledger and the rulebooks (the standing rules); the owner's pending-steps file. | `pending` uses `ledger` | ledger |
+| `docs` | Doc index, doc budget, code map. | - | checks |
+| `forbidden`, `scrub`, `machinepaths`, `pieces`, `trailerscheck` | The repo checks, one each: forbidden tokens, owner-specific text, machine paths, the path-to-piece table, commits with no agent trailer. | `scrub` uses `forbidden` | checks |
+| `modulemap` | The module map: load, detect crossings, check, isolation runs, the generated page. | `lock`, `records` | checks |
+| `pytests`, `tooldeps`, `testlist`, `ci` | The test tools: the parallel runner, which tests a change can break and the kit's own runner, test-name lists, the CI ratchet. | `tooldeps` uses `pytests`, `lock`; `ci` uses `tooldeps` | tests |
+| `launcher` | Long-running sessions: start, stop, hand-off, accounts, state files, finding a live session, pipes, usage. | `hubclient`, `ledger` | sessions |
+| `pluginsource` | The kit's export of pushed main: where it is, how one is written and pruned, the refresh. | `launcher` | install |
+| `allowrules` | The permission rules that let an agent submit a landing unprompted. | `pluginsource` | install |
+| `githooks` | The pre-commit dispatch: render, then the ledger check. | `ledger` | content |
+
+**4. Work** is a branch's life, from record to main.
+
+| Package | Owns | Same layer | Design |
+|---|---|---|---|
+| `backlog` | Work records: the store, the record schema, the scope language, the write verbs as plans, the offer, who may run which verb. | - | backlog |
+| `worktree` | Linked worktrees: new, first-use prep, classify, remove, sweep, scratch trees, branch overlap, and the liveness and quiet probes the backlog takes. | `backlog` | worktree |
+| `commit` | Stage explicit paths and commit with the right trailers, after the commit checks. | `backlog` | commit |
+| `syncbase` | Merge the named main commit into a branch and check the result. | `commit` | commit |
+| `preflight` | The start-of-task picture of one checkout. | `backlog`, `worktree` | worktree |
+| `strayrestore` | Discard a main-checkout stray that a branch tip already holds. | - | worktree |
+| `gate` | The gate: steps, selection by change, the run in a lock slot, reuse, targeted rerun, the result record, budget and cap, pinned tools. | `worktree` | gate |
+| `loadnode` | Load nodes: registry, remote calls, jobs, a gate on a node. | `gate` | gate |
+| `landing` | One branch landed on main: the verdict queue, submit, the landing itself, carry, cleanup, the landing feed. | `backlog`, `worktree`, `gate`, `loadnode` | landing |
+| `dailyfull` | The daily full run and its bisect. | `backlog`, `gate` | gate |
+| `coordstate` | A coordinator's event log and the state note rendered from it. | `gate`, `landing` | sessions |
+| `reviewpack` | Everything a reviewer needs about a branch, and the quality signals. | `preflight`, `gate`, `landing` | commit |
+| `delegations` | The owner's delegation list: read, check, place, run one operation. | - | owner-files |
+
+**5. Guard** judges; nothing below it knows it exists.
+
+| Package | Owns | Same layer | Design |
+|---|---|---|---|
+| `guard` | The tool-call guard and the pre-push check: read a command line as commands, read real state, judge by the rules, the role policy, the write jail. | - | guard |
+| `hookrun` | The one hook runner behind `boot/hook.py`, and the kit header every session and subagent is given. | `guard` | guard |
+| `agentview` | Everything one role is given and held to on one host. | `guard`, `hookrun` | guard |
+
+**6. Apps** are programs composed from the layers below. No package below imports one.
+
+| Package | Owns | Same layer | Design |
+|---|---|---|---|
+| `machinesetup`, `stackskill`, `kitcmd`, `pmdata` | Install: set up a machine, a repository's committed setup, a stack's skills, the `kit` command, the PM-data branch. | `machinesetup` uses `stackskill` | install |
+| `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `agentstart` | The PM watcher and the session starts: the checks and context each kind of session is given. | each uses the ones before it, and `machinesetup`, `autotasks` | sessions |
+| `autotasks` | The automatic tasks the hub schedules. | - | hub |
+| `maintlint` | The maintenance lint. | - | checks |
+| `redfirst` | Red-first evidence runs. | - | tests |
+| `hubbacklog`, `hubsite`, `hubjobs` | The Action Hub server: store, API, listeners, push, backlog views, timed jobs. | `hubsite` uses `hubbacklog`, `autotasks`, `maintlint`, `pmwatch`; `hubjobs` uses `hubsite`, `pmwatch` | hub |
+| `hubmcp`, `lockmcp`, `blendermcp` | The MCP servers: the hub's API, the lock's read tools, a booked headless Blender. | - | hub, lock, extras |
+
+**Entry points** (`tools/`, `boot/`, `mcp/`, `githooks/`, `reserve_ui.pyw`): parse arguments, call the library, print, exit. Paths and exit codes stay stable. **Hosts** (`hosts/<name>/`): one adapter and one shell per AI host. **Optional** (`optional/`): installed on demand; the core never imports it. The complete lists: `python <kit>/tools/codemap.py` and `python <kit>/tools/doc_index.py --tools`.
+
+## Dependency rules
+
+1. **Down only.** A package imports packages in lower layers, and in its own layer the ones its row names. An import the module map does not list fails `module_map.py --check`; the map carries no ratchet and no "same layer, any direction" rule.
+2. **`kitlib` never imports an entry point, a host folder or `optional/`** (`tests/host/test_layering.py`).
+3. **A fact that lives above comes in as an argument.** A lower package that needs a higher one's answer takes a probe from its caller and has no default that reaches up. The standing probes: the backlog's `plan.Context` (branch liveness and the quiet hold, from `worktree`); the hub server's job list (from `hubjobs`, passed by `tools/hub.py`); the test child's audit (from `tooldeps`, passed by `tools/pytests.py`); a delegated run's checks that read an app (passed by its entry point); the console guard's incident folder (registered by `config`).
+4. **No import inside a function to reach up.** A late import defers a cost; it never hides an edge.
+5. **No command lines, no printing to the user, no `sys.exit` in `kitlib`**, except the standalone worker entry scripts (`gate/runner.py`, `lock/bg_client.py`, `tooldeps/pool_worker.py`). Standard library only.
+6. **One home per fact.** A constant, a path rule or a record format is defined in the package that owns it and read from there; a package that needs it from a higher one is a sign it lives too high.
+7. **One responsibility per file.** A file past about 1,500 non-test lines is split by responsibility, never by size alone.
+8. **OS code lives in `platform`.** A package that needs the OS asks `platform`; `sys.platform` and `os.name` appear nowhere else.
 
 ## Contracts
 
-- **Booking.** `book(kind)` returns a slot. `slot()` hands back a launcher, and every heavy child runs through it inside the lock's job object (pinned cores, memory measured, killed as a tree). Acquisition fails closed: there is no unlocked fallback. Lock held means a live run in the store whose process is an ancestor, shown by the `MACHINE_LOCK_RUN=<run>:<pid>:<ctime>` nest token that `nest_check` verifies. No env flag counts as proof.
-- **Kinds.** One JSON kinds table in kit config, read by the lock and by gate.py. A repository may add kinds of its own in its main checkout's `.kit.json` `kinds` section, which `machine_lock.py run` and `hold agent` book from one of its checkouts; a kit kind or alias of the same name wins (docs/lock-api.md "Repository kinds"). `gate.py --measure` writes a proposed table; the PM reviews and commits it. Sizes never change automatically. A size is a whole number of cpu slots 1..agent_cap; a run may ask for fewer, never more. A program is heavy because it is on the heavy list, Godot runs included, and its size comes from measurement.
-- **Gate-OK record.** gate.py writes `<dev_drive>\pm-kit\kit-gate-ok\<repo key>\<sha>.json`, outside every checkout, for exactly the commit it passed; with no `dev_drive` (a load node set up without one) it writes `<git common dir>/kit-gate-ok/<sha>.json` instead, which every reader then takes (docs/gate-records.md "Gate-OK record"); on a rerun where every step is reused, it writes the record for a commit no step ran on. A branch gate's record also holds `input_keys`, per-step digests of its argv, tools, the inputs at the head and the base, the change and the kit and, for a step that declares one, its toolchain, from which a one-branch landing whose main moved on reuses a step whose digests all match (docs/gate-landing-policy.md "Gate reuse", "The input tree"). The pre-push hook refuses a push to main without one, whoever pushes, when the repo sets `repo.push_block` (default false; read from the base's committed `.kit.json`, never the working tree); a delete or non-fast-forward push of main is refused whatever it says. With no `.kit.json` "gate" section the gate detects the repo's stack and runs its usual test and lint steps, plus those its base (the merge base; a landing's main) detects that the tree under test lacks; the gate's report, the record and the result record say `source: auto` (a configured section: `gate.json`), and a configured section always wins whole (docs/gate-run.md "Auto-detected gate").
-- **Result record.** A branch gate or a landing writes `<dev_drive>\pm-kit\kit-gate-result\<repo key>\<branch stem>.<gate|land>.json`, outside every checkout (no `dev_drive`: no record, and a landing refuses), `running` at the start and the verdict at the end; `gate.py wait-result` waits on it so another session wakes when a run ends, finishing `error` a `running` record whose process died (docs/gate-records.md "Result record").
-- **Landing.** `land.py <branch>... --expect-tip <sha>... [--reviewed-by <id>... --submit]` (`gate.py land` for one branch; a submission names each branch's queued reviewer before `--submit`). It books one machine-lock entry (`book(resource="landing:<git common dir>", priority="land")`), takes the repo's landing lock, merges onto `<remote>/<main>` as it is at its turn, gates the merged tree in that slot, pushes, and verifies. A red merge is undone by default; a conflict goes back to the branch's author. Landings into one repo take turns; branch gates and different repos run in parallel (docs/gate-landing.md "The landing queue").
-- **Roles.** `PM_KIT_ROLE` is the one role marker on every host, and `PM_KIT_HOST` names the host. The host adapter tells subagents apart (on Claude, the PreToolUse `agent_id` field) and passes the identity as `Action.agent`; a host whose hooks carry no subagent identity says so in `hosts.json` and gets the role-only policy. A session-start self-test alarms if the field disappears. Roles, main-branch names and protected paths come from config. Role policy (edit bans, read-only owner paths, the shell-cwd check, the lock-verb allowlist, the Blender bridge's Python-running and file-writing tools refused to the no-edit roles) is `kitlib/guard/rolepolicy.py`, the same on every host. A role's mode is the `mode:` of its role file (`content/roles/<role>.md`, shipped with the kit), which `.kit.json` `roles.<role>.mode` overrides; one switch per repository, `.kit.json` `guard.role_policy`, turns it on.
-- **Guard rules.** Raw heavy programs are denied unless the lock is held; they are allowed only as arguments of `gate.py` or `machine_lock.py run`. A subagent's edit in a main checkout is denied. Root searches are denied. Damaging git commands in a main checkout are denied (`checkout`/`switch`, `reset --hard`, `clean`, `stash`, push to main without a record). Bash and PowerShell are tokenized; a line the parser cannot read goes through `kitlib/guard/fallback.py`'s patterns.
+- **Booking.** `book(kind)` returns a slot. `slot()` hands back a launcher, and every heavy child runs through it inside the lock's job object (pinned cores, memory measured, killed as a tree). Acquisition fails closed: there is no unlocked fallback. Lock held means a live run in the store whose process is an ancestor, shown by the `MACHINE_LOCK_RUN=<run>:<pid>:<ctime>` nest token that `nest_check` verifies. No env flag counts as proof. `slot()` takes the lock's mutex on the thread that releases it and prints nothing.
+- **Kinds.** One JSON kinds table in kit config, read by the lock and by the gate. A repository may add kinds of its own in its main checkout's `.kit.json` `kinds` section; a kit kind or alias of the same name wins (docs/lock-api.md "Repository kinds"). `gate.py --measure` writes a proposed table; the PM reviews and commits it. Sizes never change automatically. A size is a whole number of cpu slots 1..agent_cap; a run may ask for fewer, never more. A program is heavy because it is on the heavy list, and its size comes from measurement.
+- **Gate-OK record.** The gate writes `<dev_drive>\pm-kit\kit-gate-ok\<repo key>\<sha>.json`, outside every checkout, for exactly the commit it passed; with no `dev_drive` it writes `<git common dir>/kit-gate-ok/<sha>.json`, which every reader then takes. `records` owns the format, the place and the verification; `gate` writes it. A branch gate's record holds per-step input digests, from which a landing reuses a step whose digests all match (docs/gate-landing-policy.md "Gate reuse"). The pre-push hook refuses a push to main without one when the repo sets `repo.push_block` (read from the base's committed `.kit.json`, never the working tree); a delete or non-fast-forward push of main is refused whatever it says. With no "gate" section the gate detects the repo's stack and runs its usual steps (docs/gate-run.md "Auto-detected gate").
+- **Result record.** A branch gate or a landing writes `<dev_drive>\pm-kit\kit-gate-result\<repo key>\<branch stem>.<gate|land>.json`, `running` at the start and the verdict at the end; `gate.py wait-result` waits on it, finishing `error` a `running` record whose process died (docs/gate-records.md "Result record").
+- **Landing.** `land.py <branch>... --expect-tip <sha>... [--reviewed-by <id>... --submit]`. It books one machine-lock entry, takes the repo's landing lock, merges onto `<remote>/<main>` as it is at its turn, gates the merged tree in that slot, pushes, and verifies. A red merge is undone; a conflict goes back to the branch's author. Landings into one repo take turns; branch gates and different repos run in parallel. A branch lands only with a queued verdict from a reviewer who is not its author (docs/gate-landing.md).
+- **What a landing runs.** The merged-tree gate runs only what the landing's work touches: each step picked by what the merge changes and run in its selected form, reusing a step whose inputs match the branch's record. No landing runs the full suite, and no branch needs a full run to land. A strict-path landing runs the same selection, always fresh (nothing reused), after a strong-tier review. The one exception: a landing whose diff changes a gate config file runs every step in its full form once, on the merged tree, at that landing. The scheduled daily full run (`daily_full.py`) is the only other full-repo run; it bisects a red and files the record.
+- **Backlog claims.** A record's scope is its claim; two live pulls never overlap. `pull` narrows the pulled record, and the in-flight one when it lists planned files, in one write; `commit.py` refuses a commit that touches the other side's narrowed part, and a landing refuses a scope breach of a narrowed record. `add` never refuses an overlap: it files the record, warns, and writes the overlap into its Found section; the pull-time guard holds such a record until the branch lands. Work that waits on the owner is parked: its claim is released and its record blocked on a hub item, with an end condition the hub checks and lifts itself (docs/backlog.md).
+- **Owner files.** A path in `owner.paths` changes only by a commit the owner authored or approved. The hub makes an approved commit itself when the owner approves; no agent writes, stages or commits an owner-only path. An approval holds until that change is on main, with a 30-day backstop: a rebuild, rebase, merge or re-land carrying the same change needs no second approval; only a change beyond what was approved does. A sync merge may carry an owner-only path when the path equals the merge-tree result and neither side's own commits breach the rule; a rename, a mode change, a non-default merge attribute or an octopus merge fails closed. `ownerfiles` holds these rules once; `commit`, `landing`, the pre-push check and the hub read them there.
+- **Roles.** `PM_KIT_ROLE` is the one role marker on every host, and `PM_KIT_HOST` names the host. The host adapter tells subagents apart and passes the identity as `Action.agent`; a host whose hooks carry no subagent identity says so in `hosts.json` and gets the role-only policy. A role's mode is the `mode:` of its role file, which `.kit.json` `roles.<role>.mode` overrides; `guard.role_policy` turns the role policy on per repository. The policy itself is `kitlib/guard/rolepolicy.py`, the same on every host. Who may run which backlog verb is `kitlib/backlog/roles.py`, the owner's map.
+- **Guard rules.** Read-only checks of real state, judged once over a neutral `Action`. A refusal names the command to use instead. The guard never answers allow: it denies, asks, warns or stays silent. A rule's mode (deny, warn, off) comes from the kit's defaults and the machine config's `guard_rules`, never from a file a branch carries. Denied by default: an agent's edit in a main checkout, a write outside the session's jail, damaging git in a main checkout (`checkout`, `switch`, `reset --hard`, `clean`, `stash`, a push to main without a record), an edit of an owner-only path, the ledger, the lock's state or a generated file, a search from a drive root, and a script or unreadable line that names `backlog.py` (no hook rewrites a subagent's command to carry its role). A raw heavy program outside the lock is a warning by default. Bash, PowerShell and cmd lines are read as commands; a line the parser cannot read goes through `kitlib/guard/fallback.py`'s patterns (docs/guard.md).
+- **Trailers.** `commit.py` writes the agent's trailers. A commit without a Co-Authored-By line is never refused: the gate's trailers step and the landing only warn.
+- **Hook entry.** Every host's hooks run `boot/hook.py <host> <event> [<part>]`. It reads the host's `hosts.json` hook data with json alone, lets a call to an unguarded tool through on a host whose `fast_path` allows it, then boots the kit and hands the event to `kitlib.hookrun`: the guard, failing closed, or a start event's context.
 
-## Details
+## Data ownership
 
-- The ledger location comes only from the user-profile machine config (`ledger_dir` with `ledger_repos`, or `ledger_path` for one file; docs/kit-json.md "Machine config keys"), which the owner sets once (docs/install.md "Backlog records and the rulings ledger"). Nothing overrides it, not `.kit.json` and not env, and the guard denies agent edits to it. The kit holds no machine paths.
-- `slot()` takes the lock's Win32 mutex (on Linux a flock, `kitlib/platform/linux/locks.py`) on the thread that releases it (the owning thread). It prints nothing; entry points print.
-- Tests live in `tests/<pkg>/` as unittest tests and target the library directly; the entry-point tests cover only arguments and exit codes.
-- Tests run on an in-process fake git (kitlib/git/fake), except the classes marked `real_git` (docs/test-tools.md "Fake git").
-- Machine setup (`tools/machine_setup.py`, `installer/machine-setup.ps1`, on Linux `installer/machine-setup.sh`) runs once per machine and writes nothing into any repository: a repository needs nothing installed (plan decision 27; docs/install.md). A repository that wants a committed setup uses `machine_setup.py --repo` (`installer/new-repo.ps1` is its PowerShell front end).
+One package writes each kind of data; others read it through that package.
 
-## Packaging
-The kit ships as one release with a thin plugin per host, which the owner installs once per host.
-- **One release value:** `kit.json` holds the one name and version. The renderer writes it into every host manifest (Claude's `.claude-plugin/plugin.json` and marketplace stay at the kit root: the plugin root is the whole kit), and `kitlib.kitrelease` exports one release (core, every host shell, and the bridge when installed) with one `PM_KIT_RELEASE_ID`.
-- **Boot:** every host entry runs the stdlib-only `boot/kitboot.py` before importing kitlib. It verifies the pinned release, or uses the source checkout when nothing is pinned.
-- **Hooks:** one hook entry for every host, `boot/hook.py <host> <event> [<part>]` (plan decision 20). Before the kit boots it reads the host's `hosts.json` `hook` data with json alone and allows a call to a tool not in `guarded_tools` on a host whose `fast_path` is `all` (Claude; Codex has `none`, so every Codex call reaches the guard); then it boots and hands the event to `kitlib.host.hookmain.dispatch` with the adapter `hosts.json` names: the guard, failing closed, or a start event's context. Each host's shell registers its hooks in a rendered manifest that runs it; on Claude the kit header (SessionStart and SubagentStart) and the coordinator SessionStart hook ship in the plugin, and the guard (`boot/hook.py claude PreToolUse`) stays in each account's settings. The PM session-start checklist (`boot/hook.py claude SessionStart pm`) stays in the PM repo's settings by decision, not in the plugin. On Codex, whose plugin root is the export, the hooks are a second plugin, `pm-kit-hooks`, whose fixed-bytes stub runs the installed export's `boot/hook.py`, so a new kit version asks the owner for no new hook trust (docs/plugin-source.md "Codex hooks plugin").
-- **Bundled per host:** the rendered agents, skills, the lock, hub and Blender bridge MCP servers (docs/blender-mcp.md) and the host's hooks. On Claude the owner installs it from the local marketplace `pm-kit` as `pm-kit@pm-kit`, in each account folder, from the kit's export of pushed main (docs/install.md "Plugin install (local marketplace)").
-- **Skills:** one folder each under `content/skills/` (docs/shipping.md lists them). Profiles and instruction files become pointers to these skills.
-- **Instructions:** `AGENTS.md` is canonical; `CLAUDE.md` imports it. The repo profile is the neutral `docs/agent-profile.md`; each host's own-folder stub (`.claude/agent-profile.md`, `.codex/agent-profile.md`) points to it.
-- **Code:** tools and kitlib stay Python. Skills explain them, and enforcement stays in the hooks and the gate.
-- **Git hooks:** `githooks/` holds the kit's git hooks: `pre-push`, and the opt-in `pre-commit`, which runs its checks through `kitlib/githooks` (the render step, then the ledger check).
+| Data | Owner | Where |
+|---|---|---|
+| `.kit.json`, the machine config, the PM-repo pointer, the PM-data record | `config` | the repository; the PM repository's `.pm-kit/`; the machine registry |
+| The lock store (runs, holds, queue, history) | `lock` | the machine's lock folder, under named mutexes |
+| Landing lock, gate-OK record, in-flight mark, verdict-queue entry (format and place) | `records` | the git common dir, or the dev drive outside every checkout |
+| Result record, gate reuse cache, gate budget | `gate` | the dev drive, outside every checkout |
+| The verdict queue's entries | `landing` | the git common dir |
+| Backlog records, the audit log | `backlog` | the configured store: a ref, a branch, or the PM-data worktree |
+| The rulings ledger, rulebooks, pending steps | `ledger`, `pending` | where the machine config says; never `.kit.json`, never env |
+| The hub store (questions, to-dos, approvals, pages, landings) | `hubsite` | the PM-data worktree |
+| Approval rules (what an approval covers, when it is spent) | `ownerfiles` | read from the hub store through `hubclient` |
+| Sessions and launcher state | `launcher` | the launcher's state folder |
+| The kit export, its marker and headers | `pluginsource` | the live root |
+| Rendered agents and manifests | `content` | `hosts/<name>/shell/`; never edited by hand |
+| The refusal log | `guard` | the PM-data worktree |
+| A coordinator's event log and state note | `coordstate` | the agent temp folder, outside every repository |
+| Scheduled tasks | `schedtask` registers; the feature that needs one names it | the OS scheduler |
+| The delegation list, the module map, the backlog role map, the strict path defaults | the owner | owner-only files |
 
-## Scheduler UI
-- **API:** kitlib/lock exposes one versioned, transport-neutral API, made of read snapshots, a revision number for changes, and validated owner writes. Every UI uses only this API (docs/lock-api.md).
-- **Adapters:** thin layers over the API.
-  - The schedule window: `reserve_ui.pyw` (kit root), a tkinter view; its logic is `kitlib/lockui/`.
-  - The Action Hub's lock section: the hub server calls the lock in-process through `kitlib/hubsite/lockdoor.py`.
-  - A lock MCP server (`mcp/lock_server.py`; docs/lock-mcp.md) with read tools only, open to all. The owner decided it ships read-only so the lock never trusts a session mark; owner lock writes stay on `reserve_ui.pyw` and the outside-terminal CLI. The guard still denies agents the retired write tools' names.
-
-## Never in the kit
-autoMode, git identity, preferences, memory, the knowledge contents and synced skills. A skill tied to one repository's engine, models or worktree tools stays in that repository.
-
-## Action Hub
-- A local website served by `tools/hub.py serve` holds the owner's questions, to-do list and story intake, and the lock section. It has an HTTP API and a CLI (`tools/hub.py`), and is reachable remotely only through the Cloudflare Access tunnel listener. Stories go to the chosen repo's coordinator for review before they reach its backlog. The PM posts and reads them through the CLI; nothing waits on an answer.
-- Push notifications: when the owner answers a question or marks a to-do done, the server tells the session that asked and the PM through the host's delivery (`kitlib/hubsite/push.py` decides what and when; the host adapter's `push()` sends, on Claude Code to the session's peer pipe; the launcher records each session's pipe as a hint, `kitlib/launcher/pipes.py`). Without a delivery the hub serves as before (docs/hub-push.md "Push notifications").
-- The store schema and the PM's steps are in docs/action-hub.md. The hub-ops skill wraps them in the plugin.
-
-## PM session start
-- `kitlib/pmstart` builds the checklist that `boot/hook.py claude SessionStart pm` injects at PM session start; see docs/pm-start.md.
-- First-use repo prep (`kitlib/git/prep.py`) runs from the PM session start and `tools/new_worktree.py`. It writes local settings only: the anchored worktree folder lines in the repository's `info/exclude`, and the local `core.hooksPath` when none is set. Nothing is committed (docs/new-worktree.md "First-use prep").
+The kit holds no machine paths: every machine fact comes from the machine config.
 
 ## Hosts
-- kitlib stays host-neutral and never imports a host. The host is chosen at the edge: a host's entry points build its adapter and pass it in; shared CLIs read `PM_KIT_HOST` (default `claude`) and resolve the adapter through `hosts.json`. One `--host` flag replaces `--provider`.
-- A `HostAdapter` parses its hook payloads into `Action`, renders `Decision` back, and supplies `SessionHost`, `ContentRenderer` and, where the host has them, `CommandHost`, a launcher and a plugin installer; optionally it gives the text each of its start hooks adds (`start_text`, by event and part, and `start_parts`, the parts a role runs), which `boot/hook.py` writes and `tools/agent_view.py` shows. `HostProfile` (the `profile` section of `hosts.json`) holds only consumed fields: owner paths, worktree root, state dir, skills dir, agent process images, the session process and session env var, env prefixes, MCP tool-name and agent-name formats, and commit attribution (name, email, model env var, model form).
+
+- `kitlib` stays host-neutral and never imports a host. The host is chosen at the edge: a host's entry points build its adapter and pass it in; shared CLIs read `PM_KIT_HOST` (default `claude`) and resolve the adapter through `hosts.json`.
+- A host name appears only in `hosts.json`, its own folder, `optional/bridge/hosts/<name>/`, the bridge's peer list and tests (`tests/host/test_leaks.py`). A host adds no hook script. Adding a host changes no other folder (docs/new-host.md).
 - Capabilities a host lacks (no `ask`, no subagent identity in hooks) are declared in `hosts.json`; the core degrades them one way for every host (`ask` becomes deny with the reason).
 - One shared conformance suite (`tests/host/conformance.py`) defines a supported host; each host's tests subclass it with recorded payloads.
-- The roster: every role exists on every host, with a tier per role and a tier → model map per host (docs/ROSTER.md). The role list lives only in `content/roles/`: docs/ROSTER.md's tables are rendered from it, and the launcher's `KIT_AGENTS` and the backlog policy's groups (`kitlib/backlog/roles.py`) read it (`kitlib.content.roster`), so a role is added or removed with one file and a render. Roles are referred to by bare name in content; each host's instructions say how a name maps to its dispatch name.
-- Migration history from the old `claude/` and `codex/` folders: docs/multi-host-plan.md section 3.
+
+### Host contract
+
+`kitlib/host/`: the neutral `Action` and `Decision` types, `HostAdapter`, `HostProfile`, `SessionHost`, `CommandHost`, `ContentRenderer`. Protocols and data only. A `HostAdapter` parses its hook payloads into `Action`, renders `Decision` back, and supplies the rest; optionally it gives the text each of its start hooks adds. `HostProfile` (the `profile` section of `hosts.json`) holds only consumed fields.
+
+### Content
+
+`content/roles/` and `content/skills/`: every role and skill written once. `python tools/render_content.py --write` renders the roles into each host's agents and manifests; every host loads `content/skills/` itself, so skill text is identical everywhere. Rendered files are committed and open with a generated-file line; `tools/commit.py` renders when a source is committed, the guard refuses a hand edit, and a test fails on drift. Every role exists on every host, with a tier per role and a tier-to-model map per host; a role's own model, where it has one, is `hosts.json` `role_models` (deep-worker runs the host's strongest long-context model). The role list lives only in `content/roles/`: docs/ROSTER.md, the launcher and the backlog policy read it from there. `content/default-profile.md` is the profile a role reads in a repository with none.
+
+## Packaging
+
+- **One version.** `kit.json` holds the one name and version; the renderer writes it into every host manifest.
+- **The live kit.** The machine runs the kit from an export of pushed main (`pluginsource`): each host installs its thin plugin from that export, and a refresh re-points every account when main moves (docs/plugin-source.md). There is no other way to ship it: no pinned release.
+- **Boot.** Every host entry runs the stdlib-only `boot/kitboot.py` before importing `kitlib`.
+- **Hooks.** The one hook entry (Contracts, "Hook entry"). Each host's shell registers its hooks in a rendered manifest; Codex's hooks are a second plugin whose fixed-bytes stub runs the installed export's entry, so a new kit version asks for no new hook trust.
+- **Bundled per host.** The rendered agents, the skills, the lock, hub and Blender MCP servers, and the host's hooks.
+- **Instructions.** `AGENTS.md` is canonical; `CLAUDE.md` imports it. The repo profile is `docs/agent-profile.md`; each host's own-folder stub points to it.
+- **Git hooks.** `githooks/` holds `pre-push` and the opt-in `pre-commit`.
+- **Machine setup** runs once per machine and writes nothing into any repository. A repository that wants a committed setup asks for one (`machine_setup.py --repo`).
+- **Repo layer.** A repository holds `.kit.json` (optional: with none, the defaults of docs/kit-json.md "With no file") and at most one repo hook module. It holds no copy of the kit and no stub of its tools: skills and roles run `<kit>/tools/<x>.py -C <checkout>`.
+
+## Scheduler UI
+
+`kitlib/lock` exposes one versioned, transport-neutral API: read snapshots, a revision number, validated owner writes. Every UI uses only this API (docs/lock-api.md): the schedule window (`reserve_ui.pyw`, logic in `kitlib/lockui`), the Action Hub's lock section (in-process, through `kitlib/hubsite/lockdoor.py`), and the lock MCP server, which ships read tools only so the lock never trusts a session mark. Owner lock writes stay on the window and the outside-terminal CLI.
+
+## Action Hub
+
+A local website (`tools/hub.py serve`) holds the owner's questions, to-dos, approvals, pages and story intake, and the lock section. It is reachable remotely only through the tunnel listener's access check. Agents reach it through `hubclient` (the CLI and the hub MCP server); nothing below the apps layer imports the server. When the owner acts, the server tells the session that asked, and the PM, through the host's push delivery. Its timed jobs (`hubjobs`) are passed in at start (docs/action-hub.md).
+
+## Security
+
+- The owner's personal details never leave the machine, and never enter a tracked file: the scrub and the machine-path check gate every commit.
+- Owner-only paths, the ledger, the lock's state, the hub's secrets and the machine config are closed to agents by the guard, whatever the role.
+- Everything that decides fails closed: the guard on an error, the lock on acquisition, a landing on a record it cannot read, an approval it cannot verify.
+- A branch can never loosen the rules it is judged by: gate config, guard modes, push rules and owner paths are read from the base's committed tree or the machine config, never from the branch.
+- An agent ends only a process it started, by pid and start time.
+
+## Testing
+
+- Tests live in `tests/<pkg>/` as unittest tests and target the library; entry-point tests cover only arguments and exit codes.
+- Tests run on the in-process fake git (`kitlib/git/fake`), except the classes marked `real_git` (docs/test-tools.md "Fake git").
+- A change runs the tests it can break: `kit_tests.py --select` picks them from the import graph. A branch gate and a landing run that selection (Contracts, "What a landing runs"); the daily full run is the only full-repo run.
+- A fix comes with a test that fails without it (`redfirst.py`).
+- Each host passes the shared conformance suite. The module map check runs in the gate.
+
+## Never in the kit
+
+autoMode, git identity, preferences, memory, the knowledge contents and synced skills. A skill tied to one repository's engine, models or worktree tools stays in that repository.
+
+## Open items
+
+None. An item that waits on the owner is listed here and marked **OPEN** where it applies; until it is answered, the code stays as it is on that point.
+
+## Designs
+
+| Design | Covers |
+|---|---|
+| `docs/modules/base-design.md` | `platform`, `proc`, `fs`, `schedtask`, the wires, the root files |
+| `docs/modules/git-design.md` | `git`, the fake git |
+| `docs/modules/host-design.md` | `host`, `attribution`, `hosts/<name>/`, `boot/` |
+| `docs/modules/content-design.md` | `content`, `githooks`, `content/` |
+| `docs/modules/config-design.md` | `config` |
+| `docs/modules/lock-design.md` | `lock`, `lockui`, `lockmcp` |
+| `docs/modules/records-design.md` | `records`, `landed` |
+| `docs/modules/hub-design.md` | `hubvalidate`, `hubclient`, `hubsite`, `hubjobs`, `hubbacklog`, `hubmcp`, `autotasks` |
+| `docs/modules/owner-files-design.md` | `ownerfiles`, `delegations` |
+| `docs/modules/ledger-design.md` | `ledger`, `pending` |
+| `docs/modules/checks-design.md` | `docs`, the repo checks, `modulemap`, `maintlint` |
+| `docs/modules/tests-design.md` | `pytests`, `tooldeps`, `testlist`, `ci`, `redfirst` |
+| `docs/modules/sessions-design.md` | `launcher`, `pmwatch`, the session starts, `coordstate` |
+| `docs/modules/backlog-design.md` | `backlog` |
+| `docs/modules/worktree-design.md` | `worktree`, `preflight`, `strayrestore` |
+| `docs/modules/commit-design.md` | `commit`, `syncbase`, `reviewpack` |
+| `docs/modules/gate-design.md` | `gate`, `loadnode`, `dailyfull` |
+| `docs/modules/landing-design.md` | `landing` |
+| `docs/modules/guard-design.md` | `guard`, `hookrun`, `agentview` |
+| `docs/modules/install-design.md` | `pluginsource`, `allowrules`, `machinesetup`, `stackskill`, `kitcmd`, `pmdata`, `installer/` |
+| `docs/modules/extras-design.md` | `blendermcp`, `optional/` |

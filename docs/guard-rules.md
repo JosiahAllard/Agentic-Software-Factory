@@ -4,7 +4,7 @@ Part of docs/guard.md (the index); the sections below are moved there unchanged.
 
 ## Rules
 
-`kitlib/guard/rules.py` `decide(action, ctx)`. Its rules are split over `kitlib/guard/rules_base.py`, `rules_owner.py`, `rules_run.py`, `rules_gitcore.py`, `rules_push.py`, `rules_edit.py`, `rules_net.py`, `rules_tools.py` and `rules_write.py`, in that order (each imports only those before it); `rules.py` imports and re-exports every name in them, so a `rules.<name>` below names any of them. Every row below is a row in tests/guard/test_rules.py with the exact `Instead:` text. `<main>` is the main checkout, quoted, and `<wt>` is the session's own worktree.
+`kitlib/guard/rules.py` `decide(action, ctx)`. Its rules are split over `kitlib/guard/rules_base.py`, `rules_owner.py`, `rules_run.py`, `rules_gitcore.py`, `rules_push.py`, `rules_edit.py`, `rules_net.py`, `rules_tools.py`, `rules_write.py`, `rules_gitread.py`, `rules_gitcommit.py`, `rules_gitjail.py` and `rules_gitref.py`, in that order (each imports only those before it); `rules.py` imports and re-exports every name in them, so a `rules.<name>` below names any of them. Every row below is a row in tests/guard/test_rules.py with the exact `Instead:` text. `<main>` is the main checkout, quoted, and `<wt>` is the session's own worktree.
 
 | rule | denied | instead |
 |---|---|---|

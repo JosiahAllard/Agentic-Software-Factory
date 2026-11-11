@@ -1,4 +1,4 @@
-"""kitlib.git.overlap and tools/branch_overlap.py (docs/branch-overlap.md): which unmerged branches
+"""kitlib.worktree.overlap and tools/branch_overlap.py (docs/branch-overlap.md): which unmerged branches
 change files in a set. Each case gets a copy of one built repository (tests/gitfixture.py):
 
   main          initial README.md, then kit/merged merged in; pushed to origin
@@ -16,7 +16,8 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib.git import cmd, overlap
+from kitlib.git import cmd
+from kitlib.worktree import overlap
 from kitlib.git import repo as gitrepo
 from tests import gitfixture
 

@@ -61,7 +61,7 @@ import time
 from kitlib import kitroot
 from kitlib.config import ConfigError, load
 from kitlib.git import cmd
-from kitlib.git import prep as gitprep
+from kitlib.worktree import prep as gitprep
 from kitlib.git import refs as gitrefs
 from kitlib.records import inflight, landing
 from kitlib.host.registry import RegistryError
@@ -234,7 +234,7 @@ def create(root, branch, existing=False, base=None, wait=True, say=None, sleep=t
     flight (None: they lead the Outcome's lines); `sleep` and `clock` are time's, for tests.
     `host` is a hosts.json name whose folder the worktree goes in (kitlib.worktree.hostdirs); None
     is "repo".worktrees_dir, as before hosts. `prep(main, folders)` is the first-use repo prep
-    (None: kitlib.git.prep.run) run once the worktree is made; its lines follow the worktree line."""
+    (None: kitlib.worktree.prep.run) run once the worktree is made; its lines follow the worktree line."""
     rc, common, err = git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir')
     if rc != 0 or not common:
         return Outcome(REFUSED, ['refused: %s is not a git checkout (no common dir: %s).'

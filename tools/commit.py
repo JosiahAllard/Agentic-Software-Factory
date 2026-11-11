@@ -25,7 +25,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import commit as C                                      # noqa: E402
+from kitlib import attribution, commit as C                          # noqa: E402
 from kitlib.git import repo                                         # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
 
@@ -63,7 +63,7 @@ def parser():
                       help='read the body from this file (UTF-8)')
     p.add_argument('--model', default=None,
                    help='the model you run on (default: the host\'s model variable, %s on the '
-                        'default host)' % C.MODEL_ENV)
+                        'default host)' % attribution.MODEL_ENV)
     p.add_argument('--host', '--provider', dest='host', default=None,
                    help='the agent host, for the Co-Authored-By trailer (default: $PM_KIT_HOST, '
                         'else the hosts.json default); --provider is its old name, kept for one release')

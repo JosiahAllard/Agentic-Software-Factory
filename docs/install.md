@@ -127,7 +127,7 @@ the machine config (docs/kit-json.md "Machine config keys"). The first `<kit>/to
 ### What first use writes
 
 The first time the kit works in a repository (the PM's start, `tools/new_worktree.py`), the
-first-use prep (`kitlib/git/prep.py`; docs/new-worktree.md "First-use prep") writes local git
+first-use prep (`kitlib/worktree/prep.py`; docs/new-worktree.md "First-use prep") writes local git
 settings only, never a tracked or untracked file, and nothing is committed:
 
 - `.git/info/exclude` (in the git common folder, so every worktree shares it): one anchored line

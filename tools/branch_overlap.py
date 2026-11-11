@@ -3,7 +3,7 @@
   branch_overlap.py [-C DIR] (--files PATH ... | --files-from FILE | --branch BRANCH) [--base REV]
 
 Read-only: it never fetches, writes or moves a ref. A thin entry point (ARCHITECTURE.md, Layers):
-it parses, calls kitlib.git.overlap.look, prints and exits. Exit codes: 0 no overlap; 1 overlap;
+it parses, calls kitlib.worktree.overlap.look, prints and exits. Exit codes: 0 no overlap; 1 overlap;
 2 usage, or git gave no answer (CANNOT ANSWER); 130 Ctrl+C.
 """
 import argparse
@@ -12,7 +12,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib.git import overlap                                      # noqa: E402
+from kitlib.worktree import overlap                                      # noqa: E402
 
 USAGE = 2
 

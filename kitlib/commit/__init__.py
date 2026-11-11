@@ -103,7 +103,6 @@ from kitlib.commit import approval
 
 OK, REFUSED, USAGE = 0, 1, 2
 TOOL = 'commit.py'
-MODEL_ENV = attribution.model_environment()       # the default host's (hosts.json)
 OWNER_AUTHORED_TRAILER = 'Owner-Authored: yes'
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DOC_BUDGET_TIMEOUT = 600     # seconds
@@ -136,28 +135,6 @@ class _Stop(Exception):
         Exception.__init__(self, code)
         self.code = code
         self.lines = [l for l in lines if l is not None]
-
-
-def settings(cfg):
-    """`{'merge_fold', 'coauthor_families', 'main_branch', 'remote', 'rule_pointer'}` from a
-    checked Config.
-    Raises ConfigError on a family name that is blank or not single-spaced."""
-    sec = cfg.section('commit')
-    families = sec['coauthor_families'] or []
-    if not all(f.strip() and f == ' '.join(f.split()) for f in families):
-        raise kconfig.ConfigError('.kit.json "commit".coauthor_families must be a list of names '
-                                  '(one or more words, single-spaced), e.g. ["Codex"]')
-    return {'merge_fold': bool(sec['merge_fold']), 'coauthor_families': families,
-            'main_branch': cfg.main_branch, 'remote': cfg.remote,
-            'rule_pointer': cfg.section('checkout_guard')['rule_pointer']}
-
-
-def coauthor(model, families=(), provider=None):
-    """The co-author trailer for `model`: `Claude <model>`, never a bare model name - unless the
-    name is one of `families` or starts with one followed by a space, '.' or '-' (`Codex GPT-5`,
-    `Codex-mini`, `Codex.2`; never `Codexer`): that name is kept as given. A lower-case Claude
-    model id is written as its display name (attribution.display_name)."""
-    return attribution.coauthor(model, provider, families)
 
 
 def repo_path(path, root):
@@ -216,40 +193,6 @@ def canonical_approved(rules, owner_approved, paths):
     return [rules.canonical(value, paths) for value in owner_approved]
 
 
-def resolve_model(owner_authored, flag, env=None, provider=None):
-    """`(model, where it came from, usage message or None)`. --model is required on every
-    ordinary commit: the flag, else MODEL_ENV (blank is unset). --owner-authored takes none:
-    --model there is contradictory, and MODEL_ENV is ignored."""
-    env = os.environ if env is None else env
-    try:
-        model_env = attribution.model_environment(provider)
-        if not owner_authored and attribution.requires_model_id(provider):
-            attribution.coauthor(flag, provider)
-    except ValueError as error:
-        return None, None, str(error)
-    if owner_authored:
-        if flag:
-            return None, None, ('--owner-authored and --model contradict each other - one commit '
-                                'cannot be both the owner\'s own and an agent\'s; drop one')
-        return None, None, None
-    if flag and flag.strip():
-        return flag, '--model', None
-    fallback = (env.get(model_env) or '').strip() if model_env else ''
-    if fallback:
-        return fallback, model_env, None
-    return None, None, missing_model(provider)
-
-
-def missing_model(provider=None):
-    """The one refusal commit.py and sync_base.py give when no model is named. It offers the
-    chosen host's own model variable, and none when that host has no fallback: never another
-    host's (hosts.json model_env)."""
-    model_env = attribution.model_environment(provider)
-    return ('--model is required: name the model you are running on, --model "<model name>"%s; '
-            'it goes in the commit\'s Co-Authored-By trailer. If you do not know it, say so and '
-            'stop.' % (' (or set %s for this session only)' % model_env if model_env else ''))
-
-
 def model_requirement_error(rules, owner_authored, owner_approved, paths):
     """None unless an --owner-authored commit's --owner-approved coverage fails: every value must
     name a blanket entry or one of the paths this call commits (an empty or unrelated value must
@@ -272,7 +215,7 @@ def build_trailers(rules, owner_approved, owner_authored, model, families=(), pr
     """`<owner trailer>: <value>` lines (the configured "owner".trailer), then Co-Authored-By on
     an agent's commit, or `Owner-Authored: yes` on the owner's own, then the `session` lines."""
     trailers = ['%s: %s' % (rules.trailer, o) for o in owner_approved]
-    trailers.append(OWNER_AUTHORED_TRAILER if owner_authored else coauthor(model, families, provider))
+    trailers.append(OWNER_AUTHORED_TRAILER if owner_authored else attribution.coauthor(model, provider, families))
     trailers.extend(session)
     return trailers
 
@@ -1384,7 +1327,7 @@ def _commit(req, lines):
     root = req.root
     try:
         cfg = kconfig.load(root)
-        opts = settings(cfg)
+        opts = kconfig.commit_settings(cfg)
         rules = cfg.owner_rules()
     except kconfig.ConfigError as e:
         raise _Stop(USAGE, 'REFUSED: the kit configuration is refused: %s. Nothing was committed.'
@@ -1397,7 +1340,7 @@ def _commit(req, lines):
                      'message and its trailers')
     if req.consume is not None:
         return _consume(req, lines)
-    model, source, err = resolve_model(req.owner_authored, req.model, req.env, req.provider)
+    model, source, err = attribution.resolve_model(req.owner_authored, req.model, req.env, req.provider)
     if err:
         raise _usage(err)
     if source not in (None, '--model'):

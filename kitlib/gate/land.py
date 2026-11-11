@@ -1906,7 +1906,7 @@ class Lander(object):
 
     def tree_path(self):
         """Where the landing tree is: Lander(tree=), else <main checkout>/<worktrees_dir>/_landing
-        (TREE_NAME), the folder agent worktrees go in (kitlib.git.prep keeps it out of git
+        (TREE_NAME), the folder agent worktrees go in (kitlib.worktree.prep keeps it out of git
         status)."""
         if self.tree_given:
             return os.path.normpath(os.path.abspath(self.tree_given))

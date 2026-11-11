@@ -20,7 +20,7 @@ from kitlib.config import load
 from kitlib.records import inflight, landing
 from kitlib.worktree import new
 from kitlib.git import cmd as gitcmd
-from kitlib.git import prep as gitprep
+from kitlib.worktree import prep as gitprep
 from tests import gitfixture
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -64,7 +64,7 @@ class WorktreeCase(unittest.TestCase):
         self.addCleanup(env.stop)
         # The first-use repo prep would set these repositories' core.hooksPath to the kit's
         # githooks; the cases here test the worktree, PrepIsRun the prep's call and
-        # tests/git/test_prep.py the prep itself.
+        # tests/worktree/test_prep.py the prep itself.
         prep = mock.patch.object(gitprep, 'run', return_value=[])
         self.prep = prep.start()
         self.addCleanup(prep.stop)
@@ -223,12 +223,12 @@ class NewBranchMode(WorktreeCase):
 
 
 class PrepIsRun(WorktreeCase):
-    """A worktree that is made runs the first-use repo prep (kitlib.git.prep) on the main checkout,
+    """A worktree that is made runs the first-use repo prep (kitlib.worktree.prep) on the main checkout,
     with every host's worktree folder; its lines follow the worktree line. A refusal runs none."""
 
     def setUp(self):
         # Config passed through the environment (GIT_CONFIG_COUNT/KEY_n/VALUE_n, which a sandbox
-        # may set and the fake git refuses) is dropped, as tests/git/test_prep.py does.
+        # may set and the fake git refuses) is dropped, as tests/worktree/test_prep.py does.
         env = mock.patch.dict(os.environ, {k: v for k, v in os.environ.items() if not k.upper()
                                            .startswith(('GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_',
                                                         'GIT_CONFIG_VALUE_'))}, clear=True)

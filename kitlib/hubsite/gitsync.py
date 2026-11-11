@@ -86,7 +86,7 @@ Every pass ends in the status object (GitSync.status), which the server's /healt
 The commit is a plain data commit: the machine's own git identity (no --author, no -c), the fixed
 subject SUBJECT, no body, no agent trailer, limited by pathspec to the store folder, hooks left
 on, never signed (`--no-gpg-sign`: a signing program may ask for a passphrase, and nobody watches
-this thread). It does not go through kitlib.commit: that is the path for an agent's change to
+this thread). It does not go through commit.py: that is the path for an agent's change to
 tracked code, with a model trailer and a staged machine-path scan, and neither fits data the owner
 wrote in a browser. Other paths staged in the data worktree stay staged and out of the commit.
 
@@ -166,7 +166,7 @@ import re
 import threading
 import time
 
-from kitlib import commit as kcommit
+from kitlib import kitroot
 from kitlib import pmdata
 from kitlib.git import cmd, refs, repo
 
@@ -219,9 +219,9 @@ def _kit_checkout_error(root, branch, remote):
     is not on the data branch recorded in its kit-pm-data.json (docs/pm-data-branch.md "Layout"),
     or one pushing to another remote than the recorded one (a checkout holding the kit's code is
     _kit_code_error's). Returns the recorded remote for the data branch, else None."""
-    same, why = repo.same_repository(root, kcommit.KIT_ROOT)
+    same, why = repo.same_repository(root, kitroot.root())
     if same is None:
-        kit_common, _ = repo.common_dir(kcommit.KIT_ROOT)
+        kit_common, _ = repo.common_dir(kitroot.root())
         if kit_common is not None:      # the kit is in git; the store's repository could not be told
             raise Refused('cannot tell whether %s is the kit\'s repository: %s' % (root, why))
         return None

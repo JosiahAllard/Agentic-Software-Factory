@@ -57,7 +57,7 @@ import time
 from kitlib import attribution
 from kitlib import kitroot
 
-from kitlib.config import ConfigError, load as load_config
+from kitlib.config import ConfigError, commit_settings, load as load_config
 from kitlib.git import checkout as gitcheckout
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
@@ -253,7 +253,7 @@ def owner_refusal(top, cfg, full):
     from kitlib import commit as kcommit      # here: only a merge that is committed needs it
     try:
         rules = cfg.owner_rules()
-        fold = kcommit.settings(cfg)['merge_fold']
+        fold = commit_settings(cfg)['merge_fold']
     except ConfigError as e:
         bad, why = None, 'kit configuration: %s' % e
     else:

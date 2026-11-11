@@ -891,12 +891,12 @@ def allow_rules(cfg, repos=None, pm_repo=None, settings=None, load_repos=None, l
 
 
 def repo_prep(repos=None, prep=None, load_repos=None):
-    """The first-use repo prep (kitlib.git.prep.run; docs/new-worktree.md "First-use prep") of each
+    """The first-use repo prep (kitlib.worktree.prep.run; docs/new-worktree.md "First-use prep") of each
     repository in launcher.repos, the repositories the kit's workers make worktrees in: its lines,
     none for a repository already prepared. A folder that is not there is that repo's own "could
     not prep" line; prep never raises."""
     if prep is None:
-        from kitlib.git import prep as gitprep
+        from kitlib.worktree import prep as gitprep
         prep = gitprep.run
     repos = (load_repos or launcher_repos)() if repos is None else repos
     lines = []

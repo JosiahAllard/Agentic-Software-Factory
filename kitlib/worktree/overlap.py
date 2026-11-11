@@ -30,8 +30,8 @@ import os
 from kitlib.backlog import scope as smod
 from kitlib.config import ConfigError, load as load_config
 
-from . import batch, cmd, refs
-from . import repo as gitrepo
+from kitlib.git import batch, cmd, refs
+from kitlib.git import repo as gitrepo
 
 CLEAR, OVERLAP, CANNOT = 0, 1, 2
 

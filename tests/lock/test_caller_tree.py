@@ -16,7 +16,7 @@ SHELL, HOST, PWSH, CONHOST, EXPLORER, USERINIT, WINLOGON = range(900002, 900009)
 CARRIER, WMI, SVCHOST, TERMINAL = range(900010, 900014)
 GONE = 900099                   # a pid that cannot be opened
 WALK = ('the fakes answer the calls the Windows walk makes (handles, the listing); on Linux the '
-        'walk reads /proc (tests/proc/test_linux_process.py)')
+        'walk reads /proc (tests/platform/test_linux_process.py)')
 
 
 def who(table, env=None):

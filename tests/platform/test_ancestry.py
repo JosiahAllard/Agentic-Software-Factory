@@ -11,7 +11,7 @@ from tests.platforms import windows_only
 
 ME, SHELL, HOST, TOP = 900001, 900002, 900003, 900004
 WALK = ('the fakes answer the calls the Windows walk makes (handles, the listing); on Linux the '
-        'walk reads /proc (tests/proc/test_linux_process.py)')
+        'walk reads /proc (tests/platform/test_linux_process.py)')
 
 
 def table():

@@ -345,9 +345,9 @@ the host as heavy.
    tests/fs/test_treelock.py. Store() with no root refuses on Linux by name until slice 9 gave it
    a real root.
 4. **Process identity and kill.** Done: kitlib/platform/linux/process.py (the boot folded into
-   ctime, section 2.2); tests/proc/test_linux_process.py, tests/lock/test_nest_linux.py.
+   ctime, section 2.2); tests/platform/test_linux_process.py, tests/lock/test_nest_linux.py.
 5. **Containment and the pool.** Done: kitlib/platform/linux/contain.py (Job, NsJob, Carrier,
-   probe) and cpu.py; tooldeps/pool.py and pytests/runner.py on the seam; tests/proc/
+   probe) and cpu.py; tooldeps/pool.py and pytests/runner.py on the seam; tests/platform/
    test_linux_contain.py, test_linux_cpu.py. The pid shield is Windows only, so each Linux unit and
    worker carries the "could not shield" note.
 6. **Lock hardware.** Done: kitlib/platform/linux/hardware.py, lock/layout.detect_linux; the four

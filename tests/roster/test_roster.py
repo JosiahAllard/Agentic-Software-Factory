@@ -82,16 +82,11 @@ class RealRosterTest(unittest.TestCase):
 
     def test_deep_worker_runs_fable_on_claude_and_the_consultant_its_tier(self):
         """By owner decision deep-worker alone runs fable on Claude; the consultant, also deep, keeps
-        the tier's model; Codex has no override for either."""
+        the tier's model; Codex has no override for either. The ROSTER cell (hosts.json itself:
+        tests/host/test_registry.py)."""
         rows = {r[0]: r[1] for r in tables(read(os.path.join(KIT_ROOT, 'docs', 'ROSTER.md')).decode('utf-8'))['role'][1:]}
         self.assertEqual(rows['deep-worker'], 'deep (claude: fable)')
         self.assertEqual(rows['consultant'], 'deep')
-        roles = {r.name: r for r in content.load_roles(KIT_ROOT)}
-        self.assertEqual(roles['deep-worker'].model_for(*MAPS['claude']), 'fable')
-        self.assertEqual(roles['consultant'].model_for(*MAPS['claude']), MAPS['claude'][0]['deep'])
-        self.assertEqual(MAPS['claude'][0]['deep'], 'opus')
-        for name in ('deep-worker', 'consultant'):
-            self.assertEqual(roles[name].model_for(*MAPS['codex']), MAPS['codex'][0]['deep'], name)
 
     def test_every_role_models_key_is_a_role_file(self):
         names = {r.name for r in content.load_roles(KIT_ROOT)}

@@ -32,11 +32,11 @@ def _cell(text):
     return ' '.join(text.split()).replace('|', '\\|')
 
 
-def roles_table(content, maps=None):
+def roles_table(content, maps):
     """The role table's lines for Content `content`, by role name; `maps` as render's."""
     out = ['| role | tier | effort | use for |', '|---|---|---|---|']
     for r in sorted(content.roles, key=lambda r: r.name):
-        out.append('| %s | %s | %s | %s |' % (r.name, tier_cell(r, maps or {}), r.effort or NONE,
+        out.append('| %s | %s | %s | %s |' % (r.name, tier_cell(r, maps), r.effort or NONE,
                                              _cell(r.summary or r.description)))
     return out
 

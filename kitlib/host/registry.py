@@ -26,7 +26,8 @@ An entry: {"adapter": "<module>", "shell": "<repo path>", "platforms": ["windows
 "capabilities": {...}, "profile": {...}, "hook": {...},
 "tiers": {"light", "standard", "strong", "deep" -> model}}, optionally "role_models": {role -> model}
 (a role this host runs on that model, not its tier's: kitlib.host.content Role.model_for; each a
-role name, tests/host check each is a role file) and, on exactly one host, "default": true.The profile's "process_names" is per platform ({"windows": [...], "linux": [...]},
+role name; tests/roster/test_roster.py checks each is a role file) and, on exactly one host,
+"default": true. The profile's "process_names" is per platform ({"windows": [...], "linux": [...]},
 one entry for each of the host's "platforms"); its HostProfile carries the whole map as
 ((platform, images), ...), and process_names() reads the running platform's list of each
 (kitlib.platform.NAME, imported only then), so loading the registry needs no kitlib.platform.

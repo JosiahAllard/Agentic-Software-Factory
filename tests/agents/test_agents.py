@@ -9,7 +9,7 @@ from tests.shipped import scan
 # every model a Claude agent file may name: the host's tier models and its role_models (hosts.json)
 CLAUDE_MODELS = ({m for _, m in registry.host("claude").tiers}
                  | {m for _, m in registry.host("claude").role_models})
-AGENTS =Path(__file__).resolve().parents[2] / "hosts" / "claude" / "shell" / "agents"
+AGENTS = Path(__file__).resolve().parents[2] / "hosts" / "claude" / "shell" / "agents"
 EXPECTED = {"pm", "coordinator", "weak-worker", "worker", "senior-worker", "strong-worker", "deep-worker", "consultant",
             "analyst", "lander", "docs-writer", "test-runner", "helper", "topic"}
 # the seven role files the specialty skills replaced (docs/specialty-skills.md): no host ships them

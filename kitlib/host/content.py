@@ -299,7 +299,8 @@ def parse_role(data, source='role'):
         raise ContentError('%s: empty summary' % source)
     return Role(name=name, description=description, tier=fields['tier'], sandbox=fields['sandbox'],
                 capabilities=caps or (), all_tools=caps is None, effort=fields.get('effort'),
-                cache=fields.get('cache'), compact=compact, mode=mode, writes=writes, group=group or MODE_GROUP.get(mode), run=fields.get('run'), summary=summary,
+                cache=fields.get('cache'), compact=compact, mode=mode, writes=writes,
+                group=group or MODE_GROUP.get(mode), run=fields.get('run'), summary=summary,
                 body=text[m.end():], newline=newline)
 
 

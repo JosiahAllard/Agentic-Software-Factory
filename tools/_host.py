@@ -8,9 +8,11 @@ script has its own folder on sys.path, so `import _host` finds this file.
   adapter_module(name, environ, path)   the imported adapter module of `name`, else of PM_KIT_HOST
   plugin_copies(home, environ, path)    the plugin-copy step of each registered host whose adapter
                                         has one (tools/plugin_refresh.py --apply)
-  model_maps(renderers)                 {host: (tier -> model, role -> model)} of each renderer
-                                        (default: every registered host's): docs/ROSTER.md's
-                                        `tiers` argument (kitlib.roster)
+  renderers(hosts)                      the ContentRenderer of each named host (default: every
+                                        registered host), in name order
+  model_maps(rs)                        {host: (tier -> model, role -> model)} of each renderer
+                                        (default: renderers()): docs/ROSTER.md's `tiers` argument
+                                        (kitlib.roster)
 """
 import importlib
 import os
@@ -27,12 +29,16 @@ def adapter_module(name=None, environ=None, path=None):
     return importlib.import_module(registry.host(registry.choose(name, environ, path), path).adapter)
 
 
-def model_maps(renderers=None):
-    """{host: (tier_models(), role_models())} of each ContentRenderer in `renderers` (default: every
-    host hosts.json registers): the model maps docs/ROSTER.md's tables are rendered from."""
-    if renderers is None:
-        renderers = [adapter_module(h).ADAPTER.content().renderer() for h in sorted(registry.names())]
-    return {r.host: (r.tier_models(), r.role_models()) for r in renderers}
+def renderers(hosts=None):
+    """The ContentRenderer of each named host (default: every host hosts.json registers), in name
+    order."""
+    return [adapter_module(h).ADAPTER.content().renderer() for h in sorted(hosts or registry.names())]
+
+
+def model_maps(rs=None):
+    """{host: (tier_models(), role_models())} of each ContentRenderer in `rs` (default: every
+    host's, renderers()): the model maps docs/ROSTER.md's tables are rendered from."""
+    return {r.host: (r.tier_models(), r.role_models()) for r in (renderers() if rs is None else rs)}
 
 
 def plugin_copies(home=None, environ=None, path=None):

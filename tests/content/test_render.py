@@ -393,15 +393,14 @@ class ClaudeRendererTest(unittest.TestCase):
         self.assertIn(b'use the 1M-context opus model', got)
 
     def test_the_real_deep_worker_runs_fable_and_the_consultant_opus(self):
-        """Owner decision: deep-worker alone runs fable on Claude; the consultant keeps the deep tier."""
-        for name, model in (('deep-worker', 'fable'), ('consultant', dict(registry.host('claude').tiers)['deep'])):
+        """Owner decision: deep-worker alone runs fable on Claude; the consultant keeps the deep tier's
+        opus. The rendered agent files (hosts.json itself: tests/host/test_registry.py)."""
+        for name, model in (('deep-worker', 'fable'), ('consultant', 'opus')):
             with open(os.path.join(KIT_ROOT, 'hosts', 'claude', 'shell', 'agents', name + '.md'), 'rb') as f:
                 got = f.read().decode('utf-8').replace('\r\n', '\n')
             with self.subTest(name):
                 self.assertIn('\nmodel: %s\n' % model, got.split('\n---\n', 1)[0])
                 self.assertIn('the 1M-context %s model' % model, got)
-        self.assertEqual(dict(registry.host('claude').tiers)['deep'], 'opus')
-        self.assertEqual(dict(registry.host('claude').role_models), {'deep-worker': 'fable'})
 
     def test_every_tier_and_capability_has_a_claude_value(self):
         self.assertEqual(sorted(claude_content.renderer().tier_models()), sorted(hc.TIERS))

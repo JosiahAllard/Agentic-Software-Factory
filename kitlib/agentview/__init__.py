@@ -1,4 +1,5 @@
-"""kitlib.agentview: everything one role is given and held to, on one host (docs/content.md "Agent view"). tools/agent_view.py prints it.
+"""kitlib.agentview: everything one role is given and held to, on one host (docs/content.md "Agent
+view"). tools/agent_view.py prints it.
 
   view(kit, repo, name, host, renderer, ...)   [Section(title, lines)]: GIVEN sections in the order
                                                the agent receives them, then the HELD ones

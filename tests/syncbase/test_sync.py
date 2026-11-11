@@ -131,7 +131,8 @@ class SyncCase(unittest.TestCase):
 
     def kit_hint(self, name):
         """The command a hint prints for kit tool `name`: this kit's own tools/<name>.py with
-        -C the linked checkout, both quoted in forward slashes (docs/install.md "Ported repo tools")."""
+        -C the linked checkout, both quoted in forward slashes (docs/install.md "Ported repo
+        tools")."""
         return 'python "%s/tools/%s.py" -C "%s"' % (KIT.replace('\\', '/'), name,
                                                      self.git('rev-parse', '--show-toplevel'))
 

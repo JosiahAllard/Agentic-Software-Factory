@@ -1,4 +1,5 @@
-"""The launched session's window on Linux (docs/launcher.md "The window"): bash in a detached tmux session, or in launcher.terminal's command. kitlib.platform.NAME
+"""The launched session's window on Linux (docs/launcher.md "The window"): bash in a detached tmux
+session, or in launcher.terminal's command. kitlib.platform.NAME
 is patched to 'linux' and tmux and the terminal are fakes, so this runs on Windows and starts
 nothing. A tmux name tmux already has, and two names made the same tmux name, are refused with
 nothing started or ended; Windows's window text is the same as before."""

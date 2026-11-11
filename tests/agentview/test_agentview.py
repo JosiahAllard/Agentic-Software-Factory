@@ -1,4 +1,5 @@
-"""kitlib.agentview and tools/agent_view.py: what one role is given and held to (docs/content.md "Agent view").
+"""kitlib.agentview and tools/agent_view.py: what one role is given and held to (docs/content.md
+"Agent view").
 
 Each section is checked against the live source it is built from (the host's ContentRenderer and
 start_text, the kit header, the skills folder, kitlib.backlog.roles, the guard's role policy), on

@@ -33,7 +33,8 @@ What a subclass supplies:
                   behind the contract yet; the session test skips, saying so)
   LEAK_ALLOWED    {kit path: count} of the host's name left where section 2.7 forbids it (shrink only)
 
-Every hook a host registers runs the kit's one entry, boot/hook.py <host> <event> [<part>], or, for a plugin whose root is not the kit, its byte copy at <shell>/boot/hook.py: a
+Every hook a host registers runs the kit's one entry, boot/hook.py <host> <event> [<part>], or, for
+a plugin whose root is not the kit, its byte copy at <shell>/boot/hook.py: a
 host adds no hook script. The entry is run here in-process over the host's recorded payloads.
 
 Every check reads hosts.json and the adapter's own answers; none names a host.
@@ -430,7 +431,8 @@ class HostConformance(object):
 
     def test_skills_ship_when_declared(self):
         """A host with skills ships every skill file: copied byte for byte by its renderer, or
-        loaded from content/skills itself, which its plugin manifest names (docs/content.md "Manifests")."""
+        loaded from content/skills itself, which its plugin manifest names (docs/content.md
+        "Manifests")."""
         if not self.entry.capabilities.skills:
             return
         c = kcontent.load(self.KIT_ROOT)

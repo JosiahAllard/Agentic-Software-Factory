@@ -4,7 +4,7 @@ own process and cpu modules' functions, kitlib.platform.linux by its own code in
 kitlib/platform/linux/. A process is named by (pid, ctime), ctime its
 creation time in the backend's own units, so a reused pid is never taken for the process.
 
-Process (linux: slice 4)
+Process
   alive(pid, ctime)                 False only when that process is surely gone
   proc_ctime(pid)                   the creation time of pid, or None
   own_ctime()                       this process's creation time
@@ -22,13 +22,13 @@ Process (linux: slice 4)
                                     platform layer imports no kit module), `timeout` its limit
                                     (TimeoutExpired); RuntimeError when the child fails
 
-Hardware (linux: slice 6)
+Hardware
   threads()                         every active logical processor's global id, ascending
   all_mask()                        the mask of threads()
   l3_domains()                      [global mask] of each L3 cache domain; [] when not known
   memory_mb()                       {total_mb, free_mb} of physical memory now, or None
 
-Affinity (linux: slice 5)
+Affinity
   affinity_of(pid, ctime)           the process's affinity mask, or None
   set_affinity(pid, ctime, mask)    pin the process to `mask`
 """

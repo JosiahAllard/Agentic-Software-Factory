@@ -95,7 +95,8 @@ def require_peer_support():
     """LaunchError on Linux: the procStart the host writes there is not known to match the
     kit's creation time, so a fork could not be confirmed. Windows: nothing."""
     if platform.NAME == 'linux':
-        raise LaunchError('Linux peer support is deferred (docs/launcher.md "PM relaunch"): the procStart '
+        raise LaunchError('Linux peer support is deferred (docs/launcher.md "PM relaunch"): '
+                          'the procStart '
                           'the host writes on Linux is not known to match, so a fork cannot be confirmed; '
                           'nothing was started.')
 

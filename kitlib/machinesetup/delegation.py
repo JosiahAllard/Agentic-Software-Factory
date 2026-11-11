@@ -1,4 +1,5 @@
-"""The --delegation mode (docs/machine-setup.md "Linux"): the one root step that gives strong containment (S1) on a systemd
+"""The --delegation mode (docs/machine-setup.md "Linux"): the one root step that gives strong
+containment (S1) on a systemd
 box, or a boot hook on a box with no systemd, offered by the default mode below S1 and run by the
 owner with sudo. Declining it is allowed: the box is then at the lower tier, shown as such. After
 it the kit never asks for root again.

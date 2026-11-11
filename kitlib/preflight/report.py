@@ -75,7 +75,8 @@ def report(top, cfg, kit_root, base=None, fetch=False, lock_reader=lockline.read
     out.extend(LIST_INDENT + _worktree_line(w) for w in (wts or [])[:MAX_LISTED])
     place = repo.classify(top)
     out.extend(leftovers.lines(top, place, wts))
-    # The kit's own tools folder: a repository holds no copy of the kit's tools (docs/install.md "Ported repo tools"), so every command printed runs them from the kit, with -C.
+    # The kit's own tools folder: a repository holds no copy of the kit's tools (docs/install.md
+    # "Ported repo tools"), so every command printed runs them from the kit, with -C.
     tools = kit_root.replace('\\', '/').rstrip('/') + '/tools'
     out.extend(defaultstore.lines(top, cfg, tools))
     here = '"%s"' % top.replace('\\', '/')

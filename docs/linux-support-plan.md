@@ -67,6 +67,8 @@ reference VM (Ubuntu 24.04, systemd, the delegation drop-in) and on one weak-mod
 A VM on the owner's machine is outside the lock's view, so the VM run books the machine lock from the
 host as heavy.
 
+After each Claude Code update, re-run the tree-kill probe: the kit's detach and its lack of a pid shield on Linux rest on how Claude Code kills a call's tree (probe scripts on the reference VM, below).
+
 Unknown, to probe: Claude Code's Linux messaging address and session file fields (slice 15), its
 managed settings path (`/etc/claude-code`, machine setup step 5), and how the owner's self-hosted
 runner delegates cgroups to the runner user (slice 17).

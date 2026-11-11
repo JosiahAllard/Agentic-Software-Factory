@@ -1,4 +1,5 @@
-"""The window a launched session runs in on Linux (docs/launcher.md "The window"). kitlib.launcher.window hands its q, script and
+"""The window a launched session runs in on Linux (docs/launcher.md "The window").
+kitlib.launcher.window hands its q, script and
 open_window here when kitlib.platform.NAME is 'linux'.
 
 `script()` is bash, one statement per line, the Windows window's steps in its order: the title;

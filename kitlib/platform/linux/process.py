@@ -1,5 +1,5 @@
-"""The process primitives on Linux,
-read from /proc, with the meanings kitlib.platform.windows.process gives them on Windows. On
+"""The process primitives on Linux, read from /proc, with the meanings
+kitlib.platform.windows.process gives them on Windows. On
 Linux the process face binds its process names to these, so its callers run unchanged.
 
 A process is (pid, ctime). The ctime is `(boot << 64) | starttime`: boot is
@@ -22,7 +22,6 @@ only ctimes below the stamp).
                       CommandLine, ExecutablePath, ProcessId, ParentProcessId, Created), from /proc
   process_rows(timeout, run)
                       the seam's name for rows: no child is started, so no timeout applies
-
 
 terminate_verified opens a pidfd on the pid first and reads its starttime after: the pidfd names
 the process it was opened on, so the signal reaches that process or none, and the starttime read

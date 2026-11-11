@@ -742,7 +742,8 @@ class Parts(unittest.TestCase):
 class Tool(Base):
     def test_a_missing_old_kit_is_usage(self):
         """--old-kit names a folder that is not there: usage, before any home is looked up. With
-        no --old-kit the tool runs the default mode, not a usage error (tests/machinesetup/test_fresh.py test_the_default_mode_needs_no_switch)."""
+        no --old-kit the tool runs the default mode, not a usage error
+        (tests/machinesetup/test_fresh.py test_the_default_mode_needs_no_switch)."""
         r = subprocess.run([sys.executable, TOOL, '--old-kit', os.path.join(self.root, 'none')],
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, M.EXIT_USAGE)

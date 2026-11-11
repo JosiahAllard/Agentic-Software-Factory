@@ -11,7 +11,8 @@ from kitlib.platform.windows.process import (  # noqa: F401  (the face's names)
     listed_ctime, listed_ctimes, memory_mb, own_ancestors, own_ctime, proc_ctime, process_parents,
     raise_to_normal, set_affinity, snapshot, terminate_verified)
 
-# On Linux the process names read /proc instead (kitlib.platform.linux.process), with the same meanings and (pid, ctime) identity,
+# On Linux the process names read /proc instead (kitlib.platform.linux.process), with the same
+# meanings and (pid, ctime) identity,
 # the ctime `(boot << 64) | starttime`. The affinity and memory functions above stay Windows's:
 # off Windows they raise PlatformUnsupported through kitlib.platform.windows.win32.
 if kitlib.platform.NAME == "linux":

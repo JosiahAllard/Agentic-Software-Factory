@@ -2,7 +2,8 @@
 
 For each kit tool command in content/skills/**.md, content/roles/*.md and
 content/default-profile.md: it is written `python <kit>/tools/<name>.py`, never a bare
-`python tools/<name>.py` or another folder's copy (docs/install.md "Ported repo tools"); the kit has tools/<name>.py; the command shows `-C` when that
+`python tools/<name>.py` or another folder's copy (docs/install.md "Ported repo tools"); the kit
+has tools/<name>.py; the command shows `-C` when that
 tool's parser defines it, so it names the checkout it acts on and runs the same from any
 directory; and every `-x` / `--flag` the command shows is an option string that tool's parser
 defines. The tools are never run: their source is parsed (ast) for the option

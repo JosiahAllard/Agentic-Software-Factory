@@ -62,7 +62,8 @@ class Backends(unittest.TestCase):
             for name in names:
                 with self.subTest(name=name):
                     with self.assertRaisesRegex(platform.PlatformUnsupported,
-                                                r'%s is not built on Linux yet \(the %s area, slice %d\)'
+                                                r'%s is not built on Linux yet '
+                                                r'\(the %s area, slice %d\)'
                                                 % (name, area, slice_number)):
                         getattr(linux, name)(1, 2)
 

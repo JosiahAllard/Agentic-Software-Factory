@@ -30,7 +30,8 @@ RETIRED hook scripts, in HOOKS (`<kit>/hosts/claude/shell/hooks/`) or in
 MOVED_HOOKS (`<kit>/claude/hooks/`, before the hosts/ move), is re-pointed to the kit's one hook
 entry, ENTRY, followed by the host and the script's words (RETIRED): `guard.py` becomes
 `boot/hook.py <host> PreToolUse`. This runs in every mode and in the PM settings too, so a settings
-file written before the one hook entry keeps its one guard entry and its PM hook. Any other name in those
+file written before the one hook entry keeps its one guard entry and its PM hook. Any other name in
+those
 folders, or a kit with no ENTRY, is refused.
 """
 import copy
@@ -328,7 +329,8 @@ def repoint_moved(data, ctx):
     """Re-point, in place, every hook path in `data` (any event; `command` and `args`) that names a
     RETIRED hook script in this kit's HOOKS or MOVED_HOOKS folder to ENTRY and its words; [what it
     did, one line per path]. ValueError for another name there, or a kit with no ENTRY. Runs in
-    every mode: a settings file written before the one hook entry otherwise gets a second guard entry, or
+    every mode: a settings file written before the one hook entry otherwise gets a second guard
+    entry, or
     keeps a hook path the kit no longer has (a missing guard script blocks every tool call)."""
     did = []
     hooks = data.get('hooks') if isinstance(data, dict) else None

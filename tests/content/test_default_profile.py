@@ -1,4 +1,5 @@
-"""The kit's default agent profile, content/default-profile.md. A role reads it when the repository has no profile of its
+"""The kit's default agent profile, content/default-profile.md. A role reads it when the repository
+has no profile of its
 own, so it has a heading for every profile section any role names, read from the role files
 rather than listed here; it is host-neutral, since no renderer fills tokens in it; and every role
 that falls back on a missing profile names it, none of them stopping for want of one."""

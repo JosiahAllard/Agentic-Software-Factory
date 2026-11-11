@@ -1,4 +1,5 @@
-"""Rule 1 of the seam (docs/modules/base-design.md "Contract"): code asks kitlib.platform which operating
+"""Rule 1 of the seam (docs/modules/base-design.md "Contract"): code asks kitlib.platform which
+operating
 system it runs on, never os.name or sys.platform itself.
 
 The scan reads every kit .py file outside tests/ and kitlib/platform/ (and outside dot-folders

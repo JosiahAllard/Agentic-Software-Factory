@@ -1,4 +1,5 @@
-"""Containment on Linux (kitlib.platform.linux.contain): kitlib.proc.job.Job on a cgroup scope (S1, S2), a user and PID namespace (W1) or on the
+"""Containment on Linux (kitlib.platform.linux.contain): kitlib.proc.job.Job on a cgroup scope (S1,
+S2), a user and PID namespace (W1) or on the
 weak tier (W2).
 
 On every platform: which cgroups a job may kill (only one it made, checked before any write), the

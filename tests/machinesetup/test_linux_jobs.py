@@ -1,4 +1,5 @@
-"""Machine setup's scheduled jobs on Linux (docs/machine-setup.md "Linux"): the agent temp sweep, the worktree sweep and the automatic tasks' tick planned as pm-kit
+"""Machine setup's scheduled jobs on Linux (docs/machine-setup.md "Linux"): the agent temp sweep,
+the worktree sweep and the automatic tasks' tick planned as pm-kit
 jobs, procwatch's note and linger's note. kitlib.platform.NAME is patched to 'linux'; the host is
 a fake whose jobs go to a temporary home through the real schedule module with a fake systemctl,
 so nothing real is written, and linger is only ever read."""

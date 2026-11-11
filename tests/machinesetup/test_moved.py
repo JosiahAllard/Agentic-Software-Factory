@@ -221,7 +221,8 @@ class MovedSkillLinks(unittest.TestCase):
         self.reported(common.MOVED_FROM + '/skills')
 
     def test_a_skill_link_into_the_claude_shells_old_copy_is_a_leftover(self):
-        self.reported(common.SHELL + '/skills')           # the rendered copy, before skills moved to content/skills
+        # the rendered copy, before skills moved to content/skills
+        self.reported(common.SHELL + '/skills')
 
     def reported(self, moved):
         root = tempfile.mkdtemp(prefix='machinesetup-moved-links-')

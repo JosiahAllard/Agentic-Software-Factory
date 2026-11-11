@@ -124,7 +124,8 @@ class HostNames(unittest.TestCase):
         self.assertEqual(len(occurrences(source)), 5)
 
 
-# ARCHITECTURE.md "Hosts": a host name appears only in hosts.json, hosts/, optional/bridge/hosts/ and tests,
+# ARCHITECTURE.md "Hosts": a host name appears only in hosts.json, hosts/, optional/bridge/hosts/
+# and tests,
 # so adding a host changes no other folder. kitlib is counted above. Below: the kit's top folders,
 # boot/ (code, as kitlib) and content/ (every occurrence, prose too, since content is what every
 # host renders). What is left is listed with its reason and can only shrink.
@@ -151,7 +152,8 @@ class HostSlot(unittest.TestCase):
         names = set(registry.names()) | {'codex', 'claude', 'anthropic', 'openai'}
         found = sorted(n for n in os.listdir(ROOT) if os.path.isdir(os.path.join(ROOT, n))
                        and n.lower() in names and n not in TOP_ALLOWED)
-        self.assertEqual(found, [], 'a host\'s files go under hosts/<name>/ (ARCHITECTURE.md "Hosts")')
+        self.assertEqual(found, [],
+                         'a host\'s files go under hosts/<name>/ (ARCHITECTURE.md "Hosts")')
 
     def test_every_registered_host_lives_under_hosts(self):
         from kitlib.host import registry

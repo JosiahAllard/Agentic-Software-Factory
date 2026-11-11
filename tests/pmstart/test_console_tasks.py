@@ -87,6 +87,11 @@ class Judge(unittest.TestCase):
     def test_a_program_inside_the_kit_folder_is_the_kits(self):
         self.assertEqual(len(judge([task(r"\x", r"Q:\kit\.venv\Scripts\python.exe", "-V")])), 1)
 
+    def test_a_kit_folder_with_a_non_ascii_character_is_matched(self):
+        root = "Q:\\K\u00eft"
+        args = '"%s\\tools\\daily_full.py" -C "Q:\\repo"' % root
+        self.assertEqual(len(ct.judge([task(r"\kit-daily-full", "python.exe", args)], roots={root})), 1)
+
     def test_every_console_action_of_a_task_is_one_line(self):
         t = {"path": r"\kit-daily-full", "actions": [{"exe": "python.exe", "args": "a"},
                                                      {"exe": PYW, "args": CARRIED},

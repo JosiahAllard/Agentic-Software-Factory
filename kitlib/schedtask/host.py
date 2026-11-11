@@ -5,8 +5,6 @@ the rest of what that feature asks of the machine.
 """
 import subprocess
 
-from kitlib.platform.linux import schedule
-
 from . import read
 
 _NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
@@ -40,20 +38,25 @@ class Host(object):
     def job_backend(self, job):
         """Linux: the backend the pm-kit job `job` goes to (schedule.choose: ScheduleError when
         there is none)."""
+        from kitlib.platform.linux import schedule
         return schedule.choose(job)
 
     def job_describe(self, job, kind):
         """Linux: the lines saying what job_install(job) writes (schedule.describe)."""
+        from kitlib.platform.linux import schedule
         return schedule.describe(job, kind)
 
     def job_install(self, job):
         """Linux: write and enable the pm-kit job `job` (schedule.install); its lines."""
+        from kitlib.platform.linux import schedule
         return schedule.install(job)
 
     def systemd(self):
         """Linux: whether the user's systemd manager answers."""
+        from kitlib.platform.linux import schedule
         return schedule.has_systemd()
 
     def linger(self):
         """Linux: whether linger is on for this user (True, False, None: unknown)."""
+        from kitlib.platform.linux import schedule
         return schedule.linger()

@@ -9,7 +9,6 @@ import unittest
 from unittest import mock
 import xml.etree.ElementTree as ET
 
-from kitlib.pmstart import consoletasks as ct
 from kitlib.proc import spawn
 from kitlib.schedtask import host as schedhost
 from kitlib.schedtask import read as R
@@ -97,8 +96,6 @@ class Read(unittest.TestCase):
         tasks = R.read_tasks(run=FakeRun(stdout=raw))
         self.assertEqual(tasks[0]["actions"][0]["args"],
                          '"%s\\tools\\daily_full.py" -C "Q:\\repo"' % KIT_NON_ASCII)
-        lines = ct.judge(tasks, roots={KIT_NON_ASCII})
-        self.assertEqual(len(lines), 1)
 
     def test_single_byte_output_declaring_a_single_byte_encoding_keeps_it(self):
         raw = (b'<?xml version="1.0" encoding="windows-1252"?>'

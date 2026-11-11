@@ -6,6 +6,7 @@ from unittest import mock
 
 from kitlib import hoststart, pmstart, coordinatorstart
 from kitlib.config import ConfigError
+from kitlib.proc import listing
 
 
 class Checks(unittest.TestCase):
@@ -13,7 +14,7 @@ class Checks(unittest.TestCase):
         with mock.patch.object(pmstart, 'standing', return_value=['standing rule: test']) as standing, \
              mock.patch.object(pmstart, 'reminders', return_value=['reminder']) as reminders, \
              mock.patch.object(pmstart, 'kit_sync', side_effect=AssertionError('must not mutate')), \
-             mock.patch.object(pmstart, 'list_processes', side_effect=AssertionError('wrong host')):
+             mock.patch.object(listing, 'list_processes', side_effect=AssertionError('wrong host')):
             cfg = {'standing': ['test'], 'reminders_file': 'configured'}
             rows = hoststart.shared_checks('pm', os.getcwd(), pm_config=cfg,
                     now=datetime.datetime(2026, 10, 12, tzinfo=datetime.timezone.utc))

@@ -5,6 +5,7 @@ process names are kitlib.platform.linux.process's; proc's process module binds e
 running platform's.
 """
 import ctypes
+import json
 import os
 from ctypes import wintypes
 
@@ -447,3 +448,19 @@ def raise_to_normal():
         return "unchanged"
     return "raised" if K32.SetPriorityClass(me, win32.NORMAL_PRIORITY_CLASS) else "failed"
 
+
+_PS = ("Get-CimInstance Win32_Process | Select-Object Name,CommandLine,ExecutablePath,"
+       "ProcessId,ParentProcessId,@{n='Created';e={$_.CreationDate.ToString('o')}}"
+       " | ConvertTo-Json -Compress")
+
+
+def process_rows(timeout, run):
+    """All processes as dicts with Name, CommandLine, ExecutablePath, ProcessId, ParentProcessId,
+    Created (ISO 8601), from PowerShell Get-CimInstance run by `run` (subprocess.run's signature).
+    subprocess.TimeoutExpired after `timeout` seconds; RuntimeError when PowerShell exits non-zero."""
+    r = run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS],
+            capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0:
+        raise RuntimeError("powershell exit %d: %s" % (r.returncode, r.stderr.strip()[:200]))
+    data = json.loads(r.stdout or "[]")
+    return [data] if isinstance(data, dict) else data

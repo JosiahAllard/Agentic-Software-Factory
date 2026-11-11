@@ -265,7 +265,7 @@ class SessionDirs(Case):
         def fake(**kw):
             seen.update(kw)
             return []
-        with mock.patch('kitlib.pmstart.list_processes', fake):
+        with mock.patch('kitlib.proc.listing.list_processes', fake):
             self.assertEqual(S.default_lister(), [])
         self.assertEqual(seen, {'timeout': S.LIST_TIMEOUT})
         self.assertEqual(S.LIST_TIMEOUT, 30)
@@ -611,7 +611,7 @@ CHANGE = LATER - 5 * S.DAY       # the fake time the user environment (TEMP) was
 
 
 def at(t):
-    """A process start time as kitlib.pmstart.list_processes gives it (ISO, local offset, 7 digits)."""
+    """A process start time as kitlib.proc.listing.list_processes gives it (ISO, local offset, 7 digits)."""
     import datetime
     s = datetime.datetime.fromtimestamp(t).astimezone().isoformat(timespec='microseconds')
     return s[:26] + '0' + s[26:]

@@ -714,7 +714,7 @@ InUse = collections.namedtuple('InUse', 'texts named errors')
 
 
 def _processes():
-    from kitlib.pmstart import list_processes
+    from kitlib.proc.listing import list_processes
     return list_processes(timeout=LIST_TIMEOUT)
 
 
@@ -776,10 +776,10 @@ def _leases(root):
 
 def read_in_use(root, procs=None, tasks=None):
     """InUse: the command line and program of every running process (one Win32_Process read,
-    kitlib.pmstart.list_processes), the definition of every scheduled task (`_tasks`) and the
+    kitlib.proc.listing.list_processes), the definition of every scheduled task (`_tasks`) and the
     pin leases under `root`. A read that fails adds its error and the others still run. An empty
     process list (None or []) is a failed read: a real one always holds the reader itself, and
-    kitlib.pmstart.list_processes answers [] when PowerShell printed nothing. procs and tasks:
+    kitlib.proc.listing.list_processes answers [] when PowerShell printed nothing. procs and tasks:
     the tests' stand-ins for the two reads."""
     texts, named, errors = [], set(), []
     try:

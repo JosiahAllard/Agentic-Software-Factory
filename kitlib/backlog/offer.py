@@ -641,9 +641,9 @@ def launcher_stems():
 def running_names():
     """The names of the session processes running now, as the hub's coordinator restart job reads
     them (kitlib.launcher.lookup: launched, rc_name). Raises when they cannot be listed."""
-    from kitlib import pmstart
     from kitlib.launcher import lookup
-    rows = lookup.launched(pmstart.list_processes(timeout=pmstart.TIMEOUT))
+    from kitlib.proc import listing
+    rows = lookup.launched(listing.list_processes(timeout=listing.TIMEOUT))
     return [n for n in (lookup.rc_name(p.get('CommandLine')) for p in rows) if n]
 
 

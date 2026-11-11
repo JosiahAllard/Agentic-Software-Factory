@@ -96,7 +96,7 @@ from kitlib.hubsite import jobs
 from kitlib.launcher import accounts as A
 from kitlib.launcher import lookup, state
 from kitlib.launcher.settings import LaunchError
-from kitlib.proc import spawn
+from kitlib.proc import listing, spawn
 
 NAME = 'coord-restart'
 EVERY_S = 300
@@ -380,8 +380,8 @@ def boot_slack(uptime_s):
 
 
 def list_processes():
-    """The jobs' default process listing: kitlib.pmstart.list_processes with PROC_TIMEOUT_S."""
-    return pmstart.list_processes(timeout=PROC_TIMEOUT_S)
+    """The jobs' default process listing: kitlib.proc.listing.list_processes with PROC_TIMEOUT_S."""
+    return listing.list_processes(timeout=PROC_TIMEOUT_S)
 
 
 def skip_timed_out(e):
@@ -517,7 +517,7 @@ def owner_items(pending, key):
 
 
 def row_created(row):
-    """A process row's Created (ISO, kitlib.pmstart.list_processes) as epoch seconds, or None."""
+    """A process row's Created (ISO, kitlib.proc.listing.list_processes) as epoch seconds, or None."""
     try:
         return datetime.datetime.fromisoformat(row.get('Created') or '').timestamp()
     except (AttributeError, TypeError, ValueError):

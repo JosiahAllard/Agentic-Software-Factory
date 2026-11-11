@@ -381,7 +381,7 @@ the host as heavy.
     pmstart/consoletasks.py read-back. Open proof: a timer fires once on the VM, a cron entry on a
     box without user systemd.
 11. **Sessions.** Done: kitlib/launcher/linuxwin.py (tmux, or a configured terminal command),
-    launcher/stop.py, pmstart process listing.
+    launcher/stop.py, the proc process listing (proc/listing.py).
 12. **Hook interpreter.** Done: hookmain.manifest_command and INTERPRETERS (python3 on Linux, run by
     /bin/sh; a tool event's line exits 2 when python3 fails or is missing, a start event's says
     the kit did not load), each host's `hooks.linux.json`, hosts.json platforms, the plugin export

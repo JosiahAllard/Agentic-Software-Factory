@@ -29,6 +29,7 @@ from kitlib.config import pm as pmconfig
 from kitlib.git import cmd as gitcmd
 from kitlib.launcher import lookup
 from kitlib.pmstart import configcheck
+from kitlib.proc import listing
 from kitlib.coordinatorstart import parts
 from kitlib.records import landing
 
@@ -305,7 +306,7 @@ def context(cfg, env=None, cwd=None, now=None, procs=None, run=_run, read=_read,
 
         def procs_once():
             if "p" not in box:
-                box["p"] = procs if procs is not None else pmstart.list_processes()
+                box["p"] = procs if procs is not None else listing.list_processes()
             return box["p"]
 
         def entry_once():

@@ -1,5 +1,5 @@
 """kitlib.platform.linux.process.rows (docs/linux-support-plan.md slice 11): every /proc process as
-kitlib.pmstart.list_processes's dicts. Fake runs on any platform against a /proc tree in a temp
+kitlib.proc.listing.list_processes's dicts. Fake runs on any platform against a /proc tree in a temp
 folder (PROC and STAT patched; every pid folder has its stat, so no signal is sent to a real pid);
 Live runs on Linux against the real /proc."""
 import datetime

@@ -16,6 +16,11 @@ Process (linux: slice 4)
   kill_tree(pid, ctime, code=1, snap=None)
                                     end it and every live process under it, each verified by
                                     its ctime; {pid: result}
+  process_rows(timeout, run)        every process as dicts (Name, CommandLine, ExecutablePath,
+                                    ProcessId, ParentProcessId, Created); `run` is the caller's
+                                    subprocess.run for a backend that starts a child (the
+                                    platform layer imports no kit module), `timeout` its limit
+                                    (TimeoutExpired); RuntimeError when the child fails
 
 Hardware (linux: slice 6)
   threads()                         every active logical processor's global id, ascending
@@ -29,7 +34,7 @@ Affinity (linux: slice 5)
 """
 
 PROCESS = ('alive', 'proc_ctime', 'own_ctime', 'ancestry', 'descendants', 'command_line',
-           'kill_tree')
+           'kill_tree', 'process_rows')
 HARDWARE = ('threads', 'all_mask', 'l3_domains', 'memory_mb')
 AFFINITY = ('affinity_of', 'set_affinity')
 

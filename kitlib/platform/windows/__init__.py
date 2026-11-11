@@ -9,10 +9,11 @@ import importlib
 
 _FROM = {'cpu': ('threads', 'all_mask', 'l3_domains'),
          'process': ('alive', 'proc_ctime', 'own_ctime', 'ancestry', 'descendants', 'command_line',
-                     'kill_tree', 'memory_mb', 'affinity_of', 'set_affinity')}
+                     'kill_tree', 'memory_mb', 'affinity_of', 'set_affinity',
+                     'process_rows')}
 
 __all__ = ['alive', 'proc_ctime', 'own_ctime', 'ancestry', 'descendants', 'command_line',
-           'kill_tree', 'threads', 'all_mask', 'l3_domains', 'memory_mb', 'affinity_of',
+           'kill_tree', 'process_rows', 'threads', 'all_mask', 'l3_domains', 'memory_mb', 'affinity_of',
            'set_affinity']
 
 

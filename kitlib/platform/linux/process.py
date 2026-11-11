@@ -18,8 +18,10 @@ only ctimes below the stamp).
                       as kitlib.platform.windows.process documents them
   pidns(pid)          the inode of pid's PID namespace, None when it cannot be read
   stamp_now()         the seam's stamp (kitlib.lock.run filetime_now on Linux)
-  rows()              every process as kitlib.pmstart.list_processes's dicts (Name, CommandLine,
-                      ExecutablePath, ProcessId, ParentProcessId, Created), from /proc
+  rows()              every process as kitlib.proc.listing.list_processes's dicts (Name,
+                      CommandLine, ExecutablePath, ProcessId, ParentProcessId, Created), from /proc
+  process_rows(timeout, run)
+                      the seam's name for rows: no child is started, so no timeout applies
                       (docs/linux-support-plan.md section 8, slice 11)
 
 terminate_verified opens a pidfd on the pid first and reads its starttime after: the pidfd names
@@ -378,7 +380,7 @@ def rows(readlink=os.readlink):
     """Every process /proc lists as a dict with Name (its comm), CommandLine (command_line; "" for
     none), ExecutablePath (the /proc/<pid>/exe link, None when it cannot be read), ProcessId,
     ParentProcessId and Created (the local ISO time it started, None when that cannot be told), the
-    keys kitlib.pmstart.list_processes gives on Windows. A process that ends or cannot be read
+    keys kitlib.proc.listing.list_processes gives on Windows. A process that ends or cannot be read
     while it is listed is left out. Raises OSError when /proc cannot be listed."""
     btime, tck = _btime(), _clk_tck()
     out = []
@@ -399,3 +401,8 @@ def rows(readlink=os.readlink):
         out.append({'Name': st[3], 'CommandLine': cmd, 'ExecutablePath': exe, 'ProcessId': pid,
                     'ParentProcessId': st[1], 'Created': _created(btime, st[2], tck)})
     return out
+
+
+def process_rows(timeout, run):
+    """rows(); `timeout` and `run` are the seam's arguments and unused here."""
+    return rows()

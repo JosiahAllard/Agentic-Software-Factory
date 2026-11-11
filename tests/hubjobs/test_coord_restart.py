@@ -351,10 +351,10 @@ class Job(JobBase):
         self.assertEqual(self.job._fails, 1)
 
     def test_the_default_listing_waits_longer_than_the_session_start(self):
-        with mock.patch.object(C.pmstart, 'list_processes', return_value=[]) as lp:
+        with mock.patch.object(C.listing, 'list_processes', return_value=[]) as lp:
             self.assertEqual(C.list_processes(), [])
         lp.assert_called_once_with(timeout=C.PROC_TIMEOUT_S)
-        self.assertGreater(C.PROC_TIMEOUT_S, C.pmstart.TIMEOUT)
+        self.assertGreater(C.PROC_TIMEOUT_S, C.listing.TIMEOUT)
 
     def test_a_crossing_on_the_entry_holds_the_start_until_its_claim_lapses(self):
         crossing = {'phase': 'stall-stop', 'phase_at': NOW}

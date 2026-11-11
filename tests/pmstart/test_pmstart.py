@@ -11,6 +11,7 @@ from unittest import mock
 from kitlib import pmstart
 from kitlib.config import pm as pmconfig
 from kitlib.pmstart import fglock
+from kitlib.proc import listing
 from tests.home import temp_home
 from tests.pmstart import HANDOFF_FAKE, HUB_KEPT_OFF, keep_off_hub_site, keep_off_launcher_repos
 
@@ -404,15 +405,15 @@ class ChecklistTest(unittest.TestCase):
         self.assertIn("pm_watch.py is not running", txt)  # no pm_watch_cmd: the kit's own command
 
     def test_process_listing_failure_isolated(self):
-        orig = pmstart.list_processes
+        orig = listing.list_processes
         def bad():
             raise subprocess.TimeoutExpired("powershell", 4)
-        pmstart.list_processes = bad
+        listing.list_processes = bad
         try:
             txt = pmstart.checklist(CFG, NOW, reminders={"read": lambda p: "[]"},
                                     handoff=HANDOFF_FAKE)
         finally:
-            pmstart.list_processes = orig
+            listing.list_processes = orig
         self.assertIn("could not check watcher", txt)
         self.assertIn("could not check liveness", txt)
         self.assertIn(HUB_KEPT_OFF, txt)

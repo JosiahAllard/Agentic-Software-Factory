@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from kitlib import pmstart
+from kitlib.proc import listing
 from tests.home import temp_home
 from tests.pmstart import HANDOFF_FAKE, keep_off_launcher_repos
 
@@ -86,7 +87,7 @@ class AgentTempCheck(unittest.TestCase):
         with mock.patch("kitlib.machinesetup.agenttemp.task_registered", fake), \
                 mock.patch.object(pmstart, "agent_temp_task_exists", REAL_TASK_EXISTS):
             lines = pmstart.agent_temp_lines(env=lambda: "X:\\t", sweep_key=lambda: {"dir": "X:\\t"})
-        self.assertEqual(seen, [("agent-temp-sweep", pmstart.TIMEOUT)])
+        self.assertEqual(seen, [("agent-temp-sweep", listing.TIMEOUT)])
         self.assertEqual(lines, ["could not check the agent temp sweep task agent-temp-sweep: RuntimeError: "
                                  "schtasks /Query timed out after 4 s"])
 

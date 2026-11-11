@@ -12,18 +12,27 @@ from kitlib import pmwatch as W
 from tests.pluginsource import Kit
 
 
+NOW = 10000.0
+
+
+def block(failures=0, ok_ago=60, every=300):
+    """A plugin-refresh health block as the hub's GET health gives it."""
+    return {"every_s": every, "runs": 5, "failures": failures, "running": False, "last_at": NOW - 5,
+            "ok_at": None if ok_ago is None else NOW - ok_ago, "note": None, "error": None}
+
+
 class PluginEventTest(unittest.TestCase):
     def setUp(self):
         self.k = Kit(self)
         self.spawned = []
         self.live = set()
 
-    def watcher(self, auto, state=None, folders=(), hub_job=lambda: False):
+    def watcher(self, auto, state=None, folders=(), hub_job=lambda: None):
         s = plugin_layout.Settings(self.k.root, auto, "origin")
         check = W.plugin_check(kit=self.k.kit, settings=s,
                                spawn=lambda kit, root: self.spawned.append((kit, root)),
                                alive=lambda pid, ct: pid in self.live, folders=list(folders),
-                               hub_job=hub_job)
+                               hub_job=hub_job, now=lambda: NOW)
         w = W.Watcher(state if state is not None else {}, [], lambda: {}, os.path.join(self.k.base, "alerts"),
                       os.path.join(self.k.base, "sessions.json"), lambda n: None, branch_poll=0,
                       plugin=check)
@@ -93,13 +102,70 @@ class PluginEventTest(unittest.TestCase):
         os.makedirs(self.k.root)
         self.export_at(self.main())
         new = self.advance()
-        w = self.watcher(auto=True, hub_job=lambda: True)
+        w = self.watcher(auto=True, hub_job=lambda: block(failures=1))
         self.assertEqual(w.poll(1.0), ["PLUGIN pm-kit plugin behind kit main %s: %s"
                                        % (new[:12], plugin_layout.refresh_cmd())])
         self.assertEqual(self.spawned, [])
-        w = self.watcher(auto=True, hub_job=lambda: False)
+        w = self.watcher(auto=True, hub_job=lambda: None)
         self.assertTrue(w.poll(1.0)[0].endswith("(auto_refresh: started)"))
         self.assertEqual(len(self.spawned), 1)
+
+    def test_a_healthy_hub_job_makes_a_plain_behind_export_silent_until_it_stops_being_healthy(self):
+        os.makedirs(self.k.root)
+        self.export_at(self.main())
+        new = self.advance()
+        cur = [block()]
+        w = self.watcher(auto=True, hub_job=lambda: cur[0])
+        self.assertEqual(w.poll(1.0), [])
+        self.assertEqual(w.poll(400.0), [])
+        self.assertEqual(self.spawned, [])
+        cur[0] = block(failures=1)
+        self.assertEqual(w.poll(800.0), ["PLUGIN pm-kit plugin behind kit main %s: %s"
+                                         % (new[:12], plugin_layout.refresh_cmd())])
+        self.assertEqual(self.spawned, [])
+
+    def test_a_refreshed_export_clears_the_memory_under_a_healthy_job(self):
+        os.makedirs(self.k.root)
+        self.export_at(self.main())
+        new = self.advance()
+        cur = [block(failures=1)]
+        w = self.watcher(auto=True, hub_job=lambda: cur[0])
+        self.assertEqual(len(w.poll(1.0)), 1)
+        self.assertIn(new[:12], w.s["plugin_main"])
+        cur[0] = block()
+        self.export_at(new)
+        self.assertEqual(w.poll(2.0), [])
+        self.assertIsNone(w.s["plugin_main"])
+
+    def test_a_stale_or_unreadable_hub_job_or_auto_off_still_reports(self):
+        os.makedirs(self.k.root)
+        self.export_at(self.main())
+        new = self.advance()
+        line = ["PLUGIN pm-kit plugin behind kit main %s: %s" % (new[:12], plugin_layout.refresh_cmd())]
+        self.assertEqual(self.watcher(auto=True, hub_job=lambda: block(ok_ago=1000)).poll(1.0), line)
+        self.assertEqual(self.watcher(auto=True, hub_job=lambda: block(ok_ago=None)).poll(1.0), line)
+        self.assertEqual(self.watcher(auto=False, hub_job=lambda: block()).poll(1.0), line)
+        ev = self.watcher(auto=True, hub_job=lambda: None).poll(1.0)     # hub down or unreadable
+        self.assertEqual(ev, [line[0] + " (auto_refresh: started)"])
+
+    def test_a_healthy_hub_job_does_not_silence_no_export_or_an_unmigrated_folder(self):
+        w = self.watcher(auto=True, hub_job=lambda: block())
+        self.assertEqual(len(w.poll(1.0)), 1)
+        os.makedirs(self.k.root)
+        (two,) = self.k.folders(".claude-two")
+        self.export_at(self.main())
+        self.advance()
+        w = self.watcher(auto=True, folders=[two], hub_job=lambda: block())
+        got = w.poll(2.0)
+        self.assertEqual(len(got), 1)
+        self.assertIn("--migrate", got[0])
+
+    def test_plugin_job_healthy(self):
+        for b, want in ((block(), True), (block(ok_ago=900), True), (block(ok_ago=901), False),
+                        (block(failures=1), False), (block(ok_ago=None), False),
+                        ({"failures": 0}, False), ({}, False), (None, False),
+                        (dict(block(), failures=True), False), (dict(block(), every_s=0), False)):
+            self.assertEqual(W.plugin_job_healthy(b, NOW), want, b)
 
     def test_hub_plugin_job_up_reads_health_jobs(self):
         class Client:

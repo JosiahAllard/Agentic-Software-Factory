@@ -2,8 +2,8 @@
 
 A host is an AI platform the kit runs on, such as Claude Code. Adding one means adding a folder
 and one `hosts.json` entry. A host adds no hook script: its hooks run the kit's one entry,
-`boot/hook.py <host> <event>` (plan decision 20). No file in `kitlib/`, `content/`, `boot/` or
-another host's folder changes (docs/multi-host-plan.md section 2.7; ARCHITECTURE.md "Hosts"). A
+`boot/hook.py <host> <event>`. No file in `kitlib/`, `content/`, `boot/` or
+another host's folder changes (ARCHITECTURE.md "Hosts"). A
 host is supported when its test
 class passes the conformance suite, `tests/host/conformance.py`.
 

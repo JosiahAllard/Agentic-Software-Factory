@@ -1,4 +1,4 @@
-"""kitlib.launcher.lookup on Linux (docs/linux-support-plan.md slice 11): session_images is the running
+"""kitlib.launcher.lookup on Linux: session_images is the running
 platform's process_names over every host. kitlib.platform.NAME is patched to 'linux', so this runs
 on Windows."""
 import unittest

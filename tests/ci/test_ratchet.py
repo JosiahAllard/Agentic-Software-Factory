@@ -344,7 +344,7 @@ class Cli(Tree):
 
 
 class Imports(unittest.TestCase):
-    """The ratchet must run where kitlib.proc cannot import (Linux before slice 2): neither it nor
+    """The ratchet must run where kitlib.proc cannot import (Linux): neither it nor
     its entry point loads kitlib.proc (beyond the console hook `import kitlib` loads on Windows),
     kitlib.config or kitlib.git."""
 

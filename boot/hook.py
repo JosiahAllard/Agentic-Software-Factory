@@ -1,5 +1,5 @@
-"""hook.py: the one hook entry of every host (ARCHITECTURE.md "Hosts"; docs/new-host.md; plan
-decision 20). A host adds no hook script: its manifest runs this file with its name and the event.
+"""hook.py: the one hook entry of every host (ARCHITECTURE.md "Hosts"; docs/new-host.md). A host
+adds no hook script: its manifest runs this file with its name and the event.
 
   python boot/hook.py <host> <event> [<part>] < payload.json
       <host> a hosts.json key, <event> one of its hook_events, <part> a named start check its
@@ -115,8 +115,9 @@ def starts(argv, hosts=HOSTS):
 
 
 def setup_hint():
-    """For a hook command line this entry cannot use (a settings entry written by hand or before
-    plan step 14): the machine setup that rewrites it, when this file is in a kit checkout."""
+    """For a hook command line this entry cannot use (a settings entry written by hand or from an
+    older
+    kit): the machine setup that rewrites it, when this file is in a kit checkout."""
     tool = os.path.join(os.path.dirname(HERE), 'tools', 'machine_setup.py')
     if not os.path.isfile(tool):
         return ''

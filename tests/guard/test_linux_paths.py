@@ -1,6 +1,7 @@
-"""The guard's path semantics on Linux (docs/linux-support-plan.md section 3, "Guard path semantics
-and the safety review", slice 8): one class per finding of that section's table that lives in the
-guard, each read through tests/guard/linux.py (kitlib.platform.NAME 'linux', posixpath, a
+"""The guard's path semantics on Linux: one class per case of the
+guard's Linux path handling (the main checkout, a root search, a write outside its roots, a mount
+table that aliases a path), each read through tests/guard/linux.py (kitlib.platform.NAME 'linux',
+posixpath, a
 stand-in mount table), so it runs on Windows and on Linux alike. A subagent session in the linked
 worktree /work/repo/.claude/worktrees/wt of the main checkout /work/repo is refused what it is
 refused on Windows: the main checkout, a root search, a write outside its roots."""

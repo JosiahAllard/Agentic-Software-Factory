@@ -1,10 +1,10 @@
-"""The seam's contract (docs/linux-support-plan.md section 2.1): each primitive's name, signature
+"""The seam's contract (docs/modules/base-design.md "Contract"): each primitive's name, signature
 and meaning, and no OS code. Every backend provides every name: kitlib.platform.windows as its
 own process and cpu modules' functions, kitlib.platform.linux by its own code in
 kitlib/platform/linux/. A process is named by (pid, ctime), ctime its
 creation time in the backend's own units, so a reused pid is never taken for the process.
 
-Process (linux: slice 4)
+Process
   alive(pid, ctime)                 False only when that process is surely gone
   proc_ctime(pid)                   the creation time of pid, or None
   own_ctime()                       this process's creation time
@@ -22,13 +22,13 @@ Process (linux: slice 4)
                                     platform layer imports no kit module), `timeout` its limit
                                     (TimeoutExpired); RuntimeError when the child fails
 
-Hardware (linux: slice 6)
+Hardware
   threads()                         every active logical processor's global id, ascending
   all_mask()                        the mask of threads()
   l3_domains()                      [global mask] of each L3 cache domain; [] when not known
   memory_mb()                       {total_mb, free_mb} of physical memory now, or None
 
-Affinity (linux: slice 5)
+Affinity
   affinity_of(pid, ctime)           the process's affinity mask, or None
   set_affinity(pid, ctime, mask)    pin the process to `mask`
 """
@@ -38,6 +38,6 @@ PROCESS = ('alive', 'proc_ctime', 'own_ctime', 'ancestry', 'descendants', 'comma
 HARDWARE = ('threads', 'all_mask', 'l3_domains', 'memory_mb')
 AFFINITY = ('affinity_of', 'set_affinity')
 
-# Each area's names and the slice of docs/linux-support-plan.md section 8 that builds it on Linux.
+# Each area's names and the number of the slice that built it on Linux.
 AREAS = {'process': (PROCESS, 4), 'hardware': (HARDWARE, 6), 'affinity': (AFFINITY, 5)}
 NAMES = PROCESS + HARDWARE + AFFINITY

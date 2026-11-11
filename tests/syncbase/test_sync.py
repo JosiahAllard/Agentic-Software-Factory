@@ -131,8 +131,8 @@ class SyncCase(unittest.TestCase):
 
     def kit_hint(self, name):
         """The command a hint prints for kit tool `name`: this kit's own tools/<name>.py with
-        -C the linked checkout, both quoted in forward slashes (no repository holds a copy of
-        the kit's tools: decision 21 and step 15 in docs/multi-host-plan.md)."""
+        -C the linked checkout, both quoted in forward slashes (docs/install.md "Ported repo
+        tools")."""
         return 'python "%s/tools/%s.py" -C "%s"' % (KIT.replace('\\', '/'), name,
                                                      self.git('rev-parse', '--show-toplevel'))
 
@@ -683,7 +683,7 @@ class ConfiguredRemote(SyncCase):
 class ConfiguredToolsDir(SyncCase):
     """`.kit.json` "repo".tools_dir does not spell the commands this prints: they name the kit's
     own tool with -C the checkout, since no repository holds a copy of the kit's tools
-    (docs/multi-host-plan.md section 7 decision 21, "Tool stubs in repos"; step 15 "No stubs")."""
+    (docs/install.md "Ported repo tools")."""
 
     CONFIG = {'repo': {'main_branch': 'master', 'tools_dir': 'devtools'}}
 

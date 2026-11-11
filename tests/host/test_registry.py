@@ -301,7 +301,7 @@ class Profiles(Case):
 class ProcessNames(Case):
     """process_names is per platform: each host's profile carries the whole map, and
     registry.process_names() is the running platform's agent images (kitlib.platform.NAME, read
-    at that call) over every host (docs/linux-support-plan.md slice 2)."""
+    at that call) over every host."""
 
     def union(self, name, path=None):
         with mock.patch.object(kitlib.platform, 'NAME', name):

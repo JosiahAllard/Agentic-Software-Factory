@@ -661,8 +661,7 @@ def cleanup_here(main, tw, base, new, had, wait_s, say, step_s=HOLD_STEP_S):
 
 def leftover_line(tw, landed, main):
     """The line for a throwaway worktree `tw` left registered, naming the kit's own
-    worktree_remove.py with -C the main checkout `main` (a repository holds no copy of the kit's
-    tools, decision 21 in docs/multi-host-plan.md section 7)."""
+    worktree_remove.py with -C the main checkout `main` (docs/install.md "Ported repo tools")."""
     name = os.path.basename(tw)
     verb = '%s %s' % (kitroot.command('worktree_remove', main), name)
     return ('leftover  %s stays registered; once nothing holds it: %s'

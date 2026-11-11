@@ -3,7 +3,7 @@
 The maps passed in are {host: (tier -> model, role -> model)}: each host's tier map and the roles
 it runs on a model other than their tier's (hosts.json `tiers` and `role_models`).
 
-The role files are the one roster (docs/multi-host-plan.md section 7, decision 17): a role is added
+The role files are the one roster (ARCHITECTURE.md "Content"): a role is added
 or removed with one file and a render. ROSTER.md is prose the owner writes, with two rendered
 regions, each between a start marker and END:
   <!-- rendered: roles -->      | role | tier | effort | use for |, one row per role file, by name:

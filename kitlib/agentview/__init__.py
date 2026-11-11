@@ -1,5 +1,5 @@
-"""kitlib.agentview: everything one role is given and held to, on one host (decision 18 in
-docs/multi-host-plan.md section 7; docs/content.md "Agent view"). tools/agent_view.py prints it.
+"""kitlib.agentview: everything one role is given and held to, on one host (docs/content.md "Agent
+view"). tools/agent_view.py prints it.
 
   view(kit, repo, name, host, renderer, ...)   [Section(title, lines)]: GIVEN sections in the order
                                                the agent receives them, then the HELD ones
@@ -22,7 +22,7 @@ conformance suite pins to what the host writes:
   Skills                   content/skills, when the host has skills (hosts.json)
   Repo profile             the `profile_path` token in `repo` (and `coordinator_profile_path` when
                            the role's body names it); no profile_path file: the kit's
-                           content/default-profile.md, the roles' fallback (decision 26)
+                           content/default-profile.md, the roles' fallback
   Model, tools and mode    the role file; renderer.settings(role) (what the host's file sets) and
                            renderer.tools() (its capability -> tool map)
   Guard rules              kitlib.guard.rolepolicy.rules_for(mode) and its LOCK_VERBS
@@ -246,7 +246,7 @@ def skills(content, role, host, renderer, brief):
 
 
 def profile(kit, repo, role, values):
-    """The profile in use: the repository's, or, with none (it is opt-in: decision 26), the kit's
+    """The profile in use: the repository's, or, with none (it is opt-in), the kit's
     default profile that the role falls back to for `profile_path`."""
     keys = ['profile_path'] + [k for k in ('coordinator_profile_path',)
                                if (k, None) in tokens_in(role.body)]

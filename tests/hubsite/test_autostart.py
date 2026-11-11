@@ -300,7 +300,7 @@ class SetupAutostartCli(CliCase):
 
 
 class Linux(unittest.TestCase):
-    """The hub job on Linux (docs/linux-support-plan.md slice 10), with kitlib.platform.NAME
+    """The hub job on Linux, with kitlib.platform.NAME
     patched to 'linux', a temporary home and a fake systemctl: a systemd user service
     pm-kit-hub.service, else an XDG autostart entry, else refused; never a shell startup file."""
     DESKTOP = {'DESKTOP_SESSION': 'gnome'}

@@ -18,8 +18,8 @@ one refused pair is Codex to Codex. Being served does not make a direction work:
 the per-direction limits. Claude to Codex needs an owner-granted writer lease (Contracts, "Writer
 leases"), and the Codex terminal adapter is dead.
 
-This is the bridge from `codex/robust-bridge-plan`, ported as plan step 10
-(docs/multi-host-plan.md section 2.4). Its design history, the Phase 0 evidence and the
+This is the bridge from `codex/robust-bridge-plan`, ported into the kit.
+Its design history, the Phase 0 evidence and the
 24 bridge docs it replaces are in git history (that branch, up to its tip when this port was made).
 
 ## Layout
@@ -405,7 +405,7 @@ Four helpers were load-bearing and moved instead:
 | `claude/bridge_phase0.read_record` | `optional/bridge/hosts/claude/records.py` |
 
 `codex/pmkit_codex/bridge_client.py` is now `hosts/codex/client.py`, and the bridge owns it. It is
-the Codex plugin's client of this frontend. The Codex host (`hosts/codex/`, plan step 9) keeps no copy of
+the Codex plugin's client of this frontend. The Codex host (`hosts/codex/`) keeps no copy of
 it. If its diagnostics ever probe the bridge, they import `optional.bridge.hosts.codex.client`
 lazily and optionally. The legacy `session_delivery.py` helper was not ported, since nothing in
 the bridge uses it.
@@ -522,7 +522,7 @@ that carries `permission_mode`.
 | Service (`bridge_service.py`) | Idle start tested from a relocated copy, with the source's paths: marker, leadership, no chats, no SEND, clean shutdown. Needs re-running on this layout. |
 | Codex updates | An update moves both pinned Codex executables: the app package folder holding `ChatGPT.exe` and the `bin\<16 hex>\codex.exe` copy. Preparation and every service start move them to the current install (`hosts/codex/locate.py`; "Configuration"); tests on fake package trees, and the Windows package lookup checked against the installed app (26.1023.6123). An update while the service runs is not followed: frontends of the new `codex.exe` are refused (`frontend-host-unverified`) until the service restarts. |
 | Migrating from the older bridge the owner runs | Not done. Its in-memory sends must be reconciled before any cutover. |
-| Linux and macOS | None. Named pipes, ACLs, tokens and job objects (plan section 6). |
+| Linux and macOS | None. Named pipes, ACLs, tokens and job objects |
 
 ### Changes from the source
 

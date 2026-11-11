@@ -11,8 +11,8 @@ body with its tokens filled from tokens(): TOKENS, and PROFILE_TOKENS read from 
 entry, so a value hosts.json holds is written once (`{{long_context_model}}` names the role's own
 `model` line's model: long_context_phrase); `{{model:<tier>}}` from tier_models() and
 `{{tool:<capability>}}` from TOOLS, the map the `tools` line uses. Lines end as the role file's do.
-Skills are not copied: the plugin manifest points at `content/skills/` itself (decision 29 in
-docs/multi-host-plan.md section 7).
+Skills are not copied: the plugin manifest points at `content/skills/` itself (docs/content.md
+"Manifests").
 
 manifests(kit, content) writes the files that carry the kit's one version (kit.json; ARCHITECTURE.md
 "Packaging"), each JSON with indent 2 and a final newline:
@@ -44,7 +44,8 @@ HOST = 'claude'
 SHELL_REL = 'hosts/claude/shell'
 AGENTS_REL = SHELL_REL + '/agents'
 SKILLS_REL = 'content/skills'                  # the plugin's skills: the content folder itself
-RETIRED_SKILLS_REL = SHELL_REL + '/skills'     # the skills' copy before decision 29: any file there is stale
+# the skills' copy before they moved to content/skills: any file there is stale
+RETIRED_SKILLS_REL = SHELL_REL + '/skills'
 HOOKS_REL = SHELL_REL + '/hooks/hooks.json'
 MANIFEST_REL = '.claude-plugin/plugin.json'
 MARKETPLACE_REL = '.claude-plugin/marketplace.json'

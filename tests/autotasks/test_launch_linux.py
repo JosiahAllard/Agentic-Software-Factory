@@ -1,4 +1,4 @@
-"""kitlib.autotasks.tick.launch on Linux (docs/linux-support-plan.md slice 11): the task runs in its
+"""kitlib.autotasks.tick.launch on Linux: the task runs in its
 own session (start_new_session), with no Windows creation flags, so it outlives the tick that
 started it. kitlib.platform.NAME is patched to 'linux' and Popen is a fake, so this runs on Windows
 and starts nothing."""

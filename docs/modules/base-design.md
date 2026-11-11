@@ -45,4 +45,4 @@ A new OS primitive: add its name to `platform.api.NAMES`, implement it in both b
 
 ## Reference
 
-docs/linux-support-plan.md (how the seam was built, and the Linux work still open), docs/windows-token-leak.md, docs/kitboot.md.
+docs/linux-support-plan.md (the Linux work still open), docs/windows-token-leak.md, docs/kitboot.md.

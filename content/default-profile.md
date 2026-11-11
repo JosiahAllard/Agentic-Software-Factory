@@ -1,7 +1,6 @@
 # Agent profile: the kit's default
 
-The profile an agent reads when its repository has none of its own (a repo profile is opt-in:
-docs/multi-host-plan.md decision 26). It has every heading a role reads, in the same words as a repo
+The profile an agent reads when its repository has none of its own. It has every heading a role reads, in the same words as a repo
 profile. `<kit>` is the kit's folder, `<worktree>` your worktree, `<repo>` the repository's main
 checkout.
 

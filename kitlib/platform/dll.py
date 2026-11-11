@@ -1,4 +1,4 @@
-"""Windows DLLs bound at first use, never at import (docs/linux-support-plan.md section 2.1, rule 3).
+"""Windows DLLs bound at first use, never at import (docs/modules/base-design.md "Contract").
 
   windll(name, **kw)          ctypes.WinDLL(name, **kw) where ctypes has it (Windows); elsewhere
                               PlatformUnsupported naming the DLL and the platform

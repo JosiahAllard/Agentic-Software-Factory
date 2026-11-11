@@ -1,5 +1,5 @@
-"""The box checks of machine setup on Linux (docs/linux-support-plan.md section 6 and slice 14;
-docs/machine-setup.md "Linux"), and the front door tools/kit.py asks.
+"""The box checks of machine setup on Linux (docs/machine-setup.md "Linux"), and the front door
+tools/kit.py asks.
 
   front_door(platform)  None when the kit runs on `platform` (sys.platform's spelling); else the
                         refusal: every platform but Windows and Linux (darwin included), and WSL,

@@ -99,7 +99,7 @@ def has_console():
     GetConsoleProcessList, not GetConsoleWindow: a console made with CREATE_NO_WINDOW, or by
     ensure_windowless_console, has a GetConsoleWindow() of 0 (measured).
     Off Windows always True, and kernel32 is never asked: no start there opens a console window,
-    so a child needs no flag for one (docs/linux-support-plan.md section 1.3, "Shields")."""
+    so a child needs no flag for one."""
     import kitlib.platform
     if kitlib.platform.NAME != 'windows':
         return True

@@ -1,4 +1,4 @@
-"""The lock's process checks on Linux (docs/linux-support-plan.md section 8, slice 4), on the /proc
+"""The lock's process checks on Linux, on the /proc
 ctime `(boot << 64) | starttime` (kitlib.platform.linux.process):
 
 - a record or token written before a reboot names no live process after it (the boot id is the

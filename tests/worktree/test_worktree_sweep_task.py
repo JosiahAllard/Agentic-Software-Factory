@@ -221,7 +221,7 @@ class FakeJobs(object):
 
 
 class Linux(TaskCase):
-    """task.run on Linux (docs/linux-support-plan.md slice 10): the same flags, the pm-kit job of
+    """task.run on Linux: the same flags, the pm-kit job of
     the task's name instead of the PowerShell line; the runner is never called."""
 
     def setUp(self):

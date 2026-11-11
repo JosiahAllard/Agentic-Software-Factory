@@ -1,7 +1,7 @@
 """The Windows backend of the seam: the Win32 bindings (win32) and every Windows primitive (cpu,
 process, job, console, tcp, pipe, shield, winwatch). The contract's names
 (kitlib.platform.api.NAMES) are cpu's and process's own functions, unchanged
-(docs/linux-support-plan.md section 2.1, rule 2), asked for through kitlib.platform.backend().
+(docs/modules/base-design.md "Contract"), asked for through kitlib.platform.backend().
 
 A name is imported when first asked for, never on import: importing a submodule (console, which
 `import kitlib` loads) imports this package, and that stays free of ctypes."""

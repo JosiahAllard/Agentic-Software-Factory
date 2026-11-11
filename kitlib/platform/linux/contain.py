@@ -1,5 +1,5 @@
-"""Containment on Linux: the Job of the process face (docs/linux-support-plan.md section 2.3 and
-section 8, slice 5). On Linux the face's Job is this module's Job, with the same methods and
+"""Containment on Linux: the Job of the process face. On Linux the face's Job is this module's Job,
+with the same methods and
 meanings, on the strongest tier the machine gives, probed at run time (probe()):
 
   S1  a cgroup v2 scope of the user's systemd (`systemd-run --user --scope -p Delegate=yes`) with
@@ -19,7 +19,7 @@ W1 comes from the same kind of trial (w1_trial): an NsJob on `sleep`, seen in a 
 own, killed through its pid 1 and seen gone.
 A process that itself runs in a kit job's leaf (a pool worker, a unit, a slot's command) reads the
 tier from that job's cgroup instead, with no trial, and makes its jobs inside it (nesting, below).
-Tier.text names the tier and what it lacks, the line the lock and its runs show (slice 7).
+Tier.text names the tier and what it lacks, the line the lock and its runs show.
 
 The layout of a job's cgroup J (S1, S2): the command and its tree in J/main, the kill_on_close
 watchdog in J/w, and the jobs a member makes in J/j-<owner pid>-<n>-<hex>, so killing J kills the
@@ -72,7 +72,7 @@ owner checks the path is a kit job's cgroup, named as this job named it, before 
 Stragglers (leftovers): end(kill=False) unpins J and releases the watchdog, so what the command
 left keeps running unpinned in J, in the outer job when J is nested, as on Windows; leftovers()
 moves them out of J into a scope of their own (top-level, through systemd) or a sibling job
-directory (nested). Its call sites are slice 7's.
+directory (nested). Its callers are the lock's runs and jobs.
 
 W2: the stub carries PMKIT_JOB, a list of job tokens each child inherits; the members are the
 processes whose environment names the token plus the command's descendants. terminate stops every

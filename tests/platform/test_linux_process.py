@@ -1,4 +1,4 @@
-"""The process primitives on Linux (docs/linux-support-plan.md section 8, slice 4): /proc readers
+"""The process primitives on Linux: /proc readers
 behind kitlib.proc.process's names, the ctime `(boot << 64) | starttime`. On a real spawned tree:
 ancestry, descendants, command_line and kill_tree; a parent created after its child ends a walk;
 a pid at another ctime is not killed; an ended, unreaped process (a zombie) is gone. Hidden: a

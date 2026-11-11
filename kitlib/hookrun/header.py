@@ -8,7 +8,7 @@ SessionStart and SubagentStart additionalContext).
 
 Skills and role files name the kit's folder `<kit>` (docs/content.md "Skills"), and a role or skill
 body is not substituted on every host, so the header says once, at the start, what `<kit>` is. A
-repository holds no copies of the kit's tools (decision 21 in docs/multi-host-plan.md section 7):
+repository holds no copies of the kit's tools (docs/install.md "Ported repo tools"):
 every call is `python <kit>/tools/<x>.py -C <checkout>`.
 """
 

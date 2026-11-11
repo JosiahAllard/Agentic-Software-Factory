@@ -1,5 +1,4 @@
-"""The lock across pid namespaces (Linux; contain's W1 runs each command in a pid namespace of its
-own, docs/linux-support-plan.md section 2.3). A pid is a number in one namespace:
+"""The lock across pid namespaces (Linux). A pid is a number in one namespace:
 
 - a run record names its wrapper's namespace (`pidns`), and a checker in another one never judges
   the wrapper by its pid (store.record_state): the run lock decides (run_live, run_dead), as it

@@ -214,7 +214,7 @@ def live_root(kit=None, environ=None):
 def refresh_cmd(migrate=False):
     """`python "<kit>/tools/plugin_refresh.py" [--migrate] --apply`, the kit (live_root) named in
     full: the line reaches a PM whose session runs in another folder, and no repository holds a
-    copy of the kit's tools (decision 21 in docs/multi-host-plan.md section 7)."""
+    copy of the kit's tools (docs/install.md "Ported repo tools")."""
     return '%s%s --apply' % (kitroot.command('plugin_refresh', kit=live_root()),
                              ' --migrate' if migrate else '')
 

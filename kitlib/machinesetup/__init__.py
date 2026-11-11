@@ -1,5 +1,5 @@
 """kitlib.machinesetup: set up a machine for the kit (tools/machine_setup.py,
-installer/machine-setup.ps1; docs/machine-setup.md). Plan decision 27: it writes nothing into any
+installer/machine-setup.ps1; docs/machine-setup.md). It writes nothing into any
 repository; a repository works with the kit with nothing committed in it, and the kit's first use
 there writes only local git settings (kitlib.worktree.prep).
 
@@ -40,7 +40,7 @@ elevated terminal.
 
 The committed repo setup is kitlib.machinesetup.repo (`--repo PATH`, run_repo), a mode of its own.
 run_agent_temp() does the agents' temp folder steps alone (tools/agent_temp_init.py).
-On Linux (docs/linux-support-plan.md slice 14) the default mode first runs the box checks
+On Linux (docs/machine-setup.md "Linux") the default mode first runs the box checks
 (kitlib.machinesetup.linuxbox: WSL, root, a second kit user, a container, git and tmux, the
 containment tier with the delegation step offered below S1) in a `box` section of its own. The
 delegation step is `--delegation` (run_delegation; kitlib.machinesetup.delegation), a mode of its

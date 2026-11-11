@@ -140,7 +140,7 @@ class RealRead(unittest.TestCase):
 
 
 class Linux(unittest.TestCase):
-    """On Linux (docs/linux-support-plan.md slice 10) read_tasks is the pm-kit jobs read back,
+    """On Linux read_tasks is the pm-kit jobs read back,
     never schtasks."""
 
     def setUp(self):

@@ -1,4 +1,4 @@
-"""Machine setup's scheduled jobs on Linux (docs/linux-support-plan.md slice 10): the agent temp
+"""Machine setup's scheduled jobs on Linux (docs/machine-setup.md "Linux"): the agent temp
 sweep, each repository's worktree sweep and the automatic tasks' tick, each a pm-kit job of
 kitlib.platform.linux.schedule where Windows registers a scheduled task. Each step plans a job
 when the Windows step would plan its task (missing; for the tick, also one that differs); the job

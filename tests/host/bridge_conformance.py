@@ -1,4 +1,4 @@
-"""The bridge-port part of the host conformance suite (docs/multi-host-plan.md section 2.6), for a
+"""The bridge-port part of the host conformance suite (docs/new-host.md), for a
 host whose bridge half exists (optional/bridge/hosts/<name>/). Not a test module: a host's
 conformance class takes it through `mixin(HOST)`, which is BridgeConformance when the half exists
 and an empty class otherwise, so a host without a half runs none of it:

@@ -1,7 +1,7 @@
 # The committed repo setup's PowerShell front end (docs/install.md "Committed setup (--repo)"). The
 # work is `tools\machine_setup.py --repo <Target>` (kitlib\machinesetup\repo.py): this script turns
 # its parameters into that call and adds nothing to what it does. A repository needs none of this to
-# work with the kit (plan decision 27): it is for a repository that wants its kit settings committed.
+# work with the kit: it is for a repository that wants its kit settings committed.
 #
 #   powershell -NoProfile -File installer\new-repo.ps1 -Target <checkout> -OwnerEmail <owner>
 #                                -AgentEmail <agents> [-MainBranch main] [-RepoName <name>]

@@ -1,4 +1,4 @@
-"""First-use repo prep (docs/multi-host-plan.md decisions 23 and 25; docs/new-worktree.md "First-use
+"""First-use repo prep (docs/new-worktree.md "First-use
 prep"): local settings only, nothing tracked and nothing committed.
 
   run(path, folders=None, kit=None)    lines saying what was done or could not be; [] when the

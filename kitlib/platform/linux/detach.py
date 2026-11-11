@@ -1,6 +1,5 @@
 """A run started again outside its caller on Linux (machine_lock.py run|background --detach, the
-gate's detached landing): kitlib.lock.detach's Linux backend (docs/linux-support-plan.md
-section 4, slice 7).
+gate's detached landing): kitlib.lock.detach's Linux backend.
 
 Windows asks WMI, so the run is a child of WMI's provider host. Here the caller starts a
 trampoline (`python -I -c TRAMPOLINE`) in a session of its own (setsid), and the trampoline
@@ -11,7 +10,7 @@ the run starts as `systemd-run --user --scope` in a unit of its own, `<prefix>-d
 so it is in no cgroup of the caller's either (a terminal's or an agent host's scope, which its
 end may kill as a whole); systemd-run execs the command, so the scope's process is the run. The
 trampoline says the run's pid once the run is in its unit (or at once, with no unit), and says
-why when it is not. Without systemd it is the setsid double fork alone (plan step 10).
+why when it is not. Without systemd it is the setsid double fork alone.
 
 The units here are named `-detach-`; a kit job's are `-job-` (contain), and nothing here stops
 or cleans up a unit: the run's scope goes when its last process ends (--collect).

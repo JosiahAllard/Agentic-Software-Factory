@@ -1,4 +1,4 @@
-"""The host contract (ARCHITECTURE.md "Host contract"; docs/multi-host-plan.md section 2.1).
+"""The host contract (ARCHITECTURE.md "Host contract").
 
 What the core and a host adapter exchange, and nothing else: the neutral `Action` a hook payload
 is parsed into, the `Decision` rendered back, a host's `HostProfile` and `HostCapabilities`, and

@@ -1,5 +1,5 @@
 """The ratchet: the suite's failing tests held to a baseline that only shrinks (docs/test-tools.md
-"Platform markers and the ratchet"; docs/linux-support-plan.md section 4).
+"Platform markers and the ratchet").
 
   run_suite(root, timeout, environ)  one child runs the whole suite under `root`: a Run
   read_baseline(path, default)       the baseline's ids; Refused when it is malformed
@@ -13,7 +13,7 @@ failure counts as its test's), the import failures among them (unittest's _Faile
 number of tests run and the platform markers by reason (tests/platforms.py REASONS). A child that
 dies, times out or prints no such line is a broken run, as is one that ran no test.
 
-This module must import where kitlib.proc cannot (Linux, before slice 2 of the plan): it uses
+This module must import where kitlib.proc cannot (Linux): it uses
 subprocess with an explicit creationflags= and loads no kitlib.proc beyond kitlib/__init__'s
 console hook, and no kitlib.config or kitlib.git.
 The child's environment is the caller's without the session's kit binding

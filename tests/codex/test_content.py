@@ -138,8 +138,8 @@ class DefaultRole(unittest.TestCase):
 
 class Banner(unittest.TestCase):
     def test_every_committed_agent_file_opens_with_the_generated_line(self):
-        """Its first line names the role file and the render command (decision 19 in
-        docs/multi-host-plan.md section 7; docs/content.md "Generated files")."""
+        """Its first line names the role file and the render command (docs/content.md "Generated
+        files")."""
         folder = os.path.join(ROOT, *cc.AGENTS_REL.split('/'))
         names = kcontent.load(ROOT).role_names()
         self.assertEqual(sorted(n for n in os.listdir(folder) if n.endswith('.toml')),

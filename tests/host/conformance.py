@@ -1,4 +1,4 @@
-"""The host conformance suite (docs/multi-host-plan.md section 2.6; docs/new-host.md): what a
+"""The host conformance suite (docs/new-host.md): what a
 supported host is. Not a test module (no `test` prefix, and the mixin is no TestCase), so it runs
 only through a host's subclass:
 
@@ -33,8 +33,8 @@ What a subclass supplies:
                   behind the contract yet; the session test skips, saying so)
   LEAK_ALLOWED    {kit path: count} of the host's name left where section 2.7 forbids it (shrink only)
 
-Every hook a host registers runs the kit's one entry, boot/hook.py <host> <event> [<part>] (plan
-decision 20), or, for a plugin whose root is not the kit, its byte copy at <shell>/boot/hook.py: a
+Every hook a host registers runs the kit's one entry, boot/hook.py <host> <event> [<part>], or, for
+a plugin whose root is not the kit, its byte copy at <shell>/boot/hook.py: a
 host adds no hook script. The entry is run here in-process over the host's recorded payloads.
 
 Every check reads hosts.json and the adapter's own answers; none names a host.
@@ -431,8 +431,8 @@ class HostConformance(object):
 
     def test_skills_ship_when_declared(self):
         """A host with skills ships every skill file: copied byte for byte by its renderer, or
-        loaded from content/skills itself, which its plugin manifest names (decision 29 in
-        docs/multi-host-plan.md section 7)."""
+        loaded from content/skills itself, which its plugin manifest names (docs/content.md
+        "Manifests")."""
         if not self.entry.capabilities.skills:
             return
         c = kcontent.load(self.KIT_ROOT)
@@ -600,6 +600,6 @@ class HostConformance(object):
         over = ['%s: %d, allowed %d' % (p, n, self.LEAK_ALLOWED.get(p, 0))
                 for p, n in sorted(counts.items()) if n > self.LEAK_ALLOWED.get(p, 0)]
         self.assertEqual(over, [], 'the host name outside hosts.json, hosts/%s/ and tests '
-                                   '(docs/multi-host-plan.md 2.7)' % self.HOST)
+                                   '(ARCHITECTURE.md "Hosts")' % self.HOST)
         for p in self.LEAK_ALLOWED:
             self.assertTrue(os.path.isfile(os.path.join(self.KIT_ROOT, *p.split('/'))), p)

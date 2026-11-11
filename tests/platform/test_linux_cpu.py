@@ -1,5 +1,5 @@
-"""The affinity primitives on Linux (kitlib.platform.linux.cpu; docs/linux-support-plan.md
-section 8, slice 5): a mask's cpu ids, and on a real child affinity_of and set_affinity with the
+"""The affinity primitives on Linux (kitlib.platform.linux.cpu): a mask's cpu ids, and on a real
+child affinity_of and set_affinity with the
 answers kitlib.proc.process gives on Windows: pinned, gone, reused, failed (an empty mask)."""
 import importlib
 import os

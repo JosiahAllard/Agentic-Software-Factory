@@ -89,7 +89,7 @@ class Preflight(Case):
         self.assertNotIn('doc index', out)
 
     def test_no_index_is_skipped_not_failed_and_the_line_says_so(self):
-        # The doc index is opt-in (decision 26): a repository without one passes, saying why.
+        # The doc index is opt-in: a repository without one passes, saying why.
         self.repo.git('rm', '-q', 'docs/INDEX.md')
         self.repo.git('commit', '-q', '-m', 'no index')
         self.commit_unlisted()
@@ -217,7 +217,7 @@ class ConfigRef(Case):
         self.assertIn(UNLISTED, out)
 
     def test_a_ref_with_no_kit_json_still_checks_an_index_the_head_has(self):
-        # The index file alone opts in (decision 26): no .kit.json at the ref is all defaults,
+        # The index file alone opts in: no .kit.json at the ref is all defaults,
         # "doc_index".enabled true, so the head's index is checked.
         first = self.repo.git('rev-list', '--max-parents=0', 'HEAD').strip()
         self.assertNotEqual(self.repo.git('ls-tree', '--name-only', first, '.kit.json').strip(),

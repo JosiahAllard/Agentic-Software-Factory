@@ -4,7 +4,7 @@ one function was a hazard of the four copies this replaces: machine_lock, winpro
 pytests).
 Windows only, standard library only. Each DLL is a kitlib.platform.dll.LazyDLL: it loads, and
 each function gets its prototype below, when that function is first used, so this module imports
-on any platform (docs/linux-support-plan.md section 2.1, rule 3) and a call off Windows raises
+on any platform (docs/modules/base-design.md "Contract") and a call off Windows raises
 PlatformUnsupported.
 """
 import ctypes

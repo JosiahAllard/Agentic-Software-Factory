@@ -35,7 +35,7 @@ REPO_LOCAL_SUFFIX = "-train-eval"     # the training-and-evaluation workflow ski
 # repo-relative kit paths
 PLUGIN_RX = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([\w./-]*[\w-])")
 KIT_RX = re.compile(r"<kit>/([\w./-]*[\w-])")
-# what only one host understands, which a shared skill never says (docs/multi-host-plan.md, section 5)
+# what only one host understands, which a shared skill never says
 HOST_ONLY = (("${CLAUDE_PLUGIN_ROOT}", "write <kit>/..."), ("pm-kit:", "name the role bare"),
              ("{{", "skills are not rendered: no tokens"), ("CLAUDE.md", "say the repo's instructions"),
              (".claude/", "say the repo profile or name no host folder"))

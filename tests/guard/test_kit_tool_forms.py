@@ -1,6 +1,5 @@
 """A kit tool run from the kit's folder is judged exactly as the same call through a repository
-stub (decision 21 in docs/multi-host-plan.md section 7: a repository holds no stubs, so skills
-and roles run `python <kit>/tools/<x>.py -C <worktree>`). The guard knows a kit tool by its
+stub (docs/install.md "Ported repo tools"). The guard knows a kit tool by its
 file name, never by a path relative to the checkout: each row's stub form
 (`python tools/<x>.py ...`) and its kit forms (the kit's absolute path, quoted and not, with -C
 when the tool takes one; the kit command's `python <kit>/tools/kit.py <x>`, `kit <x>` and

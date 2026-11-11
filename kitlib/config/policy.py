@@ -89,7 +89,7 @@ HEAVY_DEFAULTS = (
      'why': 'a Gradle run configures and builds the project'},
 )
 
-# The same programs as Linux names them (docs/linux-support-plan.md section 3, finding 8), added
+# The same programs as Linux names them, added
 # on Linux only: godot[0-9]* would make godot4.exe heavy on Windows too. godot4 and the like (an
 # AppImage, Godot4.AppImage, too), flatpak's exported launchers (exports/bin/org.godotengine.Godot,
 # exports/bin/org.blender.Blender), and `flatpak run <app id>`: flatpak's other verbs on an app id

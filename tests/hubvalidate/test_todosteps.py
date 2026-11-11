@@ -466,7 +466,7 @@ class RealPowerShell(unittest.TestCase):
 
 
 class PerOsRun(unittest.TestCase):
-    """{run: {windows, linux}} (docs/linux-support-plan.md section 5): the form for the target OS."""
+    """{run: {windows, linux}}: the form for the target OS."""
     FORMS = {'run': {'windows': 'dir C:\\x', 'linux': 'ls /x'}}
 
     def test_a_string_run_is_verbatim_for_every_os(self):

@@ -1,4 +1,4 @@
-"""Scheduled jobs on Linux (docs/linux-support-plan.md section 2.2 and slice 10), where Windows
+"""Scheduled jobs on Linux, where Windows
 registers a Task Scheduler task: a systemd user unit when the user's systemd manager answers, else
 a crontab line; a job at sign-in with no systemd is an XDG autostart entry when a desktop session
 exists. Imported only from the Linux branches of the kit's task code (kitlib.hubsite.autostart,

@@ -29,8 +29,7 @@ Part of docs/guard.md (the index); the sections below are moved there unchanged.
 ## Generated files
 
 `kitlib/guard/generated.py` `source(top, rel)`; rule `generated-file` (`rules.generated_file`), checked
-with the other edit rules for a file tool's target and each shell write target (decision 19 in
-docs/multi-host-plan.md section 7; docs/content.md "Generated files"). It judges only a checkout
+with the other edit rules for a file tool's target and each shell write target (docs/content.md "Generated files"). It judges only a checkout
 with the kit's layout (`content/roles/` and `tools/render_content.py`, `kitlib.content.oncommit.is_kit`),
 the checkout git places the target in, and these paths in it (case folded):
 

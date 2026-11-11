@@ -1,5 +1,5 @@
-"""kitlib.platform: the one place that knows the operating system (docs/linux-support-plan.md
-section 2.1, "The seam").
+"""kitlib.platform: the one place that knows the operating system (docs/modules/base-design.md
+"Contract").
 
   NAME                  'windows', 'linux' or 'unsupported', from sys.platform when kitlib
                         loads. Code reads it as kitlib.platform.NAME at call time, so a test can

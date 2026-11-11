@@ -1,5 +1,5 @@
-"""kitlib.worktree.prep: the first-use repo prep (docs/new-worktree.md "First-use prep"; decisions 23 and 25
-of docs/multi-host-plan.md), against throwaway repositories with a bare remote (tests/gitfixture.py).
+"""kitlib.worktree.prep: the first-use repo prep (docs/new-worktree.md "First-use prep"), against
+throwaway repositories with a bare remote (tests/gitfixture.py).
 
 Every case runs with the fixture's environment (no global or system git config) and its own
 stand-in kit folder, so no case points a repository at this checkout's githooks.
@@ -151,7 +151,8 @@ class NothingTrackedChanges(PrepCase):
         self.assertEqual(self.fx.git('rev-parse', 'HEAD', cwd=clone), head)
 
     def test_a_commit_in_a_worktree_pushes_to_its_remote_branch(self):
-        """Decision 23's condition: the exclude hides the folder from the main checkout only."""
+        """The exclude hides the folder from the main checkout only, so a worktree's commit with it
+        pushes."""
         self.run_prep()
         wt = self.fx.worktree('w', branch='fix/pushed')
         self.fx.write('src/a.txt', 'a\n', root=wt)

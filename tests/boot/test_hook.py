@@ -1,4 +1,4 @@
-"""boot/hook.py, the one hook entry of every host (plan decision 20; docs/new-host.md): what it does
+"""boot/hook.py, the one hook entry of every host (docs/new-host.md): what it does
 before the kit boots, with the standard library alone. The run through a host's adapter is the
 conformance suite's (tests/host/conformance.py) and tests/guard/test_entry.py's."""
 import importlib.util

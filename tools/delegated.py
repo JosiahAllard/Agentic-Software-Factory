@@ -108,6 +108,12 @@ def hub_client():
     return client.Client(settings.load().port)
 
 
+def checklist(cfg):
+    """The PM start checklist text, read without changing any state."""
+    from kitlib import pmstart      # loaded only by a run that has a checklist-line precondition
+    return pmstart.checklist(cfg, check_only=True)
+
+
 def request(a, pairs, listed):
     try:
         cfg = user.user_config()
@@ -149,7 +155,7 @@ def main(argv=None):
         return fail('refused: %s' % e)
     try:
         op = drun.find(listed.operations, a.id)
-        res = drun.run(op, pairs, trigger, cfg, hub=hub)
+        res = drun.run(op, pairs, trigger, cfg, hub=hub, checks=drun.with_checklist(checklist))
     except drun.RunRefused as e:
         return fail('refused: %s' % e)
     print('logged %s; ran: %s' % (res.entry, ' '.join(res.argv)))

@@ -45,8 +45,9 @@ class Cli(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         calls = []
 
-        def fake(op, pairs, trigger, cfg, hub=None):
+        def fake(op, pairs, trigger, cfg, hub=None, checks=None):
             calls.append((op.id, pairs, trigger, hub))
+            self.checks = checks
             if refuse:
                 raise drun.RunRefused(refuse)
             return result
@@ -125,6 +126,17 @@ class Cli(unittest.TestCase):
                                       'hub:A-001', result=res)
         self.assertEqual(code, 0)
         self.assertEqual(calls, [('D-001', [('name', 'alpha')], 'hub:A-001', 'HUB')])
+
+    def test_the_run_gets_the_checklist_line_check(self):
+        self.write_list()
+        res = drun.Result('H-kit-0002', ['tool.exe'], 0, None)
+        self.main('run', 'D-001', '--arg', 'name=alpha', '--approval', 'hub:A-001', result=res)
+        self.assertIn('checklist-line', self.checks)
+
+    def test_the_handed_in_checklist_reads_without_changing_state(self):
+        with mock.patch('kitlib.pmstart.checklist', return_value='t') as cl:
+            self.assertEqual(delegated.checklist({'k': 1}), 't')
+        cl.assert_called_once_with({'k': 1}, check_only=True)
 
     def test_a_trigger_and_an_approval_together_are_a_usage_error(self):
         self.write_list()

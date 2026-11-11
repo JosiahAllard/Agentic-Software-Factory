@@ -204,7 +204,8 @@ class ParkTest(ApiCase):
                 pass
         self.views.asks = [self.line('Q-404', parked=False)]
         hub = serve.Hub(None, self.store, self.api, self.views, None, [], None, Timer(), [],
-                        log=lambda level, text: said.append((level, text)))
+                        log=lambda level, text: said.append((level, text)),
+                        code=serve.code_folders())
         hub._refile()
         self.assertEqual(said, [('note', 'kit:EX-1: owner line cites missing Q-404')])
 

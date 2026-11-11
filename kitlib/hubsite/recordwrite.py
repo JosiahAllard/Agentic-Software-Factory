@@ -11,7 +11,7 @@ add, edit, delete and unblock from the record page (docs/hub-views.md "The recor
   park(root, rid, item_id, cond, asker)                         -> {"lines", "park"}
   withdraw(root, rid, cond)                                     -> {"lines", "unblocked", "dropped"}
 
-condition_met is not an owner route: the hub's unblock-conditions job (kitlib.hubjobs
+condition_met is not an owner route: the hub's unblock-conditions job (hubjobs
 .unblock_conditions) calls it when a record's `until` condition is met, and it commits under
 Session: hub-condition (CONDITION_SESSION), clearing that one member (plan.plan_condition_met:
 an `owner` member only on a to-do, a question or an approval, the owner's own act).
@@ -165,7 +165,7 @@ def answer(root, rid, qid, at, title, label, note=None, via=None, other=False, w
 
 def condition_met(root, rid, member, cond):
     """Clear blocker `member` of `rid`, whose `until` condition `cond` the caller found met
-    (kitlib.hubjobs.unblock_conditions), in one store commit under Session: hub-condition
+    (hubjobs.unblock_conditions), in one store commit under Session: hub-condition
     (plan.plan_condition_met). {"lines", "unblocked", "dropped"}: dropped when the line was
     dropped, unblocked when that cleared the member (an `owner` member with other lines left
     keeps its hold); both False when the record no longer holds that condition, and nothing was
@@ -250,7 +250,7 @@ def asks(root):
     `todo:<q> done`, `approval:<q> decided`; `kind` the condition's) of a record still blocked
     on the owner, `parked` true when the record's body says the hub parked it on q
     (PARK_REASON). Read with no fetch, as the hub's timed jobs read
-    (kitlib.hubjobs.unblock_conditions open_snapshot); the implicit store holds none. A store
+    (hubjobs.unblock_conditions open_snapshot); the implicit store holds none. A store
     that cannot be read is a HubError `store`. For the hub's sweep of lines whose ask is gone
     (kitlib.hubsite.api questions_file)."""
     from kitlib.backlog import conditions as condmod

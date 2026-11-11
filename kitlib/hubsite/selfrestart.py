@@ -13,8 +13,9 @@ What look() does, in turns, all on the caller's thread except the work marked (t
      store or another port is not the task's). No task, a task in another state, or one that
      cannot be read: NOT_HERE once, and the stale warning shows at once, as before this module.
   3. Once settled, the self-check (thread): eligible again, then a child python (CHECK_SNIPPET,
-     self_check) that imports every module of serve.code_folders() but the timed jobs' own (a job
-     that fails is a start-up note of the new server, not a failed start), runs tools/hub.py's top level
+     self_check) that imports every module of serve.code_folders() with no jobs handed, so none of
+     the timed jobs' own (a job that fails is a start-up note of the new server, not a failed
+     start), runs tools/hub.py's top level
      and builds, starts and asks GET health of a hub on a temp store and temp token folder, on
      port 0 with no tunnel, sync, push, backlog or jobs. Exit 0 within CHECK_TIMEOUT_S passes.
      A failure logs CHECK_FAILED and the stale warning shows; that stamp is never tried again.
@@ -180,9 +181,10 @@ def check(timeout=None):
 def self_check(kit_root=None, make_settings=None, make_sources=None):
     """What the self-check's child does; raises when the code does not start (the child's
     traceback is its last output line's source). Imports every module of serve.code_folders()
-    under `kit_root` (default KIT_ROOT) but the timed jobs' own modules (the server serves without
-    a job whose module fails, with a start-up note, so a broken job is no reason to keep old
-    code; their package is imported and listed), runs tools/hub.py's top level, then builds a hub from
+    under `kit_root` (default KIT_ROOT): with no jobs handed, none of the timed jobs' own modules
+    (the server serves without a job whose module fails, with a start-up note, so a broken job is
+    no reason to keep old code; their package is imported by tools/hub.py, which hands them to the
+    server), runs tools/hub.py's top level, then builds a hub from
     make_settings(tmp) and make_sources(tmp) (default: the machine's settings and sources with a
     temp store and temp token folder, port 0, no tunnel, sync, push, backlog, lock or jobs),
     starts it, asks its GET health and closes it. `make_*`: the tests' stand-ins."""
@@ -190,12 +192,10 @@ def self_check(kit_root=None, make_settings=None, make_sources=None):
     import runpy
     import shutil
     import tempfile
-    from kitlib import hubjobs
     from kitlib.hubclient import token as hubtoken
     from kitlib.hubsite import api, serve
     from kitlib.hubclient import settings as hub_settings
     kit_root = kit_root or KIT_ROOT
-    jobs_folder = os.path.dirname(os.path.abspath(hubjobs.__file__))
     for folder in serve.code_folders():
         package = os.path.relpath(folder, kit_root).replace(os.sep, '.')
         for name in sorted(os.listdir(folder)):
@@ -203,9 +203,8 @@ def self_check(kit_root=None, make_settings=None, make_sources=None):
                 continue
             if name == '__init__.py':
                 importlib.import_module(package)
-            elif not _same_folder(folder, jobs_folder):     # a job: serve.build notes its failure
+            else:
                 importlib.import_module('%s.%s' % (package, name[:-3]))
-    hubjobs.makers()
     runpy.run_path(os.path.join(kit_root, 'tools', 'hub.py'), run_name='hub_self_check')
 
     def machine_settings(tmp):

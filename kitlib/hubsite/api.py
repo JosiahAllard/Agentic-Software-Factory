@@ -326,7 +326,7 @@ def _launcher_entries():
 
 def launcher_coordinators():
     """{session key: its `repo`} of the launcher's sessions.json entries that run a coordinator
-    (`agent` set, as kitlib.hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
+    (`agent` set, as hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
     it), read now. Raises as launcher_keys does; Api.coordinator_keys says so."""
     return {k: e.get('repo') for k, e in _launcher_entries() if e.get('agent')}
 

@@ -24,7 +24,7 @@
   such as `keys-fetch`) or `tunnel: off: <why>`. `on` does not say that a tunnel program reaches the
   listener.
 - **Stale code.** A running `hub serve` compares the `.py` files of `kitlib/hubsite`, of the timed
-  jobs' `kitlib/hubjobs` and of the package it reads its machine settings through,
+  jobs it was handed (`kitlib/hubjobs`: each maker's folder) and of the package it reads its machine settings through,
   `kitlib/config` (name, modified time, size; `serve.code_stamp`,
   `serve.code_folders`), with what they were at its start, at most every 30 seconds (`CODE_LOOK_S`).
   When they differ, a server run by its autostart task restarts itself

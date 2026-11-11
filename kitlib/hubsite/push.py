@@ -195,7 +195,7 @@ TODO_NOTE_PUSH_MAX = 400                    # characters of a done to-do's note 
 LOG_MAX = 1 << 20                           # push-undelivered.jsonl rotates past this
 OUTBOX = 'push-outbox.json'
 # Job events owed once per detail rather than once per job: each names one thing the PM must
-# hear about (kitlib.hubjobs.unblock_conditions: one opened record each; usage_crossover: one
+# hear about (hubjobs.unblock_conditions: one opened record each; usage_crossover: one
 # session or account each), so a second one in a round must not replace the first.
 _CROSSOVER = 'The hub usage crossover job (hub health jobs.usage-crossover, usage-crossover.log): '
 # the PM's way back from a checkpoint ask: a crossing of the PM that ends without `crossed`

@@ -21,6 +21,13 @@ from tests.hubsite.test_serve import HEALTH, ServeCase
 WAIT_S = 10
 
 
+def standin(maker):
+    """`maker` as a timed job's maker the hub is handed (Sources.jobs): its `folder` is this
+    package's own, already hub code (serve.code_folders)."""
+    maker.folder = os.path.dirname(os.path.abspath(jobs.__file__))
+    return maker
+
+
 class Boom(Exception):
     pass
 
@@ -270,7 +277,7 @@ class WiredTest(ServeCase):
         def maker(sources):
             made.append(sources)
             return jobs.Job('demo', 300, run, first_s=0)
-        hub = self.build(jobs=[maker])
+        hub = self.build(jobs=[standin(maker)])
         self.assertEqual(len(made), 1)
         self.assertEqual(hub.jobs.names(), ['demo'])
         self.assertEqual(run.calls, 0, 'build starts nothing')
@@ -291,7 +298,7 @@ class WiredTest(ServeCase):
         def maker(sources):
             seen.append(sources.pending)
             return None
-        hub = self.build(jobs=[maker])
+        hub = self.build(jobs=[standin(maker)])
         self.assertEqual(seen, [hub.api.pending])     # set before the jobs are made
         qid = 'Q-' + '901'
         hub.api.store.put('questions', qid, {
@@ -313,7 +320,7 @@ class WiredTest(ServeCase):
         def maker(sources):
             seen.append(sources.handoffs)
             return None
-        hub = self.build(jobs=[maker])
+        hub = self.build(jobs=[standin(maker)])
         self.assertEqual(seen[0](), {})
         for doc_id, kind in (('C-001', 'handoff'), ('C-002', 'checkin')):
             hub.api.store.put('handoffs', doc_id, {'from': 'kit', 'kind': kind, 'state_path': 'Z:\\n.md',
@@ -325,7 +332,7 @@ class WiredTest(ServeCase):
     def test_no_jobs_is_null_in_health_and_a_maker_that_raises_is_a_note(self):
         def broken(sources):
             raise RuntimeError('no')
-        hub = self.build(jobs=[broken])
+        hub = self.build(jobs=[standin(broken)])
         self.assertIsNone(hub.jobs)
         self.assertTrue(any('a timed job was not made' in n for n in hub.notes))
         hub.start()
@@ -333,7 +340,7 @@ class WiredTest(ServeCase):
 
     def test_a_job_that_holds_the_close_is_an_unclean_step(self):
         run = Script(hold=True)
-        hub = self.build(jobs=[lambda s: jobs.Job('held', 300, run, first_s=0)])
+        hub = self.build(jobs=[standin(lambda s: jobs.Job('held', 300, run, first_s=0))])
         hub.start()
         self.assertTrue(run.entered.wait(WAIT_S))
         self.assertFalse(hub.close(0.1))
@@ -355,13 +362,15 @@ class MachineJobsTest(unittest.TestCase):
     def test_machine_sources_gives_every_discovered_job_only_with_sync(self):
         from kitlib.hubsite import plugin_job
         pm_repo(self, record=False)
-        src = serve.machine_sources(self.home)
+        src = serve.machine_sources(self.home, jobs=hubjobs.makers())
         found = [m.module for m in hubjobs.makers()]
         self.assertIn('kitlib.hubjobs.plugin_refresh', found)
         self.assertEqual([m.module for m in src.jobs], found,
-                         'the server runs what discovery finds, no list of its own')
+                         'the server runs the jobs it is handed, no list of its own')
         self.assertEqual(src.home, self.home)
-        self.assertEqual(serve.machine_sources(self.home, sync=False).jobs, [],
+        self.assertEqual(serve.machine_sources(self.home).jobs, [], 'none handed, none run')
+        self.assertEqual(serve.machine_sources(self.home, sync=False,
+                                               jobs=hubjobs.makers()).jobs, [],
                          'a scratch store runs no job')
         self.assertEqual(serve.Sources().jobs, [])
         maker = src.jobs[found.index('kitlib.hubjobs.plugin_refresh')]
@@ -441,7 +450,10 @@ class DiscoveryTest(ServeCase):
 
 class CodeStampTest(unittest.TestCase):
     def test_the_jobs_folder_is_hub_code_too(self):
-        self.assertIn(os.path.dirname(os.path.abspath(hubjobs.__file__)), serve.code_folders())
+        self.assertIn(os.path.dirname(os.path.abspath(hubjobs.__file__)),
+                      serve.code_folders(hubjobs.makers()))
+        self.assertNotIn(os.path.dirname(os.path.abspath(hubjobs.__file__)),
+                         serve.code_folders(), 'a server handed no job reads no job folder')
 
     def test_a_job_module_added_changes_the_stamp(self):
         a = tempfile.mkdtemp(prefix='kit-stamp-a-')

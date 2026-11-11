@@ -13,7 +13,9 @@
   run(hub, started=None, stop=None)             start, serve until `stop` is set, the owner's
                                                 stop route is called or Ctrl+C, close
   Sources(...)                                  where each part comes from
-  machine_sources(home=None, sync=True)         this machine's Sources, from its machine config
+  machine_sources(home=None, sync=True, jobs=())
+                                                this machine's Sources, from its machine config,
+                                                with the timed jobs it is handed
   SiteViews                                     the Api's `views` object over those sources
   health_route(api, views, tunnel='', fixed=False)
                                                 a listener's route for GET health (below)
@@ -227,7 +229,7 @@ import re
 import threading
 import time
 
-from kitlib import hubbacklog, hubjobs, pmstart, pmwatch
+from kitlib import hubbacklog, pmstart, pmwatch
 from kitlib.config import pm as pmconfig, pmdata
 from kitlib.config import user
 from kitlib.config.types import ConfigError
@@ -371,8 +373,9 @@ class Sources(object):
                    LockDoor, or its like: revision, view, stats); None: those routes answer
                    `unavailable`
       jobs         the timed jobs (kitlib.hubsite.jobs): [make(sources) -> jobs.Job or None],
-                   one per job; machine_sources gives kitlib.hubjobs.makers(), a scratch store
-                   none; [] or None: none
+                   one per job, each with its `folder` (serve.code_folders) and `module` (the
+                   hubjobs package's makers, which hubjobs.machine_sources hands
+                   machine_sources; a scratch store none); [] or None: none
       home         the home folder machine_sources read the machine config under (None: the
                    user's), for a job that reads it again
       pending      callable(for_key) -> the pending items for a session key (Api.pending: each
@@ -517,9 +520,10 @@ def _repos_with_session_keys(cfg, stored, toplevel):
     return found
 
 
-def machine_sources(home=None, sync=True):
+def machine_sources(home=None, sync=True, jobs=()):
     """This machine's Sources, read from the machine config under `home` (default the user's).
-    It writes nothing and starts no git. sync=False: no git sync (a scratch store). The lock
+    It writes nothing and starts no git. sync=False: no git sync and none of `jobs` (a scratch
+    store). `jobs`: the timed jobs' makers (Sources.jobs), handed by the caller. The lock
     door reads the machine lock (its own fixed folder, not `home`) on its first call, never
     here. ConfigError when the machine config cannot be used."""
     path = user.readable_file(home)
@@ -532,10 +536,10 @@ def machine_sources(home=None, sync=True):
                   notices=pmwatch.configured_notice_dir(path),
                   agents=agents_dir(), skills=skills_dir(),
                   sync=gitsync.GitSync if sync else None, home=home)
-    # The timed jobs: every module of kitlib.hubjobs, found there (no line here per job). `sync`
-    # is false only for a scratch store (tools/hub.py serve --store), which runs no machine job.
+    # The timed jobs, as handed (no line here per job). `sync` is false only for a scratch store
+    # (tools/hub.py serve --store), which runs no machine job.
     if sync:
-        src.jobs.extend(hubjobs.makers())
+        src.jobs.extend(jobs)
     if pm and pm.get('path'):
         from kitlib.maintlint import result as lint_result
         src.findings = os.path.join(pm['path'], lint_result.FOLDER)
@@ -1351,7 +1355,7 @@ def build(settings, sources, log=None):
             api.jobs_status = timed.status   # GET health `jobs` (Api.jobs_seen)
         hub = Hub(settings, store, api, views, creds, listeners, sync, views_b, notes, log,
                   tunnel=said, stopping=stopping, push=pusher, jobs=timed,
-                  tokens=sources.tokens)
+                  tokens=sources.tokens, code=code_folders(sources.jobs))
         api.code_status = hub.code_state     # GET health and GET snapshot `code` (Api.code_seen)
         return hub
     except BaseException:
@@ -1361,13 +1365,17 @@ def build(settings, sources, log=None):
         raise
 
 
-def code_folders():
-    """The folders whose .py files are the hub's code: this package, the timed jobs'
-    (kitlib.hubjobs), so a job added or changed on disk is stale code too, and the package
-    the server reads its machine settings through (kitlib.config)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    return [here] + [os.path.dirname(os.path.abspath(m.__file__))
-                     for m in (hubjobs, user)]
+def code_folders(jobs=()):
+    """The folders whose .py files are the hub's code: this package, the folder of each of the
+    timed jobs' makers `jobs` (each one's `folder`: Sources.jobs), so a job added or changed
+    on disk is stale code too, and the package the server reads its machine settings through
+    (kitlib.config). Each folder once, in that order."""
+    out = [os.path.dirname(os.path.abspath(__file__))]
+    for maker in jobs or ():
+        folder = os.path.abspath(maker.folder)
+        if folder not in out:
+            out.append(folder)
+    return out + [os.path.dirname(os.path.abspath(user.__file__))]
 
 
 def code_stamp(folders=None):
@@ -1394,12 +1402,14 @@ class Hub(object):
     closes the hub once it is set. A Hub made without one gets an event nothing sets. `push` is
     the push-notification worker (kitlib.hubsite.push.PushWorker: start, stop) or None; `jobs`
     the timed jobs (kitlib.hubsite.jobs.Jobs: start, stop) or None. `tokens` is the token
-    folder (selfrestart.LOG_NAME goes there) or None; `self_restart` the selfrestart.Watcher,
-    made at the first look that finds the code changed unless one was set before."""
+    folder (selfrestart.LOG_NAME goes there) or None; `code` the folders the code stamp reads
+    (build: code_folders of its Sources.jobs); `self_restart` the selfrestart.Watcher, made at
+    the first look that finds the code changed unless one was set before."""
 
     def __init__(self, settings, store, api, views, creds, listeners, sync, backlog_views, notes,
-                 log=None, tunnel='', stopping=None, push=None, jobs=None, tokens=None):
+                 log=None, tunnel='', stopping=None, push=None, jobs=None, tokens=None, *, code):
         self.tokens = tokens
+        self._folders = code
         self.self_restart = None
         self.push = push
         self.jobs = jobs
@@ -1422,7 +1432,7 @@ class Hub(object):
         self._seen = ('', '')               # the sync failure watch() last logged
         self._stale = False                 # watch() said the code is newer than this process
         try:
-            self._code = code_stamp()
+            self._code = code_stamp(self._folders)
         except Exception:                   # noqa: BLE001 - no stamp, no stale look
             self._code = None
         self._looked = time.monotonic()     # when watch() last took the stamp
@@ -1490,7 +1500,7 @@ class Hub(object):
             return
         self._looked = at
         try:
-            now = code_stamp()
+            now = code_stamp(self._folders)
         except Exception:           # noqa: BLE001 - a look that fails is tried again next turn
             return
         if self.self_restart is None:

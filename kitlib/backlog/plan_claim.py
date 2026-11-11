@@ -102,7 +102,8 @@ def plan_pull(snap, ctx, rid, reason=None, may_collide=False, blocker=None, batc
     shared = shared_of(ctx)
     hits = narrow.live_hits(scopes, others, skip=rid, branch=branch, shared=shared)
     shares = narrow.live_shares(scopes, others, skip=rid, branch=branch, shared=shared)
-    full = narrow.resource_hits(rec.all('uses'), holding, ctx.capacity(snap), skip=rid, branch=branch)
+    full = narrow.resource_hits(rec.all('uses'), holding, ctx.capacity(snap), skip=rid,
+                                branch=branch)
     folds, notes = narrow._pull_fold_hits(ctx, scopes, holding, branch, diffs)
     # The fold refusal first: `next` passes a folding record over, so "not in the offer" would
     # hide the reason and the override that this one names.

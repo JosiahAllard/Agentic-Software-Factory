@@ -287,7 +287,7 @@ def _fold_overlap(snap, ctx, rid, branch, scopes):
 
 # --- set ------------------------------------------------------------------------------------------
 
-WIDEN_ROW =policy.COLLISION_ROWS['set']
+WIDEN_ROW = policy.COLLISION_ROWS['set']
 
 
 def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False,

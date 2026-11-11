@@ -353,8 +353,9 @@ class BlockedPull(unittest.TestCase):
 
     def test_the_note_must_be_followed_by_the_blocked_line(self):
         note = 'Stopped on branch kit/x at abcdef1234, branch kept.'
-        self.assertEqual(plan_claim.blocked_pull('%s\nBlocked on owner (2026-10-01): R-1: why' % note),
-                         ('kit/x', 'abcdef1234'))
+        self.assertEqual(
+            plan_claim.blocked_pull('%s\nBlocked on owner (2026-10-01): R-1: why' % note),
+            ('kit/x', 'abcdef1234'))
         self.assertIsNone(plan_claim.blocked_pull('%s\nReleased (2026-10-01): why' % note))
         self.assertIsNone(plan_claim.blocked_pull(note))
         self.assertIsNone(plan_claim.blocked_pull('no note'))

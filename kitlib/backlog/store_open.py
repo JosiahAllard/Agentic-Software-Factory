@@ -65,6 +65,6 @@ def open_backend(root, cfg, fetch=True, clean=False):
                                implicit=implicit)
     if store == 'branch':
         return sref.RefBackend(root, remote, 'refs/heads/' + smod.BRANCH,
-                          'refs/remotes/%s/%s' % (remote, smod.BRANCH),
-                          no_remote_ref='refs/heads/' + smod.BRANCH, fetch=fetch)
+                               'refs/remotes/%s/%s' % (remote, smod.BRANCH),
+                               no_remote_ref='refs/heads/' + smod.BRANCH, fetch=fetch)
     return sfolder.MainBackend(root, 'docs/backlog' if store == 'main' else store, clean=clean)

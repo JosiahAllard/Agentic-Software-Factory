@@ -2,7 +2,6 @@
 talks to it over a real socket, and stops what it started."""
 import gzip
 import http.client
-import itertools
 import json
 import os
 import socket
@@ -53,6 +52,21 @@ class Recorder(object):
 class Broken(object):
     def call(self, *a, **kw):
         raise RuntimeError('boom in D:\\secret\\place')
+
+
+class StepClock(object):
+    """Stands in for httpd._clock: each thread's readings are 0, step, 2*step, ... A request is
+    answered on a thread of its own and read twice, so it takes exactly `step` seconds whatever
+    else runs at once."""
+
+    def __init__(self, step):
+        self.step = step
+        self.local = threading.local()
+
+    def __call__(self):
+        n = getattr(self.local, 'n', 0)
+        self.local.n = n + 1
+        return n * self.step
 
 
 class Large(object):
@@ -1206,28 +1220,29 @@ class LogCase(httpfix.ListenerCase):
         self.assertEqual(r.status, 404)
         self.assertLess(len(self.lines[0][1]), 300)
 
-    def slow_lines(self, step, timer=None):
-        """The 'slow' lines of two GET health requests on a listener whose clock moves `step`
-        seconds a reading (two readings a request); `timer` gives each request's timer state."""
-        ticks = itertools.count(0, step)
-        states = iter(timer or ())
-        lis = self.listener(clock=lambda: next(ticks),
-                            timer=(lambda: next(states)) if timer else None)
-        for _ in range(2):
-            self.assertEqual(get(lis.port, HEALTH + '?q=' + self.owner, self.owner).status, 200)
-        lis.stop(TIMEOUT)               # every handler has ended: its line is written
+    def slow_lines(self, step, api_=None, paths=(HEALTH,)):
+        """The 'slow' lines of a GET of each of `paths` (with a query) on a listener where each
+        request takes exactly `step` seconds (StepClock)."""
+        with mock.patch.object(httpd, '_clock', StepClock(step)):
+            lis = self.listener(api_)
+            for path in paths:
+                get(lis.port, path + '?q=' + self.owner, self.agent)
+            lis.stop(TIMEOUT)           # every handler has ended: its line is written
         return [text for level, text in self.lines if level == 'slow']
 
-    def test_a_slow_request_is_one_line_with_its_time_and_the_timer(self):
-        self.assertEqual(self.slow_lines(httpd.SLOW_S + 1, timer=[True, False]), [
-            'slow GET %s %.2fs timer=running' % (HEALTH, httpd.SLOW_S + 1),
-            'slow GET %s %.2fs timer=stopped' % (HEALTH, httpd.SLOW_S + 1)])
+    def test_a_slow_request_is_one_line_with_its_time_and_no_query(self):
+        self.assertEqual(self.slow_lines(httpd.SLOW_S + 1, paths=(HEALTH, HEALTH)),
+                         ['slow GET %s %.2fs' % (HEALTH, httpd.SLOW_S + 1)] * 2)
 
-    def test_a_request_under_slow_s_and_one_with_no_timer(self):
+    def test_a_request_under_slow_s_is_no_line_and_one_of_slow_s_is(self):
         self.assertEqual(self.slow_lines(httpd.SLOW_S / 2), [])
-        self.lines[:] = []
-        self.assertEqual(self.slow_lines(httpd.SLOW_S),
-                         ['slow GET %s %.2fs timer=-' % (HEALTH, httpd.SLOW_S)] * 2)
+        self.assertEqual(self.slow_lines(httpd.SLOW_S), ['slow GET %s %.2fs' % (HEALTH, httpd.SLOW_S)])
+
+    def test_a_counted_wait_is_no_slow_line(self):
+        wait = BASE + '/wait'
+        self.assertEqual(self.slow_lines(httpd.SLOW_S + 1, Broken(), paths=(wait, HEALTH)),
+                         ['slow GET %s %.2fs' % (HEALTH, httpd.SLOW_S + 1)])
+        self.assertEqual(len(self.errors()), 2)         # both were answered (Broken: 500)
 
     def test_with_no_log_nothing_is_written(self):
         lis = self.listener(log=None)

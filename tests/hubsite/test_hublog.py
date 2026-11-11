@@ -62,6 +62,11 @@ class HubLogCase(Case):
         self.assertFalse(log.write('error', 'lost'))
         log.filed('error', 'lost too')
 
+    def test_a_character_utf_8_cannot_hold_is_a_question_mark_and_no_raise(self):
+        log = hublog.HubLog(self.path, clock=lambda: AT)
+        self.assertTrue(log.write('error', 'bad \ud800 path'))
+        self.assertTrue(self.read().endswith('ERROR bad ? path\n'))
+
     def test_the_hub_log_rotates_at_its_cap(self):
         log = hublog.HubLog(self.path, clock=lambda: AT, cap=100)
         for n in range(10):

@@ -22,16 +22,18 @@
   field prints no such line. The tunnel line is `tunnel: on` (the Access keys were fetched),
   `tunnel: bound, keys not fetched` (until the first request with a token; a failed fetch adds ` (reason)`,
   such as `keys-fetch`) or `tunnel: off: <why>`. `on` does not say that a tunnel program reaches the
-  listener. `backlog timer: not running` means the backlog timer has stopped: GET snapshot
-  then answers the last held backlog (the backlog view unavailable before the first read) and reads no git itself; GET
-  /health says it as `backlog_timer_running` (`false`; `null` with no backlog source).
+  listener. `backlog timer: not running` means the backlog timer has stopped: GET snapshot then
+  answers the last held backlog (the backlog view unavailable before the first read) and reads no
+  git itself; GET health says it as `backlog_timer_running` (`false`; `null` with no backlog source).
 - **The hub log.** `hub.py serve` writes `hub.log` in the token folder (`<PM repo>/.pm-kit/hub/`,
   `kitlib.hubsite.hublog`), beside `self-restart.log`; the autostart task has no console, so this file
-  is where its lines are. Each line is `<UTC ISO time> <LEVEL> <text>`, one line each (a newline in the
+  is where its lines are. The token folder is guarded, so only the owner can read the log, not an
+  agent. Each line is `<UTC ISO time> <LEVEL> <text>`, one line each (a newline in the
   text is written `\n`, secrets scrubbed): the server's ERROR and NOTE lines, and a SLOW line for each
-  local request over `httpd.SLOW_S` (2 s) that is not a long wait, as `slow GET <path> 10.62s
+  local listener request over `httpd.SLOW_S` (2 s) that is not a long wait, as `slow GET <path> 10.62s
   timer=running` (`timer=stopped` when the backlog timer has stopped, `-` for a server with no
-  backlog). No access lines. At 1 MiB (`hublog.LOG_MAX`) it moves to `hub.log.1`, replacing an older
+  backlog). The tunnel listener writes no SLOW line: its time would include the remote network. No
+  access lines. At 1 MiB (`hublog.LOG_MAX`) it moves to `hub.log.1`, replacing an older
   one; push's `push-undelivered.jsonl` rotates the same way (`hublog.append`). A `--store` run writes no
   hub log.
 - **Stale code.** A running `hub serve` compares the `.py` files of `kitlib/hubsite`, of the timed

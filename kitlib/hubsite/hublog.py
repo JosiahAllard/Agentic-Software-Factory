@@ -8,8 +8,9 @@
   LOG_NAME, LOG_MAX, FILED
 
 The hub log is LOG_NAME in the token folder (kitlib.hubsite.cli.server serve wires it). It holds
-the server's 'error' and 'note' lines, which the console shows too, and the 'slow' lines of
-kitlib.hubsite.httpd: one a request that took httpd.SLOW_S seconds or longer. No request line and no
+the server's 'error' and 'note' lines, which the console shows too, and the local listener's
+'slow' lines (kitlib.hubsite.httpd, kitlib.hubsite.serve): one a request that took httpd.SLOW_S
+seconds or longer. The token folder is guarded, so only the owner reads it. No request line and no
 header ever reaches it (httpd's 'access' lines are not filed). Each line goes through
 gitsync.scrub, so none holds the user or password of a URL; a line's newlines are kept as
 `\\n` so one entry is one line. A file that cannot be written loses the line, never the
@@ -29,13 +30,14 @@ FILED = ('error', 'note', 'slow')
 def append(path, line, cap):
     """Add `line` and a newline to the file at `path`, after moving it to `path + '.1'` (which
     it replaces) when it holds `cap` bytes or more. A file that is not there yet is made. A
-    move that fails is skipped; a write that fails raises OSError."""
+    move that fails is skipped; a write that fails raises OSError. A character UTF-8 cannot
+    hold (a lone surrogate) is written as `?`."""
     try:
         if os.path.getsize(path) >= cap:
             os.replace(path, path + '.1')
     except OSError:
         pass
-    with open(path, 'a', encoding='utf-8', newline='\n') as f:
+    with open(path, 'a', encoding='utf-8', errors='replace', newline='\n') as f:
         f.write(line + '\n')
 
 
@@ -61,7 +63,7 @@ class HubLog(object):
             with self._lock:
                 append(self.path, '%s %s %s' % (stamp, str(level).upper(), said), self.cap)
             return True
-        except OSError:
+        except (OSError, UnicodeError):     # never expected past errors='replace': still a lost line
             return False
 
     def filed(self, level, text, out=None):

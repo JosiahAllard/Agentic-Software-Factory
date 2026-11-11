@@ -365,6 +365,29 @@ class BuildCase(ServeCase):
         self.assertEqual(get(hub.port, '/').status, 404)
         self.assertEqual(self.errors(), [])
 
+    def test_the_local_listeners_slow_line_says_whether_the_backlog_timer_runs(self):
+        from tests.hubsite.test_httpd import StepClock
+
+        class Timed(FakeBacklog):
+            running = None
+
+            def timer_running(self):
+                return self.running
+
+        took = httpd.SLOW_S + 1
+        for running, state in ((True, 'running'), (False, 'stopped'), (None, '-')):
+            self.lines[:] = []
+            fake = Timed(self.calls)
+            fake.running = running
+            with mock.patch.object(httpd, '_clock', StepClock(took)):
+                # None: no backlog source at all, so no timer
+                hub = self.build(**({} if running is None else {'backlog': lambda s: fake}))
+                self.assertIs(hub.start(), True)
+                self.assertEqual(get(hub.port, HEALTH + '?q=x', self.owner).status, 200)
+                self.assertIs(hub.close(), True)        # its handler has ended: the line is in
+            self.assertEqual([text for level, text in self.lines if level == 'slow'],
+                             ['slow GET %s %.2fs timer=%s' % (HEALTH, took, state)])
+
     def test_nothing_is_served_before_start_and_start_works_once(self):
         hub = self.build()
         self.assertEqual(httpfix.http_threads(), [])
@@ -2336,6 +2359,15 @@ class ClientCase(ServeCase):
         self.assertEqual(servehealth.status_lines({'revision': 1, 'git': None, 'backlog': [],
                                              'backlog_at': None}, NOW),
                          ['revision 1', 'git: no answer', 'backlog: not read yet'])
+
+    def test_status_lines_say_a_backlog_timer_that_is_not_running(self):
+        base = {'revision': 1, 'git': None, 'backlog': [], 'backlog_at': None}
+        said = {running: servehealth.status_lines(dict(base, backlog_timer_running=running), NOW)
+                for running in (False, True, None)}
+        self.assertEqual(said[False], ['revision 1', 'git: no answer', 'backlog: not read yet',
+                                       'backlog timer: not running'])
+        for running in (True, None):        # running, or no timer to say of
+            self.assertEqual(said[running], said[False][:-1], running)
 
     def test_status_lines_say_the_code_and_the_jobs_before_the_tunnel(self):
         from kitlib.hubclient import codestale

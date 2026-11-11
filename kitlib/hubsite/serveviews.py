@@ -3,8 +3,8 @@ builds it over a servesources.Sources).
 
   SiteViews(...)        the views below
   NoRepoList            the repository list could not be read and no earlier answer is held
-  NotReadYet            GET snapshot's backlog or completed view before the backlog timer's
-                        first read
+  NotReadYet            GET snapshot's backlog or completed view before any read (the
+                        backlog timer's or a route's), with or without the timer
 
 Views (SiteViews). backlog, completed, repos, agents and skills exist only where their source does, so
 the Api answers a missing one `unavailable` by itself. What a view says never holds a path,

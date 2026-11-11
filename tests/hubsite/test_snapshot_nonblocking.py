@@ -219,12 +219,24 @@ class Dies(Pause):
         raise SystemExit()
 
 
-class Fails(Pause):
-    """The timer's pause, raising an ordinary error each time: the timer must live on."""
+def fails(stop, seconds):
+    """The timer's pause, raising an ordinary error: the timer must live on."""
+    raise RuntimeError('the pause failed')
+
+
+class Fallback(Pause):
+    """Stands in for backlog.event_wait, the pause the timer makes again after its own pause
+    raised: `seen` is the timer's timer_error and whether its thread ran, read in that pause
+    (after the failure was noted and before the next round could clear it)."""
+
+    def __init__(self, views_b):
+        Pause.__init__(self)
+        self.views_b = views_b
+        self.seen = []
 
     def __call__(self, stop, seconds):
-        self.rounds.release()
-        raise RuntimeError('the pause failed')
+        self.seen.append((self.views_b.timer_error, self.views_b.timer_running()))
+        return Pause.__call__(self, stop, seconds)
 
 
 class WithoutTimer(SnapshotCase):
@@ -264,13 +276,15 @@ class WithoutTimer(SnapshotCase):
         self.assertIsNotNone(h['backlog_at'])               # what the last round read stays
 
     def test_a_pause_that_raises_is_a_timer_error_and_the_timer_lives(self):
-        self.build(['alpha'], refresh_s=0.05)
-        self.views_b.wait = Fails()
+        self.build(['alpha'])
+        self.views_b.wait = fails
+        fallback = Fallback(self.views_b)
+        patcher = mock.patch.object(backlog, 'event_wait', fallback)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.assertTrue(self.views_b.start())
-        for _ in range(2):                                  # the round after the failure runs
-            self.assertTrue(self.views_b.wait.rounds.acquire(timeout=WAIT))
-        self.assertTrue(self.views_b.timer_running())
-        self.assertEqual(self.views_b.timer_error, 'RuntimeError')
+        self.assertTrue(fallback.rounds.acquire(timeout=WAIT))
+        self.assertEqual(fallback.seen, [('RuntimeError', True)])
         self.assertIs(self.views.health()['backlog_timer_running'], True)
 
     def test_held_answers_none_before_any_read(self):

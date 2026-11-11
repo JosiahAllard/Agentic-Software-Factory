@@ -20,6 +20,7 @@ from unittest import mock
 from kitlib.config import heavy_programs
 from kitlib.redfirst import run as R
 from kitlib.redfirst import verdict as V
+from kitlib.worktree import scratch as S
 from tests.lock.helpers import KINDS, StoreCase
 from tests.lock.test_run import one_usable_slot
 
@@ -136,7 +137,7 @@ class LockCase(Case, StoreCase):
         self.env = {k: v for k, v in os.environ.items()
                     if k not in ('CLAUDE_CODE_SESSION_ID', 'CLAUDE_PID')
                     and not k.startswith('MACHINE_LOCK_')}
-        self.slug = R.PREFIX + self.base[:10]
+        self.slug = S.PREFIX + self.base[:10]
         self.booked = []
         self.real_book = lockrun.book
         guard = mock.patch.object(lockrun, 'book', self.checked_book)

@@ -324,12 +324,12 @@ def _build(root, where, reader, home=None, machine=None):
 
 
 # A retired key a config still writes (Config.retired): gate.py and land.py say it once a run.
-RETIRED_WARNING = 'WARNING: %s still writes "%s", a retired key: it is ignored; remove it'
+RETIRED_WARNING = 'WARNING: %s still writes "%s", a retired section or key: it is ignored; remove it'
 
 
 def retired_warnings(root):
     """The RETIRED_WARNING lines of the working tree's `.kit.json` at `root`, one per retired
-    key it still writes; none when it cannot be loaded (the tool's own load says why)."""
+    section or key it still writes; none when it cannot be loaded (the tool's own load says why)."""
     try:
         cfg = load(root)
     except ConfigError:

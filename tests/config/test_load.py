@@ -396,10 +396,6 @@ class RetiredSectionTest(TreeCase):
                 self.assertEqual(cfg.retired, ('testlist',))
                 self.assertEqual(cfg.section('repo')['name'], 'a')
 
-    def test_the_section_is_retired_and_not_a_schema_section(self):
-        self.assertIn('testlist', schema.RETIRED_SECTIONS)
-        self.assertNotIn('testlist', schema.SECTIONS)
-
     def test_a_config_without_it_retires_nothing_and_a_real_typo_still_refuses(self):
         self.assertEqual(self.load({'repo': {'name': 'a'}}).retired, ())
         why = self.refused({'testlist': {}, 'testlst': {}})

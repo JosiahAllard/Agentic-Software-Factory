@@ -307,16 +307,23 @@ class Verdicts(Fakes):
         # A unit imports the checkout's tools as discover had them; the kit's own tools folder
         # (where the child's entry point lives) must not shadow a same-named repository tool.
         os.makedirs(os.path.join(self.root, 'tools'))
-        with open(os.path.join(self.root, 'tools', 'whose_tool.py'), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(self.root, 'tools', 'tool_deps.py'), 'w', encoding='utf-8') as fh:
             fh.write('WHOSE = "repo"\n')
         self.write('test_whose', '''
+            import os
+            import sys
             import unittest
-            import whose_tool
+            import tool_deps
 
             class W(unittest.TestCase):
                 def test_w(self):
-                    self.assertEqual(whose_tool.WHOSE, 'repo')
-            ''')
+                    self.assertEqual(tool_deps.WHOSE, 'repo')
+
+                def test_the_kit_tools_folder_is_not_on_the_path(self):
+                    kit_tools = os.path.normcase(os.path.abspath(%r))
+                    self.assertNotIn(kit_tools, [os.path.normcase(os.path.abspath(p))
+                                                 for p in sys.path if p])
+            ''' % os.path.join(KIT, 'tools'))
         code, out = self.run_modules(['test_whose'])
         self.assertEqual(code, 0, out)
 

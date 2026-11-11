@@ -355,13 +355,15 @@ class MachineJobsTest(unittest.TestCase):
     def test_machine_sources_gives_every_discovered_job_only_with_sync(self):
         from kitlib.hubsite import plugin_job
         pm_repo(self, record=False)
-        src = serve.machine_sources(self.home)
+        src = serve.machine_sources(self.home, jobs=hubjobs.makers())
         found = [m.module for m in hubjobs.makers()]
         self.assertIn('kitlib.hubjobs.plugin_refresh', found)
         self.assertEqual([m.module for m in src.jobs], found,
-                         'the server runs what discovery finds, no list of its own')
+                         'the server runs the jobs it is handed, no list of its own')
         self.assertEqual(src.home, self.home)
-        self.assertEqual(serve.machine_sources(self.home, sync=False).jobs, [],
+        self.assertEqual(serve.machine_sources(self.home).jobs, [], 'none handed, none run')
+        self.assertEqual(serve.machine_sources(self.home, sync=False,
+                                               jobs=hubjobs.makers()).jobs, [],
                          'a scratch store runs no job')
         self.assertEqual(serve.Sources().jobs, [])
         maker = src.jobs[found.index('kitlib.hubjobs.plugin_refresh')]
@@ -441,7 +443,10 @@ class DiscoveryTest(ServeCase):
 
 class CodeStampTest(unittest.TestCase):
     def test_the_jobs_folder_is_hub_code_too(self):
-        self.assertIn(os.path.dirname(os.path.abspath(hubjobs.__file__)), serve.code_folders())
+        self.assertIn(os.path.dirname(os.path.abspath(hubjobs.__file__)),
+                      serve.code_folders(hubjobs.makers()))
+        self.assertNotIn(os.path.dirname(os.path.abspath(hubjobs.__file__)),
+                         serve.code_folders(), 'a server handed no job reads no job folder')
 
     def test_a_job_module_added_changes_the_stamp(self):
         a = tempfile.mkdtemp(prefix='kit-stamp-a-')

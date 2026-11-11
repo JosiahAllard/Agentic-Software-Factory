@@ -13,7 +13,7 @@ from .store import HubError
 # edited; an agent's to-do (todos_add) and a file approval (approvals_add) only when added. The
 # owner's act ends each: an answer (filed into the record), a to-do marked done or an approval
 # decided (either way: denied counts), which the hub's unblock-conditions job reads
-# (kitlib.hubjobs.unblock_conditions); an approval that expires undecided keeps its line, and that
+# (hubjobs.unblock_conditions); an approval that expires undecided keeps its line, and that
 # job pushes the PM `approval-expired`.
 ASKS = {
     'questions': ('question', 'question:%s answered', 'answered'),

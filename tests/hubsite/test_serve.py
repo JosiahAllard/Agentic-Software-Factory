@@ -1216,7 +1216,7 @@ class ReasonCase(ServeCase):
 
     def test_watch_says_once_that_the_hub_code_changed_since_this_server_started(self):
         stamp = [(('serve.py', 1, 10),)]
-        with mock.patch.object(serve, 'code_stamp', lambda: stamp[0]),                 mock.patch.object(serve, 'CODE_LOOK_S', 0):
+        with mock.patch.object(serve, 'code_stamp', lambda *folders: stamp[0]),                 mock.patch.object(serve, 'CODE_LOOK_S', 0):
             hub = self.build()
             hub.watch()
             self.assertEqual(self.lines, [])
@@ -1238,7 +1238,7 @@ class ReasonCase(ServeCase):
     def test_a_task_run_server_restarts_itself_on_new_code_and_shows_no_warning(self):
         stamp = [(('serve.py', 1, 10),)]
         started = []
-        with mock.patch.object(serve, 'code_stamp', lambda: stamp[0]), \
+        with mock.patch.object(serve, 'code_stamp', lambda *folders: stamp[0]), \
                 mock.patch.object(serve, 'CODE_LOOK_S', 0), \
                 mock.patch.object(selfrestart, 'SETTLE_S', 0), \
                 mock.patch.object(selfrestart, 'eligible', lambda port, store: None), \
@@ -1272,7 +1272,7 @@ class ReasonCase(ServeCase):
     def test_the_hub_code_is_its_package_its_jobs_and_the_settings_packages(self):
         from kitlib import hubjobs
         from kitlib.config import pmdata
-        folders = serve.code_folders()
+        folders = serve.code_folders(hubjobs.makers())
         for module in (serve, hubjobs, pmdata, user):
             self.assertIn(os.path.dirname(os.path.abspath(module.__file__)), folders)
         self.assertEqual(os.path.basename(folders[-1]), 'config')
@@ -1333,7 +1333,7 @@ class ReasonCase(ServeCase):
                 raise RuntimeError('broken look')
 
         stamp = [(('serve.py', 1, 10),)]
-        with mock.patch.object(serve, 'code_stamp', lambda: stamp[0]), \
+        with mock.patch.object(serve, 'code_stamp', lambda *folders: stamp[0]), \
                 mock.patch.object(serve, 'CODE_LOOK_S', 0):
             hub = self.build()
             hub.self_restart = Broken()
@@ -1347,7 +1347,7 @@ class ReasonCase(ServeCase):
 
     def test_health_and_snapshot_say_when_the_hub_code_on_disk_is_newer(self):
         stamp = [(('serve.py', 1, 10),)]
-        with mock.patch.object(serve, 'code_stamp', lambda: stamp[0]),                 mock.patch.object(serve, 'CODE_LOOK_S', 0):
+        with mock.patch.object(serve, 'code_stamp', lambda *folders: stamp[0]),                 mock.patch.object(serve, 'CODE_LOOK_S', 0):
             hub = self.build()
             hub.start()
             for path in (HEALTH, BASE + '/snapshot'):
@@ -1396,7 +1396,7 @@ class ReasonCase(ServeCase):
     def test_watch_takes_the_code_stamp_at_most_once_in_the_look_window(self):
         looks = []
 
-        def stamp():
+        def stamp(*folders):
             looks.append(1)
             return (('serve.py', len(looks), 1),)
 
@@ -1412,7 +1412,7 @@ class ReasonCase(ServeCase):
         hub.close()
 
     def test_watch_survives_a_code_look_that_fails(self):
-        with mock.patch.object(serve, 'code_stamp', lambda: {}['gone']),                 mock.patch.object(serve, 'CODE_LOOK_S', 0):
+        with mock.patch.object(serve, 'code_stamp', lambda *folders: {}['gone']),                 mock.patch.object(serve, 'CODE_LOOK_S', 0):
             self.build().watch()
         self.assertEqual(self.lines, [])
 

@@ -286,7 +286,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import hubvalidate, platform                           # noqa: E402
+from kitlib import hubjobs, hubvalidate, platform                  # noqa: E402
 from kitlib.config import copies, user                             # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
 from kitlib.hubclient import client, settings                      # noqa: E402
@@ -912,7 +912,7 @@ def _serve(a, stop):
     scratch = a.store is not None       # never the truth of the text: '' is refused by the parser
     if scratch:
         s = s._replace(store=os.path.abspath(a.store), push=False)
-    sources = serve.machine_sources(sync=not scratch)
+    sources = serve.machine_sources(sync=not scratch, jobs=hubjobs.makers())
     if not scratch:
         sources.push, sources.push_dir = _push_delivery()
     hub = serve.build(s, sources, log=_log)

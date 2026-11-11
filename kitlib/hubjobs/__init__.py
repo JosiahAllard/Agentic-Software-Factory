@@ -6,13 +6,15 @@ the jobs.
                           does not start with '_', sorted by name; nothing is imported yet
   maker(sources)          imports its module and returns module.make(sources): a
                           kitlib.hubsite.jobs.Job, or None when the job does not apply here;
-                          `maker.module` is the module's full name
+                          `maker.module` is the module's full name, `maker.folder` the
+                          folder it is in
 
-serve.machine_sources puts makers() in Sources.jobs for the machine's server (a scratch store
-gets none), and serve.build calls each maker: a module that fails to import, or a make that
-raises, is a line in the hub's start-up notes and the hub serves without that job; a make that
-returns None is left out silently. The hub's stale-code check (serve.code_stamp) reads this
-folder too, so a job added or changed on disk asks for a restart like hub code does.
+The hub server is handed its jobs and never imports this package: `tools/hub.py serve` gives
+makers() to serve.machine_sources(jobs=), which puts them in Sources.jobs for the machine's server
+(a scratch store gets none), and serve.build calls each maker: a module that fails to import, or
+a make that raises, is a line in the hub's start-up notes and the hub serves without that job; a
+make that returns None is left out silently. The hub's stale-code check (serve.code_stamp) reads
+each maker's folder too, so a job added or changed on disk asks for a restart like hub code does.
 
 Adding a job: write one module here, `kitlib/hubjobs/<name>.py`, with `make(sources)` returning
 `jobs.Job(NAME, EVERY_S, run)` (kitlib.hubsite.jobs docstring: what run(ctx) returns, Skip,
@@ -33,12 +35,14 @@ def makers(package=None):
     package = package or sys.modules[__name__]
     names = sorted(name for _, name, is_pkg in pkgutil.iter_modules(package.__path__)
                    if not is_pkg and not name.startswith('_'))
-    return [_maker(package.__name__ + '.' + name) for name in names]
+    folder = list(package.__path__)[0]
+    return [_maker(package.__name__ + '.' + name, folder) for name in names]
 
 
-def _maker(module):
+def _maker(module, folder):
     def maker(sources):
         return importlib.import_module(module).make(sources)
     maker.module = module
+    maker.folder = folder
     maker.__module__ = module       # what serve's note names when the maker raises
     return maker

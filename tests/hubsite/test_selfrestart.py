@@ -574,7 +574,7 @@ class SelfCheckCase(unittest.TestCase):
         with mock.patch.object(importlib, 'import_module', picky):
             with self.assertRaises(ImportError):
                 self.run_self_check()
-        for name in ('kitlib.hubsite.serve', 'kitlib.hubjobs', 'kitlib.config.pmdata'):
+        for name in ('kitlib.hubsite.serve', 'kitlib.config.pmdata'):
             self.assertIn(name, names, 'every code folder is imported, %s too' % name)
         self.assertEqual(self.made, [])
 
@@ -583,16 +583,13 @@ class SelfCheckCase(unittest.TestCase):
         from kitlib import hubjobs
         self.assertTrue(hubjobs.makers(), 'a job module to fail')
         real = importlib.import_module
-        names = []
 
         def no_jobs(name, *a):
-            names.append(name)
             if name.startswith('kitlib.hubjobs.'):
                 raise ImportError('a job half landed')
             return real(name, *a)
         with mock.patch.object(importlib, 'import_module', no_jobs):
             self.run_self_check()       # the new server serves without it, with a note
-        self.assertIn('kitlib.hubjobs', names)
         self.assertEqual(len(self.made), 1)
 
 

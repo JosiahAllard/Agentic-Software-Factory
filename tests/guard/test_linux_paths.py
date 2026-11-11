@@ -1,10 +1,10 @@
 """The guard's path semantics on Linux: one class per case of the
 guard's Linux path handling (the main checkout, a root search, a write outside its roots, a mount
 table that aliases a path), each read through tests/guard/linux.py (kitlib.platform.NAME 'linux',
-posixpath, a
-stand-in mount table), so it runs on Windows and on Linux alike. A subagent session in the linked
-worktree /work/repo/.claude/worktrees/wt of the main checkout /work/repo is refused what it is
-refused on Windows: the main checkout, a root search, a write outside its roots."""
+posixpath, and a stand-in mount table), so it runs on Windows and on Linux alike. A subagent
+session in the linked worktree /work/repo/.claude/worktrees/wt of the main checkout /work/repo is
+refused what it is refused on Windows: the main checkout, a root search, a write outside
+its roots."""
 import os
 import posixpath
 import shutil
@@ -58,7 +58,7 @@ class LinuxCase(unittest.TestCase):
 
 
 class F1AbsolutePaths(LinuxCase):
-    """Finding 1: an absolute /path is placed, not None (shell.resolve_path), so shell writes and
+    """An absolute /path is placed, not None (shell.resolve_path), so shell writes and
     git targets outside the worktree are judged."""
 
     def test_resolve_path_places_an_absolute_path(self):
@@ -88,7 +88,7 @@ class F1AbsolutePaths(LinuxCase):
 
 
 class F2SlashIsARoot(LinuxCase):
-    """Finding 2: `/` is a root (rules.is_root, root_search, jail.own_root)."""
+    """`/` is a root (rules.is_root, root_search, jail.own_root)."""
 
     def test_slash_is_a_root(self):
         self.assertTrue(rules.is_root('/', None))
@@ -108,7 +108,7 @@ class F2SlashIsARoot(LinuxCase):
 
 
 class F3LedgerGlob(LinuxCase):
-    """Finding 3: ledger_glob folds the pattern and the held path the same way."""
+    """ledger_glob folds the pattern and the held path the same way."""
 
     def ctx(self, ledger):
         ctx = self.w.ctx()
@@ -138,7 +138,7 @@ class F3LedgerGlobFolding(F3LedgerGlob):
 
 
 class F4Backslash(LinuxCase):
-    """Finding 4: bash drops every unquoted backslash, so a write target built with escapes is the
+    """Bash drops every unquoted backslash, so a write target built with escapes is the
     path bash writes."""
 
     def word(self, text):
@@ -159,7 +159,7 @@ class F4Backslash(LinuxCase):
 
 
 class F5NoMsysOrTmpMapping(LinuxCase):
-    """Finding 5: /c/x is /c/x, and /tmp is /tmp: no Git Bash mapping."""
+    """/c/x is /c/x, and /tmp is /tmp: no Git Bash mapping."""
 
     def test_a_one_letter_folder_is_not_a_drive(self):
         self.assertEqual(sh.resolve_path('/c/Users/f', '/w'), '/c/Users/f')
@@ -177,7 +177,7 @@ class F5NoMsysOrTmpMapping(LinuxCase):
 
 
 class F6CaseFolding(LinuxCase):
-    """Finding 6: the placer folds case where the mount does (paths.norm, the mount table). A
+    """The placer folds case where the mount does (paths.norm, the mount table). A
     known-folding mount folds; an unknown fstype, or no table, folds only for what the guard
     refuses, never for what it allows (the jail's allowed roots compare case-sensitively)."""
     mounts = VFAT
@@ -244,7 +244,7 @@ class F6NoMountTable(F6UnknownMount):
 
 
 class F7HomeVariables(LinuxCase):
-    """Finding 7: $HOME and ~ name the home folder (shell.HOME_VAR_RE, rules._ROOT_NAMES). No gap
+    """$HOME and ~ name the home folder (shell.HOME_VAR_RE, rules._ROOT_NAMES). No gap
     in the variable names on Linux; the test pins it."""
 
     def test_home_is_a_root(self):
@@ -261,7 +261,7 @@ class F7HomeVariables(LinuxCase):
 
 
 class F10Symlinks(LinuxCase):
-    """Finding 10: the jail resolves links (jail.real through the placer): a link in the worktree
+    """The jail resolves links (jail.real through the placer): a link in the worktree
     into the main checkout is judged where it leads."""
 
     def test_a_link_into_the_main_checkout_is_judged_there(self):

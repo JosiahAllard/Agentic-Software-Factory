@@ -292,7 +292,7 @@ class EntryPoints(unittest.TestCase):
                         self.assertEqual(process_uses(f.read(), rel), [])
 
     def test_the_list_saw_every_kind_of_entry_point(self):
-        for rel in ('tools/gate.py', 'tools/_host.py', 'tools/agent_view.py', 'tools/kit_release.py',
+        for rel in ('tools/gate.py', 'tools/_host.py', 'tools/agent_view.py',
                     'tools/render_content.py', 'tools/machine_lock.py', 'githooks/pre-push',
                     'githooks/pre-commit.py', 'reserve_ui.pyw', 'tests/__init__.py', 'boot/hook.py',
                     'boot/kitboot.py', 'kitlib/host/hookmain.py',

@@ -50,8 +50,8 @@ home folder this process resolves, unless the environment already carries one. T
 starts inherit it and refuse that home.
 And the time fence's marker (docs/flaky-tests.md): KIT_TIME_FENCE=1 unless it is set, so a degrade
 budget (kitlib.clock.budget) is the ceiling in every unit; kit_tests' own process stays unmarked.
-No test child gets the session's kit binding: PM_KIT_ROOT, PM_KIT_RELEASE_ID, KIT_LIVE_ROOT and
-KIT_PINNED, PM_KIT_ROLE, PM_KIT_HOST and PM_KIT_SESSION_NAME (KIT_SESSION_ENV), each registered
+No test child gets the session's kit binding: PM_KIT_ROOT, KIT_LIVE_ROOT and KIT_PINNED,
+PM_KIT_ROLE, PM_KIT_HOST and PM_KIT_SESSION_NAME (KIT_SESSION_ENV), each registered
 host's session_env variable and its PM_KIT_<HOST>_ variables (hosts.json; session_env_names()) are
 dropped from its environment, so a session's env cannot steer the suite
 (kitlib/tooldeps/childenv.py child_env).

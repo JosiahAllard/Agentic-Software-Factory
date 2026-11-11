@@ -82,7 +82,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/guard-owner.md` | shell guard: owner lock tools, machine setup, delegation list, hub secrets | an owner-only tool or a hub secret is refused | kw: guard, owner, hub secrets, delegation
 - `docs/guard-hooks.md` | shell guard: pre-push, owner-only commits, self-test, go-live | a push or commit is refused | kw: guard, pre-push, owner-only, go-live
 - `docs/guard-v2.md` | guard v2 design: keep/cut list and the checks it weakened | planning guard cuts | kw: guard-v2, guard, cuts, refusals
-- `docs/kitboot.md` | boot/kitboot.py: which kit a host entry runs, the pinned release check before kitlib | a hook or the lock server will not load the kit | kw: kitboot, boot, PM_KIT_ROOT, PM_KIT_RELEASE_ID, release
+- `docs/kitboot.md` | boot/kitboot.py: which kit a host entry runs, checked before kitlib | a hook or the lock server will not load the kit | kw: kitboot, boot, PM_KIT_ROOT
 - `docs/install.md` | installing the kit in a repository | setting up a repo | kw: install, installer, junctions, plugin
 - `docs/jev-fit-audit.md` | Jev fit audit step 1: the kit's routing and labelling decisions, cost and fit findings (desk study, no trial) | weighing a structured-decision model for kit decisions | kw: jev, fit-audit, audit, cost
 - `docs/kit-json.md` | `.kit.json` keys, types and defaults | configuring | kw: kit-json, config

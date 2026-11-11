@@ -123,8 +123,6 @@ def _environment(home, temporary, profile):
                PYTHONDONTWRITEBYTECODE='1', KIT_FAKE_GIT='0',
                NO_PROXY='127.0.0.1,localhost',
                PSModuleAnalysisCachePath=str(temporary / 'ps-cache'))
-    if profile.release_identity is not None:
-        env['PM_KIT_RELEASE_ID'] = profile.release_identity
     return env
 
 

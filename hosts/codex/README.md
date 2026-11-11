@@ -114,7 +114,7 @@ From the branch's `codex/` tree. Each is open work before activation.
 - `pmkit_codex/install_acceptance.py`: native marketplace registration in a private `CODEX_HOME`,
   cached skill, hook and MCP discovery, read-only MCP start.
 - `scripts/package.py` and `scripts/shared_release.py`: the command lines over those and over
-  `kitlib.kitrelease.store`.
+  a pinned release store; the kit ships no pinned release (ARCHITECTURE.md "Packaging").
 
 ## Checks
 

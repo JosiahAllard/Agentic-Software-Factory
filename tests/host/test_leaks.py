@@ -23,7 +23,6 @@ ALLOWED = {
     'kitlib/config/user.py':               1,    # a key's help text
     'kitlib/guard/rules.py':               1,    # the guard refactor
     'kitlib/guard/rules_edit.py':          2,    # the guard refactor (worktree folder: lock_state_dir, WT_ADD)
-    'kitlib/kitrelease/bootstrap.py':      3,    # release inventory, runs before kitlib
     'kitlib/launcher/accounts.py':         4,    # launcher wave
     'kitlib/launcher/autostart.py':        2,
     'kitlib/launcher/lookup.py':           3,

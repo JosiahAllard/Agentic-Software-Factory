@@ -529,8 +529,7 @@ class HostConformance(object):
             entry.kit_here = mock.Mock(side_effect=AssertionError('the kit was booted'))
         argv = [self.HOST, event] + ([part] if part else [])
         with mock.patch.dict(os.environ), mock.patch('kitlib.guard.decide', decide):
-            for name in ('PM_KIT_ROOT', 'PM_KIT_RELEASE_ID'):
-                os.environ.pop(name, None)
+            os.environ.pop('PM_KIT_ROOT', None)
             code = entry.main(argv, io.StringIO(json.dumps(payload)), out, environ=environ or {},
                               hosts=self.REGISTRY or registry.PATH)
         return code, out.getvalue()

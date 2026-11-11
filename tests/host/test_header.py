@@ -102,7 +102,7 @@ class Entry(unittest.TestCase):
         # No PM_KIT_ROLE either: a SubagentStart with no agent_id reads the role from the mark, and
         # this case wants the plain hook whatever session runs the tests.
         environ = {k: v for k, v in os.environ.items()
-                   if k not in ('PM_KIT_ROOT', 'PM_KIT_RELEASE_ID', 'PM_KIT_ROLE')}
+                   if k not in ('PM_KIT_ROOT', 'PM_KIT_ROLE')}
         environ.update(env)
         stdin = {'input': json.dumps(payload)} if payload is not None else {'stdin': subprocess.DEVNULL}
         return subprocess.run([sys.executable, ENTRY, 'claude'] + list(args), capture_output=True, text=True,

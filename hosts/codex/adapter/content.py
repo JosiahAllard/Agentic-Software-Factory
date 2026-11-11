@@ -83,13 +83,13 @@ HOOKS = (
 HOOK_TIMEOUT = 10
 MCP_SERVERS = {SERVER_NAME: {'type': 'stdio', 'command': 'python',
                                 'args': [SHELL_REL + '/mcp/lock_server.py'], 'cwd': '.',
-                                'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID']},
+                                'env_vars': ['PM_KIT_ROOT']},
                HUB_NAME: {'type': 'stdio', 'command': 'python',
                           'args': [SHELL_REL + '/mcp/hub_server.py'], 'cwd': '.',
-                          'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID']},
+                          'env_vars': ['PM_KIT_ROOT']},
                BLENDER_NAME: {'type': 'stdio', 'command': 'python',
                               'args': [SHELL_REL + '/mcp/blender_server.py'], 'cwd': '.',
-                              'env_vars': ['PM_KIT_ROOT', 'PM_KIT_RELEASE_ID', 'PM_KIT_BLENDER']}}
+                              'env_vars': ['PM_KIT_ROOT', 'PM_KIT_BLENDER']}}
 
 
 def mcp_servers(platform='windows'):

@@ -31,7 +31,7 @@ each host plugs into.
 
 ## 1. Where things stand
 
-The plan below is built through step 10 and §7 (steps 11-20); the section that follows describes the target shape as it stands. What is shared today is the tools (`tools/` over `kitlib/`), the guard (kitlib.guard.decide over a neutral Action), the lock MCP server, kitlib.attribution, kitlib.packageexport, kitlib.kitrelease and kitlib.hoststart.shared_checks. The pre-refactor inventory of what each host duplicated (agent definitions, skills, hook entries, role marker, release binding) and the structural faults it caused is in git history.
+The plan below is built through step 10 and §7 (steps 11-20); the section that follows describes the target shape as it stands. What is shared today is the tools (`tools/` over `kitlib/`), the guard (kitlib.guard.decide over a neutral Action), the lock MCP server, kitlib.attribution and kitlib.hoststart.shared_checks. The pre-refactor inventory of what each host duplicated (agent definitions, skills, hook entries, role marker, release binding) and the structural faults it caused is in git history.
 
 ## 2. Target shape
 
@@ -238,8 +238,9 @@ promoted (below); the rest was deleted (optional/bridge/README.md).
 - `kit.json` at the root holds the one `version` and is the input to the release identity
   (decision 6).
 - The renderer writes that version into every host manifest: `.claude-plugin/plugin.json` and
-  marketplace, and Codex `plugin.json` and `mcp.json`.- `kitlib.kitrelease` exports one release that contains the core, every host shell and, when
-  installed, the bridge. Each release has one `PM_KIT_RELEASE_ID`.
+  marketplace, and Codex `plugin.json` and `mcp.json`.
+- There is no pinned release: the kit runs from an export of pushed main (ARCHITECTURE.md
+  "Packaging").
 - Every host's entry points run the same stdlib-only boot check, `boot/kitboot.py`. It is
   lifted from Codex's `profile.py` and `release_binding.py`, and runs before any kitlib import.
   With no `PM_KIT_ROOT` or release ID set, it uses the source checkout, which is today's

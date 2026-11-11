@@ -201,10 +201,11 @@ def test_source(root):
 
 def new_sources(root, rng):
     """verdicts.new_sources for the range `rng` in `root`, with kitlib.docs.codemap's source
-    extensions and type patterns and the repo's test sources (test_source)."""
+    extensions and type patterns, the repo's test sources (test_source) and main as fetched."""
     from kitlib.docs import codemap
+    main, _ = main_as_fetched(root)
     return verdicts.new_sources(root, rng, codemap.EXTS, test_source(root),
-                                (('.gd', codemap.GD_TYPE), (None, codemap.TYPE)))
+                                (('.gd', codemap.GD_TYPE), (None, codemap.TYPE)), main)
 
 
 def carry(a, common_dir):

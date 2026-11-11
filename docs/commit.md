@@ -18,7 +18,7 @@ It stages exactly the PATHs named and commits them in the work tree that DIR is 
 - A relative `--body-file` is relative to the caller's directory.
 - No flag may be abbreviated.
 
-What it refuses (`kitlib/commit/__init__.py`, `_commit`):
+What it refuses (`kitlib/commit/run.py`, `_commit`; the checks are `kitlib/commit/checks.py`):
 - **Explicit paths only.** A directory, `.`, `-A`, `--all` or a path with a `*` is a usage error (a `?` or `[` pattern is not tested). A path outside the work tree is a usage error too.
 - **Foreign staged files.** Anything already staged and not named is refused, because it may belong to another session.
   - With `"commit".merge_fold` on, during a merge with one MERGE_HEAD, the files the merge staged itself are exempt (`kitlib.ownerfiles.rules.merge_owned`).
@@ -52,7 +52,7 @@ The message is the subject, then the body, then the trailers:
 - An `--owner-authored` commit carries `Owner-Authored: yes` instead of `Co-Authored-By`.
 - The model comes from `--model`, else `CLAUDE_AGENT_MODEL`. A blank value counts as unset; with none, or with `--model` and `--owner-authored` together, the call is a usage error.
 - `"Claude "` is added unless the name is a `"commit".coauthor_families` family, or starts with one followed by a space, `.` or `-`.
-- The session line comes last (`kitlib.commit.session_lines`). Lines of the form `<key>: <value>` that end the body, `<key>` being a host's `attribution.session_trailer` key in `hosts.json` (`Claude-Session`), are taken out of the body and written in the trailer block, where git reads them as trailers. This holds with or without the environment variable below, so a `-b "...~~Claude-Session: <url>"` is a trailer, not a body line. The same line anywhere else in the body stays in the body.
+- The session line comes last (`kitlib.commit.message.session_lines`). Lines of the form `<key>: <value>` that end the body, `<key>` being a host's `attribution.session_trailer` key in `hosts.json` (`Claude-Session`), are taken out of the body and written in the trailer block, where git reads them as trailers. This holds with or without the environment variable below, so a `-b "...~~Claude-Session: <url>"` is a trailer, not a body line. The same line anywhere else in the body stays in the body.
   - With no such line, an agent's commit on Claude gets `Claude-Session: https://claude.ai/code/<id>`, `<id>` being `CLAUDE_CODE_BRIDGE_SESSION_ID`. Nothing is written when that variable is unset, blank, or not a plain id (letters, digits, `_`, `-`).
   - The URL prefix and the variable name are harness facts observed on 2026-10-14, not a documented contract. A host change to either is a `hosts.json` edit.
   - An `--owner-authored` commit gets no session line from the environment. Codex has no session trailer (`"session_trailer": null`).
@@ -64,7 +64,7 @@ The message is the subject, then the body, then the trailers:
 
 After a commit that includes a `.md` file or an owner-only file, it prints the doc-budget verdict.
 - The kit's `tools/doc_budget.py -C <root>` produces it, and `kitlib.verdict` judges it.
-- A `doc index` verdict follows (`kitlib.commit.doc_index_check`: `tools/doc_index.py -C <root>`, judged on `DOC INDEX OK` / `DOC INDEX FAILED`). Either failing prints the follow-up-commit notice. `.kit.json` "doc_index".enabled false prints nothing.
+- A `doc index` verdict follows (`kitlib.commit.run.doc_index_check`: `tools/doc_index.py -C <root>`, judged on `DOC INDEX OK` / `DOC INDEX FAILED`). Either failing prints the follow-up-commit notice. `.kit.json` "doc_index".enabled false prints nothing.
 - With no such tool, the verdict is `docs      NOT CHECKED - ...`; with no `doc_index.py`, the doc index line is a NOT CHECKED line too.
 - A failing verdict leaves the commit in place. It only asks for a follow-up commit.
 
@@ -86,7 +86,7 @@ Known limit: with the store itself unreadable both at commit and at landing, no 
 
 ## Owner approval
 
-A change to owner-only paths that an agent asked for and the owner approved on the Action Hub (docs/hub-approvals.md "approvals/A-NNN") is committed by the hub, on the branch the request names, in that branch's linked worktree, as the owner approves it (docs/hub-approvals.md "Applying"; `kitlib/ownerfiles/apply.py`). An agent never commits it: `--owner-approval` and `--consume` are kept only as usage errors (exit 2, `kitlib.commit.HUB_APPLIES`) that say so and name `hub.py approvals apply A-<n>`, the owner's verb for an approval the hub could not apply. The agent asks with `hub.py approvals add` or `hub_approval_request` from a checkout on its branch, leaves the approved paths at HEAD's copy, and reads the commit from `hub.py approvals show A-<n>` or the `applied` push.
+A change to owner-only paths that an agent asked for and the owner approved on the Action Hub (docs/hub-approvals.md "approvals/A-NNN") is committed by the hub, on the branch the request names, in that branch's linked worktree, as the owner approves it (docs/hub-approvals.md "Applying"; `kitlib/ownerfiles/apply.py`). An agent never commits it: `--owner-approval` and `--consume` are kept only as usage errors (exit 2, `kitlib.commit.run.HUB_APPLIES`) that say so and name `hub.py approvals apply A-<n>`, the owner's verb for an approval the hub could not apply. The agent asks with `hub.py approvals add` or `hub_approval_request` from a checkout on its branch, leaves the approved paths at HEAD's copy, and reads the commit from `hub.py approvals show A-<n>` or the `applied` push.
 
 Landing it: `gate land` and the pre-push hook (`kitlib.ownerfiles.rules.violations`) pass a non-owner commit that changes an owner-only path only when it carries exactly one `Owner-Approval: hub:A-<n>`, has one parent, changes no path outside the approval, and makes the approved change on that parent (`approvals.delta_error`). At the approval's `head` each approved path must be its base blob. At the commit each path must be what the approved change gives on the parent: the approved blob when the parent holds the base or the approved blob, else a clean `git merge-file` of parent, base and approved content (`approvals.delta_result`), as a regular file in the parent's mode (100644 or 100755: a symlink or gitlink entry refuses, `ownerfiles.rules.irregular`). A delete must leave no file. The hub must then verify the approval for its signed base as consumed (by any commit, so a rebuilt branch keeps it). A file approval, used or not, holds until it is spent or 30 days after the owner's decision (`APPROVAL_LIFE_S`, `kitlib/ownerfiles/approvals.py`). It is spent once a commit that main as last fetched reaches carries its trailer (`approvals.spent`); any other commit carrying it is then refused. A merge, a root commit, a conflict or any doubt of the hub keeps it refused.
 

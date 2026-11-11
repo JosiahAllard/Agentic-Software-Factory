@@ -19,7 +19,7 @@ Low-level design of `kitlib/commit`, `kitlib/syncbase` and `kitlib/reviewpack`. 
 | Path | Holds |
 |---|---|
 | `commit/run.py` | The call: order of checks, stage, commit, put back on a refusal |
-| `commit/checks.py`, `merge.py`, `message.py` | The pre-write checks; the sync-merge rule; the message and trailers |
+| `commit/checks.py`, `message.py` | The pre-write checks, the sync-merge rule among them; the message and trailers |
 | `syncbase/` | The named merge and its checks |
 | `reviewpack/` | The pack, `quality`, `codegraph`, `codesignals`, `scorecard` |
 

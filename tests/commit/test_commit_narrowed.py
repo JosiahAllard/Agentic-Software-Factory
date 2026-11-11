@@ -7,7 +7,7 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib import commit as C
+from kitlib.commit import run as C
 from tests.backlog.helpers import record_text
 from tests.commit import test_commit
 from tests.commit.test_commit import AGENT, OWNER, LinkedCase
@@ -171,7 +171,7 @@ class AMerge(NarrowedCase, test_commit.MergeCase):
 class TheImportStaysLazy(unittest.TestCase):
 
     def test_importing_kitlib_commit_does_not_import_kitlib_backlog(self):
-        code = ('import sys; import kitlib.commit; '
+        code = ('import sys; import kitlib.commit.run; '
                 'print(sorted(m for m in sys.modules if m.split(".")[:2] == ["kitlib", "backlog"]))')
         p = subprocess.run([sys.executable, '-c', code], cwd=KIT, capture_output=True, text=True,
                            timeout=60)

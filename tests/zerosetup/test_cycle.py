@@ -11,7 +11,7 @@ The cycle, in the order a PM and a worker run it:
      under it (docs/gate-records.md "Result record"), never into the clone;
   2. the PM makes the worker's worktree (kitlib.worktree.new.create, tools/new_worktree.py),
      which runs the first-use repo prep (kitlib.worktree.prep: info/exclude, core.hooksPath);
-  3. the worker commits in the worktree (kitlib.commit.commit, tools/commit.py);
+  3. the worker commits in the worktree (kitlib.commit.run.commit, tools/commit.py);
   4. the worker gates the branch --full with no gate configured (kitlib.gate.runner.branch_gate:
      the stack is detected, `source: auto`, and the clone's own unittest tests run), which writes
      the full-gate OK record a landing takes for the tip;
@@ -41,7 +41,7 @@ import unittest
 from unittest import mock
 
 import kitlib.config as kconfig
-from kitlib import commit as kcommit
+from kitlib.commit import run as kcommit
 from kitlib import kitroot
 from kitlib import gate as G
 from kitlib.config import user as kuser

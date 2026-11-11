@@ -8,7 +8,7 @@ import json
 import unittest
 from unittest import mock
 
-from kitlib import commit as C
+from kitlib.commit import checks as C
 from kitlib.config import owner
 from kitlib.ownerfiles import rules as oc
 from kitlib.hubclient import errors as huberrors

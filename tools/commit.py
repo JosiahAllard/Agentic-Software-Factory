@@ -8,10 +8,10 @@
             [--owner-authored] --allow-empty
       commit no paths, only the message and its trailers (a `Closes:` line); refused when
       anything is staged, a merge is in progress or the branch is unborn
-  --owner-approval and --consume are usage errors (kitlib.commit HUB_APPLIES): the hub commits a
+  --owner-approval and --consume are usage errors (kitlib.commit.run HUB_APPLIES): the hub commits a
   change the owner approved (docs/commit.md "Owner approval").
 
-A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.commit, prints and exits.
+A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.commit.run, prints and exits.
 Exit codes (kitlib.commit): 0 committed, 1 refused or git failed, 2 USAGE (also the main-checkout
 refusal and a refused .kit.json).
 """
@@ -21,7 +21,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import attribution, commit as C                          # noqa: E402
+from kitlib import attribution                                     # noqa: E402
+from kitlib.commit import run as C                                 # noqa: E402
 from kitlib.git import repo                                         # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
 
@@ -67,7 +68,7 @@ def parser():
                    help="the owner's own commit: Owner-Authored: yes, no Co-Authored-By")
     p.add_argument('--owner-approved', action='append', default=[],
                    help='an owner-only path or blanket entry the owner approved (repeatable)')
-    # Kept only to name the hub: a usage error (kitlib.commit HUB_APPLIES).
+    # Kept only to name the hub: a usage error (kitlib.commit.run HUB_APPLIES).
     p.add_argument('--owner-approval', dest='owner_approval', default=None, metavar='hub:A-<n>',
                    help=argparse.SUPPRESS)
     p.add_argument('--consume', default=None, metavar='COMMIT', help=argparse.SUPPRESS)

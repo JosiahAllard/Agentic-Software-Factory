@@ -15,7 +15,8 @@ import unittest
 from unittest import mock
 
 from kitlib import attribution
-from kitlib import commit as C
+from kitlib.commit import checks, message
+from kitlib.commit import run as C
 from kitlib.config import owner as ownermod
 from kitlib.git import cmd
 from kitlib.ownerfiles import rules as ownerrules
@@ -63,25 +64,25 @@ class RepoPath(unittest.TestCase):
     ROOT = os.path.abspath(os.sep + os.path.join('w', 'repo'))
 
     def test_a_relative_path_is_unchanged_but_for_its_slashes(self):
-        self.assertEqual(C.repo_path('docs\\a.md', self.ROOT), 'docs/a.md')
-        self.assertEqual(C.repo_path('Docs/A.md', self.ROOT), 'Docs/A.md')
+        self.assertEqual(checks.repo_path('docs\\a.md', self.ROOT), 'docs/a.md')
+        self.assertEqual(checks.repo_path('Docs/A.md', self.ROOT), 'Docs/A.md')
 
     def test_dot_and_dot_dot_segments_are_folded(self):
-        self.assertEqual(C.repo_path('./CLAUDE.md', self.ROOT), 'CLAUDE.md')
-        self.assertEqual(C.repo_path('tools/../CLAUDE.md', self.ROOT), 'CLAUDE.md')
-        self.assertEqual(C.repo_path('.\\.claude\\x.md', self.ROOT), '.claude/x.md')
+        self.assertEqual(checks.repo_path('./CLAUDE.md', self.ROOT), 'CLAUDE.md')
+        self.assertEqual(checks.repo_path('tools/../CLAUDE.md', self.ROOT), 'CLAUDE.md')
+        self.assertEqual(checks.repo_path('.\\.claude\\x.md', self.ROOT), '.claude/x.md')
 
     def test_a_path_climbing_out_is_none(self):
-        self.assertIsNone(C.repo_path('..', self.ROOT))
-        self.assertIsNone(C.repo_path('../x.txt', self.ROOT))
-        self.assertIsNone(C.repo_path('a/../../x.txt', self.ROOT))
+        self.assertIsNone(checks.repo_path('..', self.ROOT))
+        self.assertIsNone(checks.repo_path('../x.txt', self.ROOT))
+        self.assertIsNone(checks.repo_path('a/../../x.txt', self.ROOT))
 
     def test_an_absolute_path_inside_is_made_relative(self):
-        self.assertEqual(C.repo_path(os.path.join(self.ROOT, 'tools', 'x.py'), self.ROOT),
+        self.assertEqual(checks.repo_path(os.path.join(self.ROOT, 'tools', 'x.py'), self.ROOT),
                          'tools/x.py')
 
     def test_an_absolute_path_outside_is_none(self):
-        self.assertIsNone(C.repo_path(os.path.join(os.path.dirname(self.ROOT), 'x'), self.ROOT))
+        self.assertIsNone(checks.repo_path(os.path.join(os.path.dirname(self.ROOT), 'x'), self.ROOT))
 
 
 class OwnerAuthoredCoverage(unittest.TestCase):
@@ -92,7 +93,7 @@ class OwnerAuthoredCoverage(unittest.TestCase):
         self.r = rules()
 
     def err(self, approved, paths, owner_authored=True):
-        return C.model_requirement_error(self.r, owner_authored, approved, paths)
+        return checks.model_requirement_error(self.r, owner_authored, approved, paths)
 
     def test_an_agent_commit_is_never_judged_here(self):
         self.assertIsNone(self.err([], ['CLAUDE.md'], owner_authored=False))
@@ -122,72 +123,72 @@ class OwnerOnlyPaths(unittest.TestCase):
     def test_the_default_list(self):
         for p in ('CLAUDE.md', '.claude/settings.json', '.github/workflows/ci.yml', '.kit.json',
                   'tools/gate.json'):
-            self.assertEqual(C.locked_paths(self.r, [p]), [p], p)
+            self.assertEqual(checks.locked_paths(self.r, [p]), [p], p)
 
     def test_the_retired_doc_budget_json_is_not_in_the_default(self):
         # Nothing reads tools/doc_budget.json since the doc tools moved to .kit.json (docs/doc-tools.md).
-        self.assertEqual(C.locked_paths(self.r, ['tools/doc_budget.json']), [])
+        self.assertEqual(checks.locked_paths(self.r, ['tools/doc_budget.json']), [])
 
     def test_case_does_not_matter(self):
-        self.assertEqual(C.locked_paths(self.r, ['claude.MD', '.Claude/x']), ['claude.MD', '.Claude/x'])
+        self.assertEqual(checks.locked_paths(self.r, ['claude.MD', '.Claude/x']), ['claude.MD', '.Claude/x'])
 
     def test_lookalikes_are_not_locked(self):
-        self.assertEqual(C.locked_paths(self.r, ['.claudex/foo.md', 'CLAUDE.md.bak',
+        self.assertEqual(checks.locked_paths(self.r, ['.claudex/foo.md', 'CLAUDE.md.bak',
                                                  'docs/CLAUDE.md', 'README.md']), [])
 
     def test_the_worktrees_folder_is_excepted(self):
-        self.assertEqual(C.locked_paths(self.r, ['.claude/worktrees/x/a.py']), [])
+        self.assertEqual(checks.locked_paths(self.r, ['.claude/worktrees/x/a.py']), [])
 
     def test_a_blanket_never_covers_claude_md(self):
-        self.assertEqual(C.unapproved_locked(self.r, ['CLAUDE.md'], ['.claude/']), ['CLAUDE.md'])
-        self.assertEqual(C.unapproved_locked(self.r, ['.Claude/X.md'], ['.claude/']), [])
+        self.assertEqual(checks.unapproved_locked(self.r, ['CLAUDE.md'], ['.claude/']), ['CLAUDE.md'])
+        self.assertEqual(checks.unapproved_locked(self.r, ['.Claude/X.md'], ['.claude/']), [])
 
     def test_a_deeper_directory_is_not_a_blanket(self):
-        self.assertEqual(C.unapproved_locked(self.r, ['.claude/a/b.md'], ['.claude/a/']),
+        self.assertEqual(checks.unapproved_locked(self.r, ['.claude/a/b.md'], ['.claude/a/']),
                          ['.claude/a/b.md'])
 
     def test_canonical_values_are_the_committed_spelling(self):
-        self.assertEqual(C.canonical_approved(self.r, ['claude.md', 'unrelated'], ['CLAUDE.md']),
+        self.assertEqual(message.canonical_approved(self.r, ['claude.md', 'unrelated'], ['CLAUDE.md']),
                          ['CLAUDE.md', 'unrelated'])
 
     def test_a_configured_list_replaces_the_default(self):
         r = ownermod.from_section({'paths': ['ops/'], 'paths_except': [], 'email': '',
                                    'agent_emails': [], 'trailer': None})
-        self.assertEqual(C.locked_paths(r, ['ops/x', 'CLAUDE.md']), ['ops/x'])
+        self.assertEqual(checks.locked_paths(r, ['ops/x', 'CLAUDE.md']), ['ops/x'])
 
 
 class Trailers(unittest.TestCase):
 
     def test_an_agent_commit_gets_co_authored_by(self):
-        self.assertEqual(C.build_trailers(rules(), [], False, 'Test Model'), [COAUTHOR])
+        self.assertEqual(message.build_trailers(rules(), [], False, 'Test Model'), [COAUTHOR])
 
     def test_an_owner_authored_commit_says_so_instead(self):
-        self.assertEqual(C.build_trailers(rules(), ['CLAUDE.md'], True, None),
+        self.assertEqual(message.build_trailers(rules(), ['CLAUDE.md'], True, None),
                          ['Owner-Approved: CLAUDE.md', 'Owner-Authored: yes'])
-        self.assertEqual(C.build_trailers(rules(), [], True, None), ['Owner-Authored: yes'])
+        self.assertEqual(message.build_trailers(rules(), [], True, None), ['Owner-Authored: yes'])
 
     def test_the_configured_trailer_name_is_used(self):
-        self.assertEqual(C.build_trailers(rules(trailer='Owner-OK'), ['x'], True, None)[0],
+        self.assertEqual(message.build_trailers(rules(trailer='Owner-OK'), ['x'], True, None)[0],
                          'Owner-OK: x')
 
     def test_the_families_reach_the_trailers(self):
-        self.assertEqual(C.build_trailers(rules(), [], False, 'Codex-mini', ['Codex']),
+        self.assertEqual(message.build_trailers(rules(), [], False, 'Codex-mini', ['Codex']),
                          ['Co-Authored-By: Codex-mini <noreply@anthropic.com>'])
 
     def test_the_message_shape(self):
-        self.assertEqual(C.build_message('s', '', ['t']), 's\n\nt\n')
-        self.assertEqual(C.build_message('s', 'b', ['t', 'u']), 's\n\nb\n\nt\nu\n')
+        self.assertEqual(message.build_message('s', '', ['t']), 's\n\nt\n')
+        self.assertEqual(message.build_message('s', 'b', ['t', 'u']), 's\n\nb\n\nt\nu\n')
 
 
 class OwnerIdentity(unittest.TestCase):
 
     def test_each_refusal(self):
         r = rules(owner_email=OWNER, agent_emails=[AGENT])
-        self.assertIsNone(C.owner_identity_error(r, OWNER))
-        self.assertIn('could not say', C.owner_identity_error(r, None))
-        self.assertIn("an agent's", C.owner_identity_error(r, AGENT))
-        self.assertIn("not the owner's", C.owner_identity_error(r, 'x@example.invalid'))
-        self.assertIn('not configured', C.owner_identity_error(rules(), OWNER))
+        self.assertIsNone(checks.owner_identity_error(r, OWNER))
+        self.assertIn('could not say', checks.owner_identity_error(r, None))
+        self.assertIn("an agent's", checks.owner_identity_error(r, AGENT))
+        self.assertIn("not the owner's", checks.owner_identity_error(r, 'x@example.invalid'))
+        self.assertIn('not configured', checks.owner_identity_error(rules(), OWNER))
 
 
 class MessagePieces(unittest.TestCase):
@@ -195,22 +196,22 @@ class MessagePieces(unittest.TestCase):
     def test_a_machine_path_in_the_message(self):
         drive = 'C:' + '\\'
         gh = ('GitHub',)
-        self.assertEqual(C.machine_path_error('subject', 'body %AGENT_TEMP%\\x', folders=gh),
+        self.assertEqual(checks.machine_path_error('subject', 'body %AGENT_TEMP%\\x', folders=gh),
                          (None, []))
         self.assertIn('machine path',
-                      C.machine_path_error('see %sGitHub\\x' % drive, '', folders=gh)[0])
-        self.assertIsNone(C.machine_path_error('see %sGitHub\\x' % drive, '', folders=())[0])
+                      checks.machine_path_error('see %sGitHub\\x' % drive, '', folders=gh)[0])
+        self.assertIsNone(checks.machine_path_error('see %sGitHub\\x' % drive, '', folders=())[0])
         # The typed form is scanned too: `\n` would cut `...\Users\nick` short.
         typed = 'in %sUsers\\nick\\x' % drive
-        self.assertIn('machine path', C.machine_path_error('s', typed.replace('\\n', '\n'), typed,
+        self.assertIn('machine path', checks.machine_path_error('s', typed.replace('\\n', '\n'), typed,
                                                            folders=())[0])
 
     def test_an_unreadable_machine_config_is_a_warning_of_the_message_check(self):
         drive = 'C:' + '\\'
         note = 'WARNING: machine config X could not be read'
-        with mock.patch.object(C.machinepaths, 'folders', return_value=((), note)):
-            self.assertEqual(C.machine_path_error('subject', 'body'), (None, [note]))
-            refusal, warnings = C.machine_path_error('see %sUsers\\nick\\x' % drive, '')
+        with mock.patch.object(checks.machinepaths, 'folders', return_value=((), note)):
+            self.assertEqual(checks.machine_path_error('subject', 'body'), (None, [note]))
+            refusal, warnings = checks.machine_path_error('see %sUsers\\nick\\x' % drive, '')
         self.assertIn('machine path', refusal)
         self.assertEqual(warnings, [note])
 
@@ -307,11 +308,11 @@ class AnOrdinaryCommit(LinkedCase):
                          'https://x/s')
 
     def test_a_body_without_a_double_tilde_is_unchanged(self):
-        self.assertEqual(C.message_body('plain body, no marker', None, '.', '.'),
+        self.assertEqual(message.message_body('plain body, no marker', None, '.', '.'),
                          ('plain body, no marker', None))
 
     def test_a_single_tilde_stays_literal(self):
-        self.assertEqual(C.message_body('about ~5 files, ~/x and a~b', None, '.', '.'),
+        self.assertEqual(message.message_body('about ~5 files, ~/x and a~b', None, '.', '.'),
                          ('about ~5 files, ~/x and a~b', None))
 
     def test_the_environment_variable_supplies_the_model_and_says_so(self):
@@ -597,7 +598,7 @@ class AStagedMachinePathIsRefused(LinkedCase):
     def commit_rewriting_before_the_check(self, text):
         """Commit a.py, rewriting its work-tree file to `text` after the call has staged it and
         just before the staged check runs: the staged copy and the work tree then differ."""
-        real = C.staged_machine_path_error
+        real = checks.staged_machine_path_error
 
         def wrapper(*a, **kw):
             self.put('a.py', text)
@@ -771,7 +772,7 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
         self.assert_refused_unchanged(head, *self.commit('add a', 'a.py'), 'HEAD')
 
     def test_head_moved_before_the_commit_refuses(self):
-        real, theirs = C.staged_machine_path_error, []
+        real, theirs = checks.staged_machine_path_error, []
 
         def wrapper(*a, **kw):
             theirs.append(self.other_writer_commits())
@@ -1058,7 +1059,7 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
     def test_a_restage_after_the_machine_path_check_refuses(self):
         """The blobs checked are the blobs committed: a named file staged again with other
         content after the check refuses the commit."""
-        head, real = self.head(), C.staged_machine_path_error
+        head, real = self.head(), checks.staged_machine_path_error
 
         def wrapper(*a, **kw):
             got = real(*a, **kw)
@@ -1721,7 +1722,7 @@ class MergeInProgress(MergeCase):
     def test_a_file_another_writer_stages_mid_call_stays_out_of_the_merge(self):
         tip, base = self.start_merge()
         self.put('intruder.txt', 'not yours\n')
-        real = C.staged_machine_path_error
+        real = checks.staged_machine_path_error
 
         def wrapper(*a, **kw):
             self.git('add', '--', 'intruder.txt')
@@ -2200,9 +2201,9 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
         self.merge(self.top(), self.bottom())
         self.git('add', '--', 'work.txt')
         rules = C.kconfig.load(self.wt).owner_rules()
-        self.assertEqual(C.merge_owner_refusal(self.wt, rules), ([self.F], None))
+        self.assertEqual(checks.merge_owner_refusal(self.wt, rules), ([self.F], None))
         self.approve('A-001', 'A-002')
-        self.assertEqual(C.merge_owner_refusal(self.wt, rules), ([], None))
+        self.assertEqual(checks.merge_owner_refusal(self.wt, rules), ([], None))
 
 
 @gitfixture.real_fixture('a committed .gitattributes with merge=union: the fake git refuses the '
@@ -2246,7 +2247,7 @@ class TheCommandLine(LinkedCase):
                       ('--owner-approval', 'hub:A-001', '--consume', 'HEAD'),
                       ('--consume', 'HEAD', '--allow-empty')):
             code, out = self.in_process('-m', 's', '--model', 'M', *extra)
-            self.assertEqual(code, C.USAGE, (extra, out))
+            self.assertEqual(code, checks.USAGE, (extra, out))
             self.assertIn('USAGE: the hub applies a change the owner approved', out)
             self.assertIn('hub.py approvals apply', out)
         self.assertEqual(self.head(), head)
@@ -2414,7 +2415,7 @@ class TheSessionTrailer(LinkedCase):
                          + COAUTHOR)
 
     def test_the_owner_approval_lines_come_first(self):
-        trailers = C.build_trailers(rules(), ['docs/'], False, 'M', session=['Claude-Session: u'])
+        trailers = message.build_trailers(rules(), ['docs/'], False, 'M', session=['Claude-Session: u'])
         self.assertEqual(trailers, ['%s: docs/' % rules().trailer,
                                     'Co-Authored-By: Claude M <noreply@anthropic.com>',
                                     'Claude-Session: u'])

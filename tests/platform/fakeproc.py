@@ -1,5 +1,5 @@
-"""A fake process table for ancestry walks (kitlib.proc.process ancestors_of, ancestry, and
-kitlib.lock.store.caller): the Windows calls a walk makes are patched to answer from it, so a
+"""A fake process table for ancestry walks (kitlib.platform.windows.process ancestors_of, ancestry,
+and kitlib.lock.store.caller): the Windows calls a walk makes are patched to answer from it, so a
 chain no live machine can be made to show on demand (a shell that has exited but is still held
 open, a reused parent pid) is one table.
 
@@ -13,7 +13,8 @@ import collections
 import contextlib
 from unittest import mock
 
-from kitlib.proc import process, win32
+from kitlib.platform.windows import process, win32
+from kitlib.proc import process as face
 
 FakeProc = collections.namedtuple('FakeProc', 'ctime parent exited listed opens', defaults=(True,))
 
@@ -37,7 +38,8 @@ def listing(table):
 @contextlib.contextmanager
 def patched(table, me):
     """The process calls answer from table while it is entered, and this process (pid `me`) has
-    creation time table[me].ctime."""
+    creation time table[me].ctime: in the Windows backend, whose own calls look its names up
+    there, and in the face (kitlib.proc.process), for the names it has."""
     def opens(pid):
         return int(pid) in table and table[int(pid)].opens
 
@@ -55,4 +57,6 @@ def patched(table, me):
     with contextlib.ExitStack() as stack:
         for name, fake in fakes.items():
             stack.enter_context(mock.patch.object(process, name, fake))
+            if hasattr(face, name):
+                stack.enter_context(mock.patch.object(face, name, fake))
         yield

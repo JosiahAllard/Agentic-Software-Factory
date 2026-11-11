@@ -20,7 +20,7 @@ from optional.bridge.win.leader import ServiceLeader
 from optional.bridge.port import NativeSource
 from optional.bridge.win.service import BrokerService
 from kitlib.proc.job import Job
-from kitlib.proc.process import close,open_process,own_ctime,proc_ctime
+from kitlib.platform.windows.process import close,open_process,own_ctime,proc_ctime
 from tests.bridge.test_pairing import chat
 
 RUNTIME_SOURCE='optional/bridge/hosts/claude/runtime.py'

@@ -33,10 +33,10 @@ program's twin and dropped (_drop_twins), so another run's window never hides on
 
 Whose window. `ours(pid)` (Monitor's argument, called on the monitor thread) says whether a pid is
 the caller's: True, False, or None for unknown. A machine-lock run passes its job's membership
-(kitlib.proc.job.Job.contains). A window whose program is known not to be the caller's is listed
-apart and not counted (report_lines). One whose program cannot be placed (it has exited by the time
-the event is read, or cannot be opened) is counted, tagged `run unknown`: so another program's
-short-lived window can count against a run.
+(kitlib.platform.windows.job.Job.contains). A window whose program is known not to be the
+caller's is listed apart and not counted (report_lines). One whose program cannot be placed (it
+has exited by the time the event is read, or cannot be opened) is counted, tagged `run unknown`:
+so another program's short-lived window can count against a run.
 
 The title heuristic (looks_launched) and its limits:
 - A title counts as launched when, after an "Administrator: " prefix, it is a full path to a
@@ -62,11 +62,12 @@ The title heuristic (looks_launched) and its limits:
 
 What spawned it (proc_info). When the monitor reads a window's program (a console window's own
 pid, a PseudoConsoleWindow's pid for a Terminal window or tab) it also reads, there and then, the
-program's command line, its parent pid and the parent's command line (kitlib.proc.process), each cut
-to CMDLINE_CAP characters. A process gone or not readable by then gives UNREADABLE for that field,
-never an exception; a parent gone, unreadable or created after the program (its pid reused) gives
-a parent pid of None. The report shows them on `cmd:` and `parent:` lines under the window's own
-line; a Window built without them (cmdline None) shows neither.
+program's command line, its parent pid and the parent's command line
+(kitlib.platform.windows.process), each cut to CMDLINE_CAP characters. A process gone or not
+readable by then gives UNREADABLE for that field, never an exception; a parent gone, unreadable or
+created after the program (its pid reused) gives a parent pid of None. The report shows them on
+`cmd:` and `parent:` lines under the window's own line; a Window built without them (cmdline None)
+shows neither.
 """
 import ctypes
 import os
@@ -76,7 +77,7 @@ import time
 from ctypes import wintypes
 
 from kitlib.platform.dll import windll
-from kitlib.proc import process, win32
+from . import process, win32
 
 CONSOLE = "ConsoleWindowClass"
 TERMINAL = "CASCADIA_HOSTING_WINDOW_CLASS"

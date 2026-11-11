@@ -24,7 +24,7 @@ class GitIgnoredTest(unittest.TestCase):
         return answer, seen
 
     def test_no_console_passes_no_window(self):
-        from kitlib.proc import win32
+        from kitlib.platform.windows import win32
         answer, seen = self.call(console=False)
         self.assertEqual(seen["creationflags"], win32.CREATE_NO_WINDOW)
         self.assertEqual(seen["argv"], ['git', '-C', 'repo', 'check-ignore', '-q', 'p'])

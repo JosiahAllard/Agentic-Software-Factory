@@ -89,14 +89,14 @@ class TablesTest(unittest.TestCase):
 
     @windows_only('the Windows TCP table is read through iphlpapi')
     def test_windows_reads_the_loopback_time_wait_rows_of_both_tables(self):
-        from kitlib.proc import win32
+        from kitlib.platform.windows import win32
         other = b'\x0a\0\0\x01'
         tables = {
             win32.AF_INET: struct.pack('<I', 3) + v4_row(11, LO4, 5000, LO4, 6000, 0)
             + v4_row(5, LO4, 5001, LO4, 6001, 10) + v4_row(11, other, 5002, other, 6002, 0),
             win32.AF_INET6: struct.pack('<I', 1) + v6_row(11, LO6, 5003, LO6, 6003, 0)}
         with mock.patch('kitlib.platform.NAME', 'windows'), \
-                mock.patch.object(tcp, '_table', lambda family: tables[family]):
+                mock.patch('kitlib.platform.windows.tcp.table', lambda family: tables[family]):
             self.assertEqual(httpfix.time_wait_ends(), {
                 ((4, LO4, 5000), (4, LO4, 6000)), ((6, LO6, 5003), (6, LO6, 6003))})
 

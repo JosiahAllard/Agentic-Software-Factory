@@ -25,8 +25,8 @@ from unittest import mock
 
 from kitlib.config import ConfigError, load as load_config
 from kitlib.proc import job as job_mod
-from kitlib.proc import shield as pid_shield
-from kitlib.proc import win32
+from kitlib.platform.windows import shield as pid_shield
+from kitlib.platform.windows import win32
 from kitlib.pytests import child, runner
 from kitlib.tooldeps import deps as tool_deps
 from tests.gitfixture import TempRepo, rmtree, stale_local_main
@@ -607,7 +607,7 @@ class ThePidHold(Fakes):
         report = os.path.join(self.dir, 'unit.json')
         self.write('test_grandchild', textwrap.dedent('''
             import json, os, subprocess, sys, unittest
-            from kitlib.proc import shield
+            from kitlib.platform.windows import shield
 
             class G(unittest.TestCase):
                 def test_starts_a_child(self):

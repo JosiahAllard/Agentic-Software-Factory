@@ -47,6 +47,7 @@ import threading
 import time
 
 import kitlib.platform
+from kitlib.platform.windows import process as winproc
 from kitlib.proc import process
 from kitlib.proc.job import Job, JobError
 from kitlib.pytests import runner as unit_runner
@@ -236,7 +237,7 @@ def _hold_one(pid):
             return os.pidfd_open(pid)
         except OSError:
             return None
-    return process.open_process(pid, process.SYNCHRONIZE) or None
+    return winproc.open_process(pid, winproc.SYNCHRONIZE) or None
 
 
 def _release(h):
@@ -246,7 +247,7 @@ def _release(h):
         except OSError:
             pass
         return
-    process.close(h)
+    winproc.close(h)
 
 
 def _ended(h, seconds):
@@ -255,7 +256,7 @@ def _ended(h, seconds):
         poller = select.poll()
         poller.register(h, select.POLLIN)
         return bool(poller.poll(int(seconds * 1000)))
-    return process.K32.WaitForSingleObject(h, int(seconds * 1000)) != process.WAIT_TIMEOUT
+    return winproc.K32.WaitForSingleObject(h, int(seconds * 1000)) != winproc.WAIT_TIMEOUT
 
 
 def _wait_all(handles, seconds):

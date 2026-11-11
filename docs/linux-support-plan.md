@@ -25,8 +25,8 @@ code without running it on Linux; "unknown" needs a probe on a Linux box.
 
 - tools/kit.py refuses darwin, every other non-Windows non-Linux platform, and WSL
   (kitlib.machinesetup.linuxbox.front_door; question 11). Linux is let through (slice 14).
-- kitlib/proc/win32.py binds its DLLs lazily (kitlib.platform.dll.LazyDLL), so it and the modules
-  built on it import on any platform, and a call off Windows raises PlatformUnsupported.
+- kitlib/platform/windows/win32.py binds its DLLs lazily (kitlib.platform.dll.LazyDLL), so it and
+  the modules built on it import on any platform, and a call off Windows raises PlatformUnsupported.
 - The hook manifests: hookmain.INTERPRETERS is `{'windows': 'pythonw', 'linux': 'python3'}`
   (MCP_INTERPRETERS: `python`, `python3`); hosts.json lists windows and linux for both hosts with
   per-platform `process_names`; each host renders `hooks.linux.json` beside its `hooks.json`
@@ -35,13 +35,14 @@ code without running it on Linux; "unknown" needs a probe on a Linux box.
 ### 1.2 What is still Windows-only
 
 - The peer messaging and the bridge: hosts/claude/adapter/peer.py (Claude Code's `\\.\pipe\`
-  address), optional/bridge/win/, kitlib/machinesetup/procwatch.py, kitlib/proc/console.py and
-  winwatch.py. Slice 15; the console and window ones have no Linux need.
+  address), optional/bridge/win/, kitlib/machinesetup/procwatch.py, and
+  kitlib/platform/windows/console.py and winwatch.py. Slice 15; the console and window ones have
+  no Linux need.
 - The delegation runner, kitlib/delegations/place.py and run.py: drive paths, `.exe` and the
   registry (winreg). Windows only by design; it does not refuse on Linux, and its tests that need
   a junction or the real registry carry `windows_only`.
-- The 23 files outside tests/ that still read os.name or sys.platform themselves
-  (tests/platform/test_no_os_checks.py ALLOWED, 23 entries). The list only shrinks.
+- The 21 files outside tests/ that still read os.name or sys.platform themselves
+  (tests/platform/test_no_os_checks.py ALLOWED, 21 entries). The list only shrinks.
 - The end-to-end landing tests skip on Linux ("the lock is Windows only"; in tests/gate/test_land*.py
   only a few unit tests run), so a landing has not run end to end there (slice 9, open proof c).
 - Build-daemon sparing and the TCP connection table: kitlib/proc/tcp.py has only the Windows reader
@@ -89,15 +90,16 @@ module each; there is no ipc.py: Unix sockets are slice 15).
 Rules:
 
 1. Outside kitlib/platform and tests, no module reads os.name or sys.platform. The test
-   (tests/platform/test_no_os_checks.py) enforces it with an allowlist of the 23 files that still
+   (tests/platform/test_no_os_checks.py) enforces it with an allowlist of the 21 files that still
    do (section 1.2); it fails on a file that starts asking and on a listed file that stopped.
 2. The Windows backend is re-exports, so moving a caller onto the seam changes no Windows
    behaviour; the Windows suite proves each move.
-3. No module imports a Windows DLL at import time. proc/win32.py, proc/pipe.py and gate/outfile.py
-   bind lazily (first call), and the modules that had a module-level `from ctypes import wintypes`
-   take it lazily or behind a guard, so an import on Linux works and a call fails with a clear
-   "not on this platform" error. On Windows this moves one failure: a DLL or export that is
-   missing fails at first call, naming the function, not at import (tests/platform/test_lazy_dll.py).
+3. No module imports a Windows DLL at import time. platform/windows/win32.py,
+   platform/windows/pipe.py and gate/outfile.py bind lazily (first call), and the modules that had a
+   module-level `from ctypes import wintypes` take it lazily or behind a guard, so an import on
+   Linux works and a call fails with a clear "not on this platform" error. On Windows this moves one
+   failure: a DLL or export that is missing fails at first call, naming the function, not at import
+   (tests/platform/test_lazy_dll.py).
 4. Guard path text goes through one function per shell (kitlib/guard/paths.py norm and the
    shell's resolve_path); hook commands come from one helper (hookmain.manifest_command).
 5. A Linux primitive that cannot give the Windows guarantee says so in its name or raises; it

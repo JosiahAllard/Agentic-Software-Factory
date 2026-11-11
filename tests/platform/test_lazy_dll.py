@@ -104,7 +104,7 @@ ctypes.WinDLL = Hiding
 sys.path.insert(0, sys.argv[1])
 out = {}
 try:
-    from kitlib.proc import win32
+    from kitlib.platform.windows import win32
     out['import'] = 'ok'
 except Exception as e:
     out['import'] = repr(e)
@@ -139,7 +139,7 @@ class KitBindingsTest(unittest.TestCase):
     @windows_only('the real kernel32')
     def test_the_kits_kernel32_gets_its_prototype_at_first_use(self):
         from ctypes import wintypes
-        from kitlib.proc import win32
+        from kitlib.platform.windows import win32
         self.assertIsInstance(win32.K32, dll.LazyDLL)
         self.assertEqual(win32.K32.OpenProcess.restype, wintypes.HANDLE)
         self.assertEqual(tuple(win32.K32.OpenProcess.argtypes),
@@ -147,7 +147,7 @@ class KitBindingsTest(unittest.TestCase):
 
     @windows_only('the real kernel32')
     def test_a_pipe_function_binds_its_export_at_the_first_call(self):
-        from kitlib.proc import pipe
+        from kitlib.platform.windows import pipe
         self.assertEqual(pipe.close.__name__, 'CloseHandle')
         with mock.patch.object(pipe, 'K', dll.LazyDLL('kernel32', None, Loader(set()))):
             with self.assertRaisesRegex(AttributeError, 'NoSuchExport'):

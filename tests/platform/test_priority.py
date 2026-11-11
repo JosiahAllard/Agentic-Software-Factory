@@ -1,13 +1,13 @@
-"""kitlib.proc.process.raise_to_normal: a process below normal (idle or below normal, as a
-scheduled task's default priority 7 gives) is raised to normal; one at normal or above is left
-as it is; off Windows nothing is called. Every kernel32 call is a fake: no real process's
-priority is read or changed."""
+"""kitlib.platform.windows.process.raise_to_normal: a process below normal (idle or below normal, as
+a scheduled task's default priority 7 gives) is raised to normal; one at normal or above is left as
+it is; off Windows nothing is called. Every kernel32 call is a fake: no real process's priority is
+read or changed."""
 import types
 import unittest
 from unittest import mock
 
 import kitlib.platform
-from kitlib.proc import process, win32
+from kitlib.platform.windows import process, win32
 
 ME = 0xFFFF                     # the fake pseudo handle of this process
 ABOVE_NORMAL, HIGH, REALTIME = 0x8000, 0x80, 0x100

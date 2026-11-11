@@ -27,7 +27,8 @@ if os.name == "nt":
     from kitlib.lock import layout as lay
     from kitlib.lock import run as rm
     from kitlib.lock.store import utc_now
-    from kitlib.proc import process, win32
+    from kitlib.proc import process
+    from kitlib.platform.windows import win32
 
 
 def gb():

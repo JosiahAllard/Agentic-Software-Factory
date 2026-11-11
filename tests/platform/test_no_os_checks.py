@@ -26,8 +26,6 @@ ALLOWED = frozenset({
     'kitlib/machinesetup/extras.py',
     'kitlib/pluginsource/__init__.py',
     'kitlib/pluginsource/claude.py',
-    'kitlib/proc/console.py',
-    'kitlib/proc/winwatch.py',
     'kitlib/redfirst/run.py',
     'kitlib/redfirst/verdict.py',
     'kitlib/tooldeps/selfrun.py',

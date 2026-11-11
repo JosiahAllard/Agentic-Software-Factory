@@ -1,6 +1,6 @@
-"""Tests for kitlib.proc.shield: a child's own process refuses PROCESS_TERMINATE by its pid while
-shielded, and `unshield` gives it back; the pid hold keeps an exited process's pid
-unused for its linger, and denies nothing. Windows only.
+"""Tests for kitlib.platform.windows.shield: a child's own process refuses PROCESS_TERMINATE by its
+pid while shielded, and `unshield` gives it back; the pid hold keeps an exited process's pid unused
+for its linger, and denies nothing. Windows only.
 
 Every child here is the test's own, created suspended or not, and ended through its own Popen
 handle, its job, or by running to its end; a grandchild is its parent's, which waits for it.
@@ -19,7 +19,8 @@ from tests import testutil
 from tests.platforms import windows_only
 
 if os.name == 'nt':
-    from kitlib.proc import job, shield, win32
+    from kitlib.proc import job
+    from kitlib.platform.windows import shield, win32
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # A note the shield writes is printed by a caller that runs the child unshielded anyway; it must
@@ -276,7 +277,7 @@ class APublishedHoldIsFoundWhileItRuns(unittest.TestCase):
 
     def test_a_child_process_finds_it(self):
         self.held.publish()
-        code = ('import sys; sys.path.insert(0, %r); from kitlib.proc import shield; '
+        code = ('import sys; sys.path.insert(0, %r); from kitlib.platform.windows import shield; '
                 'print(shield.inherited())' % ROOT)
         out = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True,
                              timeout=60)

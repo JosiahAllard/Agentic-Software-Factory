@@ -6,8 +6,9 @@ import unittest
 from unittest.mock import patch
 
 from optional.bridge.win import ancestry
-from kitlib.proc import process
-from kitlib.proc.win32 import K32
+from kitlib.platform.windows import process
+from kitlib.proc import process as face
+from kitlib.platform.windows.win32 import K32
 
 
 def _running(pid,creation):
@@ -42,11 +43,11 @@ class _ReusedPidKernel:
 
     def patches(self):
         running=type('K32',(),{'WaitForSingleObject':staticmethod(lambda handle,wait:process.WAIT_TIMEOUT)})
-        return (patch('kitlib.proc.process.open_process',self.open_process),
-            patch('kitlib.proc.process.proc_ctime',self.proc_ctime),
-            patch('kitlib.proc.process.handle_ctime',lambda handle:handle.creation),
-            patch('kitlib.proc.process.parent_pid',lambda handle:handle.parent),
-            patch('kitlib.proc.process.close',lambda handle:None),
+        return (patch('kitlib.platform.windows.process.open_process',self.open_process),
+            patch('kitlib.platform.windows.process.proc_ctime',self.proc_ctime),
+            patch('kitlib.platform.windows.process.handle_ctime',lambda handle:handle.creation),
+            patch('kitlib.platform.windows.process.parent_pid',lambda handle:handle.parent),
+            patch('kitlib.platform.windows.process.close',lambda handle:None),
             patch.object(ancestry,'K32',running))
 
 
@@ -73,9 +74,10 @@ class AncestryTests(unittest.TestCase):
         the snapshot still names it). The bridge walk takes running ancestors only
         and stops before it. Every other hop is the same in both."""
         expected=process.ancestors_of(pid,creation,limit=8)
-        with patch('kitlib.proc.process.snapshot',wraps=process.snapshot) as listings:
+        with patch('kitlib.platform.windows.process.snapshot',wraps=process.snapshot) as listings, \
+                patch.object(face,'snapshot',wraps=face.snapshot) as face_listings:
             walked=ancestry.ancestors_of(pid,creation,limit=8)
-        self.assertEqual(listings.call_count,0)
+        self.assertEqual(listings.call_count+face_listings.call_count,0)
         if expected and walked==expected[:-1] and not _running(*expected[-1]): return walked
         self.assertEqual(walked,expected)
         return walked

@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 from optional.bridge.core.messages import DeliveryError
-from kitlib.proc.pipe import (INVALID,close,create_file,descriptor,
+from kitlib.platform.windows.pipe import (INVALID,close,create_file,descriptor,
     process_image,process_sids,server_pid)
 from kitlib.proc.process import ancestors_of,own_ctime,proc_ctime
 from .transport import LOCAL_PIPE,PipeTarget

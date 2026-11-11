@@ -28,7 +28,7 @@ import hashlib
 from pathlib import Path
 import re
 
-from kitlib.proc.pipe import K, bind
+from kitlib.platform.windows.pipe import K, bind
 from optional.bridge.core.messages import DeliveryError
 
 PACKAGE_NAME = 'OpenAI.Codex'

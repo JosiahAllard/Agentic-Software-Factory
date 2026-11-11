@@ -6,7 +6,7 @@ stat /proc does not show (hidepid=2, another user's) is no process only when sig
 and a stat that cannot be read cannot be told; a comm with spaces and ')' is read whole.
 
 Backends runs on every platform: the Linux backend's process area is that module, and on Windows
-kitlib.proc.process keeps its own functions."""
+kitlib.proc.process binds the Windows backend's (kitlib.platform.windows.process)."""
 import builtins
 import errno
 import importlib
@@ -71,7 +71,8 @@ class Backends(unittest.TestCase):
         for name in ('snapshot', 'alive', 'proc_ctime', 'own_ctime', 'ancestry', 'descendants',
                      'command_line', 'terminate_verified', 'kill_tree', '_ancestor'):
             with self.subTest(name=name):
-                self.assertEqual(getattr(process, name).__module__, 'kitlib.proc.process')
+                self.assertEqual(getattr(process, name).__module__,
+                                 'kitlib.platform.windows.process')
 
     @posix_only('kitlib.proc.process reads /proc on Linux')
     def test_kitlib_proc_process_names_are_the_proc_readers_on_linux(self):

@@ -1,12 +1,13 @@
-"""JSON-line test helpers over kitlib.proc.pipe handles: a client's send and a listener's drain.
+"""JSON-line test helpers over kitlib.platform.windows.pipe handles: a client's send and a
+listener's drain.
 
 They were methods of the probe's Pipe class (kitlib/bridgeprobe/winpipe.py, deleted); the promoted
-kitlib.proc.pipe keeps only the handle work, so the tests that fake a peer carry them here. Not a
-test module. Windows only."""
+kitlib.platform.windows.pipe keeps only the handle work, so the tests that fake a peer carry them
+here. Not a test module. Windows only."""
 import ctypes
 import time
 
-from kitlib.proc.errors import ProcError
+from kitlib.platform import ProcError
 from optional.bridge.core.jsonwire import JsonLineDecoder, encode_frame
 
 MAX_SEND_BYTES = 4096
@@ -14,7 +15,8 @@ MAX_FRAMES = 4
 
 
 def connect_waiting(name, pid, creation, timeout=5):
-    """kitlib.proc.pipe.connect that waits, bounded, while the one instance serves another client.
+    """kitlib.platform.windows.pipe.connect that waits, bounded, while the one instance serves
+    another client.
 
     Under load a test's client meets ERROR_PIPE_BUSY; this is the product's own bounded wait
     (optional.bridge.win.rpcworker._connect), not a copy. Any other failure raises at once."""
@@ -29,9 +31,10 @@ def connect_waiting(name, pid, creation, timeout=5):
 
 
 def send(pipe, frames):
-    """Write `frames` as JSON lines through a connected pipe (kitlib.proc.pipe.connect)."""
+    """Write `frames` as JSON lines through a connected pipe
+    (kitlib.platform.windows.pipe.connect)."""
     from ctypes import wintypes as w
-    from kitlib.proc.pipe import write
+    from kitlib.platform.windows.pipe import write
     data = b''.join(encode_frame(frame, max_frame_bytes=2048) for frame in frames)
     if len(data) > MAX_SEND_BYTES:
         raise ProcError('pipe-send-limit')
@@ -43,7 +46,7 @@ def send(pipe, frames):
 def frames_until_close(listener, timeout):
     """(frames, True) once the client closes; ProcError on a timeout or more than MAX_FRAMES."""
     from ctypes import wintypes as w
-    from kitlib.proc.pipe import peek, read
+    from kitlib.platform.windows.pipe import peek, read
     end = time.monotonic() + timeout
     decoder, frames = JsonLineDecoder(), []
     while time.monotonic() < end:

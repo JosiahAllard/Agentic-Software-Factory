@@ -10,7 +10,7 @@ import os
 import re
 import threading
 
-from kitlib.proc.pipe import (K,bind,close,descriptor,from_sddl,local_free,
+from kitlib.platform.windows.pipe import (K,bind,close,descriptor,from_sddl,local_free,
     process_sids,PrivateListener,SecurityAttributes)
 
 create_mutex=bind(K,'CreateMutexExW',[w.LPVOID,w.LPCWSTR,w.DWORD,w.DWORD],w.HANDLE)

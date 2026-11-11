@@ -1,6 +1,6 @@
 """The affinity primitives on Linux (docs/linux-support-plan.md section 8, slice 5), with the
-meanings kitlib.proc.process gives them on Windows. A mask is the seam's: bit i is cpu id i
-(kitlib.platform.linux.hardware).
+meanings kitlib.platform.windows.process gives them on Windows. A mask is the seam's: bit i is cpu
+id i (kitlib.platform.linux.hardware).
 
   affinity_of(pid, ctime)          the process's affinity mask (its main thread's), or None
   set_affinity(pid, ctime, mask)   pin every thread of the process to `mask`

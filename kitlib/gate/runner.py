@@ -58,7 +58,8 @@ from kitlib.gate import steps as S
 from kitlib.git import cmd, refs, repo
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import EXIT_USAGE, LockError, Store
-from kitlib.proc import process, winwatch
+from kitlib.proc import process
+from kitlib.platform.windows import winwatch
 from kitlib.proc.job import JobError
 from kitlib.records import gate_ok
 
@@ -746,7 +747,7 @@ def merged_refusal(branch, merged, base, then):
 
 
 def window_results(slot, say, seen=None):
-    """Stops the lock run's window monitor (kitlib.lock.run.Slot.watch_stop, kitlib.proc.winwatch)
+    """Stops the lock run's window monitor (Slot.watch_stop, kitlib.platform.windows.winwatch)
     and says its report: `windows opened: N` and a line per window. Returns [] (a window warns),
     or with WINDOWS_FAIL a FAIL result named `windows` when the run opened one. Fills
     seen['windows'] when `seen` is a dict. Each line is said through _say_safe: it runs inside

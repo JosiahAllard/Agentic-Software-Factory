@@ -2,7 +2,7 @@
 
 Promoted from the bridge's Phase 0 probe package (docs/multi-host-plan.md section 2.4), which the
 bridge's service, frontend and host halves (optional/bridge) build on. Every refusal raises
-kitlib.proc.errors.ProcError with a fixed code. Windows only.
+kitlib.platform.ProcError with a fixed code. Windows only.
 
     connect(name, pid, creation)   open a local pipe whose server is that exact live process, run by
                                    this user, and whose owner is that user
@@ -20,10 +20,10 @@ import time
 
 from kitlib.platform.dll import LazyDLL
 
-from .errors import ProcError
+from kitlib.platform import ProcError
 from .process import proc_ctime
 
-# Private kernel32 and advapi32 instances (no prototype here touches kitlib.proc.win32's), loaded
+# Private kernel32 and advapi32 instances (no prototype here touches win32's), loaded
 # at first use (kitlib.platform.dll): this module imports on any platform.
 K = LazyDLL('kernel32', use_last_error=True)
 A = LazyDLL('advapi32', use_last_error=True)

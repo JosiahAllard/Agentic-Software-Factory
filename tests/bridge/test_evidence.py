@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from kitlib.proc.pipe import INVALID, close, create_file
+from kitlib.platform.windows.pipe import INVALID, close, create_file
 from optional.bridge.win import evidence
 from optional.bridge.win.evidence import EvidenceError, stable_bytes
 

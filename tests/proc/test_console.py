@@ -24,6 +24,7 @@ if os.name == "nt":
     import _winapi
     from kitlib.config import user as kuser
     from kitlib.proc import console
+    from kitlib.platform.windows import console as wincon
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CREATE_NO_WINDOW = 0x08000000
@@ -154,8 +155,9 @@ def main(root, folder, mode, py):
     r['before'] = attached()
     import kitlib
     from kitlib.proc import console
+    from kitlib.platform.windows import console as wincon
     console.LOG_PATH = os.path.join(folder, 'incidents.log')
-    console.FORCE_FALLBACK = mode.endswith('fallback')
+    wincon.FORCE_FALLBACK = mode.endswith('fallback')
     r['installed'] = console.installed()
     if mode.startswith('threads'):
         r['n'], r['thread_errors'] = THREADS, []
@@ -284,21 +286,21 @@ class InstalledTest(unittest.TestCase):
 
     def test_installed_here_and_idempotent(self):
         self.assertTrue(console.installed())
-        self.assertIs(_winapi.CreateProcess, console._create_process)
+        self.assertIs(_winapi.CreateProcess, wincon._create_process)
         self.assertFalse(console.install())
-        self.assertIs(_winapi.CreateProcess, console._create_process)
+        self.assertIs(_winapi.CreateProcess, wincon._create_process)
 
     def test_subprocess_and_multiprocessing_call_it(self):
         import multiprocessing.popen_spawn_win32 as mpw
         self.assertIs(subprocess._winapi, _winapi)
         self.assertIs(mpw._winapi, _winapi)
         seen = []
-        real = console._original
+        real = wincon._original
 
         def spy(*a):
             seen.append(a[5])
             return real(*a)
-        with mock.patch.object(console, "_original", spy):
+        with mock.patch.object(wincon, "_original", spy):
             subprocess.run([python_exe(), "-c", "pass"], timeout=60,
                            creationflags=CREATE_NO_WINDOW)
         self.assertEqual(seen, [CREATE_NO_WINDOW])
@@ -309,10 +311,10 @@ class WrapperTest(unittest.TestCase):
     """_create_process with the real CreateProcess and ensure faked."""
 
     def setUp(self):
-        self.flags, self.ensured, self.answer = [], [], console.ALLOCATED
-        for name, value in (("_original", self.original), ("_mode", console._UNKNOWN),
+        self.flags, self.ensured, self.answer = [], [], wincon.ALLOCATED
+        for name, value in (("_original", self.original), ("_mode", wincon._UNKNOWN),
                             ("ensure_windowless_console", self.ensure)):
-            p = mock.patch.object(console, name, value)
+            p = mock.patch.object(wincon, name, value)
             p.start()
             self.addCleanup(p.stop)
 
@@ -327,7 +329,7 @@ class WrapperTest(unittest.TestCase):
         return self.answer
 
     def start(self, flags):
-        return console._create_process(None, "prog arg", None, None, 0, flags, None, None, None)
+        return wincon._create_process(None, "prog arg", None, None, 0, flags, None, None, None)
 
     def test_a_console_choice_passes_through_and_ensures_nothing(self):
         for flag in (CREATE_NEW_CONSOLE, DETACHED_PROCESS, CREATE_NO_WINDOW):
@@ -335,13 +337,13 @@ class WrapperTest(unittest.TestCase):
         self.assertEqual(self.flags, [CREATE_NEW_CONSOLE | 0x200, DETACHED_PROCESS | 0x200,
                                       CREATE_NO_WINDOW | 0x200])
         self.assertEqual(self.ensured, [])
-        self.assertEqual(console._mode, console._UNKNOWN)
+        self.assertEqual(wincon._mode, wincon._UNKNOWN)
 
     def test_the_first_bare_start_ensures_once(self):
-        for answer in (console.ALLOCATED, console.ATTACHED, console.PRESENT):
+        for answer in (wincon.ALLOCATED, wincon.ATTACHED, wincon.PRESENT):
             with self.subTest(answer):
-                console._mode, self.answer, self.ensured[:], self.flags[:] = \
-                    console._UNKNOWN, answer, [], []
+                wincon._mode, self.answer, self.ensured[:], self.flags[:] = \
+                    wincon._UNKNOWN, answer, [], []
                 self.start(0)
                 self.start(0x200)
                 self.start(CREATE_NEW_CONSOLE)
@@ -349,7 +351,7 @@ class WrapperTest(unittest.TestCase):
                 self.assertEqual(self.flags, [0, 0x200, CREATE_NEW_CONSOLE])
 
     def test_no_console_to_be_had_gives_every_bare_start_no_window(self):
-        self.answer = console.NONE
+        self.answer = wincon.NONE
         self.start(0)
         self.start(0x200)
         self.start(DETACHED_PROCESS)
@@ -370,45 +372,45 @@ class EnsureTest(unittest.TestCase):
     def setUp(self):
         self.calls = []
         for name, value in (("_alloc_no_window", lambda: self.call("alloc", self.alloc)),
-                            ("_attach_holder", lambda: self.call("attach", console.ATTACHED)),
+                            ("_attach_holder", lambda: self.call("attach", wincon.ATTACHED)),
                             ("_take_ctrl", lambda: self.calls.append("take")),
-                            ("_log_incident", lambda how, child: self.calls.append(("log", how)))):
-            p = mock.patch.object(console, name, value)
+                            ("_on_incident", lambda how, child: self.calls.append(("log", how)))):
+            p = mock.patch.object(wincon, name, value)
             p.start()
             self.addCleanup(p.stop)
-        self.alloc = console.ALLOCATED
+        self.alloc = wincon.ALLOCATED
 
     def call(self, name, answer):
         self.calls.append(name)
         return answer
 
     def ensure(self, console_now, **kw):
-        with mock.patch.object(console, "has_console", return_value=console_now):
-            return console.ensure_windowless_console(**kw)
+        with mock.patch.object(wincon, "has_console", return_value=console_now):
+            return wincon.ensure_windowless_console(**kw)
 
     def test_a_process_with_a_console_is_left_alone(self):
-        self.assertEqual(self.ensure(True), console.PRESENT)
+        self.assertEqual(self.ensure(True), wincon.PRESENT)
         self.assertEqual(self.calls, [])
 
     def test_alloc_first(self):
-        self.assertEqual(self.ensure(False), console.ALLOCATED)
-        self.assertEqual(self.calls, ["alloc", "take", ("log", console.ALLOCATED)])
+        self.assertEqual(self.ensure(False), wincon.ALLOCATED)
+        self.assertEqual(self.calls, ["alloc", "take", ("log", wincon.ALLOCATED)])
 
     def test_no_export_or_a_refusal_takes_the_holder(self):
-        for alloc in (None, console.NONE):
+        for alloc in (None, wincon.NONE):
             with self.subTest(alloc):
                 self.alloc, self.calls[:] = alloc, []
-                self.assertEqual(self.ensure(False), console.ATTACHED)
-                self.assertEqual(self.calls, ["alloc", "attach", "take", ("log", console.ATTACHED)])
+                self.assertEqual(self.ensure(False), wincon.ATTACHED)
+                self.assertEqual(self.calls, ["alloc", "attach", "take", ("log", wincon.ATTACHED)])
 
     def test_forced_fallback(self):
-        self.assertEqual(self.ensure(False, fallback=True), console.ATTACHED)
-        with mock.patch.object(console, "FORCE_FALLBACK", True):
-            self.assertEqual(self.ensure(False), console.ATTACHED)
-        self.assertEqual(self.calls, ["attach", "take", ("log", console.ATTACHED)] * 2)
+        self.assertEqual(self.ensure(False, fallback=True), wincon.ATTACHED)
+        with mock.patch.object(wincon, "FORCE_FALLBACK", True):
+            self.assertEqual(self.ensure(False), wincon.ATTACHED)
+        self.assertEqual(self.calls, ["attach", "take", ("log", wincon.ATTACHED)] * 2)
 
     def test_the_ctrl_handler_takes_ctrl_c_and_break_only(self):
-        self.assertEqual([console.ctrl_taken(e) for e in range(7)],
+        self.assertEqual([wincon.ctrl_taken(e) for e in range(7)],
                          [True, True, False, False, False, False, False])
 
     def test_has_console_is_true_here_or_false(self):

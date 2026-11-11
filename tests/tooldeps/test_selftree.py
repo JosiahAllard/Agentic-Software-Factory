@@ -806,8 +806,8 @@ class KitTree(unittest.TestCase):
                      'tools/kit_tests.py'):
             self.assertIs(self.select(path), ALL, path)
         # once shared core or test helpers: now their readers
-        for path in ('kitlib/config/load.py', 'kitlib/proc/shield.py', 'kitlib/lock/api.py',
-                     'tests/testutil.py', 'tests/gitfixture.py'):
+        for path in ('kitlib/config/load.py', 'kitlib/platform/windows/shield.py',
+                     'kitlib/lock/api.py', 'tests/testutil.py', 'tests/gitfixture.py'):
             self.assertIsNot(self.select(path), ALL, path)
 
     def test_paths_once_unmapped_select_their_readers(self):

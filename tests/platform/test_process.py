@@ -1,5 +1,5 @@
-"""Tests for kitlib.proc.process: snapshots, creation times, ancestry and verified kills. Every
-process ended here is the test's own, named by pid and creation time."""
+"""Tests for kitlib.platform.windows.process: snapshots, creation times, ancestry and verified
+kills. Every process ended here is the test's own, named by pid and creation time."""
 import ctypes
 import gc
 import os
@@ -14,7 +14,7 @@ from unittest import mock
 from tests.platforms import windows_only
 
 if os.name == "nt":
-    from kitlib.proc import process, win32
+    from kitlib.platform.windows import process, win32
 
 TREE = ("import subprocess,sys,time;"
         "g=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']);"
@@ -127,7 +127,7 @@ class Process(unittest.TestCase):
 
     def test_set_affinity_pins_its_own_child_and_checks_its_creation_time(self):
         import ctypes
-        from kitlib.proc import win32
+        from kitlib.platform.windows import win32
         own, every = ctypes.c_size_t(), ctypes.c_size_t()
         if not win32.K32.GetProcessAffinityMask(win32.K32.GetCurrentProcess(), ctypes.byref(own),
                                                 ctypes.byref(every)):

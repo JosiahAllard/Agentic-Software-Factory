@@ -178,9 +178,9 @@ A test must never read or write the real home folder: the machine config, the `~
 
 No test of the suite shows a window the user can see; the gate's window monitor reports any that opens (docs/gate-run.md "Console windows").
 
-- tests/proc/test_winwatch.py `RealWindows` checks the monitor against a real window without one: a child started with CREATE_NO_WINDOW shows a 1x1 tool window off screen, never activated, of a class of its own (`PROBE_CLASS`). The test's monitor records that class (`Monitor(classes=...)`); a gate's records only `winwatch.WATCHED`, so the probe counts in no gate.
+- tests/platform/test_winwatch.py `RealWindows` checks the monitor against a real window without one: a child started with CREATE_NO_WINDOW shows a 1x1 tool window off screen, never activated, of a class of its own (`PROBE_CLASS`). The test's monitor records that class (`Monitor(classes=...)`); a gate's records only `winwatch.WATCHED`, so the probe counts in no gate.
 - When no event comes, a test skips if the process has no desktop to see one on (`no_desktop`: session 0, a window station with no display, a session no user is connected to); in an interactive session it fails.
-- `ConsoleWindow`, the one test that opens a real console window (CREATE_NEW_CONSOLE), runs only when the environment sets `KIT_WINDOW_TESTS=1`: `KIT_WINDOW_TESTS=1 python -m unittest tests.proc.test_winwatch`.
+- `ConsoleWindow`, the one test that opens a real console window (CREATE_NEW_CONSOLE), runs only when the environment sets `KIT_WINDOW_TESTS=1`: `KIT_WINDOW_TESTS=1 python -m unittest tests.platform.test_winwatch`.
 
 ## Platform markers and the ratchet
 
@@ -253,7 +253,7 @@ Keys, all in "tool_tests":
 
 ## The pid shield
 
-kitlib/proc/shield.py (`shield`, `release`, `process_dacl`) adds one entry to a child process's DACL that denies PROCESS_TERMINATE to Everyone. A stale `taskkill /PID <n> /T /F` aimed at a dead shell then cannot end the child, while a job's TerminateJobObject still can.
+kitlib/platform/windows/shield.py (`shield`, `release`, `process_dacl`) adds one entry to a child process's DACL that denies PROCESS_TERMINATE to Everyone. A stale `taskkill /PID <n> /T /F` aimed at a dead shell then cannot end the child, while a job's TerminateJobObject still can.
 
 - Call it while the child is still suspended (kitlib.proc.job `Job.start`'s `before_resume`).
 - A process with a NULL DACL is left as it is (OSError).
@@ -268,7 +268,7 @@ The pid hold covers the processes a unit starts. A test's git can be given the p
 Without the hold, the ancestry question is still read safely. kitlib/git/refs.py `is_ancestor` asks `git rev-list -n 1 <descendant>^{commit}..<ancestor>^{commit}`, whose YES (nothing printed) and NO (one commit) both exit 0, so a killed git gives no answer (None) rather than a NO. Each NO is then confirmed with `git merge-base --independent`, because rev-list's walk can stop early under skewed commit dates and print a commit the descendant does reach. A confirmation that fails is also no answer. The kit's former raw `merge-base --is-ancestor` callers in kitlib/worktree, kitlib/pmdata, kitlib/redfirst and kitlib/preflight/board.py now call it.
 
 - **Opt-in, never in the gate.** `--pid-hold` on `tools/kit_tests.py` or `tools/pytests.py` turns it on; without it no hold is made. It is for agent test runs. The gate refuses `--pid-hold` in `setup`, in a step's `cmd`, `full_cmd`, `daily_cmd` or `merged_args` (kitlib/gate/steps.py `unsupported`, `build`). There is no environment switch, so nothing can leak it into a gate step.
-- kitlib/pytests/runner.py `PidHoldRun.start` starts this process's `PidHold` (kitlib/proc/shield.py `hold()`). It warms the hold for `WARM` (3 s), then publishes it. kit_tests starts it before it copies the units' environment, so the published hold reaches pooled and `--jobs 1` units alike.
+- kitlib/pytests/runner.py `PidHoldRun.start` starts this process's `PidHold` (kitlib/platform/windows/shield.py `hold()`). It warms the hold for `WARM` (3 s), then publishes it. kit_tests starts it before it copies the units' environment, so the published hold reaches pooled and `--jobs 1` units alike.
 - The hold keeps every pid of the user's processes unused until 3 s after its process exits. A stale kill then names an exited process and ends nothing.
 - A run that inherits a running hold (`shield.inherited()`) makes no hold of its own.
 - **Reporting.** The run prints `pid hold: on (...)` before the first unit and `pid hold: held to the end of the run` before its summary (pytests: before `pysel floor`, so the last line stays `OK` or `FAILED`). A hold that cannot be made, for any reason, prints `pid hold: FAILED, this run is NOT held (<error>)` at the start and `pid hold: FAILED at the start, this run was NOT held (<error>)` at the end; the tests still run. A hold that stops during the run prints `pid hold: FAILED during the run, units after it stopped were NOT held (<error>)` at the end. Unlike the shield's messages these say FAILED: the gate never runs them.
@@ -287,7 +287,7 @@ Reads that still take a quiet exit 1 as an answer include kitlib/guard/prepush.p
 
 ### What the hold costs
 
-`PidHold._pass` measured 11.5-14.8% of one core while the hold runs (kitlib/proc/shield.py, comment on `_pass`).
+`PidHold._pass` measured 11.5-14.8% of one core while the hold runs (kitlib/platform/windows/shield.py, comment on `_pass`).
 
 The whole kit suite, measured 2026-10-10 on the development machine (12 physical cores, other agents' runs sharing it). Every run was `python tools/kit_tests.py --full [--pid-hold]` booked through the machine lock with `--kind engine-test --cores 4` (8 logical processors, 8 jobs; the lock now caps engine-test, renamed `test`, at `medium_cores`, 2 on the default layout, so a rerun books `--kind test --cores 2`), 3794 tests in 170 modules, all passing. "Suite" is kit_tests' own `OK in Ns`; "wall" is the whole lock run, booking and the hold's warm-up included.
 

@@ -68,7 +68,7 @@ def read_request(stream):
 def pipe_write(stream):
     """Read one request from stream and write its packet once; the result dict (the module
     docstring). May block in WriteFile: it runs only inside write_once's job."""
-    from kitlib.proc.pipe import connect, write
+    from kitlib.platform.windows.pipe import connect, write
     pipe = None
     try:
         try:

@@ -27,7 +27,7 @@ from .helpers import StoreCase, clean_env
 
 if os.name == "nt":
     from kitlib.lock import run as rm
-    from kitlib.proc import process, win32
+    from kitlib.platform.windows import process, win32
 
 # Level 0 starts level 1, which starts level 2; each writes <level>.pid (whole, by rename) and
 # sleeps. "orphan": level 0 exits once level 2 is up, leaving levels 1 and 2 without a live parent.

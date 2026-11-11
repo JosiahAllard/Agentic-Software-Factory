@@ -252,7 +252,8 @@ def ls_remote(remote, ref, cwd, timeout=60):
 
 
 KILLED_SHAPE = ('exit 1 with no output is also what a git ended from outside leaves (a stale '
-                '`taskkill /PID <n> /T /F` that reached a reused pid, kitlib.proc.shield GOTCHA)')
+                '`taskkill /PID <n> /T /F` that reached a reused pid, '
+                'kitlib.platform.windows.shield GOTCHA)')
 
 
 def is_ancestor(ancestor, descendant, cwd):

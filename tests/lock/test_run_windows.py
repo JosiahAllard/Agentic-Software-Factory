@@ -1,8 +1,8 @@
-"""kitlib.lock.run and the window monitor (kitlib.proc.winwatch): a run watches for console
-windows from its first command's start to its release, and stops watching before its job ends.
-The ended record carries what opened; run_command says the report; a gate's slot says nothing,
-the gate does (kitlib.gate.runner.gated). Most tests swap the monitor for FakeMonitor, so no
-window opens; the one real-monitor test starts a command that opens no window."""
+"""kitlib.lock.run and the window monitor (kitlib.platform.windows.winwatch): a run watches for
+console windows from its first command's start to its release, and stops watching before its job
+ends. The ended record carries what opened; run_command says the report; a gate's slot says nothing,
+the gate does (kitlib.gate.runner.gated). Most tests swap the monitor for FakeMonitor, so no window
+opens; the one real-monitor test starts a command that opens no window."""
 import os
 import subprocess
 import sys
@@ -14,7 +14,7 @@ from tests.platforms import windows_only
 
 if os.name == "nt":
     from kitlib.lock import run as rm
-    from kitlib.proc import win32, winwatch
+    from kitlib.platform.windows import win32, winwatch
 
 TOOL = r"C:\x\tool.exe"
 WAIT_IN = "import sys; sys.stdin.read()"

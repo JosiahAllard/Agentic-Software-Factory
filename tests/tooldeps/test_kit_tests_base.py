@@ -128,7 +128,8 @@ class PidHoldOptIn(unittest.TestCase):
     def test_the_one_process_run_from_no_console_asks_for_no_window(self):
         """kit_tests starts its one process through kitlib.proc.spawn.call, which adds a keyword
         when kit_tests has no console (pythonw, a detached parent): the fakes here take it."""
-        from kitlib.proc import job, win32
+        from kitlib.proc import job
+        from kitlib.platform.windows import win32
         with mock.patch.object(job, 'has_console', return_value=False):
             rc, order, seen, out = self.run_full(1)
         self.assertEqual((rc, order), (0, ['units']), out)

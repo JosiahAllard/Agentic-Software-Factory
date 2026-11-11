@@ -3,7 +3,7 @@ import ctypes
 from ctypes import wintypes as w
 
 from optional.bridge.core.jsonwire import JsonLineDecoder
-from kitlib.proc.pipe import connect, write
+from kitlib.platform.windows.pipe import connect, write
 from .transport import MAX_PACKET_BYTES, PipeTarget
 
 

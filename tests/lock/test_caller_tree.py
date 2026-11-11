@@ -1,14 +1,14 @@
 """kitlib.lock.store.caller reads who is asking from this process's tree: a chain that runs into a
 shell that has exited, but that a handle keeps openable, is never the owner's on that account,
 nor is one WMI's provider host tops, and the owner's own chains still are. Fakes only
-(tests/proc/fakeproc.py): the process calls answer from a table, this process at its head."""
+(tests/platform/fakeproc.py): the process calls answer from a table, this process at its head."""
 import os
 import unittest
 from unittest import mock
 
 from kitlib.lock import store
 
-from tests.proc.fakeproc import FakeProc, patched
+from tests.platform.fakeproc import FakeProc, patched
 from tests.platforms import windows_only
 
 ME = os.getpid()

@@ -8,10 +8,10 @@ An end is (family, address bytes, port): family 4 or 6, the address in network o
 a number. An IPv4-mapped IPv6 address (::ffff:a.b.c.d) is named as the IPv4 end it is, so both
 ends of one connection are named alike whichever table each sits in.
 """
-import ctypes
 import struct
 
 import kitlib.platform
+from kitlib.platform.windows import tcp as _wintcp, win32 as _win32   # the tables: Windows only
 
 LISTEN = 2                              # MIB_TCP_STATE_LISTEN
 ESTABLISHED = 5                         # MIB_TCP_STATE_ESTAB
@@ -66,27 +66,10 @@ def is_loopback(end):
     return addr == b"\0" * 15 + b"\x01"
 
 
-def _table(family):
-    from . import win32                 # Windows only
-    size = win32.DW(0)
-    buf = None
-    for _ in range(5):                  # the table can grow between the two calls
-        err = win32.IPHLP.GetExtendedTcpTable(buf, ctypes.byref(size), False, family,
-                                              win32.TCP_TABLE_OWNER_PID_ALL, 0)
-        if err == 0 and buf is not None:
-            return buf.raw[:size.value]
-        if err not in (0, win32.ERROR_INSUFFICIENT_BUFFER):
-            raise OSError("GetExtendedTcpTable: windows error %d" % err)
-        buf = ctypes.create_string_buffer(size.value + 4096)
-        size = win32.DW(len(buf))
-    raise OSError("GetExtendedTcpTable: the table kept growing")
-
-
 def connections():
     """[(local, remote, pid)] of every established TCP connection now, IPv4 and IPv6. Raises
     OSError when a table cannot be read."""
-    from . import win32
-    return parse_v4(_table(win32.AF_INET)) + parse_v6(_table(win32.AF_INET6))
+    return parse_v4(_wintcp.table(_win32.AF_INET)) + parse_v6(_wintcp.table(_win32.AF_INET6))
 
 
 def listeners():
@@ -96,8 +79,8 @@ def listeners():
     when a table cannot be read. On Linux each row's pid is None (proc_net_listeners)."""
     if kitlib.platform.NAME == "linux":
         return proc_net_listeners()
-    from . import win32
-    rows = parse_v4(_table(win32.AF_INET), LISTEN) + parse_v6(_table(win32.AF_INET6), LISTEN)
+    rows = (parse_v4(_wintcp.table(_win32.AF_INET), LISTEN)
+            + parse_v6(_wintcp.table(_win32.AF_INET6), LISTEN))
     return [(local, pid) for local, _remote, pid in rows]
 
 

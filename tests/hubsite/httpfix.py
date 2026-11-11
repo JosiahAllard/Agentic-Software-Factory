@@ -223,10 +223,10 @@ def time_wait_ends():
                 continue                # a kernel with no IPv6
             rows += proc_time_wait(lines, family)
     else:
-        from kitlib.proc import win32
+        from kitlib.platform.windows import tcp as wintcp, win32
         rows = [(l, r) for l, r, _pid in
-                tcp.parse_v4(tcp._table(win32.AF_INET), WIN_TIME_WAIT)
-                + tcp.parse_v6(tcp._table(win32.AF_INET6), WIN_TIME_WAIT)]
+                tcp.parse_v4(wintcp.table(win32.AF_INET), WIN_TIME_WAIT)
+                + tcp.parse_v6(wintcp.table(win32.AF_INET6), WIN_TIME_WAIT)]
     return {(l, r) for l, r in rows if tcp.is_loopback(l) and tcp.is_loopback(r)}
 
 

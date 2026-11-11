@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib.config import user
-from kitlib.proc import shield
+from kitlib.platform.windows import shield
 from kitlib.tooldeps import selfrun
 from tests.fs.test_rmtree import read_only_repo
 from tests.gitfixture import rmtree

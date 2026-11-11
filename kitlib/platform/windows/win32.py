@@ -1,6 +1,7 @@
-"""The Win32 bindings kitlib.proc and kitlib.lock share: one kernel32, ntdll and advapi32 instance
-each, with every prototype set once (two modules setting different argtypes on one function was a
-hazard of the four copies this replaces: machine_lock, winproc, pid_shield, pytests).
+"""The Win32 bindings kitlib.platform.windows and kitlib.lock share: one kernel32, ntdll and
+advapi32 instance each, with every prototype set once (two modules setting different argtypes on
+one function was a hazard of the four copies this replaces: machine_lock, winproc, pid_shield,
+pytests).
 Windows only, standard library only. Each DLL is a kitlib.platform.dll.LazyDLL: it loads, and
 each function gets its prototype below, when that function is first used, so this module imports
 on any platform (docs/linux-support-plan.md section 2.1, rule 3) and a call off Windows raises
@@ -170,7 +171,7 @@ NTDLL = LazyDLL("ntdll", {
 PROCESS_COMMAND_LINE_INFORMATION = 60       # Windows 8.1+: a UNICODE_STRING and its text
 PROCESS_BASIC_INFORMATION_CLASS = 0         # PROCESS_BASIC_INFORMATION (below)
 
-# The TCP connection table with each row's owning pid (kitlib.proc.tcp)
+# The TCP connection table with each row's owning pid (kitlib.platform.windows.tcp)
 IPHLP = LazyDLL("iphlpapi", {                # GetExtendedTcpTable returns its error code
     "GetExtendedTcpTable": (DW, (wintypes.LPVOID, ctypes.POINTER(DW), BOOL, wintypes.ULONG,
                                  ctypes.c_int, wintypes.ULONG))})

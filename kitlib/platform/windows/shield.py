@@ -19,7 +19,7 @@ tools/pytests.py and tools/kit_tests.py, before the first unit), and shield each
 `shield` is the older, narrower guard, kept for a child's own process: it merges one ACE denying
 PROCESS_TERMINATE to Everyone into the child's DACL, through Popen's handle (granted all access at
 creation, so the caller's handle keeps every right: `proc.kill()`, TerminateJobObject and
-`unshield` still work). Call it while the child is still suspended - kitlib.proc.job.Job.start's
+`unshield` still work). Call it while the child is still suspended - the job's Job.start's
 `before_resume` - so not one instruction of it runs unshielded. Its cost: while shielded, the
 process cannot be ended by its pid (Task Manager and taskkill get "Access is denied"), and no
 process of this user, its own children included, can open it by pid for any access holding
@@ -31,7 +31,8 @@ Every message says "returned", never "failed": a caller that runs the child unsh
 prints it, and it must not read as a failing line to a gate's fail patterns. (runner.PidHoldRun's
 lines do say FAILED: its flag is refused in any gate step, so no gate reads them.)
 
-The Win32 bindings are kitlib.proc.win32's; resume is win32.resume (Job.start calls it).
+The Win32 bindings are win32's (kitlib.platform.windows.win32); resume is win32.resume (Job.start
+calls it).
 """
 import atexit
 import collections
@@ -42,7 +43,7 @@ import threading
 import time
 from ctypes import wintypes
 
-from kitlib.proc import win32
+from . import win32
 
 K32, ADV = win32.K32, win32.ADV
 
@@ -190,7 +191,8 @@ class PidHold(object):
         self._first = threading.Event()     # the first full pass is done (or the watcher stopped)
         self._stop = threading.Event()      # close() asked
         self._done = threading.Event()      # the watcher has stopped
-        self._thread = threading.Thread(target=self._watch, name='kitlib.proc.shield.PidHold',
+        self._thread = threading.Thread(target=self._watch,
+                                        name='kitlib.platform.windows.shield.PidHold',
                                         daemon=True)
         self._thread.start()
 

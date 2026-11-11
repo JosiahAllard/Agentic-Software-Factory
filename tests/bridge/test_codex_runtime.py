@@ -19,7 +19,7 @@ from optional.bridge.win.frontend import NativeFrontend
 from optional.bridge.win.leader import ServiceLeader
 from optional.bridge.port import NativeSource
 from kitlib.proc.job import Job
-from kitlib.proc.pipe import process_image
+from kitlib.platform.windows.pipe import process_image
 from kitlib.proc.process import own_ctime, proc_ctime
 
 
@@ -282,7 +282,7 @@ class CodexRuntimeTests(unittest.TestCase):
             with self.assertRaises(DeliveryError): self.factory.sender_mode(authority.sender)
 
     def channel_source(self, *, wrong_creation=False):
-        from kitlib.proc.pipe import PrivateListener
+        from kitlib.platform.windows.pipe import PrivateListener
         from optional.bridge.win.channel import NativeChannel
         from optional.bridge.win.transport import PipeTarget
         name=r'\\.\pipe\LOCAL\codex-runtime-channel-'+uuid.uuid4().hex
@@ -307,7 +307,7 @@ class CodexRuntimeTests(unittest.TestCase):
     def test_app_owned_channel_publication_uses_metadata_only_distinct_server_ancestor(self):
         from unittest.mock import patch
         from optional.bridge.win import channel
-        from kitlib.proc.pipe import peek
+        from kitlib.platform.windows.pipe import peek
         from ctypes import wintypes as w
         import ctypes
         source,native,listener=self.channel_source()

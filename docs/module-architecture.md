@@ -464,7 +464,6 @@ None: no module is open to every other.
 | reviewpack | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | reviewpack | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | reviewpack | verdict | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| reviewpack | trailerscheck | build | feature layer, same-layer use: allowed as of 2026-11-10 |
 | roster | host | build | policy layer, same-layer use: allowed as of 2026-11-06 |
 | scrub | forbidden | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | stackskill | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
@@ -544,7 +543,6 @@ None: no module is open to every other.
 | tools | tooldeps | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | trailerscheck | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | worktree | build | outer layer uses feature layer: allowed as of 2026-11-06 |
-| trailerscheck | attribution | build | feature layer uses policy layer: allowed as of 2026-11-10 |
 | trailerscheck | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | trailerscheck | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | worktree | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -618,6 +616,7 @@ Crossings counted, not refused; each count is driven down to its goal.
 | records-build-gate | records | gate | build | 0 | - |
 | stubs-build-machinesetup | stubs | machinesetup | build | 0 | - |
 | tooldeps-build-pytests | tooldeps | pytests | build | 0 | - |
+| trailerscheck-build-reviewpack | trailerscheck | reviewpack | build | 0 | - |
 | worktree-build-backlog | worktree | backlog | build | 0 | - |
 | worktree-build-commit | worktree | commit | build | 0 | - |
 | worktree-build-pieces | worktree | pieces | build | 0 | - |

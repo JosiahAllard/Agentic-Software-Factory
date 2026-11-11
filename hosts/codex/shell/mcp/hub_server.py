@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.join(HERE, '..', '..', '..', '..', 'boot'))  # the ki
 import kitboot                                                       # noqa: E402
 kitboot.boot()                                                       # the kit, checked, before kitlib
 
-from kitlib import sessionmark                                       # noqa: E402
+from kitlib.host import sessionmark                                       # noqa: E402
 from kitlib.hubmcp.server import Server, serve                      # noqa: E402
 
 

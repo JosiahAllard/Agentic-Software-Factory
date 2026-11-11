@@ -37,7 +37,8 @@ def is_dispatched(role, kit):
     if not role or not isinstance(role, str):
         return False
     try:
-        from kitlib import agentname, content
+        from kitlib import content
+        from kitlib.host import agentname
         name = agentname.bare(role)
         name = content.ALIASES.get(name, name)
         for entry in content.roster(kit):

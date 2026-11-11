@@ -29,7 +29,7 @@ import datetime
 import json
 import os
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 
 from . import roles
 

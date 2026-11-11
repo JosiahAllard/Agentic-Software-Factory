@@ -14,7 +14,7 @@ from hosts.claude.adapter.host import ADAPTER as CLAUDE
 from hosts.codex.adapter import ADAPTER as CODEX
 from kitlib import kitroot, lockmcp
 from kitlib.guard import decide, gaterole, rules
-from kitlib.host import Action, hookmain
+from kitlib.host import Action, hookmain, registry
 
 from . import world as W
 
@@ -55,7 +55,7 @@ class Base(unittest.TestCase):
 
     def mcp(self, adapter, tool):
         return self.payload(adapter.profile.mcp_tool_format.format(
-            plugin=lockmcp.PLUGIN_NAME, server=lockmcp.SERVER_NAME, tool=tool), {})
+            plugin=registry.PLUGIN_NAME, server=lockmcp.SERVER_NAME, tool=tool), {})
 
     def refused_on_codex_only(self, make, rule):
         """`make(adapter)` builds the payload: an unmarked Codex chat is refused by `rule`, the

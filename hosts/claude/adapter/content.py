@@ -35,7 +35,7 @@ generated-file line; plugin.json's description says it is rendered.
 """
 import json
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.host import hookmain, registry
 from kitlib.host.content import ContentError, banner, quote, role_source, substitute
 

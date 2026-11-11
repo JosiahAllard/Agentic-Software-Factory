@@ -7,7 +7,7 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.coordstate import log
 from kitlib.gate import result
 from kitlib.hubsite import landings

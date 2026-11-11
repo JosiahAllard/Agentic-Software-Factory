@@ -1,4 +1,4 @@
-"""The session mark (kitlib.sessionmark, docs/guard-fallback.md "Session mark") and the rules that read it:
+"""The session mark (kitlib.host.sessionmark, docs/guard-fallback.md "Session mark") and the rules that read it:
 who counts as the owner for the retired owner-only lock tool names, which sessions are agent
 sessions for kill-by-name and lock-state, the owner-identity rule, and that the lock MCP server
 installs no owner check."""
@@ -7,11 +7,12 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.guard import context, rules
 from kitlib.host import Action
 from kitlib.lock import api
-from kitlib.lockmcp import OWNER_ONLY, PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
+from kitlib.lockmcp import OWNER_ONLY
 from kitlib.lockmcp.server import TOOLS
 
 from . import world as W
@@ -23,7 +24,7 @@ COORDINATOR = {context.ROLE_ENV: 'coordinator'}
 PM = {context.ROLE_ENV: 'pm'}
 PLAIN = {context.ROLE_ENV: 'plain'}          # a launcher mark no agent-session rule holds by default
 OWNER_EMAIL = 'owner@example.com'
-P = PLUGIN_NAME + ':'                 # kitlib.agentname.PREFIX (tests/agentname pins it)
+P = PLUGIN_NAME + ':'                 # kitlib.host.agentname.PREFIX (tests/host/test_agentname.py pins it)
 
 
 class Mark(unittest.TestCase):

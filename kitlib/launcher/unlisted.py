@@ -22,7 +22,8 @@ import collections
 import os
 import re
 
-from kitlib import agentname, platform
+from kitlib import platform
+from kitlib.host import agentname
 from kitlib.launcher import linuxwin, lookup, start, stop, window
 
 CONSULTANT, DEEP = 'consultant', 'deep'

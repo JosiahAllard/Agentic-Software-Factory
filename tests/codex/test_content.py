@@ -331,7 +331,7 @@ class Hook(unittest.TestCase):
         import io
         import sys
         import types
-        from kitlib import sessionmark
+        from kitlib.host import sessionmark
         hook = self.load_hook()
         boot = types.ModuleType('kitboot')
 

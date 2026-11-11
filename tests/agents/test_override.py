@@ -1,6 +1,6 @@
 """A repo's own `.claude/agents/<name>.md` beside the kit's plugin agents (docs/ROSTER.md).
 
-The plugin registers every kit agent under its prefix (kitlib.agentname.PREFIX + name); a repo's
+The plugin registers every kit agent under its prefix (kitlib.host.agentname.PREFIX + name); a repo's
 project agent keeps its bare frontmatter name. So a same-name repo file is a second agent, `<name>`,
 reached by dispatching the bare name, and `PREFIX + <name>` stays the kit's. A repo that wants its
 own version lists the bare name in its coordinator profile; every other dispatch uses the prefixed
@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kitlib import agentname
+from kitlib.host import agentname
 from tests.agents.test_agents import AGENTS, frontmatter
 
 

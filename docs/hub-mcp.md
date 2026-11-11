@@ -7,7 +7,7 @@
 - **Port:** `hub.port` (docs/hub-serving.md "Serving it"), read from the machine's hub settings at each call, so a hub started later or on another port is found. A setting that cannot be read is the `config` tool error.
 - **Tokens:** the token files of `kitlib.hubsite.auth.folder()`. Every tool carries the agent's token, reads included (`server.AgentClient`; unlike the CLI's `Client.token`, it never falls back to the owner's for an `ANY` route). With no usable agent token a tool answers `no_agent_token`, and no tool ever opens the owner's token file.
 - **Source:** every write names itself `mcp` (`kitlib.hubsite.serve.VIA_MCP`, the `X-Hub-Via` header), so the hub records `via: mcp` on what it writes; `tools/hub.py` writes `cli`.
-- **Session mark:** `mcp/hub_server.py` reads the session's mark once at start (`kitlib.sessionmark.mark`, docs/guard-fallback.md "Session mark").
+- **Session mark:** `mcp/hub_server.py` reads the session's mark once at start (`kitlib.host.sessionmark.mark`, docs/guard-fallback.md "Session mark").
 
 ## Results
 

@@ -8,7 +8,7 @@ import unittest
 
 from hosts.claude.adapter import events
 from hosts.claude.adapter.host import ADAPTER, MATCHER
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.guard import paths, rules
 from kitlib.host import Action, Decision, registry
 

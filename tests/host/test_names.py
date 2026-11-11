@@ -8,7 +8,8 @@ import shutil
 import tempfile
 import unittest
 
-from kitlib import agentname, lockmcp
+from kitlib import lockmcp
+from kitlib.host import agentname
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

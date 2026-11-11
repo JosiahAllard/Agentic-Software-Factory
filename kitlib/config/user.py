@@ -125,7 +125,7 @@ def expand_home(path, home):
     return path
 
 
-# kitlib.sessionmark.RESERVED, repeated here so the machine config (which the lock tool reads)
+# kitlib.host.sessionmark.RESERVED, repeated here so the machine config (which the lock tool reads)
 # does not import the session mark; tests/config/test_user_docs.py keeps the two equal
 RESERVED_MARKS = ('owner', 'subagent')
 

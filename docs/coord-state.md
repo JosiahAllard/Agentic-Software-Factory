@@ -6,7 +6,7 @@ What it solves: a coordinator's note is written by hand, so what a tool already 
 
 ## Files
 
-All in the coordinator folder, `<agent temp>/<repo slug>-coordinator/`, outside the repository (agent temp is `AGENT_TEMP`, else `TEMP`, else the home folder). `<session>` is `PM_KIT_SESSION_NAME` (`kitlib.sessionmark.SESSION_NAME_ENV`), which the kit launcher sets and every tool shell, subagent and detached landing of the session inherits. A name that is not 1 to 100 letters, digits, `.`, `_` or `-` (starting with a letter or digit) is no session.
+All in the coordinator folder, `<agent temp>/<repo slug>-coordinator/`, outside the repository (agent temp is `AGENT_TEMP`, else `TEMP`, else the home folder). `<session>` is `PM_KIT_SESSION_NAME` (`kitlib.host.sessionmark.SESSION_NAME_ENV`), which the kit launcher sets and every tool shell, subagent and detached landing of the session inherits. A name that is not 1 to 100 letters, digits, `.`, `_` or `-` (starting with a letter or digit) is no session.
 
 | File | Who writes it | What it is |
 |---|---|---|

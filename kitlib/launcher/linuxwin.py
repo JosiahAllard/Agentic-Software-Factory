@@ -36,7 +36,7 @@ import os
 import re
 import subprocess
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.launcher import window
 from kitlib.launcher.settings import LaunchError
 from kitlib.proc import spawn

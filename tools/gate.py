@@ -51,7 +51,7 @@
       `stopped` result record
 
 A `.kit.json` that still writes a retired key gets one WARNING line on stderr per gate or
-landing run (kitlib.config.retired_warnings), never in the detached --submitted landing.
+landing run (kitlib.config.retired_text), never in the detached --submitted landing.
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate, prints and exits.
 Exit codes (kitlib.gate): 0 OK, 1 FAILED, 2 USAGE, 3 STUCK, 4 REFUSED, 5 BUSY, 16 STOPPED; 9
@@ -167,18 +167,12 @@ def land_parser():
     return p
 
 
-def warn_retired(root):
-    """Say on stderr, once per run, each retired key the checkout's `.kit.json` still writes."""
-    for line in kconfig.retired_warnings(root):
-        sys.stderr.write(line + '\n')
-
-
 def do_land(argv):
     p = land_parser()
     a = p.parse_args(argv)
     root = os.path.abspath(a.root)
     if not a.submitted:         # the submitting run said it; the detached landing does not
-        warn_retired(root)
+        sys.stderr.write(kconfig.retired_text(root))
     if a.wait is not None and a.wait < 0:
         p.error('--wait is 0 or more seconds')
     if a.submit and a.submitted:
@@ -368,7 +362,7 @@ def main(argv):
             return emit(G.Outcome(G.REFUSED, refused))
         if warning:
             say(warning)
-        warn_retired(root)
+        sys.stderr.write(kconfig.retired_text(root))
         try:
             book_kw = {'store': Store(say=say)}
             if a.rerun:

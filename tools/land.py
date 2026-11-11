@@ -48,7 +48,7 @@
 at once). Every landing writes a result record per branch (gate.py wait-result --kind land); a
 submitted landing writes them running before it starts, so every outcome, a refusal included,
 ends in a final record. A `.kit.json` that still writes a retired key gets one WARNING line on
-stderr per run (kitlib.config.retired_warnings), never in the detached --submitted landing.
+stderr per run (kitlib.config.retired_text), never in the detached --submitted landing.
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate.land, prints and exits.
 Exit codes (kitlib.gate): 0 OK (or SUBMITTED), 1 FAILED (CONFLICT included), 2 USAGE, 3 STUCK,
@@ -156,8 +156,7 @@ def main(argv):
     a = p.parse_args(argv)
     root = os.path.abspath(a.root)
     if not a.submitted:         # the submitting run said it; the detached landing does not
-        for line in kconfig.retired_warnings(root):
-            sys.stderr.write(line + '\n')
+        sys.stderr.write(kconfig.retired_text(root))
     if a.apply and not a.sweep_landed:
         p.error('--apply goes with --sweep-landed')
     if a.reviewed_by and not a.submit:

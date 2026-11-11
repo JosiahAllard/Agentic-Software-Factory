@@ -89,7 +89,7 @@
                  cmd form (ARCHITECTURE.md "What a landing runs"); a step that
                  passed in the branch gate
                  of exactly this tree may count without running (kitlib.gate.reuse; never with
-                 --fresh or --full; a batch reuses per step like one branch; one branch also
+                 --fresh; a batch reuses per step like one branch; one branch also
                  from its tip's --full record of this tree, reuse.same_tree). A merge that is docs-only under the base's config
                  (not --full) runs only the "gate".docs_only steps (docs/gate-run.md "Docs-only
                  changes"). A merge whose diff changes a gate config file (reuse.config_hits)

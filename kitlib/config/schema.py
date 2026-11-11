@@ -260,7 +260,7 @@ SECTIONS = {
                             required=('match',), what='{match, excuse, expect}'),
                         None, 'error-line policy'),
         'kind': Field(Str(pattern=NAME_RE, what='a kind name'), 'test', 'the kinds-table kind a gate run books (gate.py and gate.py land)'),
-        'smoke_steps': Field(ListOf(Str(pattern=NAME_RE, what='a step name')), None, 'steps a default (not --full) branch gate runs whatever changed; a landing takes such a gate\'s record for a tip once these steps passed in it (docs/gate-landing.md "Landing"); unset: a landing needs a --full record'),
+        'smoke_steps': Field(ListOf(Str(pattern=NAME_RE, what='a step name')), None, 'steps a default (not --full) gate runs whatever changed, a branch gate and a landing\'s merged gate alike (docs/gate-landing.md "Landing"); unset: none, only the steps the change selects'),
         'docs_only': Field(DOCS_ONLY, None, 'a change whose every path is docs: the branch gate runs only its steps, and a landing takes that record (docs/gate-run.md "Docs-only changes"); unset: no change is docs-only'),
     },
     'guard': {

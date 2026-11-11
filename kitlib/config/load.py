@@ -335,6 +335,12 @@ def retired_warnings(root):
     return [RETIRED_WARNING % (cfg.where, k) for k in cfg.retired]
 
 
+def retired_text(root):
+    """retired_warnings(root) as the one block a tool writes to stderr, once per run, each line
+    newline-ended; '' when there is none (tools/gate.py and tools/land.py)."""
+    return ''.join(line + '\n' for line in retired_warnings(root))
+
+
 def config_path(root):
     return os.path.join(root, CONFIG_NAME)
 

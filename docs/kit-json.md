@@ -108,7 +108,7 @@ Off with no file, each switched on by its key: `repo.push_block` (a push to main
 - `gate.zero_tests` (regex or list of regex): log patterns meaning no test ran
 - `gate.errors` ({match, excuse, expect}): error-line policy
 - `gate.kind` (a kind name, default "test"): the kinds-table kind a gate run books (gate.py and gate.py land)
-- `gate.smoke_steps` (list of a step name): steps a default (not --full) branch gate runs whatever changed; a landing takes such a gate's record for a tip once these steps passed in it (docs/gate-landing.md "Landing"); unset: a landing needs a --full record
+- `gate.smoke_steps` (list of a step name): steps a default (not --full) gate runs whatever changed, a branch gate and a landing's merged gate alike (docs/gate-landing.md "Landing"); unset: none, only the steps the change selects
 - `gate.docs_only` ({globs, exclude, steps}): a change whose every path is docs: the branch gate runs only its steps, and a landing takes that record (docs/gate-run.md "Docs-only changes"); unset: no change is docs-only
 - `guard.data_roots` (list of {path, mode, why}, default []): folders besides their checkout and temp that agent sessions may write, each with its mode; read from the main checkout only (docs/guard-jail-roles.md "Write jail")
 - `guard.role_policy` (bool, default false): hold roles to their role policy mode (docs/guard-jail-roles.md "Role policy"); off: no role is held, whatever its mode; read from the main checkout only

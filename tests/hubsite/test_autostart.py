@@ -236,7 +236,7 @@ class SetupAutostartCli(CliCase):
             calls.append((hub_py, whatif))
             return ['Would run in PowerShell:', '  script'] if whatif else ['Installed it']
         for name, value in (('install', install), ('refusals', lambda hub_py: list(refusals))):
-            p = mock.patch.object(HUB.hub_autostart, name, value)
+            p = mock.patch.object(autostart, name, value)
             p.start()
             self.addCleanup(p.stop)
         return calls

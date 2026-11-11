@@ -36,10 +36,10 @@ def run(argv):
 class Examples(unittest.TestCase):
 
     def test_every_verb_has_an_example_and_it_parses(self):
-        p = HUB.parser()
+        p = HUB._hub_args.parser()
         progs = leaves(p)
-        self.assertEqual(sorted(progs), sorted(HUB.EXAMPLES))
-        for prog, example in HUB.EXAMPLES.items():
+        self.assertEqual(sorted(progs), sorted(HUB._hub_args.EXAMPLES))
+        for prog, example in HUB._hub_args.EXAMPLES.items():
             argv = shlex.split(example)
             self.assertEqual(argv[0], 'hub.py')
             args = p.parse_args(argv[1:])
@@ -53,7 +53,7 @@ class Examples(unittest.TestCase):
                            (['answer', 'Q-1'], 'hub.py answer')):
             code, err = run(argv)
             self.assertEqual(code, 2, (argv, err))
-            self.assertTrue(err.rstrip().endswith('example: %s' % HUB.EXAMPLES[prog]), (argv, err))
+            self.assertTrue(err.rstrip().endswith('example: %s' % HUB._hub_args.EXAMPLES[prog]), (argv, err))
 
     def test_a_malformed_record_ends_with_the_questions_add_example(self):
         code, err = run(['questions', 'add', '--title', 't', '--record', 'EX-1'])
@@ -67,7 +67,7 @@ class Examples(unittest.TestCase):
             code, err = run(['questions', 'add', '--title', 't', '--record', 'pm:EX-1'])
         self.assertEqual(code, client.REFUSED, err)
         self.assertIn('REFUSED not_found: record names repo pm', err)
-        self.assertTrue(err.rstrip().endswith('example: %s' % HUB.EXAMPLES['hub.py questions add']),
+        self.assertTrue(err.rstrip().endswith('example: %s' % HUB._hub_args.EXAMPLES['hub.py questions add']),
                         err)
 
     def test_a_refusal_of_another_field_has_no_example(self):

@@ -5,10 +5,8 @@ import os
 from unittest import mock
 
 from kitlib.hubclient import localask
-from kitlib.hubsite import auth
+from kitlib.hubsite import api, auth
 from tests.hubsite import test_hub_cli as cli
-
-HUB = cli.HUB
 
 
 class PagesPlaceCase(cli.VerbCase):
@@ -62,7 +60,7 @@ class PagesRouteCase(cli.CliCase):
             seen.append((method, path, token == agent, body))
             return 200, {'ok': True, 'id': 'plan', 'version': 2}
 
-        base = HUB.api.BASE
+        base = api.BASE
         with mock.patch.object(localask, 'ask', ask):
             code, out, err = self.run_cli('pages', 'publish', 'plan', '--title', 't',
                                           '--html-file', page, '--kind', 'plan', '--folder', 'f',

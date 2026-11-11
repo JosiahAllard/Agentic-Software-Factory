@@ -28,7 +28,7 @@ Low-level design of `kitlib/pluginsource`, `kitlib/allowrules`, `kitlib/machines
 | `machinesetup/repo.py`, `linuxbox.py`, `linuxjobs.py`, `delegation.py` | The committed repo setup; the Linux box checks, jobs and containment delegation |
 | `stackskill/`, `kitcmd/`, `pmdata/init.py` | One job each |
 | `installer/` | `machine-setup.ps1`, `machine-setup.sh`, `new-repo.ps1`: front ends that check arguments and run the tool |
-| `templates/common/`, `templates/stacks/<stack>/` | What the committed setup copies |
+| `templates/common/`, `templates/stacks/<stack>/` | What the committed setup copies, or what a role (`content/roles/`) or `docs/install.md`'s hand steps draft or copy from |
 
 ## State
 
@@ -40,7 +40,7 @@ The export folders under the live root; each account folder's settings and plugi
 
 ## Adding to it
 
-A new machine step: a survey function returning plan items, in `machinesetup`. A new stack: a folder under `templates/stacks/` with its `stack.json`. A file under `templates/` that no setup step copies does not belong there.
+A new machine step: a survey function returning plan items, in `machinesetup`. A new stack: a folder under `templates/stacks/` with its `stack.json`. A file under `templates/` belongs there only if a setup step copies it, or a role (`content/roles/*.md`) or `docs/install.md`'s hand steps draft or copy from it; `tests/templates/test_all_copied.py` checks it.
 
 ## Tests
 

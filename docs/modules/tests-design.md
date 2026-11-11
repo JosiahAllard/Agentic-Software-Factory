@@ -6,7 +6,7 @@ Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/testlist`, `kit
 
 - **Tests live in `tests/<pkg>/`** as unittest tests, import the library, and import a CLI only to test its arguments and exit codes.
 - **A change runs the tests it can break.** `tooldeps` derives the import and mention graph; `kit_tests.py --select` runs the modules a branch's change reaches, plus the smoke set. `tests/selection.json` names what always runs and what widens a pick. The gate's `kit-suite` step runs this selection, on a branch and at a landing.
-- **A full run is the daily run's.** `kit_tests.py --full` exists for it and for a run by hand; no gate or landing requires one.
+- **A full run is the daily run's.** `kit_tests.py --full` exists for it; a run by hand goes through `gate.py --full`. No gate or landing requires one, except that a change to a gate config file runs every step in full once, at its landing.
 - **Two passes.** Tests run on the fake git; classes marked `real_git` run on real git. The daily run does both.
 - **Each unit runs in its own process** (`pytests`) or a pooled interpreter (`tooldeps.pool`), inside a job, with a unit timeout. A test child starts fenced: no session binding, no real home.
 - **A time budget in a test is a fence, not an assertion on speed** (`kitlib.clock`): its expiry is a visible, normal output, so machine load never decides a verdict.

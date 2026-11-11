@@ -14,7 +14,7 @@ Each entry has an id, a title and: **Serves** (the design section), **Files** (w
 4. **Each item updates what names its files**: the reference docs, docs/INDEX.md, docstrings. An item is not done while a doc names a path it removed.
 5. **The module map file is owner-only**, so the map changes once, at the end (W-038). Until then the `module-map` gate step only warns.
 6. **Design first for senior-worker items**: the builder writes its design, a reviewer checks it against the low-level design, then it builds.
-7. **No full-suite runs.** An item runs the tests its change can break (`kit_tests.py --select`); the daily full run after the landing is the full check.
+7. **No full-suite runs, with one exception.** An item runs the tests its change can break (`kit_tests.py --select`); the daily full run after the landing is the full check. The exception: an item that changes a gate config file runs every step in full once, at its landing. W-025 and W-038 change the `.kit.json` gate config, so their landings run in full once.
 8. **A file split is by responsibility**: the names in the low-level design's "Packages and files" table are the target; no function changes in a split.
 
 ## Owner approvals the batch needs
@@ -31,18 +31,18 @@ Each entry has an id, a title and: **Serves** (the design section), **Files** (w
 
 ## Order
 
-Items in one lane share files and go in the order shown; lanes in one phase can be built side by side.
+Items in one lane go in the order shown; lanes in one phase can be built side by side. Two items that share a file are in one lane or in different phases, and every "After" item is in an earlier phase or earlier in the same lane. Phases 1 and 2 are one lane each: nearly every item in them touches one of the shared files below.
 
 | Phase | Lanes |
 |---|---|
-| 0. Deletions and leaf fixes | W-040 · W-041 · W-042 · W-043 · W-018 · W-029 · W-008 · W-045 |
-| 1. Base and facts | A: W-001, W-002, W-003 · B: W-006, W-005, W-019, W-020 · C: W-007, W-009, W-010, W-011 · D: W-004 |
-| 2. Services | A: W-012 · B: W-013, W-014, W-017 · C: W-015, W-016 |
-| 3. Work | A: W-025, W-023, W-024 · B: W-021, W-026 · C: W-022 · D: W-027 · E: W-028 |
-| 4. Guard and apps | A: W-030, W-031 · B: W-032, W-033, W-034 · C: W-035, W-036 · D: W-037 |
-| 5. Docs and enforcement | W-044, W-046, W-047, then W-039, then W-038 last |
+| 0. Deletions and leaf fixes | W-040 · W-041, W-042, W-045, W-008 · W-043 · W-018 · W-029 |
+| 1. Base and facts | W-001, W-003, W-004, W-006, W-005, W-007, W-009, W-010, W-011 |
+| 2. Services | W-002, W-012, W-013, W-014, W-015, W-016, W-017, W-019, W-020 |
+| 3. Work | A: W-021, W-026, W-022, W-025, W-023, W-024 · B: W-027 · C: W-028 |
+| 4. Guard and apps | A: W-030, W-031 · B: W-032, W-033, W-034, W-035 · C: W-036 · D: W-037 |
+| 5. Docs and enforcement | W-044, W-047, W-046, then W-039, then W-038 last |
 
-Files many items touch, so those items never run side by side: `kitlib/pmstart/__init__.py` (W-006, W-009, W-019, W-035), `kitlib/guard/context.py` (W-002, W-007, W-009, W-012), `kitlib/gate/land.py` (W-015, W-023, W-024, W-025), `kitlib/pluginsource/__init__.py` (W-005, W-006, W-020).
+Files that more than one item touches (the reason for the lanes): `kitlib/pmstart/__init__.py` (W-005, W-006, W-009, W-010, W-014, W-019, W-036), `kitlib/guard/context.py` (W-002, W-007, W-009, W-012), `kitlib/guard/prepush.py` (W-009, W-012, W-015), `kitlib/pluginsource/__init__.py` (W-002, W-005, W-006, W-020, W-041), `kitlib/platform/api.py` (W-001, W-006, W-045), `kitlib/proc/console.py` (W-001, W-002, W-003), `kitlib/host/hookmain.py` (W-002, W-007, W-030), `kitlib/coordinatorstart/__init__.py` (W-006, W-007, W-009), `kitlib/delegations/run.py` (W-004, W-009, W-015, W-028), `kitlib/commit/__init__.py` (W-011, W-015, W-016, W-027), `kitlib/hubsite/approvals.py` (W-013, W-015), `kitlib/hubsite/apiapprovals.py` (W-015, W-016), `kitlib/hubsite/serve.py` (W-014, W-032, W-034, W-035), `tools/hub.py` (W-015, W-016, W-032, W-033), `kitlib/kitcmd/__init__.py` (W-041, W-042), `kitlib/hubjobs/fill_watch.py` (W-021, W-023), `kitlib/backlog/plan.py` (W-021, W-026), `kitlib/gate/rerun.py` (W-022, W-023), `kitlib/gate/land.py` (W-015, W-025, W-023; W-024 splits it after its move), `kitlib/reviewpack/__init__.py` (W-023, W-025, W-029). W-046 follows W-047 because the go-live file goes only once the profile stops citing it.
 
 ## Items
 
@@ -156,13 +156,13 @@ Files many items touch, so those items never run side by side: `kitlib/pmstart/_
 - Owner: guard. After: W-014.
 
 **W-016 The hub applies an approved change**
-- Serves: "Contracts" (Owner files: no agent writes, stages or commits an owner-only path); docs/modules/owner-files-design.md. A change of behaviour, not a move.
+- Serves: "Contracts" (Owner files: no agent writes, stages or commits an owner-only path, proposed and awaiting the owner's decision); docs/modules/owner-files-design.md. A change of behaviour, not a move.
 - Why: an agent that applies an approved owner file is refused by the host's own permission classifier as self-modification, so today an approval stalls until the owner is at the machine.
 - Files: `kitlib/ownerfiles/apply.py`, `kitlib/hubsite/apiapprovals.py` (the decide route), `tools/hub.py` (`approvals apply`, an owner verb), `kitlib/hubmcp/server.py` (`hub_approval_request` names the worktree), `kitlib/commit` and `tools/commit.py` (the agent form of `--owner-approval` goes), `kitlib/guard/rules_owner.py` (the apply verb is the owner's), `content/skills/` (hub-ops, builder: the approval steps), docs/commit.md "Owner approval", docs/hub-approvals.md.
 - Change: on the owner's approval the hub server makes the approval's commit in the worktree the request names, with the checks `commit.py --owner-approval` runs today, and tells the asking session by push. The owner can run the same apply from an outside terminal. A change that cannot be applied shows on the approval with the reason and stays approved. The design must say how the apply and an agent's own git calls in that worktree keep out of each other's way (the private index, a refusal on a staged or changed approved path).
-- Done when: `tests/ownerfiles/test_apply.py::test_approve_commits_in_named_worktree`, `::test_commit_passes_owner_rules`, `::test_unappliable_stays_approved_with_reason`, `::test_put_back_on_refusal` pass; `tests/commit` has a test that an agent's `--owner-approval` is a usage error naming the hub; `grep -rn "owner-approval" content/skills` shows no step in which an agent commits.
+- Done when: `tests/ownerfiles/test_apply.py::test_approve_commits_in_named_worktree`, `::test_commit_passes_owner_rules`, `::test_unappliable_stays_approved_with_reason`, `::test_put_back_on_refusal` pass; `tests/commit` has a test that an agent's `--owner-approval` is a usage error naming the hub; `grep -rn "owner-approval" content/skills` prints nothing.
 - Risk and tier: High. senior-worker, design first.
-- Owner: guard, and the behaviour itself. After: W-015.
+- Owner: guard, and the behaviour itself. **OPEN: the owner has not decided this change** (ARCHITECTURE.md "Open items"); do not build it until the owner answers. After: W-015.
 
 **W-017 Owner-only tool names live with their owners**
 - Serves: "Layers" (the guard imports nothing from the apps layer); docs/modules/lock-design.md, guard-design.md.
@@ -214,7 +214,7 @@ Files many items touch, so those items never run side by side: `kitlib/pmstart/_
 
 **W-024 The landing is split by step**
 - Serves: "Dependency rules" 7; docs/modules/landing-design.md "Packages and files".
-- Files: `kitlib/landing/land.py` (3,438 lines).
+- Files: `kitlib/landing/land.py` (a path that exists only after W-023 moves `kitlib/gate/land.py` there; 3,438 lines today in `kitlib/gate/land.py`).
 - Change: `lander.py` (the order of steps), `checks.py`, `merge.py`, `mergedgate.py`, `push.py`, `after.py`.
 - Done when: no file in `kitlib/landing/` is over 1,500 lines; `tests/landing` passes with test names unchanged.
 - Risk and tier: High, behaviour-neutral. senior-worker. After: W-023.
@@ -279,7 +279,7 @@ Files many items touch, so those items never run side by side: `kitlib/pmstart/_
 - Serves: "Layers" (entry points parse, call, print, exit); docs/modules/hub-design.md (`hubsite/cli/`).
 - Files: `tools/hub.py` (1,797 lines: setup, skill edits, approvals, checks, pages, stop and restart).
 - Change: each verb's work moves to `kitlib/hubsite/cli/`; the tool parses, calls and prints.
-- Done when: `tools/hub.py` is under 500 lines and defines no function that reads or writes the store; the CLI tests in `tests/hubsite` import the library.
+- Done when: new test `tests/hubsite/test_hub_tool_thin.py` passes (it fails when `tools/hub.py` is over 500 lines or imports a `kitlib.hubsite` module that reads or writes the store); `grep -rn "tools.hub\|import hub$" tests/hubsite` prints nothing.
 - Risk and tier: Medium. strong-worker. After: W-014, W-015, W-032.
 
 **W-034 `hubsite/serve.py` and `hubjobs/usage_crossover.py` are split by responsibility**
@@ -386,13 +386,15 @@ Files many items touch, so those items never run side by side: `kitlib/pmstart/_
   - docs/content.md: the MCP server lists omit the Blender server; the docs-writer tier is wrong.
   - docs/test-tools.md: two dated test counts disagree.
   - README.md: "What works today" says the guard refuses a heavy run outside the lock (it warns by default); "Who it is for" says the kit needs Windows (it runs on Windows and Linux).
-- Done when: each named file is gone or fixed, and docs/INDEX.md lists exactly the tracked docs.
+- Done when: `ls docs/flaky-tests.md docs/guard-v2.md docs/specialty-skills.md docs/go-live.md optional/bridge/STATUS.md` fails for every file; `grep -rnE "flaky-tests|guard-v2|specialty-skills|go-live|bridge/STATUS" --include=*.py --include=*.md .` prints only this file; `grep -n "^## Migration" docs/backlog-store.md` and `grep -n "WAIT_S" docs/new-worktree.md` print nothing; `grep -nE "refuses a heavy run|needs Windows" README.md` prints nothing; `tests/docs/test_kit_index.py` passes (the index lists exactly the tracked docs).
 - Risk and tier: Low. weak-worker or docs-writer.
+- After: W-047 (the go-live bullet only).
 
 **W-047 Owner-only docs follow the design**
 - Files: `docs/agent-profile.md`, `AGENTS.md`, `.claude/coordinator-profile.md`.
 - Change (the builder drafts, the owner applies): the profile's "Moves and renames" no longer asks for a stub at an old path, `tests/oldpaths` (it does not exist) or a full gate on base and tip, and asks instead for the selected tests and an equal test-name list; "Build and test" and "Known flakes" stop presenting `--full` as a branch's routine; the risk map names the new packages (`kitlib/hookrun/`, `kitlib/landing/`, `kitlib/ownerfiles/`, `kitlib/hubclient/`); `AGENTS.md` points at `docs/modules/` beside ARCHITECTURE.md.
 - Done when: `grep -n "oldpaths\|go-live" docs/agent-profile.md` prints nothing.
+- Open: how a move is checked is an open owner question (ARCHITECTURE.md "Open items"); the check named in Change is a proposal until the owner answers.
 - Risk and tier: Low. The owner's files.
 - Owner: all three files.
 

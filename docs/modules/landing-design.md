@@ -7,7 +7,7 @@ Low-level design of `kitlib/landing`. The high-level design is ARCHITECTURE.md (
 - **Work reaches main only by a landing**: `land.py <branch>... --expect-tip <sha>... --reviewed-by <id>... --submit`. No agent merges or pushes main.
 - **A branch lands with a queued verdict.** `verdict.py add` records LAND for one tip by one reviewer who did not write the branch; a strict path needs a strong-tier reviewer.
 - **The one self-review exception**: a coordinator may review its own small, low-risk diff, up to `landing.self_review_max_lines`.
-- **A verdict carries** only when a main sync is all that changed between tips. A verdict given at one tip carries to a later tip only when a main sync is all that changed, and the carry is checked again at the landing.
+- **A verdict carries** to a later tip only when a main sync is all that changed, and the carry is checked again at the landing.
 - **A submitted landing is a detached process** that books its turn in the machine lock's queue. Landings into one repository merge in ticket order, each onto the main it finds at its turn; branch gates and other repositories run beside it.
 - **The steps, in order**: take the landing lock; fetch; check each tip, its verdict, its gate record, its owner-only changes and its scope; merge onto `<remote>/<main>`; gate the merged tree in the landing's own tree and slot; push; verify the push; close the branch's records; clean up; post the landing to the hub.
 - **What the merged gate runs**: only what the landing's work touches. Each step is picked by what the merge changes and run in its selected form, reusing a step whose inputs match the branch's record. No branch needs a full run to land.

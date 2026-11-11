@@ -42,7 +42,7 @@ Items in one lane go in the order shown; lanes in one phase can be built side by
 | 4. Guard and apps | A: W-030, W-031 · B: W-032, W-033, W-034, W-035 · C: W-036 · D: W-037 |
 | 5. Docs and enforcement | W-044, W-047, W-046, then W-039, then W-038 last |
 
-Files that more than one item touches (the reason for the lanes): `kitlib/pmstart/__init__.py` (W-005, W-006, W-009, W-010, W-014, W-019, W-036), `kitlib/guard/context.py` (W-002, W-007, W-009, W-012), `kitlib/guard/prepush.py` (W-009, W-012, W-015), `kitlib/pluginsource/__init__.py` (W-002, W-005, W-006, W-020, W-041), `kitlib/platform/api.py` (W-001, W-006, W-045), `kitlib/proc/console.py` (W-001, W-002, W-003), `kitlib/host/hookmain.py` (W-002, W-007, W-030), `kitlib/coordinatorstart/__init__.py` (W-006, W-007, W-009), `kitlib/delegations/run.py` (W-004, W-009, W-015, W-028), `kitlib/commit/__init__.py` (W-011, W-015, W-016, W-027), `kitlib/hubsite/approvals.py` (W-013, W-015), `kitlib/hubsite/apiapprovals.py` (W-015, W-016), `kitlib/hubsite/serve.py` (W-014, W-032, W-034, W-035), `tools/hub.py` (W-015, W-016, W-032, W-033), `kitlib/kitcmd/__init__.py` (W-041, W-042), `kitlib/hubjobs/fill_watch.py` (W-021, W-023), `kitlib/backlog/plan.py` (W-021, W-026), `kitlib/gate/rerun.py` (W-022, W-023), `kitlib/gate/land.py` (W-015, W-025, W-023; W-024 splits it after its move), `kitlib/reviewpack/__init__.py` (W-023, W-025, W-029). W-046 follows W-047 because the go-live file goes only once the profile stops citing it.
+Files that more than one item touches within a phase (the reason for the lanes; not exhaustive, so a builder checks the Files lines of the items beside it): `kitlib/pmstart/__init__.py` (W-005, W-006, W-009, W-010, W-014, W-019, W-036), `kitlib/guard/context.py` (W-002, W-007, W-009, W-012), `kitlib/guard/prepush.py` (W-009, W-012, W-015), `kitlib/pluginsource/__init__.py` (W-002, W-005, W-006, W-020, W-041), `kitlib/platform/api.py` (W-001, W-006, W-045), `kitlib/proc/console.py` (W-001, W-002, W-003), `kitlib/host/hookmain.py` (W-002, W-007, W-030), `kitlib/coordinatorstart/__init__.py` (W-006, W-007, W-009), `kitlib/delegations/run.py` (W-004, W-009, W-015, W-028), `kitlib/commit/__init__.py` (W-011, W-015, W-016, W-027), `kitlib/hubsite/approvals.py` (W-013, W-015), `kitlib/hubsite/apiapprovals.py` (W-015, W-016), `kitlib/hubsite/serve.py` (W-014, W-032, W-034, W-035), `tools/hub.py` (W-015, W-016, W-032, W-033), `kitlib/kitcmd/__init__.py` (W-041, W-042), `kitlib/hubjobs/fill_watch.py` (W-021, W-023), `kitlib/backlog/plan.py` (W-021, W-026), `kitlib/gate/rerun.py` (W-022, W-023), `kitlib/gate/land.py` (W-015, W-025, W-023; W-024 splits it after its move), `kitlib/reviewpack/__init__.py` (W-023, W-025, W-029). W-046 follows W-047 because the go-live file goes only once the profile stops citing it.
 
 ## Items
 
@@ -72,7 +72,7 @@ Files that more than one item touches (the reason for the lanes): `kitlib/pmstar
 
 **W-004 `fs.writelock` takes its lock file; placement moves to `git`**
 - Serves: "Layers" (base: `fs` imports only `platform`, `proc`); docs/modules/base-design.md, git-design.md.
-- Files: `kitlib/fs/writelock.py:28` (imports `git.repo`), new `kitlib/git/lockplace.py`, callers `kitlib/ledger/write.py:47-79`, `kitlib/ledger/move.py`, `kitlib/pending/__init__.py:54-64`, `kitlib/delegations/run.py:697-719`.
+- Files: `kitlib/fs/writelock.py:28` (imports `git.repo`), new `kitlib/git/lockplace.py`, callers `kitlib/ledger/write.py:47-79`, `kitlib/pending/__init__.py:54-64`, `kitlib/delegations/run.py:697-719`.
 - Change: `writelock.locked(lock_file, ...)` takes the lock file's path. `git.lockplace.lock_path(file, prefix)` says where it goes (the common dir in a checkout, beside the file otherwise) and raises `NoPlace`.
 - Done when: `grep -rnE "kitlib\.git|from \.\.git" kitlib/fs` prints nothing; `tests/fs`, `tests/ledger`, `tests/pending`, `tests/git/test_lockplace.py` pass.
 - Risk and tier: Medium (a write lock shared by three writers). strong-worker.
@@ -279,7 +279,7 @@ Files that more than one item touches (the reason for the lanes): `kitlib/pmstar
 - Serves: "Layers" (entry points parse, call, print, exit); docs/modules/hub-design.md (`hubsite/cli/`).
 - Files: `tools/hub.py` (1,797 lines: setup, skill edits, approvals, checks, pages, stop and restart).
 - Change: each verb's work moves to `kitlib/hubsite/cli/`; the tool parses, calls and prints.
-- Done when: new test `tests/hubsite/test_hub_tool_thin.py` passes (it fails when `tools/hub.py` is over 500 lines or imports a `kitlib.hubsite` module that reads or writes the store); `grep -rn "tools.hub\|import hub$" tests/hubsite` prints nothing.
+- Done when: new test `tests/hubsite/test_hub_tool_thin.py` passes (it fails when `tools/hub.py` is over 500 lines or imports a `kitlib.hubsite` module that reads or writes the store).
 - Risk and tier: Medium. strong-worker. After: W-014, W-015, W-032.
 
 **W-034 `hubsite/serve.py` and `hubjobs/usage_crossover.py` are split by responsibility**
@@ -386,7 +386,7 @@ Files that more than one item touches (the reason for the lanes): `kitlib/pmstar
   - docs/content.md: the MCP server lists omit the Blender server; the docs-writer tier is wrong.
   - docs/test-tools.md: two dated test counts disagree.
   - README.md: "What works today" says the guard refuses a heavy run outside the lock (it warns by default); "Who it is for" says the kit needs Windows (it runs on Windows and Linux).
-- Done when: `ls docs/flaky-tests.md docs/guard-v2.md docs/specialty-skills.md docs/go-live.md optional/bridge/STATUS.md` fails for every file; `grep -rnE "flaky-tests|guard-v2|specialty-skills|go-live|bridge/STATUS" --include=*.py --include=*.md .` prints only this file; `grep -n "^## Migration" docs/backlog-store.md` and `grep -n "WAIT_S" docs/new-worktree.md` print nothing; `grep -nE "refuses a heavy run|needs Windows" README.md` prints nothing; `tests/docs/test_kit_index.py` passes (the index lists exactly the tracked docs).
+- Done when: `ls docs/flaky-tests.md docs/guard-v2.md docs/specialty-skills.md docs/go-live.md optional/bridge/STATUS.md` fails for every file; `grep -rnE "flaky-tests|guard-v2|specialty-skills|go-live|bridge/STATUS" --include=*.py --include=*.md .` prints only this file; `grep -n "^## Migration" docs/backlog-store.md` and `grep -n "WAIT_S" docs/new-worktree.md` print nothing; `grep -nE "a heavy run outside|needs Windows" README.md` prints nothing; `tests/docs/test_kit_index.py` passes (the index lists exactly the tracked docs).
 - Risk and tier: Low. weak-worker or docs-writer.
 - After: W-047 (the go-live bullet only).
 

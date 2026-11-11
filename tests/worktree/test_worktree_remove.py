@@ -1494,6 +1494,14 @@ class AbandonExpect(RemoveCase):
         self.assertTrue(os.path.isdir(path))
         self.assertEqual(self.git('tag', '-l'), '')
 
+    def test_the_checked_commit_is_abandoned(self):
+        path = self.workstream('held')
+        tip = self.git('rev-parse', 'kit/held')
+        rc, out = self.abandon(path, tip)
+        self.assertEqual(rc, remove_checks.OK, out)
+        self.assertFalse(os.path.exists(path))
+        self.assertEqual(self.git('rev-parse', 'archive/held^{commit}'), tip)
+
 
 @real_git('clean: the fake lacks git clean (and a throwaway GIT_INDEX_FILE)')
 class AbandonExpectLandedDirty(RemoveCase):
@@ -1509,14 +1517,6 @@ class AbandonExpectLandedDirty(RemoveCase):
         self.assertEqual(rc, remove_checks.OK, out)
         self.assertFalse(os.path.exists(path), out)
         self.assertEqual(self.git('show', 'archive/landed:wip.txt'), 'x')
-
-    def test_the_checked_commit_is_abandoned(self):
-        path = self.workstream('held')
-        tip = self.git('rev-parse', 'kit/held')
-        rc, out = self.abandon(path, tip)
-        self.assertEqual(rc, remove_checks.OK, out)
-        self.assertFalse(os.path.exists(path))
-        self.assertEqual(self.git('rev-parse', 'archive/held^{commit}'), tip)
 
 
 class Cli(RemoveCase):

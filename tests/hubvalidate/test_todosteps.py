@@ -256,6 +256,22 @@ class Check(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 self.passes(commands=[cmd])
 
+    def test_a_tool_name_in_a_quoted_string_is_not_running_the_tool(self):
+        replace = ("$p='C:\\r\\docs\\agent-profile.md'; $t=[IO.File]::ReadAllText($p); "
+                   "$t=$t.Replace('run python tools/gate.py --full','run gate.py --full'); "
+                   "[IO.File]::WriteAllText($p,$t)")
+        for cmd in (replace, 'echo "python tools/gate.py --full"', "echo 'land.py'",
+                    'Write-Host "python Q:/k/tools/worktree_remove.py x"',
+                    'python -c "print(1)  # gate.py"', 'type docs\\gate.py.md'):
+            with self.subTest(cmd=cmd):
+                self.passes(commands=[cmd])
+                self.passes(steps=[{'run': cmd}])
+        for cmd in ('python "Q:/k/tools/gate.py" --full', "& 'Q:\\k\\tools\\land.py' --submit x",
+                    'py -3 tools\\worktree_remove.py x', 'cd Q:/r; python tools/gate.py',
+                    'Q:/k/tools/sync_base.py'):
+            with self.subTest(cmd=cmd):
+                self.assertIn('coordinator', self.refused('commands', commands=[cmd]))
+
     def test_a_raw_git_delete_is_refused_naming_abandon_as_the_route(self):
         """No carve-out for a raw delete; the refusal names the route."""
         for cmd in ('git worktree remove "Q:/r/.claude/worktrees/x"', 'git branch -D api/x',

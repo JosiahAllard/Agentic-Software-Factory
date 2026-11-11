@@ -30,8 +30,8 @@ os.replace, so no writer replaces a record another wrote after that re-read. wri
 finish_dead re-read under it; an unconditional write (a run writing its own outcome) only waits
 its turn. The lock file stays (TreeLock never removes one), and its leading dot keeps it out of
 every scan of the folder. A lock not had within LOCK_WAIT_S is a ResultError, like any write that
-fails. kitlib.fs.writelock is not used: it places its lock files by asking git which checkout the
-file is in, and the result folder is in none.
+fails. kitlib.git.lockplace does not place it: it asks git which checkout the file is in, and the
+result folder is in none.
 
 The record (SCHEMA 1), every key always present:
 

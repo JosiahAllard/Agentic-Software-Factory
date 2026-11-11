@@ -10,9 +10,9 @@ here prints or exits: Usage and Refused (kitlib.ledger.errors) carry the refusal
 One writer at a time (docs/ledger.md "Write lock"): add and retire hold `locked(path)` from their
 read to their write, so two writers never take the same next id and neither replace loses the
 other's entry. The lock is kitlib.fs.writelock's: an OS byte-range lock on a file in the ledger
-repository's git common dir (lock_path; beside the file only outside any git checkout), one per
-ledger file, so writers of two repos never wait on each other and no checkout gets an untracked
-file: the system drops it when its holder exits, so a dead holder never blocks. A busy lock
+repository's git common dir (lock_path, placed by kitlib.git.lockplace; beside the file only
+outside any git checkout), one per ledger file, so writers of two repos never wait on each other
+and no checkout gets an untracked file: the system drops it when its holder exits, so a dead holder never blocks. A busy lock
 is waited on for LOCK_WAIT seconds, then refused with nothing written. It nests within one thread
 (tools/ledger.py holds it over prepare, add and commit) and excludes every other thread. The
 replace retries a PermissionError (a reader holding the file open) for kitlib.fs.replace.WAIT s.
@@ -30,6 +30,7 @@ import re
 
 from kitlib.fs import atomic
 from kitlib.fs import writelock
+from kitlib.git import lockplace
 from kitlib.git import repo as gitrepo     # noqa: F401  (tests patch write.gitrepo.classify)
 
 from . import fmt as E
@@ -44,19 +45,23 @@ LOCK_PREFIX = 'kit-ledger'    # the lock file's name in the git common dir: kit-
 
 
 def lock_path(path):
-    """The write lock's file for the ledger at `path` (kitlib.fs.writelock.lock_path): in a git
+    """The write lock's file for the ledger at `path` (kitlib.git.lockplace.lock_path): in a git
     checkout `kit-ledger-<name>-<hash>.lock` in the repository's git common dir, outside any
     checkout `.<name>.lock` beside the file. Refused when git cannot tell."""
     try:
-        return writelock.lock_path(path, LOCK_PREFIX)
-    except writelock.NoPlace as e:
+        return lockplace.lock_path(path, LOCK_PREFIX)
+    except lockplace.NoPlace as e:
         raise Refused('cannot tell whether the ledger %s is in a git checkout, so where its write '
                       'lock is: %s; nothing was written' % (path, e.detail))
 
 
 def held(path):
-    """True when this thread holds the write lock of the ledger at `path`."""
-    return writelock.held(path, LOCK_PREFIX)
+    """True when this thread holds the write lock of the ledger at `path`; False when git cannot
+    say where that lock is (then nobody could have taken it)."""
+    try:
+        return writelock.held(lockplace.lock_path(path, LOCK_PREFIX))
+    except lockplace.NoPlace:
+        return False
 
 
 @contextlib.contextmanager
@@ -65,12 +70,10 @@ def locked(path, wait=None):
     every LOCK_PAUSE for `wait` seconds (default LOCK_WAIT), then Refused naming the holder."""
     refuse_unsafe(path)
     wait = LOCK_WAIT if wait is None else wait
+    lock = lock_path(path)
     try:
-        with writelock.locked(path, LOCK_PREFIX, wait, what='ledger write', pause=LOCK_PAUSE):
+        with writelock.locked(lock, wait, what='ledger write', pause=LOCK_PAUSE):
             yield
-    except writelock.NoPlace as e:
-        raise Refused('cannot tell whether the ledger %s is in a git checkout, so where its write '
-                      'lock is: %s; nothing was written' % (path, e.detail))
     except writelock.CannotMake as e:
         raise Refused('cannot make the ledger write lock %s: %s; nothing was written' % (e.lock, e.detail))
     except writelock.Busy as e:

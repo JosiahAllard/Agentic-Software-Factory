@@ -1,7 +1,7 @@
-"""Linux's listening TCP sockets, read from /proc/net/tcp and tcp6 (kitlib.proc.tcp's listeners
-on Linux). Those tables name no owner, so each listener's pid is None.
+"""Linux's listening TCP sockets, read from /proc/net/tcp and tcp6 (the listeners of the proc
+face's tcp module, on Linux). Those tables name no owner, so each listener's pid is None.
 
-An end is (family, address bytes, port), as kitlib.proc.tcp names it: an IPv4-mapped IPv6
+An end is (family, address bytes, port), as the proc face names it: an IPv4-mapped IPv6
 address (::ffff:a.b.c.d) is named as the IPv4 end it is.
 """
 import struct

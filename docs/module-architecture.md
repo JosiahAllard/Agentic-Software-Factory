@@ -127,8 +127,6 @@ None: no module is open to every other.
 | backlog | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | backlog | machinepaths | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | backlog | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| backlog | records | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
-| backlog | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | blendermcp | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | blendermcp | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | blendermcp | mcpwire | build | feature layer uses foundation layer: allowed as of 2026-11-06 |

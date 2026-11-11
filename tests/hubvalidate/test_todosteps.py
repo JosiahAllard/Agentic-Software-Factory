@@ -262,7 +262,7 @@ class Check(unittest.TestCase):
                    "[IO.File]::WriteAllText($p,$t)")
         for cmd in (replace, 'echo "python tools/gate.py --full"', "echo 'run land.py now'",
                     'Write-Host "python Q:/k/tools/worktree_remove.py x"',
-                    'python -c "print(1)  # gate.py"'):
+                    'python -c "print(1)  # gate.py is a file"'):
             with self.subTest(cmd=cmd):
                 self.passes(commands=[cmd])
                 self.passes(steps=[{'run': cmd}])
@@ -278,7 +278,12 @@ class Check(unittest.TestCase):
                     'Start-Process python -ArgumentList "tools\\gate.py --full"',
                     'env X=1 ./gate.py', 'echo x & gate.py', '& $py tools\\gate.py',
                     "python (Join-Path $k 'tools/gate.py')", 'python -X utf8 gate.py',
-                    'python -W ignore gate.py', 'pythonw gate.py'):
+                    'python -W ignore gate.py', 'pythonw gate.py',
+                    'python "C:\\Program Files\\pm-kit\\tools\\gate.py" --full',
+                    'py -3 "D:\\My Tools\\k\\tools\\land.py"',
+                    'powershell -File "D:\\A B\\tools\\gate.py"',
+                    'Start-Process python -ArgumentList "-u","gate.py --full"',
+                    "Start-Process pwsh -ArgumentList '-Command','python gate.py'"):
             with self.subTest(cmd=cmd):
                 self.assertIn('coordinator', self.refused('commands', commands=[cmd]))
                 self.refused('steps', steps=[{'run': cmd}])

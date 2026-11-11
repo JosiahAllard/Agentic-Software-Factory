@@ -94,24 +94,25 @@ _STRAY_REF_ROUTE = ('; a ref outside refs/heads, refs/tags, refs/stash and refs/
 _KIT_TOOL_RE = re.compile(r'(?i)(?<![\w-])(?:gate|land|new_worktree|worktree_remove|sync_base)'
                           r'\.py\b')
 _QUOTED_RE = re.compile(r'"[^"]*"|\'[^\']*\'')
-_LONE_TOOL_RE = re.compile(r'(?i)[^\s"\']*(?:gate|land|new_worktree|worktree_remove|sync_base)'
-                           r'\.py\Z')
+_ENDS_IN_TOOL_RE = re.compile(r'(?i)(?:^|[\\/\s])(?:gate|land|new_worktree|worktree_remove|'
+                              r'sync_base)\.py\Z')
 # what a quoted string follows when it is run as a command: a shell wrapper's payload
 _WRAPPER_RE = re.compile(r'(?i)(?:(?<![\w-])cmd(?:\.exe)?\s+/[ck]|'
                          r'(?<![\w-])(?:powershell|pwsh)(?:\.exe)?\b.*?\s-(?:command|c)|'
                          r'(?<![\w-])(?:bash|sh)\s+(?:-\w+\s+)*-c|'
                          r'(?<![\w-])(?:iex|invoke-expression)\s*\(?|'
-                         r'(?<![\w-])start-process\b.*?\s-argumentlist)\s*\Z')
+                         r'(?<![\w-])start-process\b.*?\s-argumentlist\s*'
+                         r'(?:(?:"[^"]*"|\'[^\']*\'|[^\s,"\']+)\s*,\s*)*)\s*\Z')
 
 
 def _without_quoted(segment):
     """The segment with the content of each quoted string blanked, so a kit tool's name inside
-    a string argument is not read as running it. Kept: a string that is one path or word ending
-    in a kit tool's name, and a shell wrapper's payload (cmd /c, powershell -Command, bash -c,
-    iex, Start-Process -ArgumentList)."""
+    a string argument is not read as running it. Kept: a string whose content ends in a kit
+    tool's file name (spaces allowed), and a shell wrapper's payload (cmd /c, powershell
+    -Command, bash -c, iex, every string of a Start-Process -ArgumentList list)."""
     def blank(m):
         inner = m.group()[1:-1]
-        if _LONE_TOOL_RE.match(inner) or _WRAPPER_RE.search(segment[:m.start()]):
+        if _ENDS_IN_TOOL_RE.search(inner) or _WRAPPER_RE.search(segment[:m.start()]):
             return m.group()
         return m.group()[0] + ' ' + m.group()[0]
     return _QUOTED_RE.sub(blank, segment)

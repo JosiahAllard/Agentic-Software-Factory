@@ -228,7 +228,7 @@ Nothing in the kit needs it.
 
 ### What the committed setup does not install
 
-- The stack's `.github/workflows/{quick,full}.yml` (owner-only paths; copy them by hand).
+- The stack's `templates/stacks/<stack>/.github/workflows/{quick,full}.yml` (owner-only paths; copy them by hand).
 - `templates/common/AGENTS.md` (with `templates/common/CLAUDE.md`, the one line `@AGENTS.md`) and the two profile templates (`agent-profile.TEMPLATE.md`,
   `coordinator-profile.TEMPLATE.md`): the repository's rules file and profiles are drafted from
   them with the `<PLACEHOLDER>` slots filled (docs/shipping.md "Stack templates"); their default

@@ -57,9 +57,10 @@ def install():
 
 def set_log_dir(provider):
     """Register the incident log's folder: `provider()` gives it, or None for no log (a fenced test
-    process); it raises when the folder cannot be worked out (a bad machine config). One provider
-    per process, the last set; kitlib.config.user sets the kit's on import. None: none, so the OS
-    temp folder."""
+    process); it may raise an Exception when the folder cannot be worked out (a bad machine config:
+    the line is skipped) but never a BaseException, which no caller catches: it converts its own
+    (as config.user's does for HomeFenced). One provider per process, the last set;
+    kitlib.config.user sets the kit's on import. None: none, so the OS temp folder."""
     global _log_dir
     _log_dir = provider
 

@@ -13,10 +13,10 @@ class LogFolderTest(unittest.TestCase):
 
     def setUp(self):
         self.registered = console._log_dir      # what importing kitlib.config.user left
-        self.addCleanup(console.set_log_dir, self.registered)
-        patch = mock.patch.object(console, "LOG_PATH", None)
-        patch.start()
-        self.addCleanup(patch.stop)
+        for name, value in (("LOG_PATH", None), ("_log_dir", self.registered)):
+            patch = mock.patch.object(console, name, value)    # restored at cleanup
+            patch.start()
+            self.addCleanup(patch.stop)
 
     def test_no_provider_uses_os_temp(self):
         console.set_log_dir(None)

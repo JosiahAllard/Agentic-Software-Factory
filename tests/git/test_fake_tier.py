@@ -846,5 +846,22 @@ class FakeHashObjectPath(unittest.TestCase):
         self.assertNotEqual(rc, 0)
 
 
+class FakeCommandsRunInTheLoadedModules(unittest.TestCase):
+    """A process that keeps kitlib.git.fake and drops a command module (the suite's pool worker,
+    between units) runs the command in the module loaded again, the one a test imports and patches."""
+
+    def test_a_dropped_command_module_is_loaded_again(self):
+        from kitlib.git import fake
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, True)
+        fake.run(['rev-parse', '--git-dir'], cwd=tmp)
+        name = 'kitlib.git.fake.wtcmds'
+        with mock.patch.dict(sys.modules), mock.patch.dict(vars(fake)), mock.patch.dict(fake.COMMANDS):
+            del sys.modules[name]
+            del vars(fake)['wtcmds']
+            fake.run(['rev-parse', '--git-dir'], cwd=tmp)
+            self.assertIs(fake.COMMANDS['checkout'].__globals__, vars(sys.modules[name]))
+
+
 if __name__ == '__main__':
     unittest.main()

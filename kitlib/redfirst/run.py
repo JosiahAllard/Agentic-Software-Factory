@@ -2,7 +2,8 @@
 `head`, checked out into a throwaway DETACHED worktree at the pre-change `base`, run there, and
 judged (kitlib.redfirst.verdict). Nothing is edited in place: the caller's worktree is only read.
 
-The throwaway tree is `<main checkout>/<worktrees_dir>/redfirst-<base10>-<pid>`. It is removed on
+The throwaway tree is a scratch tree (kitlib.worktree.scratch),
+`<main checkout>/<worktrees_dir>/redfirst-<base10>-<pid>`. It is removed on
 every exit this process controls - pass, fail, error, Ctrl-C - by putting back the base's version
 of every file it checked out, then kitlib.worktree.remove's checks (status, links, holders, the
 registration) and its git_remove, never forced. A tree still held after `"redfirst".hold_wait`
@@ -47,7 +48,6 @@ import subprocess
 import sys
 import time
 
-from kitlib import kitroot
 from kitlib.config import heavy_match, heavy_programs
 from kitlib.config import load as load_config
 from kitlib.config import schema
@@ -64,14 +64,10 @@ from kitlib.lock.store import (EXIT_BUSY, EXIT_HOLD, EXIT_REQUIRE, EXIT_RESERVED
 from kitlib.proc.job import Job
 from kitlib.redfirst import verdict as V
 from kitlib.tooldeps.selfrun import UNIT_TIMEOUT
-from kitlib.worktree import holders, remove
+from kitlib.worktree import remove, scratch
 
-PREFIX = 'redfirst-'
-HOLD_STEP_S = 5
 CHILD_FLAG = '--cleanup-child'
 SIGNALS = tuple(s for s in (signal.SIGINT, getattr(signal, 'SIGBREAK', None)) if s is not None)
-OWN_CONSOLE = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
-               else {'start_new_session': True})
 # Seconds one selector's command may run (default_run) before its whole process tree is killed
 # and the selector is TIMEOUT (a run of tests.gate.test_land_fold hung 25 h
 # on 2026-10-31 and nothing stopped it). A python selector runs at most one test module, the unit
@@ -83,13 +79,6 @@ RUN_TIMEOUT = UNIT_TIMEOUT
 KIT_JSON = '.kit.json'
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                     'tools', 'redfirst.py')
-
-
-def git(cwd, *args):
-    """`(rc, stdout, stderr)` of a git started on its own console (OWN_CONSOLE)."""
-    r = cmd.subprocess_run(('git', '-C', cwd) + args, capture_output=True, text=True,
-                           encoding='utf-8', errors='replace', env=remove.git_env(), **OWN_CONSOLE)
-    return r.returncode, (r.stdout or '').strip(), (r.stderr or '').strip()
 
 
 def rev(cwd, name):
@@ -164,95 +153,10 @@ class Interrupts(object):
 
 
 # ---- the throwaway tree -------------------------------------------------------------------------
-def make_tree(main, worktrees_dir, base):
-    path = os.path.join(main, worktrees_dir, '%s%s-%d' % (PREFIX, base[:10], os.getpid()))
-    if os.path.lexists(path):
-        return None, 'the throwaway path %s exists already' % path
-    rc, out, err = git(main, 'worktree', 'add', '--detach', path, base)
-    if rc != 0:
-        return None, 'git worktree add failed: %s' % (err or out)
-    return path, None
-
-
 def copy_in(tw, head, files):
-    rc, out, err = git(tw, 'checkout', head, '--', *files)
+    rc, out, err = scratch.git(tw, 'checkout', head, '--', *files)
     if rc != 0:
         raise RuntimeError('git checkout %s -- %s failed: %s' % (head[:10], ' '.join(files), err or out))
-
-
-def put_back(tw, base, new, had):
-    """Undo copy_in: the base's version of each file it had; each file it never had out of the
-    index and off the disk. Returns the problems."""
-    problems = []
-    if had:
-        rc, out, err = git(tw, 'checkout', base, '--', *had)
-        if rc != 0:
-            problems.append('git checkout %s -- %s: %s' % (base[:10], ' '.join(had), err or out))
-    if new:
-        rc, out, err = git(tw, 'rm', '-q', '--cached', '--ignore-unmatch', '--', *new)
-        if rc != 0:
-            problems.append('git rm --cached %s: %s' % (' '.join(new), err or out))
-        for f in new:
-            full = os.path.join(tw, *f.split('/'))
-            try:
-                if os.path.isfile(full):
-                    os.remove(full)
-            except OSError as e:
-                problems.append('%s: %s' % (full, e))
-    return problems
-
-
-def remove_tree(ctx, tw, wait_s, step_s=HOLD_STEP_S, sleep=time.sleep):
-    """kitlib.worktree.remove's checks, then its git_remove; never forced. True when gone."""
-    work, disposable, ignored, why = remove.dirty(ctx, tw)
-    if why:
-        ctx.say('leftover  %s: its status could not be read (%s); not removed' % (tw, why))
-        return False
-    left = list(work) + list(disposable) + list(ignored)
-    if left:
-        ctx.say('leftover  %s holds files the run left (%s); not removed' % (tw, holders.listed(left)))
-        return False
-    links, why = holders.links_inside(tw)
-    if why or links:
-        ctx.say('leftover  %s: %s; not removed' % (tw, why or 'it holds links: ' + '; '.join(links)))
-        return False
-    deadline = time.monotonic() + wait_s
-    held = holders.blockers(tw)
-    while held and time.monotonic() < deadline:
-        sleep(step_s)
-        held = holders.blockers(tw)
-    if held:
-        ctx.say('leftover  %s is held after %d s; git was NOT run' % (tw, wait_s))
-        ctx.describe(tw, held)
-        return False
-    entry = remove.registrations(ctx.main).get(holders.canon(tw))
-    if entry is None:
-        ctx.say('leftover  %s is not a registered worktree; not removed' % tw)
-        return False
-    return remove.git_remove(ctx, tw, entry[0])
-
-
-def cleanup_here(main, tw, base, new, had, wait_s, say, step_s=HOLD_STEP_S):
-    """put_back, then remove_tree, in this process. True when the tree is gone; never raises."""
-    try:
-        problems = put_back(tw, base, new, had)
-        for p in problems:
-            say('failed    putting back: %s' % p)
-        if problems:
-            return False
-        ctx, refusal = remove.open_ctx(main)
-        if refusal:
-            for line in refusal.lines:
-                say(line)
-            return False
-        try:
-            return remove_tree(ctx, tw, wait_s, step_s)
-        finally:
-            for line in ctx.out:
-                say(line)
-    except Exception as e:  # noqa: BLE001  (the caller reports a leftover, exit 4)
-        say('failed    cleanup: %s: %s' % (type(e).__name__, e))
-        return False
 
 
 def cleanup_in_child(main, tw, base, new, had, wait_s, say):
@@ -263,10 +167,10 @@ def cleanup_in_child(main, tw, base, new, had, wait_s, say):
     try:
         proc = subprocess.Popen([sys.executable, TOOL, CHILD_FLAG], stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                env=cmd.scrubbed_env(), **OWN_CONSOLE)
+                                env=cmd.scrubbed_env(), **scratch.OWN_CONSOLE)
     except OSError as e:
         say('note      the cleanup process would not start (%s); cleaning up in this one' % e)
-        return cleanup_here(main, tw, base, new, had, wait_s, say)
+        return scratch.cleanup_here(main, tw, base, new, had, wait_s, say)
     with proc:
         try:
             proc.stdin.write(job.encode('utf-8'))
@@ -287,22 +191,12 @@ def cleanup_child(stdin, say):
     when the tree is gone, 4 when not. The caller ignores Ctrl-C first."""
     try:
         job = json.loads(stdin.decode('utf-8'))
-        ok = cleanup_here(job['main'], job['tw'], job['base'], job['new'], job['had'],
+        ok = scratch.cleanup_here(job['main'], job['tw'], job['base'], job['new'], job['had'],
                           job['wait_s'], say)
     except Exception as e:  # noqa: BLE001
         say('failed    the cleanup process: %s: %s' % (type(e).__name__, e))
         ok = False
     return 0 if ok else V.EXIT_LEFTOVER
-
-
-def leftover_line(tw, landed, main):
-    """The line for a throwaway worktree `tw` left registered, naming the kit's own
-    worktree_remove.py with -C the main checkout `main` (a repository holds no copy of the kit's
-    tools, decision 21 in docs/multi-host-plan.md section 7)."""
-    name = os.path.basename(tw)
-    verb = '%s %s' % (kitroot.command('worktree_remove', main), name)
-    return ('leftover  %s stays registered; once nothing holds it: %s'
-            % (tw, verb if landed else verb + ' --abandon "red-first throwaway"'))
 
 
 # ---- running ------------------------------------------------------------------------------------
@@ -318,7 +212,7 @@ def run_timeout(top, base):
                "pytests' default: %s at the base sets no \"tool_tests\".unit_timeout" % KIT_JSON)
     if object_types(top, [spec]).get(spec) != 'blob':
         return default
-    rc, out, err = git(top, 'show', spec)
+    rc, out, err = scratch.git(top, 'show', spec)
     if rc != 0:
         raise V.Usage('refused: %s could not be read: %s' % (spec, err or 'exit %d' % rc))
     try:
@@ -449,8 +343,8 @@ def added_lines(top, base, head, files):
     so a moved file's path and lines count as added. A file whose path git quotes (`+++ "b/..."`)
     is left out too: it cannot be told from a copied one, and leaving it out errs to INCONCLUSIVE.
     V.Usage when git cannot read the diff."""
-    rc, out, err = git(top, 'diff', '--no-color', '--no-ext-diff', '--no-renames', '-U0',
-                       '--src-prefix=a/', '--dst-prefix=b/', base, head)
+    rc, out, err = scratch.git(top, 'diff', '--no-color', '--no-ext-diff', '--no-renames', '-U0',
+                               '--src-prefix=a/', '--dst-prefix=b/', base, head)
     if rc != 0:
         raise V.Usage('refused: the diff %s..%s could not be read: %s'
                       % (base[:10], head[:10], err or 'exit %d' % rc))
@@ -514,7 +408,7 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
     if base:
         base = rev(top, base)
     else:
-        rc, out, err = git(top, 'merge-base', head, upstream)
+        rc, out, err = scratch.git(top, 'merge-base', head, upstream)
         if rc != 0 or not out:
             raise V.Usage('usage: no --base given and the merge-base with %s could not be read '
                           '(%s); pass --base <commit>' % (upstream, err or 'exit %d' % rc))
@@ -551,7 +445,7 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
     refuse_tracked_results(top, base, sels, files)
     refuse_head_placeholder(top, head, sels)
     if head == rev(top, 'HEAD'):
-        rc, out, err = git(top, 'status', '--porcelain', '--', *files)
+        rc, out, err = scratch.git(top, 'status', '--porcelain', '--', *files)
         if rc != 0:
             raise V.Usage('refused: git status failed in %s: %s' % (top, err))
         if out:
@@ -598,7 +492,7 @@ def refuse_head_placeholder(top, head, sels):
         if head != rev(top, 'HEAD'):
             raise V.Usage('refused: %s, the checkout %s, which is not at --head %s; check out '
                           'that commit or drop --head; nothing was run' % (who, top, head[:10]))
-        rc, out, err = git(top, 'status', '--porcelain', '--', *rels)
+        rc, out, err = scratch.git(top, 'status', '--porcelain', '--', *rels)
         if rc != 0:
             raise V.Usage('refused: git status failed in %s: %s' % (top, err))
         if out:
@@ -721,7 +615,7 @@ def book_slot(plan, say, ints, book_kw=None):
     try:
         ints.mode = BOOK
         try:
-            slot = lockrun.book(plan.lock, plan.repo, PREFIX + plan.base[:10], **kw)
+            slot = lockrun.book(plan.lock, plan.repo, scratch.PREFIX + plan.base[:10], **kw)
         finally:
             ints.mode = HOLD
     except LockError as e:
@@ -813,7 +707,7 @@ def select(text, runners, written, top, head):
     sel = V.parse_selector(text, list(runners) + [_NOTHING_TOOK_IT])
     if sel.runner is not _NOTHING_TOOK_IT:
         return sel
-    rc, out, _ = git(top, 'ls-tree', '-r', '--name-only', '-z', head)
+    rc, out, _ = scratch.git(top, 'ls-tree', '-r', '--name-only', '-z', head)
     committed = [f for f in out.split('\0') if f] if rc == 0 else None
     raise V.Usage(no_runner_text(text, runners, written, head, committed))
 
@@ -894,7 +788,7 @@ def run_all(plan, say, run=None, cleanup=None, ints=None, book_kw=None):
         if run is None:
             run = (locked_run(slot, ints) if slot is not None
                    else functools.partial(default_run, timeout=plan.timeout))
-        tw, why = make_tree(plan.main, plan.worktrees_dir, plan.base)
+        tw, why = scratch.make_tree(plan.main, plan.worktrees_dir, plan.base)
         if tw is None:
             say('failed    %s' % why)
             say('REDFIRST UNDECIDED - no throwaway worktree')
@@ -939,7 +833,7 @@ def run_all(plan, say, run=None, cleanup=None, ints=None, book_kw=None):
             say('note      %d interrupt(s) arrived during the cleanup; it ran to its end'
                 % ints.during_cleanup)
         if not cleaned:
-            say(leftover_line(tw, plan.landed, plan.main))
+            say(scratch.leftover_line(tw, plan.landed, plan.main))
         rc = V.exit_code(verdicts, cleaned)
         if rc == V.EXIT_UNDECIDED and V.TIMEOUT in verdicts:
             say(TIMED_OUT)
@@ -951,7 +845,7 @@ def run_all(plan, say, run=None, cleanup=None, ints=None, book_kw=None):
     except (Exception, KeyboardInterrupt) as e:  # noqa: BLE001  (never Python's 1 = GREEN)
         say('failed    unexpected %s: %s' % (type(e).__name__, e))
         if tw and not cleaned:
-            say(leftover_line(tw, plan.landed, plan.main))
+            say(scratch.leftover_line(tw, plan.landed, plan.main))
             say('REDFIRST LEFTOVER - an unexpected error; the throwaway tree may still stand')
             return V.EXIT_LEFTOVER
         say('REDFIRST UNDECIDED - an unexpected error')

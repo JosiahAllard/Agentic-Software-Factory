@@ -17,6 +17,7 @@ from kitlib.git import cmd
 from kitlib.records import landing
 from kitlib.redfirst import run as R
 from kitlib.redfirst import verdict as V
+from kitlib.worktree import scratch as S
 from tests import gitfixture
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -71,10 +72,10 @@ class Case(unittest.TestCase):
 
     @staticmethod
     def here(main, tw, base, new, had, wait_s, say):
-        return R.cleanup_here(main, tw, base, new, had, 0, say)
+        return S.cleanup_here(main, tw, base, new, had, 0, say)
 
     def throwaways(self):
-        return [n for n in os.listdir(self.home) if n.startswith(R.PREFIX)]
+        return [n for n in os.listdir(self.home) if n.startswith(S.PREFIX)]
 
 
 class Refusals(Case):
@@ -303,7 +304,7 @@ class Runs(Case):
         self.assertIn('REDFIRST OK', out)
         self.assertIn('removed', out)
         self.assertEqual(self.throwaways(), [])
-        self.assertNotIn(R.PREFIX, self.fx.git('worktree', 'list'))
+        self.assertNotIn(S.PREFIX, self.fx.git('worktree', 'list'))
 
     def test_red_with_the_landing_lock_held_and_the_head_unpushed(self):
         """new_worktree refuses a base with no pushed branch; this tool needs neither the lock
@@ -419,7 +420,7 @@ class SummaryFile(Case):
 
     def test_a_failure_after_the_log_folder_still_writes_the_summary(self):
         self.commit({'tests/calc.py': CALC_MUL, 'tests/test_mul.py': TEST_MUL})
-        with mock.patch.object(R, 'make_tree', return_value=(None, 'no tree today')):
+        with mock.patch.object(S, 'make_tree', return_value=(None, 'no tree today')):
             rc, lines = self.run_into(self.logs, '--tests', 'tests/test_mul.py')
         self.assertEqual(rc, V.EXIT_UNDECIDED, lines)
         self.assertEqual(lines[-1], 'summary   %s' % os.path.join(self.logs, SUMMARY))

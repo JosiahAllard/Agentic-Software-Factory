@@ -20,6 +20,7 @@ import unittest
 from kitlib.config import heavy_programs
 from kitlib.redfirst import run as R
 from kitlib.redfirst import verdict as V
+from kitlib.worktree import scratch as S
 
 from .test_lock import LockCase
 
@@ -252,7 +253,7 @@ class EngineExitCode(EngineRun):
         self.assertEqual(rc, V.EXIT_UNDECIDED, out)       # no such test: NONE
         tree, path, selector = self.engine_args()[:3]
         self.assertEqual((path, selector), ('tools/engine_tests/CalcTest.cs', 'Mul "Works" & more'))
-        self.assertTrue(os.path.basename(tree).startswith(R.PREFIX), tree)
+        self.assertTrue(os.path.basename(tree).startswith(S.PREFIX), tree)
 
 
 class EngineAtHead(EngineRun):
@@ -269,7 +270,7 @@ class EngineAtHead(EngineRun):
                               r'exited 1 and a log line matches the runner.s assertion')
         self.assertIn('engine: MulWorks FAILED', self.log('1-command-CalcTest.log'))
         tree = self.engine_args()[0]
-        self.assertTrue(os.path.basename(tree).startswith(R.PREFIX), tree)   # the base tree ran it
+        self.assertTrue(os.path.basename(tree).startswith(S.PREFIX), tree)   # the base tree ran it
 
 
 class EngineHeadRefusals(EngineRun):

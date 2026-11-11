@@ -169,7 +169,7 @@ def _make_secret(path):
         fsreplace.place_new(tmp, path)
     finally:
         try:
-            os.remove(tmp)         # gone already after a rename; after a link, its second name
+            os.remove(tmp)         # a safety net: place_new already took the temp when it placed it
         except OSError:
             pass
 

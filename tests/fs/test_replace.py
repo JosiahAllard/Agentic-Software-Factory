@@ -166,14 +166,16 @@ class PlaceNewTest(unittest.TestCase):
 
     def test_another_error_is_raised_with_the_source_kept(self):
         for name, call in (('linux', 'link'), ('windows', 'rename')):
-            with self.subTest(platform=name), mock.patch.object(R.platform, 'NAME', name),                     mock.patch.object(R.os, call, side_effect=OSError(5, 'io')):
+            with self.subTest(platform=name), mock.patch.object(R.platform, 'NAME', name), \
+                    mock.patch.object(R.os, call, side_effect=OSError(5, 'io')):
                 with self.assertRaises(OSError):
                     R.place_new(self.src, self.dst)
                 self.assertTrue(os.path.exists(self.src))
 
     def test_windows_waits_out_a_refusal_for_wait_seconds_and_by_default_not_at_all(self):
         clock = fake_time(self)
-        with mock.patch.object(R.platform, 'NAME', 'windows'),                 mock.patch.object(R.os, 'rename', side_effect=PermissionError(13, 'denied')) as m:
+        with mock.patch.object(R.platform, 'NAME', 'windows'), \
+                mock.patch.object(R.os, 'rename', side_effect=PermissionError(13, 'denied')) as m:
             with self.assertRaises(PermissionError):
                 R.place_new(self.src, self.dst)
             self.assertEqual((m.call_count, clock.sleeps), (1, []))

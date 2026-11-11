@@ -9,6 +9,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 KITLIB = os.path.join(ROOT, 'kitlib')
 SIZE_LINE = 1500
+MIN_FILES = 100  # a walk finding fewer kitlib files is a wrong path or an empty scan, not a pass
 EXEMPT = {
     'kitlib/git/fake/plumbing.py': 'the fake git: its size follows git plumbing, a fixed surface',
 }
@@ -28,7 +29,9 @@ def counts():
 
 class SizeLineTests(unittest.TestCase):
     def test_no_file_is_over_the_line_unless_exempt(self):
-        over = ['%s: %d lines' % (p, n) for p, n in sorted(counts().items())
+        found = counts()
+        self.assertGreaterEqual(len(found), MIN_FILES, 'the scan found too few kitlib files')
+        over = ['%s: %d lines' % (p, n) for p, n in sorted(found.items())
                 if n > SIZE_LINE and p not in EXEMPT]
         self.assertEqual(over, [], 'split by responsibility, or list with a reason in EXEMPT')
 

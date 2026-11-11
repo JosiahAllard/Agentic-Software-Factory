@@ -1,6 +1,6 @@
 """Named pipes, pipe and file ACLs, and process SIDs and images: raw Win32 through ctypes.
 
-Promoted from the bridge's Phase 0 probe package (docs/multi-host-plan.md section 2.4), which the
+Promoted from the bridge's Phase 0 probe package (optional/bridge/README.md), which the
 bridge's service, frontend and host halves (optional/bridge) build on. Every refusal raises
 kitlib.platform.ProcError with a fixed code. Windows only.
 

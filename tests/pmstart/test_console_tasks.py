@@ -207,7 +207,7 @@ class InTheChecklist(unittest.TestCase):
 
 
 class Linux(unittest.TestCase):
-    """On Linux (docs/linux-support-plan.md slice 10) a job opens no console: check says nothing
+    """On Linux a job opens no console: check says nothing
     and never reads."""
 
     def setUp(self):

@@ -1,5 +1,5 @@
 """The committed repo setup (`tools/machine_setup.py --repo PATH`; installer/new-repo.ps1 is its
-PowerShell front end; docs/install.md "Committed setup (--repo)"). Plan decision 27: machine
+PowerShell front end; docs/install.md "Committed setup (--repo)"). Machine
 setup writes nothing into a repository by default, and this mode keeps the old committed setup for
 a repository that wants it. Nothing here prints or exits: run() gives the exit code and the lines.
 
@@ -14,7 +14,7 @@ The target is an existing git checkout, named by its top level. It writes these 
                               existing file is never overwritten: only the lines it lacks are
                               appended, under INSTALLER_MARK, in the file's own line ending.
   <target>/docs/INDEX.md      a starter doc index (templates/common/INDEX.md), only if absent. It
-                              opts the repository into the doc index check (plan decision 26); the
+                              opts the repository into the doc index check; the
                               tracked .md files it does not name are listed, never refused.
   <target>/tools/gate.json    with a stack: templates/stacks/<stack>/tools/gate.json, only if absent
   <target>/tools/<file>       with a stack: its other tools files, each only if absent

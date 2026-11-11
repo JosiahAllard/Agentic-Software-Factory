@@ -3,7 +3,7 @@ scope or the bare setsid start, the trampoline's answer read back, and its failu
 kitlib.lock.detach sending each call there on Linux. The trampoline itself runs here for real
 (it needs /proc only to find a unit, which these runs name none of or never reach). Live: the
 detached run outliving its caller's whole scope, through the user's systemd (skipped without
-one; docs/linux-support-plan.md slice 7)."""
+one)."""
 import json
 import os
 import shutil

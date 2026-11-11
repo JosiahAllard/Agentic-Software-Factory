@@ -1,4 +1,4 @@
-"""Rule 1 of docs/linux-support-plan.md section 2.1: code asks kitlib.platform which operating
+"""Rule 1 of the seam (docs/modules/base-design.md "Contract"): code asks kitlib.platform which operating
 system it runs on, never os.name or sys.platform itself.
 
 The scan reads every kit .py file outside tests/ and kitlib/platform/ (and outside dot-folders
@@ -69,7 +69,7 @@ class NoOsChecks(unittest.TestCase):
         found = asking()
         self.assertEqual(sorted(set(found) - ALLOWED), [],
                          'ask kitlib.platform.NAME instead of os.name or sys.platform '
-                         '(docs/linux-support-plan.md section 2.1, rule 1): %r' % found)
+                         '(docs/modules/base-design.md "Contract"): %r' % found)
         self.assertEqual(sorted(ALLOWED - set(found)), [],
                          'these no longer ask the OS themselves: take them off ALLOWED')
 

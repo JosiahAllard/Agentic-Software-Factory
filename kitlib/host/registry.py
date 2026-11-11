@@ -78,7 +78,7 @@ _OPTIONAL_KEYS = {'default', 'role_models'}
 # ("all"), or never ("none"), for a host whose every call the guard must see (one whose hooks cannot
 # tell a subagent apart: its chats are never the owner, so no session of it may skip the guard).
 FAST_PATHS = ('all', 'none')
-# The operating systems a host can declare it runs on (multi-host plan section 6). Windows is
+# The operating systems a host can declare it runs on. Windows is
 # the only one the kit supports today; the field says so per host instead of the code assuming it.
 PLATFORMS = ('windows', 'linux', 'macos')
 

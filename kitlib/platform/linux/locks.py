@@ -1,4 +1,4 @@
-"""The lock's exclusion on Linux (docs/linux-support-plan.md section 2.2): fcntl.flock on a file,
+"""The lock's exclusion on Linux: fcntl.flock on a file,
 where Windows uses a named mutex, a run's liveness mutex and msvcrt.locking. The kernel drops a
 flock when the last descriptor of its open file description closes, so a holder that dies, however
 it dies, frees the lock: Windows's "an abandoned mutex counts as free". A flock belongs to the open

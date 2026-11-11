@@ -1,4 +1,4 @@
-"""Render on commit (decision 29 in docs/multi-host-plan.md section 7; docs/content.md "Render on
+"""Render on commit (docs/content.md "Render on
 commit"): when a commit records a path under `content/`, or `kit.json` or `hosts.json`, the kit's
 rendered files are made current first and go into the same commit.
 

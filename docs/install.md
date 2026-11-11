@@ -1,11 +1,10 @@
 # Installing the kit
 
-Three steps: point the machine at its PM repository, set the machine up once, then work in any repository, with nothing of the kit written into it (plan decision 27, docs/multi-host-plan.md section 7). Three repositories land through `gate.py land` on the owner's machine: this kit and two others. The zero repo setup cycle below is proven by a test (`tests/zerosetup/test_cycle.py`).
+Three steps: point the machine at its PM repository, set the machine up once, then work in any repository, with nothing of the kit written into it. Three repositories land through `gate.py land` on the owner's machine: this kit and two others. The zero repo setup cycle below is proven by a test (`tests/zerosetup/test_cycle.py`).
 
 A repository never holds a copy of the kit or stubs of its tools, and by default nothing else
 either: no `.kit.json`, no ignore lines. Skills, roles and the default profile run every kit tool from the
-kit's folder, as `python <kit>/tools/<name>.py -C <worktree>` (decision 21 in
-docs/multi-host-plan.md section 7; the kit header names `<kit>`, docs/content.md "Kit header").
+kit's folder, as `python <kit>/tools/<name>.py -C <worktree>` (the kit header names `<kit>`, docs/content.md "Kit header").
 A repository that wants its kit settings committed uses the committed setup ("Committed setup
 (--repo)").
 
@@ -176,7 +175,7 @@ Nothing in the kit needs it.
      there is never overwritten: only the lines it lacks are appended, under `# Added by the kit
      installer`, and the dry run lists them.
    - `docs/INDEX.md` is written only when absent, and only by this setup: it opts the repository
-     into the doc index check (decision 26). With an index file every tracked `.md` must be named
+     into the doc index check. With an index file every tracked `.md` must be named
      on an entry line of it; the starter names only itself, so the dry run and `--apply` list
      the target's tracked `.md` files it does not name (advice only, never a refusal). With no
      index file the check (run by preflight, commit and review_pack) is skipped and says so.
@@ -310,7 +309,7 @@ Owner-run, once reviewed:
 
 ### Ported repo tools
 
-Each repo reaches the kit's tools as `python <kit>/tools/<x>.py -C <checkout>`, with no copy or stub in the repo (docs/multi-host-plan.md section 7, decision 21). A new repo needs nothing; a repo that wants its kit settings committed runs the committed setup ("Committed setup (--repo)"). Per repo:
+Each repo reaches the kit's tools as `python <kit>/tools/<x>.py -C <checkout>`, with no copy or stub in the repo. A new repo needs nothing; a repo that wants its kit settings committed runs the committed setup ("Committed setup (--repo)"). Per repo:
 
 - An existing repo's old stubs or tool copies can be deleted once its own scripts and docs name the kit form; the kit writes and checks none.
 - Owner identity: `.kit.json` "owner".email in each repo. commit.py `--owner-authored` and review_pack's owner-authored label need it; the PM kit's doc_budget.json identities are not read.

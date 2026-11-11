@@ -1,6 +1,5 @@
 """kitlib.platform.dll: a DLL is loaded at its first use, never at import, and a missing export
-fails at the first call that needs it, naming the function (docs/linux-support-plan.md section
-2.1, rule 3)."""
+fails at the first call that needs it, naming the function (docs/modules/base-design.md "Contract")."""
 import ctypes
 import unittest
 from unittest import mock

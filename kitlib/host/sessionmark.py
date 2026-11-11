@@ -17,7 +17,7 @@ before the reserved check: `<plugin>:coordinator` is the coordinator's mark, `<p
 'marked-owner'.
 
   child_environment(environ, host, additions, preserve_lock, registry_path)
-        the environment for a new session a process launches (docs/multi-host-plan.md section 2.1):
+        the environment for a new session a process launches (ARCHITECTURE.md "Host contract"):
         `environ` without the session's mark (PM_KIT_ROLE, PM_KIT_SESSION_NAME), without every
         registered host's session id variable (hosts.json profile session_env), without the
         variables of every host but `host` (profile env_prefixes; host None: every host's), and

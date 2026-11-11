@@ -16,7 +16,7 @@ Two changes, each planned only when it differs:
   then WM_SETTINGCHANGE broadcast. A dry run only reads the Path. A process started before
   --apply (an open terminal or session) keeps its old PATH.
 
-On Linux (docs/linux-support-plan.md section 6, step 11) the launcher is LINUX_FILE,
+On Linux (docs/machine-setup.md "Linux") the launcher is LINUX_FILE,
 `~/.local/bin/kit` under the home folder: a sh script (MARK_SH its second line, mode 0755) whose
 last line is `exec python3 '<live main checkout>/tools/kit.py' "$@"`. No PATH is changed: most
 distributions put ~/.local/bin on a login shell's PATH when it exists, and a note says so when

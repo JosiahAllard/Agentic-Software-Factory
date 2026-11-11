@@ -12,7 +12,7 @@ qualifies every bare kit agent name, so it always starts the kit's version, and 
 launched row (coordinator, consultant, deep-worker) cannot be started by the launcher under that name
 (docs/launcher.md "The window").
 
-The role list lives only in `content/roles/` (docs/multi-host-plan.md section 7, decision 17): a
+The role list lives only in `content/roles/` (ARCHITECTURE.md "Content"): a
 role is added or removed with one file and a render. The tables between the `rendered` markers
 below are written by `python tools/render_content.py --write` from the role files and each host's
 tier map; never edit them by hand. To change a role's tier, effort or "use for" line, edit its

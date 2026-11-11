@@ -1,4 +1,4 @@
-"""Zero repo setup, end to end (docs/multi-host-plan.md section 7, step 20's proof; docs/install.md
+"""Zero repo setup, end to end (docs/install.md
 "What first use writes"): a fresh clone of an unrelated repository, with nothing of the kit
 committed in it, runs a PM-to-worker-to-land cycle through the kit's own library calls, and its
 history afterwards holds the worker's change and nothing else.
@@ -199,7 +199,7 @@ class Cycle(object):
         tip = self.worker_commit(wt, FIX, 'Fix add')
         self.assertEqual(self.git('log', '-1', '--format=%ae', cwd=wt), WORKER)
         self.pre_commit_passed(wt)
-        # ... and pushes its branch: the worktree shares the clone's remote (decision 23)
+        # ... and pushes its branch: the worktree shares the clone's remote
         self.git('push', '-q', 'origin', 'kit/fix-add', cwd=wt)
         self.assertEqual(self.remote_git('rev-parse', 'kit/fix-add'), tip)
         # 4. the worker's gate: no gate configured, the clone's own tests detected and run, --full

@@ -1,4 +1,4 @@
-"""The seam's contract (docs/linux-support-plan.md section 2.1): each primitive's name, signature
+"""The seam's contract (docs/modules/base-design.md "Contract"): each primitive's name, signature
 and meaning, and no OS code. Every backend provides every name: kitlib.platform.windows as its
 own process and cpu modules' functions, kitlib.platform.linux by its own code in
 kitlib/platform/linux/. A process is named by (pid, ctime), ctime its
@@ -38,6 +38,6 @@ PROCESS = ('alive', 'proc_ctime', 'own_ctime', 'ancestry', 'descendants', 'comma
 HARDWARE = ('threads', 'all_mask', 'l3_domains', 'memory_mb')
 AFFINITY = ('affinity_of', 'set_affinity')
 
-# Each area's names and the slice of docs/linux-support-plan.md section 8 that builds it on Linux.
+# Each area's names and the number of the slice that built it on Linux.
 AREAS = {'process': (PROCESS, 4), 'hardware': (HARDWARE, 6), 'affinity': (AFFINITY, 5)}
 NAMES = PROCESS + HARDWARE + AFFINITY

@@ -13,8 +13,7 @@ unittest.skipUnless with the reason as the skip text, so the class or method car
 tools/ci_ratchet.py counts the markers by reason. The platform is read when the marker is applied,
 from WINDOWS and POSIX below. A marker with no reason is refused.
 
-This module imports no kitlib: on Linux the kitlib import chain does not load yet (docs/
-linux-support-plan.md section 8, slice 2), and a test module must be able to name its markers."""
+This module imports no kitlib: on Linux the kitlib import chain does not load yet (docs/test-tools.md "Platform markers and the ratchet"), and a test module must be able to name its markers."""
 import os
 import unittest
 

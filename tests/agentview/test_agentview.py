@@ -1,5 +1,4 @@
-"""kitlib.agentview and tools/agent_view.py: what one role is given and held to (decision 18,
-docs/multi-host-plan.md section 7; docs/content.md "Agent view").
+"""kitlib.agentview and tools/agent_view.py: what one role is given and held to (docs/content.md "Agent view").
 
 Each section is checked against the live source it is built from (the host's ContentRenderer and
 start_text, the kit header, the skills folder, kitlib.backlog.roles, the guard's role policy), on
@@ -256,7 +255,7 @@ class GivenAndHeld(Base):
         rel = VALUES['profile_path']
         none = self.section(self.view('worker', brief=True), 'Repo profile').lines[0]
         self.assertIn('none', none)
-        # The profile is opt-in (decision 26): with none, the role reads the kit's default.
+        # The profile is opt-in: with none, the role reads the kit's default.
         default = os.path.join(KIT, 'content', 'default-profile.md')
         self.assertTrue(os.path.isfile(default))
         self.assertTrue(none.endswith("; in use: the kit's default, %s" % default), none)

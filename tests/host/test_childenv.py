@@ -1,5 +1,5 @@
 """kitlib.host.sessionmark.child_environment: a session launched on one host inherits neither the
-launching session's mark nor another host's session variables (docs/multi-host-plan.md 2.1). The
+launching session's mark nor another host's session variables (ARCHITECTURE.md "Host contract"). The
 hosts come from a test copy of hosts.json with a second host, so nothing here names the kit's."""
 import copy
 import json

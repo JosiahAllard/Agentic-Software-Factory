@@ -1,4 +1,4 @@
-"""The affinity primitives on Linux (docs/linux-support-plan.md section 8, slice 5), with the
+"""The affinity primitives on Linux, with the
 meanings kitlib.platform.windows.process gives them on Windows. A mask is the seam's: bit i is cpu
 id i (kitlib.platform.linux.hardware).
 
@@ -6,7 +6,7 @@ id i (kitlib.platform.linux.hardware).
   set_affinity(pid, ctime, mask)   pin every thread of the process to `mask`
 
 Linux affinity is a hard mask, so set_affinity never answers 'soft'; it is cooperative all the
-same: the process may set its own back (the S2 and W2 containment tiers of section 2.3 say so).
+same: the process may set its own back (the S2 and W2 containment tiers say so).
 A cpuset the process runs under wins over the mask: the kernel keeps only the cpus both allow, so
 set_affinity reads the mask back and answers 'overridden' when it is not the one asked for, as
 Windows does when a job's limit wins. The process is held by a pidfd from the first ctime check

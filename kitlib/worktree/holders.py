@@ -13,7 +13,7 @@ ERROR_SHARING_VIOLATION (32). `cwd_holders(root)` only NAMES processes for the c
 many it could not read, so "named nobody" is never "nothing holds it". Every walk here stops past
 WALK_MAX entries and never descends a link or junction (`prune`). Nothing here deletes anything.
 
-On Linux (docs/linux-support-plan.md slice 9) nothing denies a delete, so `blockers` and
+On Linux (docs/worktree-remove.md "Classify") nothing denies a delete, so `blockers` and
 `cwd_holders` read /proc instead (kitlib.platform.linux.paths.process_paths): every path inside
 `root` that a process of this user uses (its current folder, root, program, an open file or a
 mapped file) is HELD. A process of this user that cannot be read in full makes the root UNREAD

@@ -881,7 +881,7 @@ class OwnerLockTools(unittest.TestCase):
 
 
 class OwnerSetup(unittest.TestCase):
-    """Machine setup's writes (the machine config's owner_email among them, plan decision 27) are the
+    """Machine setup's writes (the machine config's owner_email among them) are the
     owner's to make: a session other than the owner's own that runs it to act is denied, its dry
     run is not, and an agent session's edit of the machine config is the write jail's."""
 

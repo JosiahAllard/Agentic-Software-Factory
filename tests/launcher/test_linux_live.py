@@ -1,4 +1,4 @@
-"""Live checks of a Linux session window (docs/linux-support-plan.md slice 11), on Linux only, each
+"""Live checks of a Linux session window, on Linux only, each
 on a private tmux server (TMUX_TMPDIR in a temp folder) that the test ends itself.
 
 ProcessTitle is the first VM check: a real `claude` started in the window still shows its

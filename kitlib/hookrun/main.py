@@ -1,5 +1,5 @@
-"""The one hook runner (multi-host plan section 2.2), behind the one hook entry of every host,
-boot/hook.py (plan decision 20). What every host's hook needs besides its own parse and render
+"""The one hook runner (ARCHITECTURE.md "Hosts"), behind the one hook entry of every host,
+boot/hook.py. What every host's hook needs besides its own parse and render
 lives here once:
 
   dispatch(adapter, event_name, kit, text, stdout, entry, args, part, environ, started)
@@ -45,7 +45,7 @@ lives here once:
         judged, so every guarded call on such a platform is the guard-error deny.
   command_line(script, executable)
         {"command", "args"} that starts `script` with no console window: the one place a hook
-        command line is rendered (plan section 6, rule 4). Today: pythonw.exe beside `executable`
+        command line is rendered. Today: pythonw.exe beside `executable`
         (default this interpreter) when there is one, else `executable` itself.
   manifest_command(script, platform, *args, blocking=False)
         {"command", "args"} for a hook manifest another machine runs (a plugin's hooks.json, one
@@ -114,7 +114,7 @@ def ready(guard):
     """Raise PlatformUnsupported unless the running platform (kitlib.platform.NAME, read now) is
     one `guard` declares ready (kitlib.guard.READY_PLATFORMS): run() turns it into the guard-error
     deny, so no guarded call goes ahead on a platform whose path semantics the guard has not been
-    proven on (docs/linux-support-plan.md section 3)."""
+    proven on."""
     from kitlib import platform
     if platform.NAME not in guard.READY_PLATFORMS:
         raise platform.PlatformUnsupported(
@@ -351,8 +351,8 @@ def command_line(script, executable=None):
     return {'command': windowless(executable).replace(os.sep, '/'), 'args': [script.replace(os.sep, '/')]}
 
 
-# The hook's Python interpreter, by name, per hosts.json platform: windowless pythonw on Windows
-# (plan section 6, rule 4), python3 on Linux (run by SHELL, manifest_command).
+# The hook's Python interpreter, by name, per hosts.json platform: windowless pythonw on Windows,
+# python3 on Linux (run by SHELL, manifest_command).
 INTERPRETERS = {'windows': 'pythonw', 'linux': 'python3'}
 SHELL = '/bin/sh'
 SHELL_NAME = 'kit-hook'

@@ -1,5 +1,4 @@
-"""Worktree holders on Linux (docs/linux-support-plan.md section 8, slice 9;
-docs/worktree-remove.md): holders.blockers, cwd_holders and describe, and classify.process_cwds,
+"""Worktree holders on Linux (docs/worktree-remove.md "Classify"): holders.blockers, cwd_holders and describe, and classify.process_cwds,
 read from /proc (kitlib.platform.linux.paths.process_paths). blockers no longer fails open: a
 process of this user using the tree is HELD, one of this user that cannot be read is UNREAD, and
 no /proc (or an empty one, or one that does not list this process) is NOT_SEARCHED, each a refusal;

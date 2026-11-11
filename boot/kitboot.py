@@ -1,5 +1,5 @@
 """kitboot: the check every host entry runs before it imports kitlib (ARCHITECTURE.md "Packaging";
-docs/multi-host-plan.md section 2.5; docs/kitboot.md). Standard library only, and nothing from the
+docs/kitboot.md). Standard library only, and nothing from the
 kit is imported here: this file decides which kit may be imported. Lifted from the Codex plugin's
 profile.py (discover, load_kit).
 

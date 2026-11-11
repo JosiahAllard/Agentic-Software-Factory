@@ -1,4 +1,4 @@
-"""Hook paths plan steps 7 and 14 changed (docs/machine-setup.md "Moved hook paths"): settings
+"""Hook paths that moved (docs/machine-setup.md "Moved hook paths"): settings
 written before them name <kit>/claude/hooks/<x>.py or <kit>/hosts/claude/shell/hooks/<x>.py, which
 machine setup re-points to the kit's one hook entry, boot/hook.py with the host and the script's
 words, in every mode and in the PM settings, so no account gets a second guard entry. Runs on a temp
@@ -46,7 +46,7 @@ class MovedHooks(unittest.TestCase):
         return os.path.join(self.kit, 'boot', 'hook.py')
 
     def new(self, name):
-        """Where the hook scripts were from the hosts/ move to plan step 14."""
+        """Where the hook scripts were from the hosts/ move to the one hook entry."""
         return os.path.join(self.kit, *(common.SHELL + '/hooks/' + name).split('/'))
 
     def old(self, name):
@@ -221,7 +221,7 @@ class MovedSkillLinks(unittest.TestCase):
         self.reported(common.MOVED_FROM + '/skills')
 
     def test_a_skill_link_into_the_claude_shells_old_copy_is_a_leftover(self):
-        self.reported(common.SHELL + '/skills')           # the rendered copy before decision 29
+        self.reported(common.SHELL + '/skills')           # the rendered copy, before skills moved to content/skills
 
     def reported(self, moved):
         root = tempfile.mkdtemp(prefix='machinesetup-moved-links-')
@@ -249,7 +249,7 @@ class MovedSkillLinks(unittest.TestCase):
 
 
 class Retired(unittest.TestCase):
-    """The kit keeps no hook script at the old paths (plan decision 28): an account's settings
+    """The kit keeps no hook script at the old paths: an account's settings
     reach boot/hook.py only once machine setup has re-pointed them."""
 
     def test_no_hook_script_is_left_at_an_old_path(self):

@@ -86,7 +86,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/landed.md` | landed: has a branch landed | checking a branch | kw: landed
 - `docs/launcher.md` | launcher | starting sessions | kw: launcher, launch
 - `docs/ledger.md` | the rulings ledger | recording a ruling | kw: ledger, rulings
-- `docs/linux-support-plan.md` | Linux support plan (mostly built): the platform seam, Linux backends, the guard's path review, CI, slices and owner questions | planning or building Linux support | kw: linux, platform, posix, cgroup, wsl, port
+- `docs/linux-support-plan.md` | Linux support: what is still open (peer messaging and the bridge, the docs, CI legs, the live proofs) and the reference-VM test procedure | finishing Linux support or running tests on the Linux VM | kw: linux, platform, posix, cgroup, wsl, port
 - `docs/load-nodes.md` | load nodes: the registry and its repos opt-in, setting up a node, node.py list, status, run, follow and stop, choosing a machine, lock runs on a node, exit codes | sending heavy runs to another box | kw: load-node, node.py, loadnode, registry, offload
 - `docs/lock-api.md` | machine lock API, runs on a load node | heavy runs | kw: lock, machine-lock
 - `docs/lock-mcp.md` | lock MCP server | lock from an agent | kw: lock-mcp, mcp
@@ -96,7 +96,6 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/module-architecture.md` | the generated module page: each module's dependencies and size against its ceiling | reading the module structure | kw: module-architecture, modules, ceilings, generated
 - `docs/module-map.md` | module boundary check: the map file, kinds, ratchets and ceilings, detectors, the architecture page, the scope report and its records summed weekly, isolation runs | changing what a module may depend on, or reading a change's scope | kw: module-map, module_map, modules, boundary, scope
 - `docs/model-ab.md` | model A/B results | choosing a model | kw: model, ab
-- `docs/multi-host-plan.md` | multi-host architecture plan (approved; steps 0-20 built) | changing host adapters, plugins or the bridge | kw: multi-host, codex, host, plugin, bridge
 - `docs/agent-review.md` | agent review: usage, refusals, definition findings (undecided) | choosing a model, editing agent definitions | kw: agent-review, agents, model
 - `optional/bridge/README.md` | the agent bridge (optional install): layout, the host port, contracts, configuration, status per host and direction, install | changing or installing the bridge, adding a host's bridge half | kw: bridge, optional, port, mcp, messaging, install, status, capability, matrix
 - `docs/new-host.md` | adding a host: the hosts.json entry, adapter, shell, fixtures and the conformance suite | adding an AI platform | kw: new-host, host, adapter, conformance, hosts.json

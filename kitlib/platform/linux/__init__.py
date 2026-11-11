@@ -1,8 +1,7 @@
 """The Linux backend of the seam: every primitive the contract names (kitlib.platform.api). An area
-whose slice of docs/linux-support-plan.md section 8 has been built takes its primitives from that
+whose slice has been built takes its primitives from that
 area's module (BUILT); every other primitive is a stub that raises PlatformUnsupported naming
-itself and the slice that builds it. Never a primitive that silently does less (section 2.1,
-rule 5)."""
+itself and the slice that builds it. Never a primitive that silently does less (docs/modules/base-design.md "Contract")."""
 from kitlib.platform import PlatformUnsupported, api
 from kitlib.platform.linux import cpu, hardware, process
 
@@ -13,8 +12,8 @@ BUILT = {'process': process, 'hardware': hardware, 'affinity': cpu}
 
 def _stub(name, area, slice_number):
     def primitive(*args, **kwargs):
-        raise PlatformUnsupported('%s is not built on Linux yet (the %s area, slice %d of '
-                                  'docs/linux-support-plan.md section 8)' % (name, area, slice_number))
+        raise PlatformUnsupported('%s is not built on Linux yet (the %s area, slice %d)'
+                                    % (name, area, slice_number))
     primitive.__name__ = primitive.__qualname__ = name
     return primitive
 

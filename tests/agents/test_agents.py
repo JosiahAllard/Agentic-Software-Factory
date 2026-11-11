@@ -239,7 +239,7 @@ class AgentFilesTest(unittest.TestCase):
         manifest = json.loads((AGENTS.parents[3] / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(sorted(manifest["agents"]),
                          sorted("./hosts/claude/shell/agents/%s" % p.name for p in AGENTS.glob("*.md")))
-        # the skills are content/skills itself: no rendered copy (decision 29, docs/content.md)
+        # the skills are content/skills itself: no rendered copy (docs/content.md)
         self.assertEqual(manifest["skills"], ["./content/skills/"])
         self.assertTrue((AGENTS.parents[3] / "content" / "skills").is_dir())
         self.assertFalse((AGENTS.parents[3] / "hosts" / "claude" / "shell" / "skills").exists())

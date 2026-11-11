@@ -1,4 +1,4 @@
-"""The machine as Linux shows it in /sys and /proc (docs/linux-support-plan.md section 2.4), for
+"""The machine as Linux shows it in /sys and /proc, for
 the lock's hardware look (kitlib.lock.layout.detect_linux) and the seam's hardware primitives.
 
 Every reader takes `root`, the folder /sys and /proc hang from ("/" on a live machine), so a

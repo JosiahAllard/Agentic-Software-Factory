@@ -1,5 +1,5 @@
-"""Four synthetic Linux /sys and /proc trees for the lock's hardware reader
-(docs/linux-support-plan.md section 2.4), written by hand from the kernel's documented layout
+"""Four synthetic Linux /sys and /proc trees for the lock's hardware reader,
+written by hand from the kernel's documented layout
 (Documentation/ABI/testing/sysfs-devices-system-cpu, Documentation/admin-guide/cgroup-v2.rst,
 proc(5), the drm sysfs class). No real machine was recorded for them.
 

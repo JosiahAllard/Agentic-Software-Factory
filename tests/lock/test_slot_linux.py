@@ -1,4 +1,4 @@
-"""A held run on Linux for real (docs/linux-support-plan.md section 8, slice 7): a Slot on a
+"""A held run on Linux for real: a Slot on a
 scratch store, whose JobSet starts each command in a systemd scope of its own. A give-back narrows
 the cpuset of every live command's scope and the next command's; at the release a straggler leaves
 the run's scope for a leftovers scope of its own, so the run's scope ends, and that is said.

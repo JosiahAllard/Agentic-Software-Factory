@@ -1,5 +1,4 @@
-"""Containment on Linux: the Job of the process face (docs/linux-support-plan.md section 2.3 and
-section 8, slice 5). On Linux the face's Job is this module's Job, with the same methods and
+"""Containment on Linux: the Job of the process face. On Linux the face's Job is this module's Job, with the same methods and
 meanings, on the strongest tier the machine gives, probed at run time (probe()):
 
   S1  a cgroup v2 scope of the user's systemd (`systemd-run --user --scope -p Delegate=yes`) with

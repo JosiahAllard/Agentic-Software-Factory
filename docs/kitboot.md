@@ -1,7 +1,6 @@
 # kitboot: the check before kitlib
 
-Every host entry runs `boot/kitboot.py` before it imports kitlib (ARCHITECTURE.md "Packaging";
-docs/multi-host-plan.md section 2.5). It is standard library only and imports nothing from the
+Every host entry runs `boot/kitboot.py` before it imports kitlib (ARCHITECTURE.md "Packaging"). It is standard library only and imports nothing from the
 kit: it decides which kit may be imported.
 
 ## Which kit runs

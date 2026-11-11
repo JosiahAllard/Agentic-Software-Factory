@@ -5,7 +5,7 @@ import stat
 from kitlib import platform
 
 # The Claude shell in a kit checkout (hosts.json "shell"), and the folder it was before the hosts/
-# move (docs/multi-host-plan.md step 7). Settings and skill links written before the move name
+# move. Settings and skill links written before the move name
 # MOVED_FROM paths; the settings and links steps re-point them into SHELL (docs/machine-setup.md
 # "Moved hook paths").
 SHELL = 'hosts/claude/shell'

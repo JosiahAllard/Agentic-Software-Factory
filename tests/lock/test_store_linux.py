@@ -1,4 +1,4 @@
-"""The lock store's exclusion on Linux (docs/linux-support-plan.md section 8, slice 3): a named
+"""The lock store's exclusion on Linux: a named
 lock (Store.lock) and a run's liveness lock (Store.run_mutex, run_mutex_held, run_dead) are flocks
 on files in a scratch store (kitlib.platform.linux.locks). Two processes contend for a named lock;
 a killed holder frees it; run_dead sees a killed run. Store() with no root is the machine's store

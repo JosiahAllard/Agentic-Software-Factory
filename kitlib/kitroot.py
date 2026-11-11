@@ -2,8 +2,7 @@
 
   root()             the kit checkout (or plugin export) this module is in
   tool(name, kit)    `<kit>/tools/<name>.py`, a kit tool; `kit` defaults to root(). A repository
-                     holds no copy of the kit's tools (decision 21 in docs/multi-host-plan.md
-                     section 7), so a command printed for a repository names this path
+                     holds no copy of the kit's tools (docs/install.md "Ported repo tools"), so a command printed for a repository names this path
   command(name, checkout, kit)
                      `python "<kit>/tools/<name>.py"`, with ` -C "<checkout>"` when one is given:
                      the command a printed hint names (forward slashes, both quoted)

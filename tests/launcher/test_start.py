@@ -581,7 +581,7 @@ class Start(Base):
                 self.assertIn('--agent %s ' % agent, self.go(agent=agent))
 
     def test_the_pm_starts_as_the_kits_pm_agent_with_the_pm_mark(self):
-        """decision 11: the PM is an agent file; a launched PM runs --agent pm-kit:pm, marked pm."""
+        """The PM is an agent file; a launched PM runs --agent pm-kit:pm, marked pm."""
         out = self.go(agent='pm')
         self.assertIn('--agent pm-kit:pm ', out)
         self.assertIn("PM_KIT_ROLE = 'pm'", out)

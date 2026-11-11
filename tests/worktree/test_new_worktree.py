@@ -27,7 +27,7 @@ KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.join(KIT, 'tools', 'new_worktree.py')
 REFUSAL = new.REFUSAL
 # the red-first command a `route` line names: the kit's own tool, quoted in forward slashes
-# (docs/multi-host-plan.md section 7 decision 21; step 15 "No stubs")
+# (docs/install.md "Ported repo tools")
 REDFIRST = '`python "%s/tools/redfirst.py" -C <your worktree> --tests <test file>`' % (
     KIT.replace('\\', '/'))
 MASTER_CONFIG = {'repo': {'main_branch': 'master'}}
@@ -217,7 +217,7 @@ class NewBranchMode(WorktreeCase):
         self.assertTrue(os.path.isdir(self.slug_path('second')))
 
     def test_next_names_the_kits_preflight_for_the_new_worktree(self):
-        """The worktree holds no copy of the kit's tools (decision 21): the kit's preflight, -C it."""
+        """The worktree holds no copy of the kit's tools: the kit's preflight, -C it."""
         out = self.tool('fix/fresh')[1]
         self.assertIn('next      %s' % kitroot.command('preflight', self.slug_path('fresh')), out)
 
@@ -1199,7 +1199,7 @@ class ALocalOnlyBaseNamesTheRoute(LandingCase):
 
     def test_the_route_names_the_kit_tool_not_the_configured_tools_dir(self):
         # no repository holds a copy of the kit's tools, so "repo".tools_dir does not spell the
-        # route (docs/multi-host-plan.md section 7 decision 21; step 15 "No stubs")
+        # route (docs/install.md "Ported repo tools")
         self.configure({'repo': {'main_branch': 'master', 'tools_dir': 'devtools'}})
         self.make_dev()
         self.hold()
@@ -1356,7 +1356,7 @@ class ConfigKeys(WorktreeCase):
         self.assertFalse(os.path.exists(self.slug_path('fresh')), out)
 
     def test_the_tools_dir_never_spells_a_kit_command(self):
-        """The repository's tools folder holds no kit tool (decision 21): the hints name the kit's."""
+        """The repository's tools folder holds no kit tool: the hints name the kit's."""
         self.configure({'repo': {'tools_dir': 'devtools'}})
         out = self.tool('fix/fresh')[1]
         self.assertIn(kitroot.command('preflight', self.slug_path('fresh')), out)

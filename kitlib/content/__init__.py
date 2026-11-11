@@ -17,8 +17,7 @@ the edge, tools/render_content.py). Given `tiers` ({host: (tier -> model, role -
 renderers run), `render` also remakes docs/ROSTER.md's tables (kitlib.content.rosterdoc), so the roster is
 checked and written like the host files. Pure file work: no printing, no exit.
 
-`roster(kit)` is the kit's role list, read from the role files and nothing else (decision 17 in
-docs/multi-host-plan.md section 7): a RosterEntry (name, mode, tier, group, run) per role, by name.
+`roster(kit)` is the kit's role list, read from the role files and nothing else (ARCHITECTURE.md "Content"): a RosterEntry (name, mode, tier, group, run) per role, by name.
 The launcher's KIT_AGENTS and the backlog policy's groups (kitlib.backlog.roles) are read from it.
 
 `names_of(name)` is a role's name with its old or new one (ALIASES). `role_modes(kit)` is {role: mode} from the role files under the kit root `kit`, for the guard's

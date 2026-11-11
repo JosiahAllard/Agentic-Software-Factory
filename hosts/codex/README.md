@@ -1,6 +1,6 @@
 # Codex host
 
-Codex's slot in the multi-host kit (docs/multi-host-plan.md step 9; docs/new-host.md): the Codex
+Codex's slot in the multi-host kit (docs/new-host.md): the Codex
 companion plugin's behaviour on the host contract. **Nothing here is installed or activated on any
 machine, and live parity with the default host is not verified.** The package passes the conformance
 suite on payloads in the branch's recorded shapes; no installed Codex client has run it. Every

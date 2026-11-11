@@ -6,7 +6,7 @@ It is `HKLM\\SOFTWARE\\pm-kit`, value `pm_repo`, a REG_SZ, read in the 64-bit re
 administrator can write it (tools/machine_setup.py --pm-repo, docs/machine-setup.md "PM repo
 pointer"), so an agent cannot point the kit at another PM repository.
 
-On Linux (docs/linux-support-plan.md slice 9) there is no registry: the value is one line of UTF-8
+On Linux there is no registry: the value is one line of UTF-8
 text in the file /etc/pm-kit/pointer, which only an administrator can write, else in the user's
 <profile>/.config/pm-kit/pointer, the profile folder from the password database and never from
 $HOME or $XDG_CONFIG_HOME (kitlib.platform.linux.paths.read_pointer). A machine file that is there

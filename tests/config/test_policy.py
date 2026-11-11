@@ -115,7 +115,7 @@ WINDOWS_DEFAULTS = ['godot', 'godot.*', 'godot_*', 'blender*'] + 2 * [
 
 
 class LinuxHeavyTest(unittest.TestCase):
-    """Godot and Blender as Linux names them (docs/linux-support-plan.md section 3, finding 8)."""
+    """Godot and Blender as Linux names them."""
 
     def setUp(self):
         patcher = mock.patch('kitlib.platform.NAME', 'linux')

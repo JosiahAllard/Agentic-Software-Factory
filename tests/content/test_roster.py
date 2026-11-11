@@ -1,5 +1,5 @@
 """kitlib.content.rosterdoc, tools/agent_roster.py and the roster render: docs/ROSTER.md's tables are rendered
-from content/roles and each host's tier -> model map (decision 17, docs/multi-host-plan.md section 7).
+from content/roles and each host's tier -> model map (ARCHITECTURE.md "Content").
 
 The check runs on the real tree; the edits run on a temp copy and must leave every byte outside the
 rendered regions alone.

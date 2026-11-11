@@ -125,7 +125,7 @@ class Run(unittest.TestCase):
 
 class Unready(unittest.TestCase):
     """On a platform kitlib.guard does not declare ready (READY_PLATFORMS), every guarded call is
-    the guard-error deny and decide never runs (docs/linux-support-plan.md section 3). Linux is
+    the guard-error deny and decide never runs. Linux is
     ready since slice 8 (tests/guard/test_linux_paths.py), so a platform with no backend stands in."""
 
     def on(self, name):

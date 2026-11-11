@@ -1,4 +1,4 @@
-"""kitlib.fs.treelock on every platform (docs/linux-support-plan.md section 8, slice 3): an OS lock
+"""kitlib.fs.treelock on every platform: an OS lock
 another process or another descriptor in the same process cannot take, that a killed holder frees,
 and that the holder's own read of its record does not drop. On Linux it is a flock: an
 fcntl.lockf lock belongs to the process, so the same-process and own-read cases would fail."""

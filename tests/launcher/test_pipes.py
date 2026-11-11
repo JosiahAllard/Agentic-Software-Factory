@@ -69,7 +69,7 @@ class Registry(unittest.TestCase):
             with self.assertRaises(S.LaunchError) as cm:
                 pipes.require_peer_support()
         self.assertIn('Linux peer support is deferred', str(cm.exception))
-        self.assertIn('docs/linux-support-plan.md', str(cm.exception))
+        self.assertIn('docs/launcher.md', str(cm.exception))
         with mock.patch('kitlib.platform.NAME', 'windows'):
             pipes.require_peer_support()
 

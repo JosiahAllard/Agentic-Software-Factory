@@ -359,7 +359,7 @@ class IndexCheck(RepoCase):
 
 class ListingCheck(RepoCase):
     """Every tracked .md is named on an entry line of the index (check 0, moved here from
-    doc_budget): only where the index file exists (decision 26: it is the opt-in, `.kit.json` or
+    doc_budget): only where the index file exists (it is the opt-in, `.kit.json` or
     not) and "doc_index".enabled is not false."""
 
     SELF = '- `docs/INDEX.md` | this index | always | kw: index\n'
@@ -374,7 +374,7 @@ class ListingCheck(RepoCase):
             self.write('.kit.json', json.dumps(kit))
 
     def test_a_missing_index_skips_the_listing_and_says_so_once(self):
-        # The doc index is opt-in (decision 26): no index at the head is no listing check.
+        # The doc index is opt-in: no index at the head is no listing check.
         self.docs(kit={})
         code, out = self.capture()
         self.assertEqual(code, 0, out)
@@ -460,7 +460,7 @@ class ListingCheck(RepoCase):
         self.assertIn('DOC INDEX OK', out)
 
     def test_an_index_with_no_kit_json_is_checked(self):
-        # The index file alone opts in (decision 26); .kit.json only overrides.
+        # The index file alone opts in; .kit.json only overrides.
         self.docs(self.SELF)
         code, out = self.capture()
         self.assertEqual(code, 1, out)

@@ -1,5 +1,5 @@
 """Host names left in kitlib code (ARCHITECTURE.md "Hosts": a host name appears only in hosts.json,
-its own folder and tests). Step 6 of docs/multi-host-plan.md moves them to hosts.json or the edge;
+its own folder and tests). Moving them to hosts.json or the edge is not finished;
 what is left is listed here, file by file, with the count of occurrences, so the count can only
 shrink: a new occurrence fails, a removed one passes (then lower the number here).
 
@@ -110,7 +110,7 @@ class HostNames(unittest.TestCase):
                 over.append('%s: %d, allowed %d: %s' % (rel, len(found), ALLOWED.get(rel, 0),
                                                          ', '.join('%d %r' % f for f in found)))
         self.assertEqual(over, [], 'host names in kitlib code: move them to hosts.json or the '
-                                   'edge (docs/multi-host-plan.md step 6)')
+                                   'edge')
 
     def test_every_listed_file_exists(self):
         for rel in ALLOWED:
@@ -124,11 +124,11 @@ class HostNames(unittest.TestCase):
         self.assertEqual(len(occurrences(source)), 5)
 
 
-# Plan section 2.7: a host name appears only in hosts.json, hosts/, optional/bridge/hosts/ and tests,
+# ARCHITECTURE.md "Hosts": a host name appears only in hosts.json, hosts/, optional/bridge/hosts/ and tests,
 # so adding a host changes no other folder. kitlib is counted above. Below: the kit's top folders,
 # boot/ (code, as kitlib) and content/ (every occurrence, prose too, since content is what every
 # host renders). What is left is listed with its reason and can only shrink.
-TOP_ALLOWED = {}            # claude/ (the pre-step-7 hook stubs) went with plan step 14
+TOP_ALLOWED = {}            # claude/ (the old hook stubs) are gone
 CONTENT_ALLOWED = {}        # every host value in role prose is a token now (docs/content.md "Tokens")
 
 
@@ -151,7 +151,7 @@ class HostSlot(unittest.TestCase):
         names = set(registry.names()) | {'codex', 'claude', 'anthropic', 'openai'}
         found = sorted(n for n in os.listdir(ROOT) if os.path.isdir(os.path.join(ROOT, n))
                        and n.lower() in names and n not in TOP_ALLOWED)
-        self.assertEqual(found, [], 'a host\'s files go under hosts/<name>/ (docs/multi-host-plan.md 2.7)')
+        self.assertEqual(found, [], 'a host\'s files go under hosts/<name>/ (ARCHITECTURE.md "Hosts")')
 
     def test_every_registered_host_lives_under_hosts(self):
         from kitlib.host import registry

@@ -18,12 +18,12 @@ worktree (docs/launcher.md "The home worktree"): never edit or check out in it; 
 
 ## Build and test
 The gate is `python tools/gate.py` (docs/gate.md); it selects by the diff and takes the machine lock
-itself. `--full` runs the whole suite, only when the gate prints `FULL NEEDED`. Selected tests: `python tools/kit_tests.py --select` (what the change reaches;
+itself. No branch gate needs `--full` (docs/gate-run.md). Selected tests: `python tools/kit_tests.py --select` (what the change reaches;
 `--changed <path> ...` names the paths, `--plan` prints the pick; docs/test-tools.md).
 Red-first through `tools/redfirst.py` (docs/redfirst.md), never an in-place mutant.
 
 ### Known flakes
-None recorded. A red `gate.py --full` (run when the gate asked for it) gets one targeted rerun of its failing tests, `python tools/gate.py --rerun` (docs/gate-rerun-checkout.md "Targeted rerun"): FLAKE lands the tip, and you report the flake record line it prints; REAL, or a second failure of the same test, is real and never lands. Report both runs.
+None recorded. A red gate run gets one targeted rerun of its failing tests, `python tools/gate.py --rerun` (docs/gate-rerun-checkout.md "Targeted rerun"): FLAKE lands the tip, and you report the flake record line it prints; REAL, or a second failure of the same test, is real and never lands. Report both runs.
 
 ## Test runner
 Pass line `kit_tests: OK`; anything else is a failure. Report the summary line and the failing

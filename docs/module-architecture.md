@@ -32,6 +32,7 @@ A crossing the map does not allow (an edge of its kind, a messaging module or a 
 | githooks | `kitlib/githooks` | feature layer (ARCHITECTURE.md Layers) |
 | githooks-dir | `githooks` | outer layer (ARCHITECTURE.md Layers) |
 | guard | `kitlib/guard` | policy layer (ARCHITECTURE.md Layers) |
+| hookrun | `kitlib/hookrun` | policy layer (ARCHITECTURE.md Layers) |
 | host | `kitlib/host` | policy layer (ARCHITECTURE.md Layers) |
 | hostrpc | `kitlib/hostrpc` | feature layer (ARCHITECTURE.md Layers) |
 | hosts | `hosts` | outer layer (ARCHITECTURE.md Layers) |
@@ -105,6 +106,7 @@ None: no module is open to every other.
 | agentview | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | agentview | content | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | agentview | guard | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| agentview | hookrun | build | feature layer uses policy layer: allowed as of 2026-11-11 |
 | agentview | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | agentview | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | allowrules | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -136,7 +138,7 @@ None: no module is open to every other.
 | blendermcp | mcpwire | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | blendermcp | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | blendermcp | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| boot | host | build | outer layer uses policy layer: allowed as of 2026-11-06 |
+| boot | hookrun | build | outer layer uses policy layer: allowed as of 2026-11-11 |
 | commit | attribution | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | commit | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | commit | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -221,8 +223,11 @@ None: no module is open to every other.
 | guard | lock | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | guard | platform | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | guard | records | build | policy layer uses foundation layer: allowed as of 2026-11-11 |
-| host | config | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
-| host | kitlib-root | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
+| hookrun | config | build | policy layer uses foundation layer: allowed as of 2026-11-11 |
+| hookrun | guard | build | policy layer, same-layer use: allowed as of 2026-11-11 |
+| hookrun | host | build | policy layer, same-layer use: allowed as of 2026-11-11 |
+| hookrun | platform | build | policy layer uses foundation layer: allowed as of 2026-11-11 |
+| hookrun | pluginsource | build | policy layer uses services layer (ARCHITECTURE.md Layers: pluginsource is layer 3, below guard): allowed as of 2026-11-11 |
 | host | platform | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | host | proc | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | hosts | agentstart | build | outer layer uses feature layer: allowed as of 2026-11-06 |
@@ -235,6 +240,7 @@ None: no module is open to every other.
 | hosts | gate | build | outer layer uses policy layer: allowed as of 2026-11-06 |
 | hosts | git | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | hosts | guard | build | outer layer uses policy layer: allowed as of 2026-11-06 |
+| hosts | hookrun | build | outer layer uses policy layer: allowed as of 2026-11-11 |
 | hosts | host | build | outer layer uses policy layer: allowed as of 2026-11-06 |
 | hosts | hostrpc | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | hoststart | build | outer layer uses feature layer: allowed as of 2026-11-06 |
@@ -353,6 +359,7 @@ None: no module is open to every other.
 | machinesetup | autotasks | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | machinesetup | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | machinesetup | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| machinesetup | hookrun | build | feature layer uses policy layer: allowed as of 2026-11-11 |
 | machinesetup | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | machinesetup | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | machinesetup | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |

@@ -19,10 +19,10 @@ from kitlib.git import cmd, repo
 from kitlib.proc import spawn
 
 from kitlib.commit.checks import (
-    OK, REFUSED, USAGE, _Stop, author_email, foreign_refusal, landed_main, locked_paths,
-    machine_path_error, main_checkout_error, merge_heads, model_requirement_error,
-    owner_identity_error, owner_only_refusal, repo_path, shrunk_paths, staged_machine_path_error,
-    staged_status, unapproved_locked, unstage_added)
+    OK, REFUSED, USAGE, _Stop, author_email, deletion_merge_paths, foreign_refusal, landed_main,
+    locked_paths, machine_path_error, main_checkout_error, merge_heads, model_requirement_error,
+    owner_identity_error, owner_only_refusal, repo_path, shrunk_paths, staged_deletion_merges,
+    staged_machine_path_error, staged_status, unapproved_locked, unstage_added)
 from kitlib.commit.message import (
     build_message, build_trailers, canonical_approved, message_body, session_lines)
 from kitlib.ownerfiles import rules as ownerrules
@@ -547,10 +547,11 @@ def render_sources(root, paths):
 
 
 def _stage(req, root, paths, rendered, named, merged, status_before, msg_warnings, body, trailers,
-           lines, shrink=(None, ())):
+           lines, exempt=(None, (), (), ())):
     """`(head, snap, status_after, others, message)`: the named paths staged and checked, for
-    commit_only; raises _Stop on a refusal. `shrink`: (rules, the owner-only paths exempt as
-    work-tree shrinks), each judged again here on its staged copy against `head`."""
+    commit_only; raises _Stop on a refusal. `exempt`: (rules, the owner-only paths exempt as
+    work-tree shrinks, those exempt as a merge of deletions, [the merge's MERGE_HEAD] for them),
+    each judged again here on its staged copy against `head`."""
     # A listed path is always added again. The one skip: a listed path staged as a deletion and
     # absent from the work tree (`git add` would fail "pathspec did not match"); its deletion is
     # committed because it was named. Nothing unnamed is ever added.
@@ -575,12 +576,16 @@ def _stage(req, root, paths, rendered, named, merged, status_before, msg_warning
     # after the machine-path check, so the blobs checked are the blobs committed.
     head = head_commit(root)
     snap = index_snapshot(root, status_after)
-    rules, shrunk = shrink
+    rules, shrunk, joined, merge_head = exempt
     grown = sorted(set(shrunk) - (shrunk_paths(root, rules, shrunk, ['--cached', head])
                                   if shrunk and head else set()))
-    if grown:           # the staged copy, the one committed, is what counts
+    unjoined, why = (staged_deletion_merges(root, joined, head, merge_head[0])
+                     if joined and head and merge_head else (sorted(joined), None))
+    if grown or unjoined:   # the staged copy, the one committed, is what counts
+        note = ['the staged merge of %s could not be judged: %s.' % (', '.join(unjoined), why)
+                ] if why else []
         raise _Stop(REFUSED, *unstage_added(root, sorted(named), status_before,
-                                            [owner_only_refusal(grown)]))
+                                            [owner_only_refusal(sorted(grown + unjoined))] + note))
     refusal, warnings = staged_machine_path_error(root, status_after, status_before)
     # The message check printed the same machine-config WARNING already: once is enough.
     if refusal:
@@ -688,10 +693,13 @@ def _commit(req, lines):
         raise _Stop(REFUSED, *(refusal + ['Nothing was committed.']))
     approved = canonical_approved(rules, req.owner_approved, paths)
     locked = locked_paths(rules, paths + [p for p in rendered if p not in paths])
-    shrunk = set()      # judged again on the staged copy, in _stage
-    if locked and not req.owner_authored and not merge_heads(root):  # a merge: never
-        shrunk = shrunk_paths(root, rules, locked)
-        locked = [p for p in locked if p not in shrunk]
+    shrunk, joined = set(), set()       # each judged again on the staged copy, in _stage
+    if locked and not req.owner_authored:
+        if len(heads) == 1:             # a merge of deletions only (docs/commit.md)
+            joined = deletion_merge_paths(root, rules, locked, heads[0], landed)
+        elif not merge_heads(root):     # a shrink: never a merge
+            shrunk = shrunk_paths(root, rules, locked)
+        locked = [p for p in locked if p not in shrunk | joined]
     if locked and not req.owner_authored:
         # The hint only for a path the merge would carry unnamed, as it is staged now.
         carried = sorted(ownerrules.merge_owned(root, rules, set(locked) & set(status_before),
@@ -708,7 +716,7 @@ def _commit(req, lines):
                               req.provider, session)
     head, snap, status_after, others, msg = _stage(
         req, root, paths, rendered, named, merged, status_before, msg_warnings, body,
-        trailers, lines, (rules, shrunk))
+        trailers, lines, (rules, shrunk, joined, heads[:1]))
     rc, out, err, new, notes, trees = commit_only(root, head, snap, msg,
                                                   allow_empty=req.allow_empty)
     if rc != 0:

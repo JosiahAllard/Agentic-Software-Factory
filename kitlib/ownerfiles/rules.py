@@ -32,6 +32,9 @@ them, so the commits judged are the ones that leave). Renames are not followed: 
 delete and an add, and both paths count. Any git failure is `(None, why)`: the caller refuses.
 A `"owner".shrink_only` path (rules.is_shrink_only) does not count for a one-parent commit
 whose change to it only deletes lines (deletes_only); each commit is judged on its own.
+An owner-only path does not count for a two-parent commit whose copy of it only combines the
+deletions of its parents (deletion_merge: no line either parent lacks, none either parent deleted,
+none both kept dropped, nothing moved); every commit on either side is still judged on its own.
 
 The author email is what the committer says it is (`--author`, GIT_AUTHOR_EMAIL): this check
 stops a plain agent commit, not an agent that forges the owner's identity. The guard's
@@ -379,6 +382,13 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
             if shrinks is None:
                 return None, why
             locked = [q for q in locked if q != p or not shrinks]
+        for p in (list(locked) if len(parents) == 2 else []):
+            row, why = _blob_entry(root, sha, p, env)
+            joins, why = (None, why) if row is None else deletion_merge(root, p, parents[0],
+                                                                       parents[1], row, env)
+            if joins is None:
+                return None, why
+            locked = [q for q in locked if q != p or not joins]
         if not locked:
             continue
         refusal, why = approval_refusal(root, sha, parents, values, paths, approvals, env)
@@ -599,8 +609,97 @@ def clean_owner_merge(root, rules, paths, head, bases, landed=()):
             fit.add(p)
     if not fit:
         return set(), None
-    ours, why = _unapproved_paths(root, rules, 'HEAD', [head] + list(landed), 'this branch\'s')
+    ours, why = ours_unapproved(root, rules, head, landed)
     return (None, why) if ours is None else (fit - ours, None)
+
+
+def ours_unapproved(root, rules, head, landed=()):
+    """`(paths, None)`: the owner-only paths a commit of HEAD's side of the merge in progress of
+    `head` (one reachable neither from `head` nor from `landed`) changes without the owner as its
+    author or an approval the hub verifies (non_owner_paths, the other way round); or
+    `(None, why)`."""
+    return _unapproved_paths(root, rules, 'HEAD', [head] + list(landed), 'this branch\'s')
+
+
+def _lines(data):
+    """The lines of `data` (bytes) split after each LF, each with its line end: a CR before the LF
+    is part of the line, and a last line with no LF is a line of its own."""
+    parts = data.split(b'\n')
+    return [p + b'\n' for p in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
+
+
+def _subsequence(short, long):
+    rest = iter(long)
+    return all(line in rest for line in short)
+
+
+def combines_deletions(ours, theirs, result, bases):
+    """True when `result` (bytes) only combines the deletions `ours` and `theirs` made from every
+    one of `bases`, compared line by line (_lines: a changed line end is a changed line): `result`
+    is in order a part of each parent (no new line, none moved), holds each line as often as the
+    parent holding it fewer times (none both kept is dropped, none one deleted comes back), and
+    each line the parents hold a different number of times is held at least that often by every
+    base (the difference is a deletion, never an addition the merge drops). No base, or a NUL
+    byte in any copy (not text), is False."""
+    copies = [ours, theirs, result] + list(bases)
+    if not bases or any(b'\0' in c for c in copies):
+        return False
+    o, t, r = _lines(ours), _lines(theirs), _lines(result)
+    if not (_subsequence(r, o) and _subsequence(r, t)):
+        return False
+    co, ct, cr = collections.Counter(o), collections.Counter(t), collections.Counter(r)
+    if any(cr[line] != min(co[line], ct[line]) for line in set(co) | set(ct) | set(cr)):
+        return False
+    differ = [line for line in set(co) | set(ct) if co[line] != ct[line]]
+    for base in bases:
+        cb = collections.Counter(_lines(base))
+        if any(cb[line] < max(co[line], ct[line]) for line in differ):
+            return False
+    return True
+
+
+def _blob_entry(root, rev, path, env=None):
+    """`((mode, oid), None)` for `path`'s entry in `rev` when it is one regular file, `((), None)`
+    when it is absent or anything else, `(None, why)` when git cannot say."""
+    out, why = _git(root, ['ls-tree', '-z', rev, '--', path], env)
+    if out is None:
+        return None, why
+    rows = _entries(out, path)
+    if len(rows) == 1 and len(rows[0]) == 3 and rows[0][0] in REGULAR_MODES and rows[0][1] == 'blob':
+        return (rows[0][0], rows[0][2]), None
+    return (), None
+
+
+def deletion_merge(root, path, one, two, result, env=None):
+    """`(True, None)` when `result`, the `(mode, oid)` entry a merge of the commits `one` and `two`
+    gives `path` (its tree's, or the index's), only combines their deletions (combines_deletions,
+    against every `git merge-base --all` of the two) and the path is a regular file of that one
+    mode at `one`, `two` and every base; `(False, None)` otherwise (no base, a rename, an add, a
+    mode change, a result that is no regular file); `(None, why)` when git cannot tell."""
+    if not result or result[0] not in REGULAR_MODES:
+        return False, None
+    r = cmd.call(NOREPLACE + ['merge-base', '--all', one, two], root, env=env)
+    if r.rc not in (0, 1):
+        return None, 'git merge-base failed for %s and %s: %s' % (one[:10], two[:10],
+                                                                 r.err or 'exit %s' % r.rc)
+    bases = cmd.text(r.out).split()
+    if not bases:
+        return False, None
+    oids = []
+    for rev in [one, two] + bases:
+        row, why = _blob_entry(root, rev, path, env)
+        if row is None:
+            return None, why
+        if not row or row[0] != result[0]:
+            return False, None
+        oids.append(row[1])
+    data = []
+    for oid in oids + [result[1]]:
+        r = cmd.call(NOREPLACE + ['cat-file', 'blob', oid], root, env=env)
+        if r.rc != 0:
+            return None, 'git cat-file failed for %s: %s' % (oid[:10], r.err or 'exit %s' % r.rc)
+        data.append(r.out)
+    return combines_deletions(data[0], data[1], data[-1], data[2:-1]), None
 
 
 def non_owner_paths(root, rules, head, landed=()):

@@ -191,8 +191,9 @@ the server alone decides what a role may do.
                                                      for the owner's approval, its status read
                                                      now (an expired one says expired;
                                                      kitlib.ownerfiles.approvals status_at)
-  hub.py approvals show A-1                         its status, repo, head, title and reason,
-                                                     then `<path> <base_blob> -> <blob>` per file
+  hub.py approvals show A-1                         its status, repo, head, the branch it is
+                                                     committed on, title and reason, then
+                                                     `<path> <base_blob> -> <blob>` per file
   hub.py approvals add --title T --file PATH CONTENT_FILE [--file ...] [--checkout DIR] [--repo R]
         [--head SHA] [--reason TEXT] [--record REPO:ID]
                                                      `REQUESTED A-001`: asks the owner to approve
@@ -1704,6 +1705,7 @@ def _approvals(a, stop):
         if d is None:
             raise huberrors.ServeError('no approval %s' % a.id)
         lines = [_item(d), 'head %s' % d.get('head')] + (
+            ['branch %s' % d['branch']] if d.get('branch') else []) + (
             ['reason %s' % d['reason']] if d.get('reason') else [])
         note = d.get('superseded')
         if isinstance(note, dict):

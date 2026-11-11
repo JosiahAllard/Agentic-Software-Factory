@@ -7,15 +7,18 @@ Approvals (kitlib.ownerfiles.approvals holds the rules; these routes only carry 
 checkout of the request's repo (Api's checkout; no checkout is `invalid`, field repo, and a base
 that is not the file at head is `invalid`, field files), and the unified diff lines the page
 shows are stored in the document as `diff`; a file request may name the `branch` the change is
-applied on. POST approvals/{id}/decide (APPROVER) writes the owner's decision, signed with Api's
-approval_key; an approve of a file request then applies it (_applied, kitlib.ownerfiles.apply,
-docs/hub-approvals.md "Applying"): the change is committed on the request's branch in its one
-linked worktree of the checkout, and the approval consumed by that commit with `applied` {by,
-branch, worktree}; one that cannot be applied stays approved with `apply` {at, error}, and the
-answer says `applied` false and why. POST approvals/{id}/apply (OWNER, `if_version` optional)
-applies an approved file request again, the same way. POST approvals/{id}/consume (AGENT) marks an
-approval consumed by a commit. Both take the `if_version` the caller read and are pinned to it,
-and an ApprovalError is answered as a HubError of its code and field. POST approvals/{id}/delete (AGENT) withdraws a request still undecided (pending, or
+applied on, which the decision's signature covers. POST approvals/{id}/decide (APPROVER) writes
+the owner's decision, signed with Api's approval_key; an approve of a file request then applies
+it (_applied, kitlib.ownerfiles.apply, docs/hub-approvals.md "Applying"): the change is
+committed on the request's branch in its one linked worktree of the checkout, and the approval
+consumed by that commit with `applied` {by, branch, worktree}; one that cannot be applied stays
+approved with `apply` {at, error}, and the answer says `applied` false and why. POST
+approvals/{id}/apply (OWNER, `if_version` optional) applies an approved file request again, the
+same way. A file request is consumed by that apply only: no route takes a commit from an agent,
+so none can spend an approval the hub has not applied. POST approvals/{id}/consume (AGENT) marks
+an op approval used (below). Decide and consume take the `if_version` the caller read and are
+pinned to it, and an ApprovalError is answered as a HubError of its code and field. POST
+approvals/{id}/delete (AGENT) withdraws a request still undecided (pending, or
 expired undecided: a decided one is `conflict`, field status): the body gives `from` (the
 requester's claim, `pm` as approvals store none) and `if_version`, as a question's withdrawal
 does. A file request may give `record` {repo, id} (checked as a question's, _bound): the record
@@ -30,9 +33,10 @@ approvals.on_main) and `if_version`; it leaves pending and is never consumed. GE
 {ok, valid, why} and never the key or the sig; an unknown id is valid false, approvals.WHY_UNKNOWN.
 An approval of kind `op` (one run of a delegated operation, docs/delegations.md "Hub approvals")
 is added with kind, op, repo, line, title and optional reason and what, and no checkout is read;
-any other kind is `invalid`, field kind. It is consumed with args_sha256 in place of commit, and
-verified with the query kind=op, op, repo and args (the line's sha256), which answers its version
-too, the pin of the consume that follows.
+any other kind is `invalid`, field kind. It is consumed with args_sha256 (a `commit` is
+`invalid`, field commit: a change is consumed by the hub's apply), and verified with the query
+kind=op, op, repo and args (the line's sha256), which answers its version too, the pin of the
+consume that follows.
 GET snapshot carries `strong`: true only on the strong owner's call (Request.strong), so the page
 shows Approve and Deny as usable; the decide route checks the role itself all the same.
 """
@@ -166,20 +170,20 @@ def _applied(api, req, doc_id, d, decided):
 
 
 def approvals_consume(api, req):
+    """An op approval used once (approvals.consume_op_fields). A change approval is consumed
+    only by the hub's own apply (_applied): a `commit` here is refused, so an agent cannot spend
+    one the owner approved and the hub has not applied."""
     from kitlib.ownerfiles import approvals as ap
-    b = _fields(req, ('commit', 'args_sha256', 'if_version'))
+    if isinstance(req.body, dict) and 'commit' in req.body:
+        raise _invalid('a change approval is consumed only by the hub applying it (POST '
+                       'approvals/{id}/apply, the owner\'s); this route takes args_sha256, for '
+                       'an op approval', 'commit')
+    b = _fields(req, ('args_sha256', 'if_version'), required=('args_sha256',))
     _pin(b, required=True)
-    if 'commit' in b and 'args_sha256' in b:
-        raise _invalid('give commit (a change) or args_sha256 (an operation), not both',
-                       'args_sha256')
     doc_id = req.params['id']
     d = api.doc(ap.COLLECTION, doc_id, b)
-    if 'args_sha256' in b:
-        changes = _approval(ap.consume_op_fields, api.approval_key(), doc_id, d,
-                            b['args_sha256'], _when(api.clock(), ''))
-    else:
-        changes = _approval(ap.consume_fields, api.approval_key(), doc_id, d, b.get('commit'),
-                            _when(api.clock(), ''))
+    changes = _approval(ap.consume_op_fields, api.approval_key(), doc_id, d,
+                        b['args_sha256'], _when(api.clock(), ''))
     return api.change(ap.COLLECTION, doc_id, d, changes, req, {'status': changes['status']})
 
 

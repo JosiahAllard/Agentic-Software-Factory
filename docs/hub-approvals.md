@@ -12,12 +12,12 @@ verifies) are `kitlib/ownerfiles/approvals.py`, "The document"; the routes are `
 | repo | agent | the repository, as the repo_id of its remote URL (`approvals.repo_id`) |
 | title, reason | agent | what the change is and why; reason is optional |
 | head | agent | the commit the change applies to (40 hex) |
-| branch | agent | the branch the hub applies the change on, in its linked worktree ("Applying"); `approvals add` and `hub_approval_request` give the checkout's current branch. Not covered by the signature |
+| branch | agent | the branch the hub applies the change on, in its linked worktree ("Applying"); `approvals add` and `hub_approval_request` give the checkout's current branch. Covered by the signature when present (`approvals.canonical`; one signed before branches stays valid), and shown to the owner on the card and in `hub.py approvals show` |
 | files | agent, server | `[{path, base_blob, blob, content}]` sorted by path; the server computes `blob` from `content`. A null `base_blob` is a new file, a null `content` (and `blob`) a delete (`approvals.new_doc`) |
 | diff | server | the unified diff lines the page shows, from the base read with git from this machine's checkout of `repo` to `content` (`approvals.diff`) |
 | created_at | server | ISO time of the request |
-| decision, decided_at, sig | server | once the owner decides; `sig` (the approval key's signature) on an approval only |
-| commit, consumed_at | server | once the hub applies the approval: its commit ("Applying"); the consume route writes them too |
+| decision, decided_at, sig | server | once the owner decides; `sig` (the approval key's signature) on an approval only, over the id, repo, head, each file's path, base blob and blob, the decision, `decided_at` and, when present, `branch` (`approvals.canonical`) |
+| commit, consumed_at | server | once the hub applies the approval: its commit ("Applying"). Nothing else writes them: no route takes a commit from an agent |
 | applied | server | `{by, branch, worktree}`: the hub applied it, in that worktree |
 | apply | server | `{at, error}`: the hub's last try to apply it failed, and why; the approval stays approved |
 | spent, spent_at | server | the commit on main that carries the approval and when the hub learned it: set once, from a landing feed event's `approvals` ("landings/L-NNN"), on a consumed file approval of the event's repo only. Display only, for a later page (no page reads them yet): the status stays, and whether an approval is used up is read from main itself (`approvals.spent`). An approval that reached main some other way than `tools/land.py` has none |
@@ -40,8 +40,9 @@ Routes, below `/api/v1`:
   request again ("Applying"), answered as the decide route's. Any other status is `conflict`, field
   `status`; an op approval is `conflict`, field `kind`. `hub.py approvals apply A-n [--if-version V]`
   prints `APPLIED A-n <commit>`, or `UNAPPLIED A-n: <why>` and exits 1.
-- POST `/approvals/{id}/consume` (agent): body `commit` and `if_version`; only an approval that is
-  `approved` is consumed.
+- POST `/approvals/{id}/consume` (agent) consumes an op approval only (kind `op`, below). A body
+  with `commit` is `invalid`, field `commit`: a file approval is consumed by the hub's apply alone, so
+  no agent can spend one the owner approved and the hub has not applied.
 - POST `/approvals/{id}/delete` (agent): the requester withdraws a request (`hub.py approvals withdraw A-n
   --from KEY --if-version V`), as `questions withdraw` does: the body gives `from` and `if_version`, both
   required, and the document is deleted. Only an undecided request is withdrawn, pending or expired
@@ -85,8 +86,8 @@ approves is the operation id, the repo and the line. A pending op request expire
 
 - POST `/approvals` (agent): body `kind` `op`, `op`, `repo`, `line`, `title`, optional `reason` and
   `what`. No checkout is read. Any other `kind` is `invalid`, field `kind`.
-- POST `/approvals/{id}/consume` (agent): body `args_sha256` (in place of `commit`) and `if_version`. Both
-  `commit` and `args_sha256` is `invalid`.
+- POST `/approvals/{id}/consume` (agent): body `args_sha256` and `if_version`. A `commit` is `invalid`,
+  field `commit`.
 - GET `/approvals/{id}/verify` (agent): query `kind=op`, `op`, `repo` and `args` (the line's SHA-256);
   answers `{ok, valid, why, version}`. The version pins the consume that follows. Only `approved`
   verifies: a consumed op approval was used once.
@@ -157,15 +158,21 @@ agent, docs/guard-owner.md). The steps are `kitlib/ownerfiles/apply.py`'s docstr
   has it checked out (`apply.worktree_for`). The main checkout's branch, a branch no linked worktree
   has, or a request with no `branch` is refused.
 - Checks, read-only and in order: the approval is signed, approved, unconsumed and unexpired for that
-  worktree's repository (`approvals.check`); the worktree's HEAD is the branch, with no merge,
-  cherry-pick, revert or rebase in progress; each approved file of the work tree is HEAD's copy and
-  the approved change applies on HEAD by the delta rule (`prewrite`, docs/commit.md "Owner approval"
-  for the rule); nothing is staged on an approved path; the backlog's narrowed-scope check passes on
-  the paths (docs/commit.md "A narrowed record").
+  worktree's repository (`approvals.check`), and the branch is the one it names (the signature covers
+  it); the worktree's HEAD is the branch, with no merge, cherry-pick, revert or rebase in progress; no
+  approved path is a render source of a kit checkout (the hub's commit renders nothing); each approved
+  file of the work tree is HEAD's copy and the approved change applies on HEAD by the delta rule
+  (`prewrite`, docs/commit.md "Owner approval" for the rule); the worktree's filters (`.gitattributes`,
+  `core.autocrlf`: `git hash-object --path`) keep each approved file as its approved blob; nothing is
+  staged, on an approved path or any other; the backlog's narrowed-scope check passes on the paths
+  (docs/commit.md "A narrowed record").
 - The commit: made on a private index from HEAD's tree and the approved blobs (hashed as they are,
   no filters), one parent, the request's title and reason and `Owner-Approval: hub:A-<n>`, author and
   committer `PM kit hub <hub@pm-kit.invalid>` (`apply.AUTHOR`, never the owner), no hook. The
-  owner-file rules (`kitlib.ownerfiles.rules.violations`) must pass it before the branch moves.
+  owner-file rules (`kitlib.ownerfiles.rules.violations`) must pass it before the branch moves, read
+  as `gate land` reads them (`kitlib.gate.land` `owner_refusal`): the config the commit holds merged
+  with main's (`<remote>/<main>` as last fetched, else the main checkout's HEAD), never the work
+  tree's `.kit.json`, so an uncommitted edit there cannot loosen them.
 - The branch is moved by compare-and-swap from the HEAD the checks read, then the approved files are
   written and their index entries set to the commit's. The decision (for an approve), `commit`,
   `consumed_at` and `applied` are one write pinned to the version the caller gave.
@@ -175,13 +182,14 @@ agent, docs/guard-owner.md). The steps are `kitlib/ownerfiles/apply.py`'s docstr
 
 The agent who asked sees the result in `hub.py approvals show A-<n>` and in a push ("applied" or
 "unapplied", docs/hub-push.md "Push notifications"). On an unapplied one it puts the worktree right
-(the reason names what: a file changed, a staged path, the wrong branch) and the owner applies it
+(the reason names what: a file changed, something staged, the wrong branch) and the owner applies it
 again. `tools/commit.py --owner-approval` is a usage error naming this (docs/commit.md "Owner
 approval").
 
 Known limits:
-- `branch` is not covered by the signature: whoever can write the hub's store can change it before
-  the owner approves. The commit's content is still the signed change.
+- A request with no `branch` (one stored before branches) is never applied: the owner asks again.
+- A failed put-back of the branch after a concurrent commit on it (the compare-and-swap of `undo`
+  refused) leaves the hub's commit in the branch's history, unconsumed: the reason names it.
 - The hub's commit carries no `Co-Authored-By` line, so `tools/trailers.py` warns on it.
 
 ## landings/L-NNN

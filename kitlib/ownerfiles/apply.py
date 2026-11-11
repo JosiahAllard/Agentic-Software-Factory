@@ -35,15 +35,20 @@ merge that conflicts, a path HEAD holds as something other than a regular file, 
 approval creates that HEAD holds with other content refuses.
 
 apply, in order. Read-only checks first: the approval is signed under `key`, approved, never
-consumed and not expired at `now`, for the worktree's repository (approvals.check); HEAD is the
-branch, with no merge, cherry-pick, revert or rebase in progress; prewrite passes on HEAD; each
-approved path's index entry is HEAD's (nothing staged on it); each probe in `checks` ((root,
-paths) -> why or None) passes. Then the commit is made on a private index (GIT_INDEX_FILE), never
-the worktree's: the approved bytes hashed as they are (--no-filters), HEAD's tree with the
-approved entries, one parent, the message the approval's title, its reason and `Owner-Approval:
-hub:A-<n>`, author and committer AUTHOR (never the owner, so the owner-file rules judge it by its
-approval), no hook. kitlib.ownerfiles.rules.violations must find nothing on it, with the approval
-judged in process (the delta rule and approvals.check, unconsumed). The branch is moved by
+consumed and not expired at `now`, for the worktree's repository (approvals.check), and `branch`
+is the branch it names (the signature covers that name); HEAD is the branch, with no merge,
+cherry-pick, revert or rebase in progress; no approved path is a render source of a kit checkout
+(the hub's commit renders nothing); prewrite passes on HEAD; the worktree's own filters
+(.gitattributes, core.autocrlf: `hash-object --path`) keep each approved file as its approved
+blob; each approved path's index entry is HEAD's and nothing else is staged; each probe in
+`checks` ((root, paths) -> why or None) passes. Then the commit is made on a private index
+(GIT_INDEX_FILE), never the worktree's: the approved bytes hashed as they are (--no-filters),
+HEAD's tree with the approved entries, one parent, the message the approval's title, its reason
+and `Owner-Approval: hub:A-<n>`, author and committer AUTHOR (never the owner, so the owner-file
+rules judge it by its approval), no hook. kitlib.ownerfiles.rules.violations must find nothing on
+it, under the rules the land check reads (_owner_rules: the config the commit holds merged with
+main's, never the work tree's `.kit.json`), with the approval judged in process (the delta rule
+and approvals.check, unconsumed). The branch is moved by
 compare-and-swap (`update-ref <new> <old>`: the commit point), then the files are written and the
 approved paths' index entries set to the commit's (git's index.lock, a bounded retry). A failure
 after the branch moved puts back what was done: the branch moved back by compare-and-swap, the
@@ -335,6 +340,80 @@ def _at_head(root, old, paths):
     return got, None
 
 
+def _staged_error(root, old, paths):
+    """Why the index of `root` holds something staged against `old` besides `paths`, or None: the
+    hub applies on a clean index only, so nothing of anyone else's is left staged on its commit."""
+    out, why = _git(root, ['diff', '--cached', '--name-only', '--no-renames', '-z', old, '--'])
+    if out is None:
+        return why
+    others = sorted(set(n for n in out.split('\0') if n) - set(paths))
+    if others:
+        return ('something else is staged in %s: %s. The hub applies an approved change on a '
+                'clean index only: commit or unstage it there first' % (root, ', '.join(others)))
+    return None
+
+
+def _filters_error(root, plan):
+    """Why the filters of the worktree `root` (.gitattributes text and eol rules, core.autocrlf, a
+    clean filter) would store an approved file as another blob than the approved one, or None.
+    The commit holds the exact approved bytes; a work tree that cleans them to another blob would
+    show the applied file changed, and its next commit would store other bytes."""
+    for p, (blob, data) in sorted(plan.items()):
+        if data is None:
+            continue
+        out, why = _git(root, ['hash-object', '--path', p, '--stdin'], stdin=data)
+        if out is None:
+            return why
+        if out.strip() != blob:
+            return ('%s would be stored as %s by the filters of %s (.gitattributes, '
+                    'core.autocrlf), not as the approved blob %s: the hub commits the approved '
+                    'bytes exactly. Ask again with content those filters keep as it is'
+                    % (p, out.strip()[:12], root, blob[:12]))
+    return None
+
+
+def _render_error(root, paths):
+    """Why `paths` hold a render source of the kit checkout `root`, or None: the hub's commit
+    renders nothing, so the rendered files would be left behind (kitlib.ownerfiles.request
+    refuses such a request; this refuses one stored another way)."""
+    from kitlib.content import oncommit
+    rendered = [p for p in paths if oncommit.wants_render([p])]
+    if rendered and oncommit.is_kit(root):
+        return ('%s is a render source: the hub\'s commit renders nothing, so its rendered files '
+                'would be left behind. The owner commits it with tools/commit.py --owner-authored'
+                % ', '.join(rendered))
+    return None
+
+
+def _owner_rules(root, new):
+    """(rules, None): the owner rules the land check reads (kitlib.gate.land owner_refusal): the
+    config the commit `new` holds (the defaults when it does not load) merged with main's
+    (kitlib.config.owner.merge), main being <remote>/<main> as last fetched, else the main
+    checkout's HEAD; never the work tree's `.kit.json`, so an uncommitted edit there cannot loosen
+    them. (None, why) when main's config cannot be read."""
+    from kitlib import config as kconfig
+    found, why = gitrepo.worktrees(root)
+    if not found:
+        return None, 'the main checkout of %s cannot be found: %s' % (root, why or 'none listed')
+    main_root = found[0].path
+    head, why = _git(main_root, ['rev-parse', '--verify', 'HEAD^{commit}'])
+    if head is None:
+        return None, why
+    try:
+        cfg = kconfig.load_at(main_root, head.strip())
+        ref = 'refs/remotes/%s/%s^{commit}' % (cfg.remote, cfg.main_branch)
+        tracking, _why = _git(main_root, ['rev-parse', '--verify', '-q', ref])
+        if tracking:
+            cfg = kconfig.load_at(main_root, tracking.strip())
+    except kconfig.ConfigError as e:
+        return None, 'the kit configuration of main is refused: %s' % e
+    try:
+        work = kconfig.load_at(root, new).owner_rules()
+    except kconfig.ConfigError:
+        work = kconfig.OwnerRules()
+    return kconfig.merge_owner_rules(work, cfg.owner_rules()), None
+
+
 def _info(entries, paths):
     """The `update-index --index-info` lines that set `paths` to `entries` ({path: (mode, oid) or
     None}; None removes the path)."""
@@ -406,6 +485,9 @@ def _checks(root, branch, did, doc, key, now, checks):
                        {f['path']: f.get('blob') for f in doc['files']}, now)
     if not ok:
         return None, 'hub:%s cannot be applied: %s' % (did, why)
+    if doc.get('branch') != branch:
+        return None, ('hub:%s was approved for branch %s, not %s: it is applied only on the '
+                      'branch its signature covers' % (did, doc.get('branch'), branch))
     why = _head_error(root, branch)
     if why:
         return None, why
@@ -413,11 +495,20 @@ def _checks(root, branch, did, doc, key, now, checks):
     if out is None:
         return None, why
     old, paths = out.strip(), approved_paths(doc)
+    why = _render_error(root, paths)
+    if why:
+        return None, why
     plan, why = prewrite(root, did, doc, paths, old)
     if plan is None:
         return None, why
+    why = _filters_error(root, plan)
+    if why:
+        return None, why
     at_head, why = _at_head(root, old, paths)
     if at_head is None:
+        return None, why
+    why = _staged_error(root, old, paths)
+    if why:
         return None, why
     for probe in checks:
         why = probe(root, paths)
@@ -463,18 +554,16 @@ def apply(root, branch, did, doc, key, now, checks=()):
     document) is committed on `branch` in the worktree `root` and written there; else (None, why),
     with what was done put back (module docstring). `key`: the approval key; `now`: an aware
     datetime; `checks`: probes (root, paths) -> why or None, run before anything is written."""
-    from kitlib import config as kconfig
     got, why = _checks(root, branch, did, doc, key, now, checks)
     if got is None:
         return None, why
     old, plan, at_head, repo = got
-    try:
-        rules = kconfig.load(root).owner_rules()
-    except kconfig.ConfigError as e:
-        return None, 'the kit configuration of %s is refused: %s' % (root, e)
     new, why = _build(root, did, doc, old, plan, at_head)
     if new is None:
         return None, 'the commit could not be made: %s' % why
+    rules, why = _owner_rules(root, new)
+    if rules is None:
+        return None, why
     bad, why = oc.violations(root, rules, new, (old,),
                              approvals=_Approved(key, did, doc, repo, now))
     if bad is None or bad:

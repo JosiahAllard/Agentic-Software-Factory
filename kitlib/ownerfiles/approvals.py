@@ -69,8 +69,9 @@ their change is the approved one (Verifier) and fail closed on any doubt.
   Verifier(client)                .verify(doc_id, repo, head, blobs, commit=None) -> (ok, why),
                                   through the verify route; fails closed.
                                   .approved_doc(doc_id) -> (doc, why) from the snapshot
-  request(client, repo, title, head, files, reason=None) / consume(client, doc_id, commit,
-  if_version)                     the agent's add and consume calls
+  request(client, repo, title, head, files, reason=None, record=None, branch=None)
+                                  the agent's add call (a change approval is consumed only by
+                                  the hub's own apply: there is no agent call for it)
   apply_approved(client, doc_id, if_version=None)
                                   the owner's call that has the hub apply an approved request
                                   again (kitlib.ownerfiles.apply)
@@ -111,7 +112,8 @@ The document (collection `approvals`, ids A-<n>):
                                  mark of the record's park (kitlib.hubsite.api park_item); not
                                  covered by the signature
   branch                         the branch the hub applies the change on, in its one linked
-                                 worktree (kitlib.ownerfiles.apply); not covered by the signature
+                                 worktree (kitlib.ownerfiles.apply); covered by the signature
+                                 when present (canonical), and shown to the owner on the card
   apply {at, error}              the last apply that failed: the approval stays approved
   applied {by, branch, worktree} once the hub applied it (with commit and consumed_at)
 
@@ -156,10 +158,10 @@ and expired are final. Superseded is read too, from the `superseded` note, and b
 an approval superseded and past its life reads superseded, the act on record. It is final, never
 consumed and never verified.
 
-Routes (kitlib.hubsite.api): the helpers below call ROUTE (POST add), ROUTE/<id>/consume (POST)
-and ROUTE/<id>/verify (GET, query repo, head, files as JSON {path: blob} and an optional commit;
-it answers {"ok": true, "valid": bool, "why": str} and never the key or the sig); the owner's
-ROUTE/<id>/decide (POST) is the page's. No printing, no exit.
+Routes (kitlib.hubsite.api): the helpers below call ROUTE (POST add), ROUTE/<id>/consume (POST,
+an op approval's only) and ROUTE/<id>/verify (GET, query repo, head, files as JSON {path: blob}
+and an optional commit; it answers {"ok": true, "valid": bool, "why": str} and never the key or
+the sig); the owner's ROUTE/<id>/decide (POST) is the page's. No printing, no exit.
 """
 import datetime
 import difflib
@@ -460,7 +462,8 @@ def new_op_doc(op, repo, line, title, now, reason=None, what=None):
 
 def canonical(doc_id, doc):
     """The bytes sign() covers: JSON of the id, repo, head, each file's [path, base_blob, blob]
-    sorted by path, the decision and decided_at, with sorted keys and no spaces; for an op
+    sorted by path, the decision, decided_at and, only when the document has one, the branch
+    (so a signature made before branches stays valid), with sorted keys and no spaces; for an op
     document, of the id, kind, op, repo, args_sha256, the decision and decided_at. ValueError
     for a document that has not their shape, that names a path twice or is of no known kind."""
     if _is_op(doc):
@@ -482,6 +485,8 @@ def canonical(doc_id, doc):
         raise ValueError('a path of the approval is named twice')
     body = {'id': doc_id, 'repo': doc.get('repo'), 'head': doc.get('head'), 'files': triples,
             'decision': doc.get('decision'), 'decided_at': doc.get('decided_at')}
+    if 'branch' in doc:
+        body['branch'] = doc['branch']
     return json.dumps(body, sort_keys=True, separators=(',', ':'),
                       ensure_ascii=True).encode('ascii')
 
@@ -1083,13 +1088,6 @@ def request(client, repo, title, head, files, reason=None, record=None, branch=N
     if branch is not None:
         body['branch'] = branch
     return client.post(ROUTE, AGENT, body)
-
-
-def consume(client, doc_id, commit, if_version):
-    """Mark the approval `doc_id` consumed by `commit` (POST ROUTE/<id>/consume, the agent's),
-    pinned to `if_version`; the client's errors propagate."""
-    return client.post('%s/%s/consume' % (ROUTE, _part(doc_id)), AGENT,
-                       {'commit': commit, 'if_version': if_version})
 
 
 def apply_approved(client, doc_id, if_version=None):

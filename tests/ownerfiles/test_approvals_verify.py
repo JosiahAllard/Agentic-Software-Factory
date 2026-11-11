@@ -566,14 +566,13 @@ class VerifierTest(unittest.TestCase):
         ok, why = ap.Verifier(FakeClient({'valid': True})).verify('A-1', URL, HEAD, {1j: 'x'})
         self.assertEqual((ok, why), (False, ap.WHY_SERVER % 'TypeError'))
 
-    def test_request_and_consume_are_the_agents_calls(self):
+    def test_request_is_the_agents_call_and_there_is_no_change_consume(self):
         client = FakeClient({'ok': True})
-        ap.request(client, URL, 't', HEAD, files(), reason='r')
-        ap.consume(client, 'A 1', COMMIT, 3)
+        ap.request(client, URL, 't', HEAD, files(), reason='r', branch='kit/w')
         self.assertEqual(client.calls, [
             ('POST', '/approvals', AGENT, {'repo': URL, 'title': 't', 'head': HEAD,
-                                           'files': files(), 'reason': 'r'}),
-            ('POST', '/approvals/A%201/consume', AGENT, {'commit': COMMIT, 'if_version': 3})])
+                                           'files': files(), 'reason': 'r', 'branch': 'kit/w'})])
+        self.assertFalse(hasattr(ap, 'consume'))
 
 
 if __name__ == '__main__':

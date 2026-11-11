@@ -900,6 +900,53 @@ class ReflogTimes(ClassifyCase):
         self.assertIsNone(self.row(data, path)['mark']['void'])
 
 
+class ReflogNewest(unittest.TestCase):
+    """sweep.reflog_newest on its own: no source, a newest time, or cannot tell."""
+
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+
+    def file(self, data):
+        path = os.path.join(self.dir, 'HEAD')
+        with open(path, 'wb') as f:
+            f.write(data)
+        return path
+
+    def test_each_case(self):
+        sha = b'0' * 40
+        cases = [
+            ('an empty file is no source', lambda: self.file(b''), (None, None)),
+            ('a missing file is no source',
+             lambda: os.path.join(self.dir, 'missing'), (None, None)),
+            ('a line with no tab and no message parses',
+             lambda: self.file(sha + b' ' + sha + b' A <a@b> 1700000100 +0000\n'
+                               + sha + b' ' + sha + b' A <a@b> 1700000000 -0500'),
+             ((1700000100, 'an entry of its HEAD reflog'), None)),
+        ]
+        for name, make, want in cases:
+            with self.subTest(name):
+                self.assertEqual(sweep.reflog_newest(make(), 'its HEAD reflog'), want)
+
+    def test_an_unreadable_path_is_cannot_tell(self):
+        cases = [
+            ('a directory where the file should be', lambda: self.dir, None),
+            ('open raises OSError', lambda: self.file(b''),
+             OSError(13, 'denied')),
+        ]
+        for name, make, raise_ in cases:
+            with self.subTest(name):
+                path = make()
+                if raise_ is None:
+                    got = sweep.reflog_newest(path, 'its HEAD reflog')
+                else:
+                    with mock.patch('builtins.open', side_effect=raise_):
+                        got = sweep.reflog_newest(path, 'its HEAD reflog')
+                self.assertIsNone(got[0], got)
+                self.assertTrue(got[1].startswith('its HEAD reflog cannot be read ('), got)
+
+
 class StaleMarkShown(ClassifyCase):
 
     def write_marks(self, *records, text=None):

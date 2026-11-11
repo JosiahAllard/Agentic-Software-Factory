@@ -912,7 +912,7 @@ def _serve(a, stop):
     scratch = a.store is not None       # never the truth of the text: '' is refused by the parser
     if scratch:
         s = s._replace(store=os.path.abspath(a.store), push=False)
-    sources = serve.machine_sources(sync=not scratch, jobs=hubjobs.makers())
+    sources = hubjobs.machine_sources(sync=not scratch)
     if not scratch:
         sources.push, sources.push_dir = _push_delivery()
     hub = serve.build(s, sources, log=_log)

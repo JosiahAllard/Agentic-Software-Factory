@@ -373,9 +373,9 @@ class Sources(object):
                    LockDoor, or its like: revision, view, stats); None: those routes answer
                    `unavailable`
       jobs         the timed jobs (kitlib.hubsite.jobs): [make(sources) -> jobs.Job or None],
-                   one per job, each with `module` and `folder` when it has them (the hubjobs
-                   package's makers, which tools/hub.py serve hands machine_sources; a scratch
-                   store none); [] or None: none
+                   one per job, each with its `folder` (serve.code_folders) and `module` (the
+                   hubjobs package's makers, which hubjobs.machine_sources hands
+                   machine_sources; a scratch store none); [] or None: none
       home         the home folder machine_sources read the machine config under (None: the
                    user's), for a job that reads it again
       pending      callable(for_key) -> the pending items for a session key (Api.pending: each
@@ -1367,14 +1367,14 @@ def build(settings, sources, log=None):
 
 def code_folders(jobs=()):
     """The folders whose .py files are the hub's code: this package, the folder of each of the
-    timed jobs' makers `jobs` that names one (`folder`: Sources.jobs), so a job added or changed
+    timed jobs' makers `jobs` (each one's `folder`: Sources.jobs), so a job added or changed
     on disk is stale code too, and the package the server reads its machine settings through
     (kitlib.config). Each folder once, in that order."""
     out = [os.path.dirname(os.path.abspath(__file__))]
     for maker in jobs or ():
-        folder = getattr(maker, 'folder', None)     # a stand-in maker may name none
-        if folder and os.path.abspath(folder) not in out:
-            out.append(os.path.abspath(folder))
+        folder = os.path.abspath(maker.folder)
+        if folder not in out:
+            out.append(folder)
     return out + [os.path.dirname(os.path.abspath(user.__file__))]
 
 
@@ -1403,14 +1403,13 @@ class Hub(object):
     the push-notification worker (kitlib.hubsite.push.PushWorker: start, stop) or None; `jobs`
     the timed jobs (kitlib.hubsite.jobs.Jobs: start, stop) or None. `tokens` is the token
     folder (selfrestart.LOG_NAME goes there) or None; `code` the folders the code stamp reads
-    (build: code_folders of its Sources.jobs; None: code_folders()); `self_restart` the
-    selfrestart.Watcher, made at the first look that finds the code changed unless one was set
-    before."""
+    (build: code_folders of its Sources.jobs); `self_restart` the selfrestart.Watcher, made at
+    the first look that finds the code changed unless one was set before."""
 
     def __init__(self, settings, store, api, views, creds, listeners, sync, backlog_views, notes,
-                 log=None, tunnel='', stopping=None, push=None, jobs=None, tokens=None, code=None):
+                 log=None, tunnel='', stopping=None, push=None, jobs=None, tokens=None, *, code):
         self.tokens = tokens
-        self._folders = code if code is not None else code_folders()
+        self._folders = code
         self.self_restart = None
         self.push = push
         self.jobs = jobs

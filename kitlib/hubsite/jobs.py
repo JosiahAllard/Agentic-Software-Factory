@@ -1,6 +1,6 @@
 """kitlib.hubsite.jobs: the runner of the hub server's timed jobs, one thread each. The jobs
-themselves are modules of the hubjobs package (its docstring: adding a job); the first is the plugin
-refresh (kitlib.hubsite.plugin_job, docs/plugin-source.md "Hub refresh").
+themselves are modules of the hubjobs package (its docstring: adding a job); the first is the
+plugin refresh (kitlib.hubsite.plugin_job, docs/plugin-source.md "Hub refresh").
 
   Job(name, every_s, run, first_s=FIRST_S)   one job: `run(ctx)` every `every_s` seconds, the
                                              first time `first_s` after start
@@ -32,9 +32,8 @@ success (None before one), `error` the last failure's text while `failures` is n
 (else None).
 
 Nothing here knows any job: each is a module of the hubjobs package that gives a Job, found by
-its makers(), which tools/hub.py serve hands the server (serve.machine_sources, Sources.jobs). The
-existing timers (the git
-sync, the backlog views, the push worker) are not jobs.
+its makers(), which the server is handed (hubjobs.machine_sources, Sources.jobs). The existing
+timers (the git sync, the backlog views, the push worker) are not jobs.
 """
 import threading
 import time

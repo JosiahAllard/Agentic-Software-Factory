@@ -118,8 +118,9 @@ store's git push (the `push` setting).
 - Timed jobs: each job is a module of `kitlib/hubjobs` with `make(sources)`, found there by
   `kitlib.hubjobs.makers` (pkgutil; a module named `_...` is a helper, not a job) and run by
   `kitlib.hubsite.jobs`; adding one needs no edit to a shared file (the `kitlib.hubjobs` docstring
-  says how). The server never imports them: `tools/hub.py serve` hands it the makers
-  (`serve.machine_sources(jobs=)`). The machine's server runs them all, a scratch store (`--store`) none; one whose module
+  says how). The server never imports them: `tools/hub.py serve` builds its Sources with
+  `kitlib.hubjobs.machine_sources`, which hands the makers to `serve.machine_sources(jobs=)`. The
+  machine's server runs them all, a scratch store (`--store`) none; one whose module
   will not import or whose `make` raises is a start-up note and the hub serves without it. The plugin
   refresh is one (docs/plugin-source.md "Hub refresh"). At a job's third failure in a row the worker
   pushes the PM once `[hub push] job <name> failing route:pm attempt:<k>`, and `... recovered` at its

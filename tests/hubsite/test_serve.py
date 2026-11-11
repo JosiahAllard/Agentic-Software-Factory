@@ -1278,6 +1278,26 @@ class ReasonCase(ServeCase):
         self.assertEqual(os.path.basename(folders[-1]), 'config')
         self.assertEqual(len(set(folders)), 3)
 
+    def test_a_built_hub_counts_a_file_changed_in_a_handed_jobs_folder_as_new_code(self):
+        folder = os.path.join(self.root, 'jobs-here')
+        os.makedirs(folder)
+        job = os.path.join(folder, 'one.py')
+        with open(job, 'w') as out:
+            out.write('X = 1\n')
+
+        def maker(sources):
+            return None
+        maker.folder = folder
+        with mock.patch.object(serve, 'CODE_LOOK_S', 0):
+            hub = self.build(jobs=[maker])
+            hub.watch()
+            self.assertEqual(self.lines, [])
+            with open(job, 'w') as out:
+                out.write('X = 22\n')       # a new size: the stamp differs whatever the clock
+            hub.watch()
+        self.assertEqual(self.lines, self.warned())
+        hub.close()
+
     def test_quiet_waits_for_every_request_in_flight_and_every_running_job(self):
         class Lis(object):
             busy = False

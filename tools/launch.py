@@ -29,8 +29,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from kitlib import kitroot                                         # noqa: E402
 from kitlib.config.types import ConfigError                       # noqa: E402
-from kitlib.launcher import accounts, handoff, pushdelivery, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
+from kitlib.pluginsource import layout                             # noqa: E402
+from kitlib.launcher import accounts, handoff, pushdelivery, reboot, relaunch, sessionsettings, settings as S, start, stop, usage, window  # noqa: E402
 from kitlib.launcher.host import Host                               # noqa: E402
 
 USAGE = 2
@@ -61,6 +63,9 @@ def existing_file(path):
 PERMISSION_MODE_ARG = dict(choices=window.PERMISSION_MODES, default=None, metavar='MODE',
                            help='the session permission mode (%s); omitted: the default command line'
                            % ', '.join(window.PERMISSION_MODES))
+MCP_ARG = dict(action='append', default=[], metavar='SERVER',
+               help="start with this kit MCP server, which the session settings otherwise deny (repeatable; "
+                    "a file of the session's own, docs/launcher.md \"Session settings\")")
 
 
 def parser():
@@ -90,6 +95,7 @@ def parser():
     s.add_argument('--no-remote-control', action='store_true',
                    help='start without --remote-control (for measuring its cost; found by -n)')
     s.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
+    s.add_argument('--mcp', **MCP_ARG)
 
     d = sub.add_parser('deep', help='a deep-worker session')
     d.add_argument('--repo-path', required=True)
@@ -110,6 +116,7 @@ def parser():
     d.add_argument('--state', help="the predecessor's state note, read first (an absolute path)")
     d.add_argument('--checkin', help='a file the session writes once it has read its notes (an absolute path)')
     d.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
+    d.add_argument('--mcp', **MCP_ARG)
 
     c = sub.add_parser('consultant', help="a repo's consultant session")
     c.add_argument('--repo-path', required=True)
@@ -126,6 +133,7 @@ def parser():
     c.add_argument('--home-worktree', action='store_true', help=HOME_HELP)
     c.add_argument('--checkin', help='a file the session writes once it has read its notes (an absolute path)')
     c.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
+    c.add_argument('--mcp', **MCP_ARG)
 
     t = sub.add_parser('topic', help='a plain session marked topic that builds one batch of records '
                        '(skill topic-session)')
@@ -140,6 +148,7 @@ def parser():
     t.add_argument('--force', action='store_true', help='start on an account at or over ' + str(accounts.HEADROOM_LIMIT) + '%%')
     t.add_argument('--plan', action='store_true', help='print, start and write nothing')
     t.add_argument('--permission-mode', **PERMISSION_MODE_ARG)
+    t.add_argument('--mcp', **MCP_ARG)
 
     m = sub.add_parser('homes', help="a main checkout's home worktrees, or remove one")
     g = m.add_mutually_exclusive_group(required=True)
@@ -234,6 +243,19 @@ def push_delivery(settings):
     return pushdelivery.push_delivery(_host.adapter_module, settings, catch=(ImportError, AttributeError))[0]
 
 
+def session_spec():
+    """The sessionsettings.Spec of start.CLI_HOST's renderer, or None when its adapter has none
+    (or will not import): sessions then start with no --settings. Its kit is the stable kit, the
+    kit checkout this tool's (layout.default_kit: an export's file goes at the next refresh)."""
+    try:
+        import _host
+        r = _host.adapter_module(start.CLI_HOST).ADAPTER.content().renderer()
+    except (ImportError, AttributeError):
+        return None
+    stable, _ = layout.default_kit(kitroot.root())
+    return sessionsettings.Spec(r.session_settings_rel(), r.mcp_deny_names(), stable)
+
+
 def run(a, settings, host):
     if a.cmd == 'start':
         if a.session:
@@ -243,25 +265,27 @@ def run(a, settings, host):
             if ignored:
                 raise S.LaunchError('--session takes its settings from the sessions.json entry; '
                                     'drop %s.' % ', '.join(ignored))
+            if a.mcp:
+                raise S.LaunchError('--session starts the entry as recorded; drop --mcp.')
             return start.start_entry(settings, host, a.session, a.account, a.prompt, a.what_if,
                                      home_worktree=a.home_worktree, permission_mode=a.permission_mode)
         return start.start(settings, host, a.repo, a.repo_path, a.account, a.org, a.prompt, a.brief,
                            name=a.name, predecessor=a.predecessor, no_agent=a.no_agent, agent=a.agent,
                            model=a.model, effort=a.effort, autocompact=a.autocompact, whatif=a.what_if,
                            home_worktree=a.home_worktree, remote_control=not a.no_remote_control,
-                           permission_mode=a.permission_mode)
+                           permission_mode=a.permission_mode, mcp=a.mcp)
     if a.cmd == 'deep':
         return start.deep(settings, host, a.repo_path, a.requester, a.slug, a.brief, a.brief_text, a.account,
                           a.autocompact, a.model, a.effort, a.force, a.plan, a.brief_dir,
                           home_worktree=a.home_worktree, predecessor=a.predecessor, state=a.state,
-                          checkin=a.checkin, permission_mode=a.permission_mode)
+                          checkin=a.checkin, permission_mode=a.permission_mode, mcp=a.mcp)
     if a.cmd == 'consultant':
         return start.consultant(settings, host, a.repo_path, a.repo, a.account, a.autocompact, a.model, a.effort,
                                 a.notes_path, a.force, a.replace, a.plan, home_worktree=a.home_worktree,
-                                checkin=a.checkin, permission_mode=a.permission_mode)
+                                checkin=a.checkin, permission_mode=a.permission_mode, mcp=a.mcp)
     if a.cmd == 'topic':
         return start.topic(settings, host, a.worktree, a.slug, a.brief, a.account, a.model, a.effort,
-                           a.autocompact, a.force, a.plan, permission_mode=a.permission_mode)
+                           a.autocompact, a.force, a.plan, permission_mode=a.permission_mode, mcp=a.mcp)
     if a.cmd == 'homes':
         return start.homes(settings, host, a.repo, a.repo_path, a.remove, a.what_if)
     if a.cmd == 'stop':
@@ -303,7 +327,9 @@ def run(a, settings, host):
 
 def main(argv=None, host=None):
     a = parser().parse_args(argv)
-    host = host or Host()
+    if host is None:
+        host = Host()
+        host.session_spec = session_spec()
     try:
         settings = S.load(host.home)
         lines = run(a, settings, host)

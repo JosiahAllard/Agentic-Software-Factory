@@ -23,7 +23,7 @@ from kitlib.git import cmd
 from kitlib.git import repo as gitrepo
 from kitlib.host import registry
 from kitlib.ledger import rulebook
-from kitlib.launcher import home, lookup, pipes, state, stop, window
+from kitlib.launcher import home, lookup, pipes, sessionsettings, state, stop, window
 from kitlib.launcher.settings import LaunchError
 
 # the PM session's live name depends on how it was started: 'Project Manager' in the desktop app, and the
@@ -200,7 +200,7 @@ def window_text(settings, host, name, role, folder, command, config_dir):
 def start(settings, host, repo=None, repo_path=None, account=None, org=None, prompt=None, brief=None,
           default_prompt=DEFAULT_PROMPT, name=None, predecessor=None, no_agent=False, agent=None,
           model=None, effort=None, autocompact=None, whatif=False, home_worktree=False,
-          remote_control=True, mark=None, permission_mode=None):
+          remote_control=True, mark=None, permission_mode=None, mcp=()):
     """Open a session's window; the lines it says. The repo folder is --repo-path, or the
     launcher.repos entry for --repo. autocompact None is DEFAULT_AUTOCOMPACT; 0 passes no
     --autocompact (the CLI's own window). home_worktree: an agent session whose folder is a main
@@ -208,7 +208,10 @@ def start(settings, host, repo=None, repo_path=None, account=None, org=None, pro
     --remote-control on the command line (window.claude_command; for measurement). mark: the
     PM_KIT_ROLE the window sets in place of the one its agent gives (window.role_for): a topic
     session is a plain session marked window.TOPIC (topic). permission_mode None: the window's own
-    default (window.session_command); else one of window.PERMISSION_MODES."""
+    default (window.session_command); else one of window.PERMISSION_MODES. A host with a
+    `session_spec` (sessionsettings.Spec; launch.py sets it) starts the session with --settings:
+    the rendered file, or with `mcp` (MCP server names) a file of this session's own, written only
+    when the window opens and removed when opening it fails."""
     if autocompact is None:
         autocompact = DEFAULT_AUTOCOMPACT
     if bool(repo) == bool(repo_path):
@@ -243,14 +246,24 @@ def start(settings, host, repo=None, repo_path=None, account=None, org=None, pro
         if add_dir:
             prompt += HOME_NOTE % (start_in, add_dir)
             folder = start_in
+    settings_path, settings_data = _session_settings(host, mcp, name, out)
     command = window.claude_command(name, prompt, run_as(agent), model, effort, autocompact, add_dir=add_dir,
-                                   remote_control=remote_control, permission_mode=permission_mode)
+                                   remote_control=remote_control, permission_mode=permission_mode,
+                                   settings=settings_path)
     text = window_text(settings, host, name, role, folder, command, config_dir)
     if whatif:
-        return out + ['Would open a new window running:', window.shown(text)]
+        wrote = ['Would write the session settings to %s' % settings_path] if settings_data else []
+        return out + wrote + ['Would open a new window running:', window.shown(text)]
     after_ms = pipes.launch_ms(host.now())      # the registry record the window makes starts after this
     kw = window.open_args(name, settings)
-    host.open_window(text, **kw)
+    if settings_data:
+        sessionsettings.write(settings_path, settings_data)
+    try:
+        host.open_window(text, **kw)
+    except BaseException:
+        if settings_data:
+            sessionsettings.remove(settings_path)
+        raise
     out = out + ['Started %s (%s) in %s. Remote Control name: %s'
                  % (name, label, window.opened_in(name, kw.get('terminal')), name)]
     try:            # the window is open: a fault here must not read as a failed launch
@@ -329,6 +342,22 @@ def entry_start_args(settings, key, entry, account, prompt, predecessor=None, na
     if entry.get('brief') and (entry.get('agent') or any_brief):
         args['brief'] = entry['brief']
     return args
+
+
+def _session_settings(host, mcp, name, out):
+    """(the --settings file, the JSON start writes there or None) for a session `name`: none when
+    the host has no session_spec (a refusal when `mcp` asks for servers) or the rendered file is
+    missing (said in `out`)."""
+    spec = getattr(host, 'session_spec', None)
+    if spec is None:
+        if mcp:
+            raise LaunchError('--mcp needs the session settings, which this launcher has none of.')
+        return None, None
+    path, missing = sessionsettings.resolve(spec)
+    if missing:
+        out.append(missing)
+        return None, None
+    return sessionsettings.plan(spec, path, mcp, agent_temp(host), name)
 
 
 def start_entry(settings, host, key, account=None, prompt=None, whatif=False, home_worktree=False,
@@ -423,7 +452,7 @@ def deep_model():
 
 def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None, account='auto',
          autocompact=DEEP_AUTOCOMPACT, model=None, effort='xhigh', force=False, plan=False, brief_dir=None,
-         home_worktree=False, predecessor=None, state=None, checkin=None, permission_mode=None):
+         home_worktree=False, predecessor=None, state=None, checkin=None, permission_mode=None, mcp=()):
     """A deep-worker session named deep-<slug>. Every check runs before anything is written; a
     --brief-text file is removed again when the launch fails. `predecessor`: the deep-worker it
     succeeds on another account (the hub's usage crossover): it is named deep-<slug>-a<N> and reads
@@ -481,7 +510,7 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
     try:
         out += start(settings, host, repo_path=repo_path, account=acct, name=name, agent='pm-kit:deep-worker',
                      model=model, effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan,
-                     home_worktree=home_worktree, permission_mode=permission_mode)
+                     home_worktree=home_worktree, permission_mode=permission_mode, mcp=mcp)
     except Exception:
         if wrote:
             try:
@@ -495,7 +524,7 @@ def deep(settings, host, repo_path, requester, slug, brief=None, brief_text=None
 
 
 def topic(settings, host, worktree, slug, brief, account='auto', model=None, effort=None, autocompact=None,
-          force=False, plan=False, permission_mode=None):
+          force=False, plan=False, permission_mode=None, mcp=()):
     """A topic session named topic-<slug> (skill topic-session): a plain session (no agent) the owner
     drives, marked window.TOPIC, started in `worktree`, a linked worktree on the branch its records are
     batched for, with `brief` (a file; relative to the worktree) as its first read. Refused, nothing
@@ -536,7 +565,7 @@ def topic(settings, host, worktree, slug, brief, account='auto', model=None, eff
               % (name, worktree, brief_path, PM_REF))
     out += start(settings, host, repo_path=worktree, account=acct, name=name, no_agent=True, model=model,
                  effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan, mark=window.TOPIC,
-                 permission_mode=permission_mode)
+                 permission_mode=permission_mode, mcp=mcp)
     out.append('When its report is in and the branch has landed, stop it: %s' % stop_cmd(name))
     return out
 
@@ -552,7 +581,7 @@ def _with_lines(out):
 
 def consultant(settings, host, repo_path, repo=None, account='auto', autocompact=CONSULTANT_DEFAULT_AUTOCOMPACT,
                model=LONG_MODEL, effort='high', notes_path=NOTES_DEFAULT, force=False, replace=False, plan=False,
-               home_worktree=False, checkin=None, permission_mode=None):
+               home_worktree=False, checkin=None, permission_mode=None, mcp=()):
     """The consultant session consultant-<repo>; one per repo unless --replace (an account hand-off).
     notes_path None is consultant_notes_path; then an old notes file in the repo (OLD_NOTES) is
     copied to it on first use, just before the window opens, and never changed or deleted
@@ -615,7 +644,7 @@ def consultant(settings, host, repo_path, repo=None, account='auto', autocompact
     try:
         out += start(settings, host, repo_path=repo_path, account=acct, name=name, agent='pm-kit:consultant', model=model,
                      effort=effort, autocompact=autocompact, prompt=prompt, whatif=plan, home_worktree=home_worktree,
-                     permission_mode=permission_mode)
+                     permission_mode=permission_mode, mcp=mcp)
     except Exception:
         if copied:
             try:

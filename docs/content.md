@@ -234,6 +234,8 @@ hosts.json carry none (plugin.json's description says it is rendered); neither d
 copies (skills, `boot/`), which must stay their source's bytes. The line is part of the render, so
 the drift check covers it.
 
+Claude's renderer also writes `hosts/claude/shell/session-settings.json`, the `--settings` file every launched session starts with (docs/launcher.md "Session settings"): its deny list is `SESSION_CUT` in `hosts/claude/adapter/content.py`, less the tools the roles' `capabilities` name, so its sources are that file and `content/roles/`.
+
 The guard refuses a hand edit of a rendered file in a kit checkout, in any session, and names its
 source and the render command (rule `generated-file`, docs/guard-jail-roles.md "Generated files").
 

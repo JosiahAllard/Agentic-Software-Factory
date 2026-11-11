@@ -102,7 +102,8 @@ class RealContentTest(unittest.TestCase):
                          sorted(c.role_names()))
         self.assertFalse(os.path.exists(os.path.join(KIT_ROOT, 'hosts', 'claude', 'shell', 'skills')))
         rendered = claude_content.renderer().render(c)
-        self.assertEqual([p for p in rendered if not p.startswith(claude_content.AGENTS_REL + '/')], [])
+        self.assertEqual([p for p in rendered if not p.startswith(claude_content.AGENTS_REL + '/')],
+                         [claude_content.SESSION_SETTINGS_REL])
 
     def test_the_plugin_manifest_lists_every_role(self):
         with open(os.path.join(KIT_ROOT, '.claude-plugin', 'plugin.json'), encoding='utf-8') as f:
@@ -454,6 +455,7 @@ class TempTreeTest(unittest.TestCase):
         # hosts.json: a plugin ships its host's entry
         for rel in ('kit.json', 'hosts.json', os.path.join('hosts', 'claude', 'shell', 'hooks', 'hooks.json'),
                     os.path.join('hosts', 'claude', 'shell', 'hooks', 'hooks.linux.json'),
+                    os.path.join('hosts', 'claude', 'shell', 'session-settings.json'),
                     os.path.join('docs', 'ROSTER.md')):
             write(self.path(rel), read(os.path.join(KIT_ROOT, rel)))
         self.rs = [claude_content.renderer()]

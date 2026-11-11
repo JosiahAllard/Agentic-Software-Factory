@@ -9,7 +9,7 @@
  "config-build-git": 7,
  "config-build-host": 2,
  "config-build-pmdata": 0,
- "gate-build-backlog": 6,
+ "gate-build-backlog": 7,
  "gate-build-guard": 0,
  "gate-build-hubsite": 2,
  "gate-build-loadnode": 2,
@@ -52,7 +52,7 @@
  "pytests-tree-root": 3,
  "records-build-gate": 0,
  "tooldeps-build-pytests": 3,
- "worktree-build-backlog": 6,
+ "worktree-build-backlog": 7,
  "worktree-build-commit": 0,
  "worktree-build-pieces": 1
 }

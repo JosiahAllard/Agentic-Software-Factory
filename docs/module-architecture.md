@@ -176,6 +176,9 @@ None: no module is open to every other.
 | delegations | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | delegations | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | delegations | hubsite | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| hubsite | kitlib-root | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| ledger | attribution | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| tools | attribution | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | tools | hubjobs | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | delegations | landed | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | delegations | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |

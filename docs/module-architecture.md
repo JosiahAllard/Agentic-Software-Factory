@@ -79,7 +79,6 @@ A crossing the map does not allow (an edge of its kind, a messaging module or a 
 | scrub | `kitlib/scrub` | feature layer (ARCHITECTURE.md Layers) |
 | stackskill | `kitlib/stackskill` | feature layer (ARCHITECTURE.md Layers) |
 | strayrestore | `kitlib/strayrestore` | feature layer (ARCHITECTURE.md Layers) |
-| stubs | `kitlib/stubs` | feature layer (ARCHITECTURE.md Layers) |
 | syncbase | `kitlib/syncbase` | feature layer (ARCHITECTURE.md Layers) |
 | testlist | `kitlib/testlist` | feature layer (ARCHITECTURE.md Layers) |
 | tooldeps | `kitlib/tooldeps` | feature layer (ARCHITECTURE.md Layers) |
@@ -99,6 +98,7 @@ None: no module is open to every other.
 | agentstart | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | agentstart | content | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | agentstart | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| agentstart | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | agentstart | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | agentview | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | agentview | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -112,10 +112,10 @@ None: no module is open to every other.
 | attribution | host | build | policy layer, same-layer use: allowed as of 2026-11-06 |
 | autotasks | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | autotasks | fs | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| autotasks | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | autotasks | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | autotasks | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | autotasks | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| autotasks | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | backlog | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | backlog | content | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | backlog | docs | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -153,6 +153,7 @@ None: no module is open to every other.
 | coordinatorstart | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | coordinatorstart | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | coordinatorstart | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| coordinatorstart | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | coordinatorstart | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | coordinatorstart | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | coordinatorstart | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -162,6 +163,7 @@ None: no module is open to every other.
 | coordstate | fs | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | coordstate | gate | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | coordstate | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| coordstate | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | coordstate | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | coordstate | records | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | dailyfull | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -294,7 +296,6 @@ None: no module is open to every other.
 | hubsite | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubsite | lockui | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| hubsite | machinesetup | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubsite | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | pmdata | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -341,6 +342,7 @@ None: no module is open to every other.
 | machinepaths | config | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
 | machinepaths | git | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
 | machinesetup | allowrules | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| machinesetup | autotasks | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | machinesetup | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | machinesetup | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | machinesetup | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
@@ -350,7 +352,6 @@ None: no module is open to every other.
 | machinesetup | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | machinesetup | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | machinesetup | stackskill | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| machinesetup | stubs | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | machinesetup | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | maintlint | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | maintlint | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -365,6 +366,7 @@ None: no module is open to every other.
 | maintlint | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | maintlint | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | mcp | blendermcp | build | outer layer uses feature layer: allowed as of 2026-11-06 |
+| mcp | host | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | mcp | hubmcp | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | mcp | kitlib-root | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | mcp | lockmcp | build | outer layer uses feature layer: allowed as of 2026-11-06 |
@@ -377,6 +379,7 @@ None: no module is open to every other.
 | opt-agenttemp | config | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-agenttemp | machinesetup | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | opt-agenttemp | pmstart | build | outer layer uses feature layer: allowed as of 2026-11-06 |
+| opt-bridge | host | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-bridge | kitlib-root | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-bridge | proc | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-comfy | config | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
@@ -415,7 +418,6 @@ None: no module is open to every other.
 | pmstart | pmdata | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmstart | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmstart | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| pmstart | stubs | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmstart | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmwatch | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -472,10 +474,6 @@ None: no module is open to every other.
 | strayrestore | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | strayrestore | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | strayrestore | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| stubs | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| stubs | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
-| stubs | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| stubs | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | syncbase | attribution | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | syncbase | commit | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | syncbase | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -540,7 +538,6 @@ None: no module is open to every other.
 | tools | reviewpack | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | stackskill | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | strayrestore | build | outer layer uses feature layer: allowed as of 2026-11-06 |
-| tools | stubs | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | syncbase | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | testlist | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | tooldeps | build | outer layer uses feature layer: allowed as of 2026-11-06 |
@@ -618,7 +615,6 @@ Crossings counted, not refused; each count is driven down to its goal.
 | pmstart-build-pmwatch | pmstart | pmwatch | build | 0 | - |
 | pmwatch-build-hubsite | pmwatch | hubsite | build | 0 | - |
 | records-build-gate | records | gate | build | 0 | - |
-| stubs-build-machinesetup | stubs | machinesetup | build | 0 | - |
 | tooldeps-build-pytests | tooldeps | pytests | build | 0 | - |
 | worktree-build-backlog | worktree | backlog | build | 0 | - |
 | worktree-build-commit | worktree | commit | build | 0 | - |

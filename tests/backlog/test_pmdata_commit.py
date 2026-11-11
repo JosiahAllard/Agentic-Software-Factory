@@ -1034,7 +1034,9 @@ class PmDataStore(unittest.TestCase):
         if not os.path.exists(cfg):
             self.repo.write('.kit.json', '{"backlog": {"store": "%s"}}\n' % DIR, root=self.wt)
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
+        # these test the commit, not the role policy: no role mark from the session running them
+        with mock.patch.dict(os.environ), contextlib.redirect_stdout(out):
+            os.environ.pop('PM_KIT_ROLE', None)
             rc = backlog_tool.main(['-C', self.wt, '--session', 'kit-test'] + list(args))
         return rc, out.getvalue()
 

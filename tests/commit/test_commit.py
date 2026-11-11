@@ -1743,6 +1743,33 @@ class MergeInProgress(MergeCase):
                 self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
                 self.git('merge', '--abort')
 
+    def test_a_merge_sync_base_left_is_judged_against_the_base_it_recorded(self):
+        # sync_base.py --base release stopped on a conflict: MERGE_HEAD is on origin/release, not
+        # on origin/main. Its marker for another commit is stale and judges by main.
+        self.push_main()
+        side = self.git('commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'on release')
+        self.t.git('update-ref', 'refs/remotes/origin/release', side)
+        self.git('merge', '-q', '--no-ff', '--no-commit', side)
+        self.put('a.txt', 'mine\n')
+        head = self.head()
+        self.assertIsNone(checks.record_sync_base(self.wt, 'release', head))
+        code, out = self.commit('merge release', 'a.txt')
+        self.assertEqual(code, 1, out)
+        self.assertIn('brings in %s, which is not on origin/main' % side[:7], out)
+        self.assertIsNone(checks.record_sync_base(self.wt, 'release', side))
+        code, out = self.commit('merge release', 'a.txt')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [head, side])
+        self.assertIsNone(checks.synced_base(self.wt, side))       # the marker is gone
+
+    def test_a_merge_head_behind_the_remote_main_tip_commits(self):
+        tip, base = self.start_merge()
+        later = self.git('commit-tree', '%s^{tree}' % base, '-p', base, '-m', 'pushed later')
+        self.t.git('update-ref', 'refs/remotes/origin/main', later)
+        code, out = self.commit('merge main', 'work.txt')
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, base])
+
     def test_a_merge_commits_with_its_auto_staged_files(self):
         tip, base = self.start_merge()
         code, out = self.commit('merge main', 'work.txt')

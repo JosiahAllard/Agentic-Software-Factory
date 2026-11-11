@@ -23,7 +23,7 @@ from kitlib.commit.checks import (
     machine_path_error, main_checkout_error, merge_heads, model_requirement_error,
     owner_identity_error, owner_only_refusal, repo_path, shrunk_paths, staged_machine_path_error,
     staged_status, unapproved_locked, unstage_added)
-from kitlib.commit.checks import unsynced_merge_refusal
+from kitlib.commit.checks import drop_sync_base, unsynced_merge_refusal
 from kitlib.commit.message import (
     build_message, build_trailers, canonical_approved, message_body, session_lines)
 from kitlib.ownerfiles import rules as ownerrules
@@ -732,6 +732,7 @@ def _commit(req, lines):
         pass                                 # the commit stands; the earlier read says enough
     if others:
         lines.append(left_staged_line(others))
+    drop_sync_base(root)                     # a merge sync_base.py left is committed now
     if ran is not None:
         lines.append('rendered  %s' % (', '.join(p for p in rendered if p not in paths)
                                        or 'no rendered file changed'))

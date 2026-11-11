@@ -13,6 +13,7 @@ import unittest
 from unittest import mock
 
 from kitlib import attribution, syncbase
+from kitlib.commit import checks as kcommit
 from kitlib.config import load as load_config
 from kitlib.git import cmd as gitcmd
 from kitlib.records import landing
@@ -648,6 +649,13 @@ class BaseOption(SyncCase):
         done = self.sync(self.stage_a_conflict(), base='trunk')
         self.assertEqual(done.code, syncbase.FAILED, self.out(done))
         self.assertIn("trunk's text wins for a row trunk changed", self.out(done))
+
+    def test_a_conflicted_merge_records_its_base_for_commit_py(self):
+        # commit.py judges the merge it finishes against the base it came from (synced_base).
+        target = self.stage_a_conflict()
+        done = self.sync(target, base='trunk')
+        self.assertIn('CONFLICTS', self.out(done))
+        self.assertEqual(kcommit.synced_base(self.repo, target), 'trunk')
 
     def test_an_empty_or_flag_shaped_base_is_a_usage_error(self):
         target = self.stage_clean()

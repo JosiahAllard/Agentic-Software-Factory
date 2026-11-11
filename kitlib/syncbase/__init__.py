@@ -384,6 +384,11 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
                         % (err or out or 'git merge exited %s' % rc))
         lines.append('CONFLICTS (%d), merge left in progress:' % len(conflicted))
         lines.extend('  ' + f for f in conflicted)
+        why = kcommit.record_sync_base(top, base, full)    # commit.py judges it against `base`
+        if why:
+            lines.append('WARNING: the base this merge came from could not be recorded for '
+                         'commit.py (%s); it will judge the merge against %s/%s.'
+                         % (why, remote, cfg.main_branch))
         return done(FAILED, conflict_advice(base, full, model, arm_merge_msg(top, model, provider), provider))
     # GOTCHA: this asked `rev-parse --verify --quiet MERGE_HEAD`, whose
     # "no MERGE_HEAD" is exit 1 with no output, a killed git's shape (gitrefs.KILLED_SHAPE): a kill

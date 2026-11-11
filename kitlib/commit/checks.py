@@ -1,6 +1,7 @@
 """The checks a commit makes before anything is written (kitlib.commit, whose docstring holds the
 rules): the paths, the owner-only rules, the author identity, what is already staged, a merge in
-progress (merge_heads, landed_main, on_main, unsynced_merge_refusal, merge_owner_refusal), a
+progress (merge_heads, landed_main, on_main, the SYNC_BASE marker, unsynced_merge_refusal,
+merge_owner_refusal), a
 machine path in the message or the staged copy, and the main checkout. Each returns a refusal or
 raises _Stop; the exit codes are here. Imports nothing from kitlib.commit."""
 import os
@@ -167,13 +168,60 @@ def on_main(root, sha, remote, main):
     return on, tip, why
 
 
+SYNC_BASE = 'kit-sync-base'     # per work tree, beside MERGE_HEAD (git rev-parse --git-path)
+
+
+def record_sync_base(root, base, sha):
+    """sync_base.py, leaving a conflicted merge of `sha` (its full hash) in progress: write
+    `<base> <sha>` to the work tree's SYNC_BASE file, so commit.py judges that MERGE_HEAD against
+    the base sync_base.py merged it from (synced_base). None, or why it was not written."""
+    path, why = repo.git_path(root, SYNC_BASE)
+    if not path:
+        return why
+    try:
+        with open(path, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write('%s %s\n' % (base, sha))
+    except OSError as e:
+        return str(e)
+    return None
+
+
+def synced_base(root, head):
+    """The base sync_base.py named in SYNC_BASE when it merged exactly `head`, else None (no file,
+    one git cannot place or that cannot be read, a bad line, or another commit's: stale)."""
+    path, _why = repo.git_path(root, SYNC_BASE)
+    if not path:
+        return None
+    try:
+        with open(path, encoding='utf-8') as fh:
+            parts = fh.read().split()
+    except OSError:
+        return None
+    if len(parts) != 2 or parts[1] != head or refs.bad_rev(parts[0]):
+        return None
+    return parts[0]
+
+
+def drop_sync_base(root):
+    """Remove SYNC_BASE once the merge is committed; a file already gone is fine."""
+    path, _why = repo.git_path(root, SYNC_BASE)
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def unsynced_merge_refusal(root, heads, remote, main):
     """None, or the refusal of a merge in progress that brings in a commit sync_base.py would
-    refuse: a MERGE_HEAD not on <remote>/<main> as last fetched (on_main), or one git cannot
-    judge. A refused sync is never redone another way (a `git merge --no-commit` committed here)."""
-    upstream = '%s/%s' % (remote, main)
+    refuse: a MERGE_HEAD not on <remote>/<base> as last fetched (on_main), or one git cannot
+    judge. <base> is the one sync_base.py recorded for exactly that MERGE_HEAD (synced_base, its
+    --base), else `main`; the remote is always the repo's. A refused sync is never redone another
+    way (a `git merge --no-commit` committed here)."""
     for head in heads:
-        on, tip, why = on_main(root, head, remote, main)
+        base = synced_base(root, head) or main
+        upstream = '%s/%s' % (remote, base)
+        on, tip, why = on_main(root, head, remote, base)
         if on:
             continue
         what = ('which is not on %s (at %s)' % (upstream, tip[:7]) if on is False else

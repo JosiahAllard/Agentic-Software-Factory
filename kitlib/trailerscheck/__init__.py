@@ -1,7 +1,7 @@
 """kitlib.trailerscheck: the gate step that warns on each branch commit with no agent
 Co-Authored-By trailer; docs/repo-checks.md "trailers".
 
-The rule is kitlib.reviewpack.trailers (the one review_pack judges by); this module only reads the
+The rule is kitlib.trailerscheck.trailers (the one review_pack judges by); this module only reads the
 branch's commits (`HEAD --not <base>`, merges included) and prints the verdicts. A commit with no
 `Co-Authored-By: <name> <noreply@anthropic.com>` is a WARNING naming it, never a failure; so is one
 the owner authored and claims (`Owner-Approved:` / `Owner-Authored: yes`). The owner's identity is
@@ -22,7 +22,7 @@ from kitlib.config import ConfigError, load as load_config, load_at
 from kitlib.config import owner as ownermod
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
-from kitlib.reviewpack import trailers
+from . import trailers
 
 OK, REFUSED = 0, 2
 

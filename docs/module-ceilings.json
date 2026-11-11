@@ -55,7 +55,6 @@
  "records-build-gate": 1,
  "stubs-build-machinesetup": 1,
  "tooldeps-build-pytests": 3,
- "trailerscheck-build-reviewpack": 1,
  "worktree-build-backlog": 5,
  "worktree-build-commit": 1,
  "worktree-build-pieces": 1

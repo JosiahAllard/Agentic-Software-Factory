@@ -20,7 +20,7 @@ python tools/forbidden.py [-C DIR] --add                                     one
 
 ## trailers
 
-`tools/trailers.py`, logic `kitlib/trailerscheck` over the rule in `kitlib/reviewpack/trailers.py` (the one review_pack judges by). Warns on each branch commit with no `Co-Authored-By: <name> <noreply@anthropic.com>` trailer; such a commit never fails the step, so it never stops a gate or a landing.
+`tools/trailers.py`, logic `kitlib/trailerscheck` over the rule in `kitlib/trailerscheck/trailers.py` (the one review_pack judges by). Warns on each branch commit with no `Co-Authored-By: <name> <noreply@anthropic.com>` trailer; such a commit never fails the step, so it never stops a gate or a landing.
 
 ```
 python tools/trailers.py [-C DIR] [--base REV] [--merged]

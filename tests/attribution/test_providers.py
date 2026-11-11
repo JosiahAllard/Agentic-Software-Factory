@@ -3,7 +3,7 @@ from unittest import mock
 
 from kitlib import attribution, commit, syncbase
 from kitlib.config.owner import Rules
-from kitlib.reviewpack import trailers
+from kitlib.trailerscheck import trailers
 
 
 class Providers(unittest.TestCase):

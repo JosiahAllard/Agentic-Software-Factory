@@ -11,7 +11,7 @@ refused `merged`.
 
 `merged` (a landing's merged-tree gate): the first-parent merges in `<base>..HEAD` are the
 lander's own and are not branch commits. It holds with HEAD on the main branch, or detached at a
-landing's merge: the landing tree of kitlib.gate.land, where HEAD's first-parent chain from the
+landing's merge: the landing tree of kitlib.landing.land, where HEAD's first-parent chain from the
 base is merges only, the oldest made onto the base itself (landing_head). On any other branch, or
 at any other detached HEAD, those merges are the branch's sync merges, so `merged` there is
 refused, never read as an exemption.

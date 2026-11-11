@@ -723,7 +723,7 @@ class Survey(unittest.TestCase):
 
     def survey(self):
         from kitlib.coordstate import render
-        from kitlib.gate import verdicts
+        from kitlib.landing import verdicts
         from kitlib.git import refs
         from kitlib.records import verdict_entry
         from kitlib.git import repo

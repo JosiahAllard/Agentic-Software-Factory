@@ -16,7 +16,8 @@ from kitlib.backlog import plan as pmod
 from kitlib.gate import rerun, runner
 from kitlib.lock import run_end
 from kitlib.records import gate_ok
-from tests.gate import fixtures, test_land
+from tests.gate import fixtures
+from tests.landing import test_land
 
 BRANCH = test_land.BRANCH
 ID = 'flaky_mod.Case.test_flaky'

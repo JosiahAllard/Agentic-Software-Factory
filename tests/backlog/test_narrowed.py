@@ -120,7 +120,7 @@ class Hits(unittest.TestCase):
 
     def test_paths_compare_as_the_landing_scope_check_compares_them(self):
         # One copy: the landing check's comparisons are scope's own.
-        from kitlib.gate import land
+        from kitlib.landing import land
         self.assertIs(land._covers, nmod.scmod.covers)
         self.assertIs(land._in_repo, nmod.scmod.in_repo)
         # A path the grammar cannot decide is covered by no member: not refused here (the

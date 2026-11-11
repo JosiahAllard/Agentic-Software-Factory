@@ -18,7 +18,7 @@ PM kit's tools/sync_base.py; docs/sync-base.md).
   refs/remotes/<remote>/<base> (refusal-log P27): a commit on local <base> alone is one the
   remote may never get (someone's unpushed commit, a local <base> ahead of the remote; a
   landing merges in its own landing tree and moves local <base> only after its push is
-  verified, kitlib.gate.land). The refusal names the hash to use instead: the
+  verified, kitlib.landing.land). The refusal names the hash to use instead: the
   fetched <remote>/<base> (`git ls-remote <remote> <base>`), never local <base>. A dirty tree is
   refused; a <target> that is not a commit here is NOT FOUND.
 - With `.kit.json` "landing".in_flight set (kitlib.records.inflight), a landing in flight is

@@ -4,13 +4,13 @@ so nothing a tool can see is written by hand.
 
   - Landings: the latest `land_submit` of each branch, joined with that branch's land result
     record (kitlib.gate.result, kind "land") at the submitted tip and, once it landed, with the
-    outcome lines of the submission's output file (kitlib.gate.submit.outcome_block). The landing
-    feed's WARNING (kitlib.hubsite.landings) is said there, after the last `result record:` line,
+    outcome lines of the submission's output file (kitlib.landing.submit.outcome_block). The landing
+    feed's WARNING (kitlib.landing.feed) is said there, after the last `result record:` line,
     and never in the record; so a landing is TO_REPORT when it ended without landing, or landed
     with that WARNING, or its output cannot tell, until a `reported` event names it. A landing
     that landed with no WARNING and a LANDED line is on the hub feed (LANDED_POSTED). Between the
     final record and the feed post the output has neither: IN_FLIGHT.
-  - Verdicts queued by this session and still waiting to land: the queue (kitlib.gate.verdicts,
+  - Verdicts queued by this session and still waiting to land: the queue (kitlib.landing.verdicts,
     entries whose `session` is it) read as it stands, leaving out the ones verdict_entry.expired names
     against main as last fetched. Nothing is dropped from the queue here.
   - The latest backlog writes.
@@ -113,7 +113,8 @@ def judge(item, record, why, block):
     and `why`) and `block`, a callable giving the outcome lines of its output file. A `reported`
     mark counts only on a final record: what was told before the end says nothing of how it
     ended."""
-    from kitlib.gate import result, submit
+    from kitlib.gate import result
+    from kitlib.landing import submit
     tip = item.get('tip') or ''
     final = None
     if record is not None and tip and result.at_tip(record, item['branch'], 'land', tip):
@@ -171,7 +172,8 @@ def _judged(root, item, read, block):
 def build(root, events, read=None, block=None):
     """`({group: [items, oldest first]}, backlog events)` for `events` in the repository at
     `root`. `read(root, branch, kind)` and `block(output)` default to kitlib.gate's."""
-    from kitlib.gate import result, submit
+    from kitlib.gate import result
+    from kitlib.landing import submit
     read = read or result.read
     block = block or submit.outcome_block
     items, backlog = fold(events)
@@ -184,7 +186,8 @@ def build(root, events, read=None, block=None):
 
 def landing(root, events, branch, tip=None, read=None, block=None):
     """The latest submitted landing of `branch`, judged, when `tip` names it; else None."""
-    from kitlib.gate import result, submit
+    from kitlib.gate import result
+    from kitlib.landing import submit
     for item in fold(events)[0]:
         if item['branch'] == branch and at_tip(item, tip):
             return _judged(root, item, read or result.read, block or submit.outcome_block)
@@ -210,7 +213,7 @@ def queued_for(common_dir, session, main=None, main_why=None):
     land, oldest first, read only. The caveat, else None, says landed entries can be among them
     because `main` (main as last fetched) is unknown. `(None, why)` when the queue cannot be
     read."""
-    from kitlib.gate import verdicts
+    from kitlib.landing import verdicts
     from kitlib.records import verdict_entry
     try:
         mine = [e for e in verdicts.entries(common_dir) if e.get('session') == session]

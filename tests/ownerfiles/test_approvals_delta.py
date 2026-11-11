@@ -171,7 +171,7 @@ class Spent(DeltaCase):
 class Landed(DeltaCase):
     """landed(checkout, base, tip): {A-<n>: sha} of the commits `tip` reaches and `base` does not
     that carry exactly one `Owner-Approval: hub:A-<n>`: what a landing puts on main (its feed
-    event, kitlib.gate.land.Lander.post_landing)."""
+    event, kitlib.landing.land.Lander.post_landing)."""
 
     landed = Spent.landed
 

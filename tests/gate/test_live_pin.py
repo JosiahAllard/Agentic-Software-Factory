@@ -552,7 +552,7 @@ BROKEN = "raise ImportError('live tree loaded')\n"
 
 class Tools(unittest.TestCase):
     """The real tools/land.py and tools/gate.py of this tree, committed to a temp repository whose
-    refs/remotes/origin/main is that commit, then their checkout's kitlib/gate/land.py broken:
+    refs/remotes/origin/main is that commit, then their checkout's kitlib/landing/verdicts.py broken:
     only a tool that runs from the export does not load the broken module."""
 
     @classmethod
@@ -570,7 +570,7 @@ class Tools(unittest.TestCase):
         plugin = tempfile.mkdtemp(prefix='kit-pin-plugin-')
         cls.addClassCleanup(gitfixture.rmtree, plugin)
         cls.export, _v = pluginsource.export(cls.repo.root, cls.sha, plugin)
-        cls.repo.write('kitlib/gate/land.py', BROKEN)
+        cls.repo.write('kitlib/landing/verdicts.py', BROKEN)
 
     def setUp(self):
         self.places = temp_places(self)
@@ -625,7 +625,7 @@ class Tools(unittest.TestCase):
     def test_a_linked_worktree_runs_its_own_code(self):
         wt = self.repo.worktree('own')
         self.addCleanup(self.repo.git, 'worktree', 'remove', '--force', wt)
-        self.repo.write('kitlib/gate/land.py', BROKEN, root=wt)
+        self.repo.write('kitlib/landing/verdicts.py', BROKEN, root=wt)
         self.assert_live(self.run_tool(wt, 'land.py'))
 
 

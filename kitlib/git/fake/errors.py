@@ -3,7 +3,7 @@
 Unsupported derives from BaseException on purpose: kit code catches Exception around git calls
 (a failed call is an expected answer), and a fake that met something it cannot do must never look
 like an answer. unittest records it as an error. Kit code that catches BaseException on purpose
-turns it into its own failure (kitlib/gate/land.py: NOT LANDED or STUCK; kitlib/git/batch.py's
+turns it into its own failure (kitlib/landing/land.py: NOT LANDED or STUCK; kitlib/git/batch.py's
 reader: a dead git), and land.py's best-effort steps after a verified push drop it.
 """
 

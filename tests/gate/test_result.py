@@ -14,7 +14,8 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.fs import treelock
-from kitlib.gate import land, result, runner, steps
+from kitlib.gate import result, runner, steps
+from kitlib.landing import land
 from kitlib.proc import process
 from kitlib.records import landing, verdict_entry
 from tests import gitfixture, testutil

@@ -270,7 +270,7 @@ forced command serves the push with no job, and the mirror refuses deletes and n
 
 ### How a landing uses it
 
-`kitlib.gate.land` (`Lander`):
+`kitlib.landing.land` (`Lander`):
 
 - **Before the booking** (in step 3) it plans the route and says `gating on load node <n>: <why>`
   or `gating here: <why>`; nothing is said when the plan is quiet (a kit checkout, no registry,

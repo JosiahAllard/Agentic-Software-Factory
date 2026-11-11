@@ -273,7 +273,7 @@ class HomeFenceEnvironment(unittest.TestCase):
         self.assertEqual([os.path.normcase(m or '') for m in seen], [os.path.normcase(home)] * 2)
 
 
-MODULES = ['tests.a.test_m', 'tests.git.test_g', 'tests.gate.test_land_x', 'tests.gate.test_other']
+MODULES = ['tests.a.test_m', 'tests.git.test_g', 'tests.landing.test_land_x', 'tests.gate.test_other']
 
 
 class KitSessionEnvironment(unittest.TestCase):
@@ -384,7 +384,7 @@ class BothTiers(unittest.TestCase):
         with mock.patch.object(cli.kitrun, 'run_pass', side_effect=lambda args, *a, **k: ran.append(args) or 0):
             rc, calls, text = self.run_both([0, 0])
         self.assertEqual(rc, 0, text)
-        self.assertEqual(ran, [cli.FULL, ['tests.git.test_g', 'tests.gate.test_land_x']])
+        self.assertEqual(ran, [cli.FULL, ['tests.git.test_g', 'tests.landing.test_land_x']])
 
     def test_a_red_real_git_pass_fails_the_run_and_prints_no_ok(self):
         rc, calls, text = self.run_both([0, 1])
@@ -517,7 +517,7 @@ class ChangedTestsOnRealGit(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         self.assertEqual([c[:2] for c in calls],
                          [('1', MODULES),
-                          ('0', ['tests.a.test_m', 'tests.git.test_g', 'tests.gate.test_land_x'])])
+                          ('0', ['tests.a.test_m', 'tests.git.test_g', 'tests.landing.test_land_x'])])
         self.assertEqual(self.oks(text), [OK_BOTH], text)
 
     def test_plan_names_the_real_git_modules_and_runs_nothing(self):

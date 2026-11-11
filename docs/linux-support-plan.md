@@ -354,7 +354,7 @@ the host as heavy.
    trees are in tests/lock/linux_trees.py, read through the real reader (fake_hardware is
    unchanged). Open proof: the VM's live /sys run (test_layout_linux.py LiveSys).
 7. **Lock runs and detach.** Done: kitlib/platform/linux/detach.py, lock/run_held.py Slot give-back
-   and the `leftovers` call sites in Slot.release and run_end.py end_sparing, gate/submit;
+   and the `leftovers` call sites in Slot.release and run_end.py end_sparing, landing/submit;
    tests/lock/test_slot_linux.py, test_detach_linux.py. Its live proofs ran on the VM (section 8.1).
    tests/lock/test_leftovers.py is Windows only; the Linux leftovers move is test_slot_linux Live's
    straggler test.

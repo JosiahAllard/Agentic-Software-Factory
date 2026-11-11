@@ -224,7 +224,7 @@ class Cli(CliBase):
                 self.assertIn("unrecognized arguments", err)
 
     def test_priority_is_not_a_cli_flag_and_resource_is_on_run_only(self):
-        """Only library callers (kitlib.gate.land) set a run's priority. --resource is run's
+        """Only library callers (kitlib.landing.land) set a run's priority. --resource is run's
         alone (background does not book through kitlib.lock.run.book), never abbreviated."""
         cases = [("run", ["--priority", "land"]), ("run", ["--prio", "land"]),
                  ("run", ["--res", "x"]), ("background", ["--resource", "x"]),
@@ -289,7 +289,7 @@ class Cli(CliBase):
         self.assertFalse(os.path.isdir(self.store.path("ended")))
 
     def test_a_landing_resource_is_usage_and_books_nothing(self):
-        """landing:<git dir> is land.py's resource (kitlib.gate.land): run --resource refuses
+        """landing:<git dir> is land.py's resource (kitlib.landing.land): run --resource refuses
         it before anything is booked, detached or not."""
         with mock.patch.object(self.tool, "detach", return_value=0) as det:
             for extra in ((), ("--detach",)):

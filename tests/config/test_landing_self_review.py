@@ -1,5 +1,5 @@
 """kitlib.config.schema: "landing".self_review_max_lines, the most changed lines a verdict the
-queueing coordinator reviewed itself may cover (kitlib.gate.verdicts.self_review_size_why):
+queueing coordinator reviewed itself may cover (kitlib.landing.verdicts.self_review_size_why):
 unset by default, a whole number from 1 to 100000 when set."""
 import unittest
 

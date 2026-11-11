@@ -145,7 +145,7 @@ included) is shown on the card in the server's words.
 The landing feed: one event per branch `tools/land.py` landed, posted by the landing itself after the
 push is verified and the landing lock released (docs/gate-landing.md "Landing feed"). The event is the land
 ledger line's fields (`result.LEDGER_FIELDS`, picked from the same land record) and the extras
-(`kitlib.hubsite.landings.EXTRA_FIELDS`); the types are `schema.FIELDS['landings']`.
+(`kitlib.landing.feed.EXTRA_FIELDS`); the types are `schema.FIELDS['landings']`.
 
 | Field | Written by | Meaning |
 |---|---|---|

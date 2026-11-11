@@ -9,7 +9,7 @@ that changes the path and whose AUTHOR email is not the owner's (rules.is_owner)
 change that a later commit undoes, a rename away and back, and an owner's change the branch brought
 in by merging main do not count; a change that stays is still judged commit by commit. With no
 `exclude` there is no target: every path a commit changes counts. `gate land` refuses a branch with
-any (gate.land), and the pre-push hook refuses a push to main with any
+any (landing.land), and the pre-push hook refuses a push to main with any
 (kitlib.guard.prepush), so a plain `git commit` cannot carry an owner-only change to main past
 either.
 

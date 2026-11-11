@@ -1,5 +1,5 @@
 """The gate's steps run in a machine-lock slot (kitlib.lock.run.book), and the two gates built on
-that: the branch gate (`gate.py`) and the merged-tree gate a landing runs (kitlib.gate.land).
+that: the branch gate (`gate.py`) and the merged-tree gate a landing runs (landing.land).
 
 Every step runs in the slot's job (its launcher): pinned to the run's cores, measured, and ended
 as a tree when the run is cancelled. A step's output goes to `<log dir>/<step>.log`; the step is
@@ -464,7 +464,7 @@ def gated(cfg, root, base, changed, chosen, kind, name, slug, log_dir, say, book
     is booked as a gate run, so the build daemons the gate leaves that serve nothing outside its
     job are stopped at its end (kitlib.lock.site, machine_lock.daemons; kitlib.proc.daemons).
     `gate`: the gate the steps are judged by (detect.effective); default the configured one.
-    `slot`: a Slot the caller already holds (a landing's, kitlib.gate.land): the steps run in it,
+    `slot`: a Slot the caller already holds (a landing's, landing.land): the steps run in it,
     nothing is booked and the slot is not released here (its holder releases it); once the steps
     finish, their build daemons are stopped (Slot.stop_daemons, as a gate's release does) and
     the rest of their tree is ended (Slot.end_tree), and an exception or Ctrl+C ends the tree
@@ -1131,7 +1131,7 @@ def merged_gate(root, cfg, base, full=False, slug='land', log_dir=None, say=None
     line. With no "gate" section in `cfg` the gate is detected from the merged tree, plus the
     steps `base` owes (detect.effective). `slot`: the Slot the landing already holds; the steps
     run in it and no second slot is booked (gated). `tree`: the checkout holding the merge (a
-    landing's landing tree, kitlib.gate.land); default `root`. `docs`: a docs-only merge may run
+    landing's landing tree, landing.land); default `root`. `docs`: a docs-only merge may run
     only its docs steps (_merged_gate)."""
     try:
         eff = detect.effective(cfg, tree or root, base=base)
@@ -1173,7 +1173,7 @@ def merged_steps(root, cfg, base, full=False, tree=None, docs=False):
     """What merged_gate() with these arguments would run, without running anything:
     `({'head', 'steps': [names, in order], 'docs': bool, 'source'}, None)`, or `(None, why)` when
     it would refuse. A landing whose merged gate runs on a load node checks the node's record
-    against this (kitlib.loadnode.landgate)."""
+    against this (loadnode.landgate)."""
     tree = tree or root
     try:
         eff = detect.effective(cfg, tree, base=base)
@@ -1195,7 +1195,7 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     checkout's), wherever the tree is. The steps are selected as a default-mode branch gate
     selects them (steps.select): each step the paths base..HEAD change pick, the smoke steps and
     setup, each running its cmd (ARCHITECTURE.md "What a landing runs"). With `full` (a landing
-    whose diff changes a gate config file, kitlib.gate.land config_escalate) every non-manual step
+    whose diff changes a gate config file, landing.land config_escalate) every non-manual step
     is selected, as gate.py --full selects them, and each runs its full_cmd where it has one. A
     step whose result needs an ignored cache the fresh landing tree lacks must be `always` or
     rebuild it in `setup`. Each step's merged_args are appended. Outcome codes:

@@ -2,7 +2,7 @@
 makes the landing close only what its `Closes:` lines name and release every other record the
 branch holds pulled (kitlib.backlog.at_landing.close_landed; docs/backlog-store.md "Closing at
 landing"). Without such a line the branch's pulls close as before. Scratch repositories with a
-ref store and with the PM data branch's folder store, landed by kitlib.gate.land.Lander."""
+ref store and with the PM data branch's folder store, landed by kitlib.landing.land.Lander."""
 import os
 import unittest
 from unittest import mock
@@ -14,8 +14,8 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 
 from tests.backlog.helpers import priced
-from tests.gate import test_land_store as tls
-from tests.gate.test_land_store import BRANCH, StoreLandCase, pulled
+from tests.landing import test_land_store as tls
+from tests.landing.test_land_store import BRANCH, StoreLandCase, pulled
 
 TRAILERS = 'Co-Authored-By: Test Model <noreply@anthropic.com>'
 
@@ -42,7 +42,7 @@ class PartLanding(StoreLandCase):
         return [l for l in out.lines if l.startswith('WARNING')]
 
     def notes(self, out):
-        # The trailer NOTEs; not the landing scope check's (tests/gate/test_land_scope.py).
+        # The trailer NOTEs; not the landing scope check's (tests/landing/test_land_scope.py).
         return [l for l in out.lines if l.startswith('NOTE')
                 and 'its paths were not checked against a scope' not in l]
 
@@ -243,7 +243,7 @@ class PartLanding(StoreLandCase):
         self.assertEqual(self.warnings(out), [])
 
     def test_unreadable_trailers_close_the_branchs_pulls_and_say_part_of_was_not_read(self):
-        # The pinned behaviour (tests/gate/test_land_closes_trailer.py): the branch's own pulls
+        # The pinned behaviour (tests/landing/test_land_closes_trailer.py): the branch's own pulls
         # still close; the WARNING says its Part-of lines were not read either.
         self.seed(pulled('FOO'))
         tip = self.branch_with('fix\n\nPart-of: FOO\n%s\n' % TRAILERS)

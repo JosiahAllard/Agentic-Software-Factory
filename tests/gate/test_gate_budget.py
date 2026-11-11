@@ -21,7 +21,8 @@ from kitlib.gate import steps as S
 from kitlib.lock import run as lockrun
 from kitlib.lock import store as lockstore
 from kitlib.records import place
-from tests.gate import fixtures, test_land
+from tests.gate import fixtures
+from tests.landing import test_land
 
 BRANCH = 'kit/feature'
 SLUG = place.slug_of(BRANCH)

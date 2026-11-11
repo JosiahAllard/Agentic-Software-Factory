@@ -1,4 +1,4 @@
-"""verdict.py: the verdict queue, reviewed branches waiting to land (kitlib/gate/verdicts.py).
+"""verdict.py: the verdict queue, reviewed branches waiting to land (kitlib/landing/verdicts.py).
 
   verdict.py add --branch B --tip SHA --verdict V --risk R --reviewer TYPE --reviewer-model M
                  --reviewer-id ID --author A --range BASE..TIP --session S [--record ID ...]
@@ -63,7 +63,7 @@
 
 -C: a path in the repository (default: here); every work tree of it shares one queue.
 
-A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate.verdicts, prints and
+A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.landing.verdicts, prints and
 exits. Exit codes: 0 done; 1 not done (git gave no answer, a queue file cannot be read or written,
 the kit configuration cannot be read by add or carry,
 nothing queued to drop or carry, a carry refused, or list found a file that is not an entry); 2 usage (the arguments, or an
@@ -81,7 +81,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _host                                                        # noqa: E402
 from kitlib import config as kconfig                              # noqa: E402
 from kitlib.coordstate.render import main_as_fetched                # noqa: E402,F401
-from kitlib.gate import verdicts                                    # noqa: E402
+from kitlib.landing import verdicts                                 # noqa: E402
 from kitlib.records import verdict_entry
 from kitlib.git import refs, repo                                  # noqa: E402
 from kitlib.host import registry                                    # noqa: E402

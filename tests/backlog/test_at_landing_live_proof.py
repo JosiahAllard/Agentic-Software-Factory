@@ -5,7 +5,7 @@ branch holds is left pulled, and one NOTE line says why and how to close it once
 (kitlib.backlog.at_landing.close_landed). `backlog.py landable` says the same ahead of the landing
 (kitlib.backlog.landable). A record with no such line closes as before. docs/backlog.md
 "Records"; docs/backlog-store.md "Lifecycle changes". Scratch repositories with a ref store,
-landed by kitlib.gate.land.Lander."""
+landed by kitlib.landing.land.Lander."""
 import unittest
 from unittest import mock
 
@@ -14,7 +14,7 @@ from kitlib.backlog import landable as L
 from kitlib.backlog import record as rmod
 from tests.backlog import test_at_landing_part as part   # not its classes: their tests run there
 from tests.backlog import test_default_store_warn as dstore    # nor these
-from tests.gate.test_land_store import BRANCH, StoreLandCase, pulled
+from tests.landing.test_land_store import BRANCH, StoreLandCase, pulled
 
 TRAILERS = part.TRAILERS
 LIVE = dict(requires='live-run')

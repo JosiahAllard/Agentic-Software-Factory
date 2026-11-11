@@ -10,7 +10,7 @@ from unittest import mock
 from kitlib import gate as G
 from kitlib.host import sessionmark
 from kitlib.coordstate import log
-from kitlib.gate import submit as submitmod
+from kitlib.landing import submit as submitmod
 from tests import inproc
 from tests.backlog.helpers import ADD_FLAGS, kit_json_ref
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree

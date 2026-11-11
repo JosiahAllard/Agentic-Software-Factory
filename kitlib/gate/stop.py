@@ -27,7 +27,7 @@ judged on the handle it kills through: never by name, never a recycled pid. Its 
 which ends the tree; a process that left the job is named and never ended. The lock's reap
 then frees the run, and the result record is finished `stopped` from here (result.finish_stopped).
 
-The landing checks see this machine only. kitlib.loadnode.landgate.land_gate runs runner.merged_gate
+The landing checks see this machine only. loadnode.landgate.land_gate runs runner.merged_gate
 with no slot and no book_kw, so on a load node a land job's merged gate is a plain gate run: a stop
 run there ends it, and main reports NOT LANDED with nothing pushed.
 
@@ -72,7 +72,7 @@ def _until(done, wait_s):
 
 
 def is_landing(rec):
-    """True for a landing's own lock run on this machine: only kitlib.gate.land.Lander.book_slot
+    """True for a landing's own lock run on this machine: only landing.land.Lander.book_slot
     books these. A load node's land gate books none of these marks (the module docstring)."""
     return (rec.get('priority') == 'land' or bool(rec.get('resource'))
             or str(rec.get('note') or '').startswith('landing:'))

@@ -367,7 +367,7 @@ def pm_data_root(root, *, worktrees=None):
 def pm_data_store(root, configured):
     """`(store root, Config, backend, None)` of the PM data branch's store, `(None,) * 4` when
     there is none or it is the configured store (`configured`: its describe(), or None), or
-    `(None, None, None, why)` when it cannot be opened. Public: kitlib/gate/land.py calls it."""
+    `(None, None, None, why)` when it cannot be opened. Public: kitlib/landing/land.py calls it."""
     pm_root, why = pm_data_root(root)
     if pm_root is None:
         return None, None, None, why

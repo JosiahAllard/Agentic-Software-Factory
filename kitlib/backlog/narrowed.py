@@ -200,7 +200,7 @@ def restore_set(rid, members, values, rules, done=None):
     kept as `--narrowed`, or `--unset narrowed` when none is left. Lines are read with
     record.narrowed_line; a malformed one is kept as written. None when no line is picked. The
     one form of `next`'s RESTORE line (offer._restore) and the landing scope check's restore
-    clause (kitlib/gate/land.py); the `set` of `narrowed` is a lead's (set-other)."""
+    clause (kitlib/landing/land.py); the `set` of `narrowed` is a lead's (set-other)."""
     originals, others, rest = [], [], []
     for v in values:
         line, _err = rmod.narrowed_line(v, rules)
@@ -223,7 +223,7 @@ def restored_scope(members, originals):
     `narrowed:` lines restored): each original, then each current member of `members` none of
     them holds (equal or strictly inside; one that cannot be compared is kept). `none` is
     dropped. Shared by `next`'s RESTORE line (offer.restore_lines) and the landing scope check's
-    restore clause (kitlib/gate/land.py)."""
+    restore clause (kitlib/landing/land.py)."""
     def held(m):
         try:
             return any(m == o or scmod.strictly_inside(m, o) for o in originals)

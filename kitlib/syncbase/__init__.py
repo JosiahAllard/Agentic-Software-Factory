@@ -57,6 +57,7 @@ import time
 from kitlib import attribution
 from kitlib import kitroot
 
+from kitlib.commit import checks as kcommit       # on_main: the one base rule, commit.py's too
 from kitlib.config import ConfigError, commit_settings, load as load_config
 from kitlib.git import checkout as gitcheckout
 from kitlib.git import cmd as gitcmd
@@ -250,7 +251,6 @@ def owner_refusal(top, cfg, full):
     (kitlib.commit.checks.merge_owner_refusal, with <remote>/<main> as last fetched judged
     already; with `"commit".merge_fold` off, it carries no path both sides changed). On a refusal
     the merge is aborted."""
-    from kitlib.commit import checks as kcommit      # here: only a merge that is committed needs it
     try:
         rules = cfg.owner_rules()
         fold = commit_settings(cfg)['merge_fold']
@@ -344,10 +344,9 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
         return done(FAILED, 'NOT FOUND: %s is not a commit in this repository, even after fetching '
                             '%s. Do not substitute another hash: tell the coordinator.'
                     % (target, upstream))
-    tip, _ = gitrefs.remote_tip(remote, base, top)
+    on, tip, why = kcommit.on_main(top, full, remote, base)
     if tip is None:
         return done(FAILED, 'refused: %s does not resolve - fetch first.' % upstream)
-    on, why = gitrefs.is_ancestor(full, tip, top)
     if on is None:
         return done(FAILED, 'refused: could not tell whether %s is on %s (%s).'
                     % (target, upstream, why))

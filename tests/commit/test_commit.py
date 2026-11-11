@@ -1674,6 +1674,7 @@ class MergeCase(LinkedCase):
         self.put('work.txt', 'branch\n')
         self.git('commit', '-q', '-m', 'branch work', '--', 'work.txt')
         tip, base = self.head(), self.git('rev-parse', 'main')
+        self.t.git('update-ref', 'refs/remotes/origin/main', base)    # a sync merge: main pushed
         p = cmd.subprocess_run(('git', 'merge', '--no-edit', 'main'), cwd=self.wt,
                                capture_output=True, text=True, env=gitfixture.fixture_env())
         self.assertNotEqual(p.returncode, 0, p.stdout)
@@ -1710,6 +1711,31 @@ class MergeInProgress(MergeCase):
         self.assertEqual(code, 1, out)
         self.assertIn('--allow-empty during a merge in progress', out)
         self.assertEqual(self.head(), head)
+
+    def test_a_merge_of_a_base_sync_base_would_refuse_is_refused(self):
+        # The bypass seen twice: sync_base.py refused a base, and the builder merged it with
+        # --no-ff --no-commit and committed that here. MERGE_HEAD not on origin/main as last
+        # fetched, or origin/main not there to judge by, is refused before anything is staged.
+        main = self.git('rev-parse', 'main')
+        for pushed, says in ((main, 'which is not on origin/main (at %s)' % main[:7]),
+                             (None, 'whether it is on origin/main could not be told')):
+            with self.subTest(pushed=pushed):
+                if pushed:
+                    self.t.git('update-ref', 'refs/remotes/origin/main', pushed)
+                else:
+                    self.t.git('update-ref', '-d', 'refs/remotes/origin/main')
+                side = self.git('commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'unpushed')
+                self.git('merge', '-q', '--no-ff', '--no-commit', side)
+                self.put('a.txt', 'mine\n')
+                head = self.head()
+                code, out = self.commit('merge it', 'a.txt')
+                self.assertEqual(code, 1, out)
+                self.assertIn('refused: the merge in progress brings in %s, %s' % (side[:7], says),
+                              out)
+                self.assertIn('sync_base.py -C', out)
+                self.assertEqual(self.head(), head)
+                self.assertEqual(self.git('diff', '--cached', '--name-only'), '')
+                self.git('merge', '--abort')
 
     def test_a_merge_commits_with_its_auto_staged_files(self):
         tip, base = self.start_merge()

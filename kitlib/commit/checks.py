@@ -1,8 +1,8 @@
 """The checks a commit makes before anything is written (kitlib.commit, whose docstring holds the
 rules): the paths, the owner-only rules, the author identity, what is already staged, a merge in
-progress (merge_heads, landed_main, merge_owner_refusal), a machine path in the message or the
-staged copy, and the main checkout. Each returns a refusal or raises _Stop; the exit codes are
-here. Imports nothing from kitlib.commit."""
+progress (merge_heads, landed_main, on_main, unsynced_merge_refusal, merge_owner_refusal), a
+machine path in the message or the staged copy, and the main checkout. Each returns a refusal or
+raises _Stop; the exit codes are here. Imports nothing from kitlib.commit."""
 import os
 import posixpath
 
@@ -153,6 +153,37 @@ def landed_main(root, remote, main):
         return []
     sha = refs.resolve('refs/remotes/%s/%s' % (remote, main), root, known=True)[0]
     return [sha] if sha else []
+
+
+def on_main(root, sha, remote, main):
+    """`(on, tip, why)`: whether `sha` is on refs/remotes/<remote>/<main> as read now (at `tip`),
+    with no fetch: the one rule a base commit is merged by (refusal-log P27). sync_base.py asks
+    it right after its fetch; unsynced_merge_refusal asks it of a merge in progress. `on` None:
+    git could not tell, or (with `tip` None) the ref does not resolve; `why` says which."""
+    tip, why = refs.remote_tip(remote, main, root)
+    if tip is None:
+        return None, None, why
+    on, why = refs.is_ancestor(sha, tip, root)
+    return on, tip, why
+
+
+def unsynced_merge_refusal(root, heads, remote, main):
+    """None, or the refusal of a merge in progress that brings in a commit sync_base.py would
+    refuse: a MERGE_HEAD not on <remote>/<main> as last fetched (on_main), or one git cannot
+    judge. A refused sync is never redone another way (a `git merge --no-commit` committed here)."""
+    upstream = '%s/%s' % (remote, main)
+    for head in heads:
+        on, tip, why = on_main(root, head, remote, main)
+        if on:
+            continue
+        what = ('which is not on %s (at %s)' % (upstream, tip[:7]) if on is False else
+                'and whether it is on %s could not be told (%s)' % (upstream, why))
+        return ('refused: the merge in progress brings in %s, %s: sync_base.py would refuse it, '
+                'and a refused sync is never redone another way. Abort it (git -C %s merge '
+                '--abort) and tell the coordinator; a base is merged only by sync_base.py -C %s '
+                '<the hash the coordinator names>. Nothing was committed.'
+                % (head[:7], what, root, root))
+    return None
 
 
 def merge_owner_refusal(root, rules, landed=(), fold=True):

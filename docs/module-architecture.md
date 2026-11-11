@@ -127,7 +127,6 @@ None: no module is open to every other.
 | backlog | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | backlog | machinepaths | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | backlog | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| backlog | pmdata | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | backlog | records | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | backlog | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | blendermcp | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -271,7 +270,6 @@ None: no module is open to every other.
 | hubjobs | machinepaths | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| hubjobs | pmdata | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | pmwatch | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -298,7 +296,6 @@ None: no module is open to every other.
 | hubsite | lockui | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubsite | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| hubsite | pmdata | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | pmwatch | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -415,7 +412,6 @@ None: no module is open to every other.
 | pmstart | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmstart | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmstart | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| pmstart | pmdata | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmstart | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmstart | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmstart | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -586,10 +582,9 @@ Crossings counted, not refused; each count is driven down to its goal.
 | guard-build-backlog | guard | backlog | build | 0 | - |
 | guard-build-commit | guard | commit | build | 0 | - |
 | guard-build-delegations | guard | delegations | build | 0 | - |
-| guard-build-hubmcp | guard | hubmcp | build | 0 | - |
+| guard-build-hubvalidate | guard | hubvalidate | build | 0 | - |
 | guard-build-hubsite | guard | hubsite | build | 0 | - |
 | guard-build-ledger | guard | ledger | build | 0 | - |
-| guard-build-lockmcp | guard | lockmcp | build | 0 | - |
 | guard-build-pluginsource | guard | pluginsource | build | 0 | - |
 | guard-build-pmdata | guard | pmdata | build | 0 | - |
 | guard-build-worktree | guard | worktree | build | 0 | - |

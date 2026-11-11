@@ -277,13 +277,13 @@ None: no module is open to every other.
 | hubjobs | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | hubjobs | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | hubjobs | hubsite | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| hubjobs | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | hubjobs | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | machinepaths | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below hubjobs): allowed as of 2026-11-11 |
 | hubjobs | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| hubjobs | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | pmwatch | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | records | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
@@ -312,7 +312,6 @@ None: no module is open to every other.
 | hubsite | ownerfiles | build | feature layer uses services layer (ARCHITECTURE.md Layers: ownerfiles is layer 3, below hubsite): allowed as of 2026-11-11 |
 | hubsite | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubsite | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| hubsite | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | pmwatch | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubsite | schedtask | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
@@ -449,10 +448,10 @@ None: no module is open to every other.
 | pmwatch | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmwatch | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmwatch | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
+| pmwatch | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | pmwatch | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | machinesetup | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| pmwatch | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmwatch | schedtask | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | preflight | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |

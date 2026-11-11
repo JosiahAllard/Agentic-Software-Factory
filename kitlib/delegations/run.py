@@ -779,9 +779,9 @@ def run(op, pairs, trigger, cfg, hub=None, now=None, spawn=procspawn.run, checks
     a kitlib.hubclient.client.Client for a question trigger or a hub approval. `spawn`, `checks`
     (the precondition checks by kind, default CHECKS: no checklist-line, see with_checklist),
     `environ` (the caller's), `registry` (read_registry's stand-in), `now` (aware UTC), `pause`
-    (called between the use-once scan and the ledger add), `home` (the home folder place.check reads, default the user's) and
-    `make_cwd` (makes an approval run's empty working folder) are for tests. Result, or
-    RunRefused with nothing done."""
+    (called between the use-once scan and the ledger add), `home` (the home folder place.check
+    reads, default the user's) and `make_cwd` (makes an approval run's empty working folder) are
+    for tests. Result, or RunRefused with nothing done."""
     now = _utc(now)
     environ = dict(os.environ if environ is None else environ)
     kind = trigger_kind(trigger)

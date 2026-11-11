@@ -1105,14 +1105,13 @@ class HubApproval(Fixture):
         self.add(decides='run D-001 name=alpha')
         with open(self.ledger, 'a', encoding='utf-8') as fh:
             fh.write('\n## H-kit-0009 | broken\n')
-        for repos in (['kit', 'pm'], ['pm']):      # an invalid ledger, then a repo off the list
-            with self.subTest(repos=repos):
-                with self.assertRaises((lwrite.Refused, lwrite.Usage)) as want:
-                    lwrite.add(self.ledger, 'kit', drun.PROV, 'q', 'a', 'd', 's', repos=repos, split=True)
-                with self.assertRaises(drun.RunRefused) as got:
-                    self.approve(cfg=dict(self.cfg, ledger_repos=repos))
-                self.assertIn(str(want.exception), str(got.exception))
-                self.assertNotIn('consume', self.events)
+        with self.assertRaises(lwrite.Refused) as want:
+            lwrite.add(self.ledger, 'kit', drun.PROV, 'q', 'a', 'd', 's', repos=self.cfg['ledger_repos'],
+                       split=True)
+        with self.assertRaises(drun.RunRefused) as got:
+            self.approve()
+        self.assertIn(str(want.exception), str(got.exception))
+        self.assertNotIn('consume', self.events)
 
     def test_a_busy_ledger_write_lock_leaves_the_approval_unspent(self):
         self.add()

@@ -176,7 +176,8 @@ def add(path, repo, prov, q, a, decides, source, supersedes='-', when=None, repo
     one of `repos` and never `all`, and `others` (the other files' texts) are where a delegated
     entry's `under <id>` may also point. `rule` (a RuleChange): the entry also changes the
     rulebook of `repo` (rulebook.target), its Decides ending with the change's tag; under the log's
-    write lock and the rulebook's both are checked, then the log is written, then the rulebook. A
+    write lock and the rulebook's both are checked, then the log is written, then the rulebook. The
+    argument checks run under the lock: bad input waits for a busy lock, and an unsafe path is reported before it. A
     `set` with no `checked` hash is a Usage error, a stale one is refused, and its rule text defaults to `decides`."""
     warnings = []
     with locked(path), contextlib.ExitStack() as stack:

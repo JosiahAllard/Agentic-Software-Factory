@@ -141,8 +141,8 @@ class Config(object):
     folder whose machine config gives the owner email when `owner.email` is unset (None: the
     user's); `machine`, when given, is a callable returning that machine config already read
     (the guard's Ctx.user, so a hook reads it once), used instead of reading it again.
-    `retired`: the retired keys (schema.RETIRED) the file still writes, as `section.key`, in
-    schema order: dropped unchecked, and said by the tool that loaded it (retired_warnings)."""
+    `retired`: the retired sections (schema.RETIRED_SECTIONS) and keys (schema.RETIRED) the file
+    still writes, as `section` or `section.key`, sections first, in schema order: dropped unchecked, and said by the tool that loaded it (retired_warnings)."""
 
     def __init__(self, root, where, raw, files, found=True, home=None, machine=None, retired=()):
         self.root = root
@@ -263,11 +263,13 @@ def _build(root, where, reader, home=None, machine=None):
     text = reader(None)
     top = {} if text is None else _parse(text, where)
     errs = []
-    bad = sorted(k for k in top if k not in schema.SECTIONS and not is_note(k))
+    bad = sorted(k for k in top if k not in schema.SECTIONS and k not in schema.RETIRED_SECTIONS
+                 and not is_note(k))
     if bad:
         errs.append('%s: unknown section(s) %s (known: %s)'
                     % (where, ', '.join(bad), ', '.join(sorted(schema.SECTIONS))))
-    raw, files, retired = {}, {}, []
+    raw, files = {}, {}
+    retired = [k for k in schema.RETIRED_SECTIONS if k in top]
     for name in schema.SECTIONS:
         value, rel = None, None
         if name in top:
@@ -322,12 +324,12 @@ def _build(root, where, reader, home=None, machine=None):
 
 
 # A retired key a config still writes (Config.retired): gate.py and land.py say it once a run.
-RETIRED_WARNING = 'WARNING: %s still writes "%s", a retired key: it is ignored; remove it'
+RETIRED_WARNING = 'WARNING: %s still writes "%s", a retired section or key: it is ignored; remove it'
 
 
 def retired_warnings(root):
     """The RETIRED_WARNING lines of the working tree's `.kit.json` at `root`, one per retired
-    key it still writes; none when it cannot be loaded (the tool's own load says why)."""
+    section or key it still writes; none when it cannot be loaded (the tool's own load says why)."""
     try:
         cfg = load(root)
     except ConfigError:

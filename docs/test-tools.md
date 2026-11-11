@@ -1,17 +1,6 @@
 # Test tools
 
-Tools for a checkout's own test runs: `tools/testlist.py`, `tools/tool_deps.py`, `tools/pytests.py`, `tools/kit_tests.py` and `tools/ci_ratchet.py`. Each takes `-C DIR`, the checkout, default here, and exits 2 on USAGE or on a refused configuration or checkout. Their keys are `.kit.json` "testlist" and "tool_tests"; the defaults are in `kitlib/config/schema.py`, and docs/kit-json.md lists them.
-
-## testlist
-
-`tools/testlist.py` (kitlib/testlist) lists the test names in a tree's result files, so that a move or rename that loses a test shows.
-
-- `--names` prints the names; `--save FILE` before the change, then `--diff FILE` after it. The diff lists removed (`  - `) and added (`  + `) names.
-- `--against NEW` diffs two saved lists.
-- `--status` adds passed, failed or skipped to each line (tab-separated).
-- `--dir DIR` reads the result files there, not under the checkout.
-- Result globs: "testlist" `junit` and `trx`.
-- Exit codes: 0 same, listed or saved; 1 the names differ; 2 nothing found, no result newer than the saved list, or a list file that cannot be read or written (`testlist: refused: ...`).
+Tools for a checkout's own test runs: `tools/tool_deps.py`, `tools/pytests.py`, `tools/kit_tests.py` and `tools/ci_ratchet.py`. Each takes `-C DIR`, the checkout, default here, and exits 2 on USAGE or on a refused configuration or checkout. Their key is `.kit.json` "tool_tests"; the defaults are in `kitlib/config/schema.py`, and docs/kit-json.md lists them.
 
 ## tool_deps
 
@@ -311,7 +300,7 @@ Without the hold, the ancestry question is still read safely. kitlib/git/refs.py
 
 Other reads whose "no" was exit 1 with no output now ask in a form that exits 0 either way:
 
-- kitlib/git/refs.py `ref_commit` asks `for-each-ref <ref>`, so a missing ref is exit 0 with no line. A broken loose ref (a file holding garbage) is also exit 0 with no line, but git warns "ignoring broken ref <ref>" on stderr, so no line with a stderr line naming the ref is no answer (tests/git/test_git.py `_Parity.test_a_broken_loose_ref_is_no_answer_and_its_siblings_still_answer`). Other stderr is not about the ref: "no ref" then stands once `resolve(known=True)` confirms it. A ref whose name differs only in case (`refs/heads/Main` against a loose `refs/heads/main`, one file on a case-insensitive file system) is no answer, never "no ref". The fake git imitates the broken-ref warning in for-each-ref and in `rev-parse --verify` (kitlib/git/fake/refs.py `BrokenRef`). The backlog store (kitlib/backlog/store.py, at_landing.py), kitlib/pmdata/init.py and kitlib/worktree/remove.py `pulled_by` read refs this way.
+- kitlib/git/refs.py `ref_commit` asks `for-each-ref <ref>`, so a missing ref is exit 0 with no line. A broken loose ref (a file holding garbage) is also exit 0 with no line, but git warns "ignoring broken ref <ref>" on stderr, so no line with a stderr line naming the ref is no answer (tests/git/test_git.py `_Parity.test_a_broken_loose_ref_is_no_answer_and_its_siblings_still_answer`). Other stderr is not about the ref: "no ref" then stands once `resolve(known=True)` confirms it. A ref whose name differs only in case (`refs/heads/Main` against a loose `refs/heads/main`, one file on a case-insensitive file system) is no answer, never "no ref". The fake git imitates the broken-ref warning in for-each-ref and in `rev-parse --verify` (kitlib/git/fake/refs.py `BrokenRef`). The backlog store (kitlib/backlog/store_ref.py, at_landing.py, plan_claim.py), kitlib/pmdata/init.py and kitlib/worktree/remove.py `pulled_by` read refs this way.
 - `refs.current_branch` asks `branch --show-current`, which prints nothing on a detached HEAD.
 - `refs.merge_base` confirms a "no common commit" by comparing the root commits each side reaches (`rev-list --max-parents=0`). In a shallow clone the cut-off commits read as roots, so there "none" is no answer (tests/reviewpack/test_base.py `ShallowClone`).
 - kitlib/pmdata/init.py reads config with `config --list -z` and filters it in Python.

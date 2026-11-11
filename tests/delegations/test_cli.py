@@ -45,7 +45,7 @@ class Cli(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         calls = []
 
-        def fake(op, pairs, trigger, cfg, hub=None):
+        def fake(op, pairs, trigger, cfg, hub=None, checks=None):
             calls.append((op.id, pairs, trigger, hub))
             if refuse:
                 raise drun.RunRefused(refuse)

@@ -573,6 +573,12 @@ class UseOnce(Fixture):
         self.refused('is not one of ledger_repos', trigger=self.rid, cfg=cfg)
 
 
+def CHECKLIST(cfg):
+    """What tools/delegated.py hands in."""
+    from kitlib import pmstart
+    return pmstart.checklist(cfg, check_only=True)
+
+
 class Preconditions(Fixture):
 
     def setUp(self):
@@ -604,9 +610,9 @@ class Preconditions(Fixture):
         text = 'PM session start checklist:\n- hub key: kit\n- could not check cap: kit x'
         with mock.patch('kitlib.config.pm.load_config', return_value={}), \
                 mock.patch('kitlib.pmstart.checklist', return_value=text):
-            self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}))
+            self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}, CHECKLIST))
             self.assertIn('no PM start checklist line',
-                          drun.checklist_line({'kind': 'checklist-line', 'text': 'cap: kit'}))
+                          drun.checklist_line({'kind': 'checklist-line', 'text': 'cap: kit'}, CHECKLIST))
 
     def test_a_checklist_line_check_changes_no_state(self):
         stamp = os.path.join(self.dir, 'pm-start-last.json')
@@ -626,14 +632,14 @@ class Preconditions(Fixture):
         with open(stamp) as f:
             before = f.read()
         with mock.patch('kitlib.config.pm.load_config', return_value={}), mock.patch('kitlib.proc.listing.list_processes', return_value=[]), mock.patch.multiple('kitlib.pmstart', **quiet),                 mock.patch('kitlib.pmstart._user_config', return_value={}),                 mock.patch('kitlib.pmstart.hub_site', hub_site),                 mock.patch('kitlib.pmstart.filed_stamp_file', return_value=stamp),                 mock.patch('kitlib.pmstart.kit_sync', return_value=['synced']) as sync,                 mock.patch('kitlib.pmstart.configcheck.lines', return_value=[]),                 mock.patch('kitlib.pmstart.consoletasks.check', return_value=[]),                 mock.patch('kitlib.pmstart.fglock.check', return_value=[]):
-            self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}))
+            self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}, CHECKLIST))
             sync.assert_not_called()
             with open(stamp) as f:
                 self.assertEqual(f.read(), before)
 
     def test_no_pm_start_config_is_refused(self):
         with mock.patch('kitlib.config.pm.load_config', return_value=None):
-            self.assertIn('no pm_start config', drun.checklist_line({'text': 'x'}))
+            self.assertIn('no pm_start config', drun.checklist_line({'text': 'x'}, CHECKLIST))
 
 
 class BranchLanded(unittest.TestCase):

@@ -631,9 +631,9 @@ def branch_landed(pre):
     return None
 
 
-def checklist_line(pre):
-    """None when a line of the PM start checklist that is not a failed check holds the text."""
-    from kitlib import pmstart
+def checklist_line(pre, checklist):
+    """None when a line of the PM start checklist that is not a failed check holds the text.
+    `checklist(cfg)` is the entry point's: the checklist text, read without changing any state."""
     from kitlib.config import ConfigError
     from kitlib.config import pm as pmconfig
     text = pre.get('text') or ''
@@ -643,13 +643,14 @@ def checklist_line(pre):
         return 'cannot read the PM start config: %s' % e
     if cfg is None:
         return 'no pm_start config: the PM start checklist cannot be read'
-    for ln in pmstart.checklist(cfg, check_only=True).split('\n'):
+    for ln in checklist(cfg).split('\n'):
         if ln.startswith('- ') and not ln[2:].startswith('could not check') and text in ln:
             return None
     return 'no PM start checklist line holds %r' % text
 
 
-CHECKS = {'file-exists': file_exists, 'branch-landed': branch_landed, 'checklist-line': checklist_line}
+# The 'checklist-line' check is added by the entry point (checklist_line with its checklist).
+CHECKS = {'file-exists': file_exists, 'branch-landed': branch_landed}
 
 
 def preconditions(pres, checks):

@@ -42,6 +42,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
 import argparse                                                    # noqa: E402
+import functools                                                   # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -108,6 +109,13 @@ def hub_client():
     return client.Client(settings.load().port)
 
 
+def checks():
+    """The precondition checks by kind: the library's, and the PM start checklist line."""
+    from kitlib import pmstart
+    return dict(drun.CHECKS, **{'checklist-line': functools.partial(
+        drun.checklist_line, checklist=lambda cfg: pmstart.checklist(cfg, check_only=True))})
+
+
 def request(a, pairs, listed):
     try:
         cfg = user.user_config()
@@ -149,7 +157,7 @@ def main(argv=None):
         return fail('refused: %s' % e)
     try:
         op = drun.find(listed.operations, a.id)
-        res = drun.run(op, pairs, trigger, cfg, hub=hub)
+        res = drun.run(op, pairs, trigger, cfg, hub=hub, checks=checks())
     except drun.RunRefused as e:
         return fail('refused: %s' % e)
     print('logged %s; ran: %s' % (res.entry, ' '.join(res.argv)))

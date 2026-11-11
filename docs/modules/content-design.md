@@ -18,7 +18,7 @@ Low-level design of `kitlib/content`, `kitlib/githooks` and the `content/` folde
 | Path | Holds |
 |---|---|
 | `kitlib/content/__init__.py` | Load roles and skills, `roster()`, `names_of()`, render through each host's `ContentRenderer`, drift check |
-| `kitlib/content/roster.py` | docs/ROSTER.md's tables from the roles and each host's model maps |
+| `kitlib/content/rosterdoc.py` | docs/ROSTER.md's tables from the roles and each host's model maps |
 | `kitlib/content/oncommit.py` | Is this a kit checkout, which staged paths need a render |
 | `kitlib/githooks/` | The pre-commit dispatch: the render step, then the opt-in ledger check |
 | `content/roles/`, `content/skills/`, `content/default-profile.md`, `content/README.md` | The sources |

@@ -193,10 +193,11 @@ def last_activity(main, path, branch):
 
 
 def sweep_skip(ctx, entry, base, ancestors, entries, machine, now, idle_s, mark):
-    """Why the UNLANDED, stale-marked tree `entry` is NOT abandoned, or None when every check
-    before the holder probe passed. Cheapest checks first; the first that fails is the reason
-    printed. `mark` is the stale mark of its branch (kitlib.worktree.marks). A landed tree is
-    never here: classify decides it."""
+    """Why the stale-marked tree `entry` is NOT abandoned, or None when every check before the
+    holder probe passed. Cheapest checks first; the first that fails is the reason printed. `mark`
+    is the stale mark of its branch (kitlib.worktree.marks). An UNLANDED tree must be clean; a
+    LANDED one (its tip in `ancestors`) must hold uncommitted work, which its abandon saves under
+    the tag: a clean landed tree is classify's."""
     s, main = ctx.s, ctx.main
     path, branch, head = entry['path'], entry['branch'], entry['head']
     key = canon(path)
@@ -215,14 +216,21 @@ def sweep_skip(ctx, entry, base, ancestors, entries, machine, now, idle_s, mark)
             ': ' + entry['locked'] if entry['locked'] else '')
     if not head:
         return 'git reported no HEAD for it'
-    if head in ancestors:
-        return 'its tip is in the base: classify decides a landed tree'
+    landed = head in ancestors
+    state = 'LANDED, with uncommitted work' if landed else 'UNLANDED'
     void = marks.void_reason(mark, path, head)
+    if void and landed:
+        return '%s; its stale mark is void: %s' % (state, void)
     if void:
         rc, count, _ = git(main, 'rev-list', '--count', '%s..%s' % (base, head))
         return 'UNLANDED: %s has %s commit(s) not in %s %s; its stale mark is void: %s' % (
             branch, count if rc == 0 and count else 'an unknown number of', s['upstream'],
             base[:10], void)
+    if landed:
+        # A clean landed tree is classify's: said before the costlier checks below.
+        why = sweep_status(ctx, path, landed)
+        if why:
+            return why
     others = sorted(os.path.normpath(e['path']) for e in entries
                     if e['branch'] == branch and canon(e['path']) != key)
     if others:
@@ -242,22 +250,26 @@ def sweep_skip(ctx, entry, base, ancestors, entries, machine, now, idle_s, mark)
     when, what = got
     void = marks.void_reason(mark, path, head, got)
     if void:
-        return 'UNLANDED; its stale mark is void: %s' % void
+        return '%s; its stale mark is void: %s' % (state, void)
     if now - when < idle_s:
         return 'active %.1f h ago (newest: %s), under the %d h idle bar' % (
             max(now - when, 0) / 3600.0, what, idle_s // 3600)
-    return sweep_status(ctx, path)
+    return sweep_status(ctx, path, landed)
 
 
-def sweep_status(ctx, path):
-    """Why the status of `path` stops the sweep, or None when it is clean. Read in `sweep_skip`
-    and AGAIN just before the abandon."""
+def sweep_status(ctx, path, landed=False):
+    """Why the status of `path` stops the sweep, or None when it may be abandoned: an UNLANDED
+    tree clean; a LANDED one (`landed`) holding uncommitted or untracked work, which its abandon
+    saves under the tag. Read in `sweep_skip` and AGAIN just before the abandon."""
     work, disposable, ignored, why = remove_checks.dirty(ctx, path)
     if work is None:
         return 'its status could not be read (%s)' % why
-    # disposable_untracked counts here: the sweep deletes nothing but the tree git removes.
+    if landed and not work:
+        return 'its tip is in the base and it holds no uncommitted work: classify decides it'
+    # disposable_untracked counts here on an unlanded tree: the sweep deletes nothing but the tree
+    # git removes. A landed tree's abandon clears them (remove.clear_disposable).
     lines = work + ['?? ' + rel for rel in disposable]
-    if lines:
+    if lines and not landed:
         return 'uncommitted or untracked files (%d): %s%s' % (
             len(lines), '; '.join(lines[:5]), ' ...' if len(lines) > 5 else '')
     if ignored:

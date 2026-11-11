@@ -891,17 +891,19 @@ class StaleMarkShown(ClassifyCase):
         self.fx.write('loose.txt', 'not committed\n', root=path)
         rc, out, data = self.run_classify()
         self.assertEqual(self.row(data, path)['class'], 'C')
-        self.assert_no_mark_offered(out, '1 dirty file(s): it marks a clean tree only')
+        self.assert_no_mark_offered(out, '1 dirty file(s): an unlanded tree is marked only when clean')
         got = marks.mark(self.repo, 'kit/wip', 'stale', liveness=lambda m, b: (None, 'tip'))
         self.assertEqual(got.code, remove_checks.REFUSED, got.lines)    # the note agrees with the tool
 
-    def test_a_landed_dirty_tree_takes_no_mark(self):
+    def test_a_landed_dirty_tree_is_offered_a_mark(self):
         path = self.workstream('after')
         self.land('kit/after')
         self.fx.write('loose.txt', 'x\n', root=path)
         rc, out, data = self.run_classify()
         self.assertEqual(self.row(data, path)['note'], 'landed, not clean')
-        self.assert_no_mark_offered(out, '1 dirty file(s)')
+        self.assertIn('kit/after --mark-stale "<why>"', out)
+        got = marks.mark(self.repo, 'kit/after', 'stale', liveness=lambda m, b: (None, 'tip'))
+        self.assertEqual(got.code, remove_checks.OK, got.lines)     # the line agrees with the tool
 
     def test_a_tree_with_nothing_of_its_own_takes_no_mark(self):
         path = self.workstream('fresh', commits=0)

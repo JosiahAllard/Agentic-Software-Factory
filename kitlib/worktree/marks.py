@@ -1,5 +1,6 @@
-"""Stale marks: a record that an UNLANDED worktree is stale, made by `--mark-stale` (below), so
-the nightly sweep abandons it under its archive tag (docs/worktree-remove.md "Stale marks").
+"""Stale marks: a record that an UNLANDED worktree is stale, or that a LANDED one's uncommitted
+leftovers are, made by `--mark-stale` (below), so the nightly sweep abandons it under its archive
+tag (docs/worktree-remove.md "Stale marks").
 tools/worktree_remove.py is the entry point (`<branch> --mark-stale "<why>"`, `<branch>
 --unmark-stale`); kitlib.worktree.nightly reads the marks and acts on them (with
 kitlib.worktree.sweep's checks); kitlib.worktree.classify shows them.
@@ -21,7 +22,9 @@ the old one (kitlib.fs.replace).
 `mark` refuses, writing nothing, unless the name is exactly a local branch other than the main
 branch, checked out in exactly one registered worktree under a worktree folder (any host's:
 remove_checks.is_workstream), present, not exempt, not locked, on its branch template if one is set, with
-work NOT in the base, clean (what `--abandon` would refuse), with no link inside, with no backlog
+either work NOT in the base and a clean tree (what `--abandon` would refuse), or its tip in the base
+and uncommitted or untracked work in the tree (the leftovers `--abandon` saves under the tag;
+disposable files are allowed, its abandon clears them), no ignored file, no link inside, no backlog
 record still pulled by it (an open claim: release or block it first) and not live by
 `--classify`'s L rule (classify.branch_liveness). A branch with no worktree is refused and pointed
 to `--branch --abandon`.
@@ -311,18 +314,19 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
     merged, err = refs.is_ancestor(tip, base, main)
     if merged is None:
         return _refuse(ctx, 'the merge check failed (%s)' % err)
-    if merged:
-        return _refuse(ctx, '%s is already in %s %s: landed work needs no mark (the plain verb or'
-                            ' the nightly sweep removes it)' % (branch, s['upstream'], base[:10]))
     work, disposable, ignored, err = remove_checks.dirty(ctx, path)
     if work is None:
         return _refuse(ctx, '%s: its status could not be read (%s)' % (path, err))
-    if work:
+    if merged and not work:
+        return _refuse(ctx, '%s is already in %s %s: landed work needs no mark (the plain verb or'
+                            ' the nightly sweep removes it)' % (branch, s['upstream'], base[:10]))
+    if work and not merged:
         return _refuse(ctx, '%s has uncommitted or untracked files (%d): %s%s - `--abandon` keeps'
                             ' commits only and refuses it' % (
                                 path, len(work), '; '.join(work[:5]), ' ...' if len(work) > 5 else ''))
-    if disposable:
-        # The sweep counts these as dirt (sweep.sweep_status), so a mark would never be acted on.
+    if disposable and not merged:
+        # The sweep counts these as dirt on an unlanded tree (sweep.sweep_status), so a mark
+        # would never be acted on. A landed tree's abandon clears them.
         lines = ['?? ' + rel for rel in disposable]
         return _refuse(ctx, '%s has untracked files (%d): %s%s - they match'
                             ' worktree_remove.disposable_untracked, but the nightly sweep counts'
@@ -359,9 +363,12 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
         return _refuse(ctx, str(e))
     ctx.say('%s %s at %s (%s): stale: %s' % (
                 'remarked ' if old else 'marked   ', branch, tip[:10], path, why),
-            '  sweep    the nightly sweep abandons it under %s%s (the tag keeps the commits) once'
-            ' it is idle %d h, if nothing in it changes first' % (
-                remove_checks.ARCHIVE, os.path.basename(path), SWEEP_IDLE_H),
+            '  sweep    the nightly sweep %s %s%s once it is idle %d h, if nothing in it changes'
+            ' first' % ('saves its uncommitted work under' if merged else
+                        'abandons it under', remove_checks.ARCHIVE, os.path.basename(path),
+                        SWEEP_IDLE_H) +
+            (' (landed: it then removes the tree and the branch)' if merged else
+             ' (the tag keeps the commits)'),
             '  clear    %s %s --unmark-stale' % (s['tool'], branch))
     return ctx.outcome(OK)
 

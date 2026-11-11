@@ -14,7 +14,9 @@ A run-wide probe classify cannot read makes every tree L, and the sweep defers (
 
 The one exception, the owner's rule (docs/worktree-remove.md "Stale marks"): an UNLANDED worktree
 a coordinator marked stale is ABANDONED, by `remove_abandon._abandon` (its archive tag first,
-then the tree, then the branch), after sweep.sweep_skip's checks. A mark is void (the tree is
+then the tree, then the branch), after sweep.sweep_skip's checks. So is a marked LANDED tree that
+holds uncommitted work (classify's C): the abandon saves that work under the archive tag, resets
+and removes the tree, then deletes the branch. A mark is void (the tree is
 skipped, the mark kept) when the tree is not the one it names, its tip moved, or its last
 activity is newer than the mark. The marks are read once, after classify: a marks file that
 cannot be read counts as a failure (exit 1) and no marked tree is acted on. Under `apply`, the
@@ -119,9 +121,10 @@ def _sweep(ctx, apply, now, machine, idle_s, procs, environ):
 
 
 def _stale_pass(ctx, apply, now, held, idle_s, base, counts):
-    """Abandon each UNLANDED tree whose stale mark holds (the owner's rule), then end_marks; adds
-    to `counts`. Landed trees are classify's: never acted on here. Returns why it deferred (a
-    landing lock taken during it), else None."""
+    """Abandon each tree whose stale mark holds (the owner's rule), then end_marks; adds to
+    `counts`. An UNLANDED tree is abandoned clean; a LANDED one only while it holds uncommitted
+    work, which the abandon saves under the tag (a clean landed tree is classify's). Returns why
+    it deferred (a landing lock taken during it), else None."""
     try:
         listing = remove_checks.worktree_listing(ctx.main)
     except remove_checks.GitReadError as e:
@@ -142,8 +145,9 @@ def _stale_pass(ctx, apply, now, held, idle_s, base, counts):
         return None
     for entry in entries:
         mark = marks.find(marked, entry['branch']) if entry['branch'] else None
-        if mark is None or not entry['head'] or entry['head'] in ancestors:
+        if mark is None or not entry['head']:
             continue
+        landed = entry['head'] in ancestors
         path = os.path.normpath(entry['path'])
         name = '%s [%s]' % (path, entry['branch'])
         reason = checks.sweep_skip(ctx, entry, base, ancestors, entries, held, now, idle_s, mark)
@@ -159,8 +163,9 @@ def _stale_pass(ctx, apply, now, held, idle_s, base, counts):
             counts['skipped'] += 1
             continue
         if not apply:
-            ctx.say('would     abandon %s under %s%s (marked stale %s by %s: %s), then delete'
-                    ' branch %s' % (path, remove_checks.ARCHIVE, os.path.basename(path),
+            ctx.say('would     abandon %s%s under %s%s (marked stale %s by %s: %s), then delete'
+                    ' branch %s' % (path, ', saving its uncommitted work,' if landed else '',
+                                    remove_checks.ARCHIVE, os.path.basename(path),
                                     marks.shown_at(mark), mark['by'], mark['why'],
                                     entry['branch']))
             counts['would abandon'] += 1
@@ -170,7 +175,7 @@ def _stale_pass(ctx, apply, now, held, idle_s, base, counts):
             ctx.say('deferred  %s: a landing started during the sweep; %s and every marked'
                     ' worktree after it were not abandoned' % (why, name))
             return why
-        changed = checks.sweep_status(ctx, path)
+        changed = checks.sweep_status(ctx, path, landed)
         if changed:
             ctx.say('skipped   %s: changed since it was checked - %s; git was NOT run'
                     % (name, changed))

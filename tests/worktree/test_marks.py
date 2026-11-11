@@ -141,11 +141,22 @@ class Mark(MarkCase):
         rc, out = self.mark('kit/a')
         self.assert_refused(rc, out, 'is locked with `git worktree lock`: kept')
 
-    def test_landed_work_is_refused(self):
+    def test_a_landed_clean_tree_is_refused(self):
         self.workstream('a')
         self.land('kit/a')
         rc, out = self.mark('kit/a')
         self.assert_refused(rc, out, 'landed work needs no mark')
+
+    def test_a_landed_tree_holding_leftovers_is_marked(self):
+        path = self.workstream('a')
+        self.land('kit/a')
+        self.fx.write('a-0.txt', 'changed\n', root=path)
+        self.fx.write('wip.txt', 'x\n', root=path)
+        rc, out = self.mark('kit/a')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('marked    kit/a at ', out)
+        self.assertIn('saves its uncommitted work under archive/a', out)
+        self.assertEqual([m['tip'] for m in self.stored()], [self.git('rev-parse', 'kit/a')])
 
     def test_a_dirty_tree_is_refused(self):
         path = self.workstream('a')

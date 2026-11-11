@@ -149,8 +149,9 @@ def abandon(top, argument, why, keep_branch=False, cwd=None, today=None, tag=Non
 
 def _abandon(ctx, argument, why, keep_branch, today, named=None, expect=None):
     """The abandon of one registered tree. `expect`, when given, is the commit the caller checked
-    (the sweep's stale mark): a tree at any other commit, or one whose work is already in the base,
-    is refused, never tagged."""
+    (the sweep's stale mark): a tree at any other commit, or one whose work is already in the base
+    with no uncommitted work left, is refused, never tagged; a landed tree that holds uncommitted
+    work has it saved (`_abandon_landed_dirty`), as without `expect`."""
     found = registered_target(ctx, argument)
     if not isinstance(found, tuple):
         return found
@@ -186,15 +187,16 @@ def _abandon(ctx, argument, why, keep_branch, today, named=None, expect=None):
         ctx.say('refused   %s: cannot read %s (%s); nothing was tagged or removed' % (path, up, err))
         return REFUSED
     merged, why_not = refs.is_ancestor(tip, base, main)
-    if merged and expect is not None:
-        ctx.say('refused   %s: %s is already in %s %s, so it is no longer stale work; nothing was'
-                ' tagged or removed' % (path, name, up, base[:10]))
-        return REFUSED
     if merged:
         work = dirty(ctx, path)[0]
         if work:
             return _abandon_landed_dirty(ctx, path, registered_path, slug, branch, tip, name,
                                          len(work), why, keep_branch, today, named)
+        if expect is not None:
+            ctx.say('refused   %s: %s is already in %s %s and holds no uncommitted work, so it is'
+                    ' no longer stale work; nothing was tagged or removed'
+                    % (path, name, up, base[:10]))
+            return REFUSED
         ctx.say('refused   %s: %s is already in %s %s - nothing to abandon. Remove it'
                 ' with `%s %s`; nothing was tagged or removed'
                 % (path, name, up, base[:10], s['tool'], handle(ctx, registered_path)))

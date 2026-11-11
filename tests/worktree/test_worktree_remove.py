@@ -1467,8 +1467,8 @@ class KeepersInBuildOutput(unittest.TestCase):
 
 
 class AbandonExpect(RemoveCase):
-    """remove_abandon._abandon's `expect` (the sweep's stale mark): held to the checked commit, and never
-    for work already in the base."""
+    """remove_abandon._abandon's `expect` (the sweep's stale mark): held to the checked commit;
+    work already in the base is refused unless the tree holds uncommitted work, which is saved."""
 
     def abandon(self, path, expect):
         ctx, refused = remove_checks.open_ctx(self.repo)
@@ -1485,15 +1485,30 @@ class AbandonExpect(RemoveCase):
         self.assertIn('kit/moved', self.branches())
         self.assertEqual(self.git('tag', '-l'), '')
 
-    def test_work_already_in_the_base_is_refused(self):
+    def test_a_clean_tree_already_in_the_base_is_refused(self):
         path = self.workstream('landed')
         self.land('kit/landed')
-        self.fx.write('wip.txt', 'x\n', root=path)       # landed-dirty: --abandon alone would take it
         rc, out = self.abandon(path, self.git('rev-parse', 'kit/landed'))
         self.assertEqual(rc, remove_checks.REFUSED, out)
         self.assertIn('so it is no longer stale work; nothing was tagged or removed', out)
-        self.assertTrue(os.path.isfile(os.path.join(path, 'wip.txt')))
+        self.assertTrue(os.path.isdir(path))
         self.assertEqual(self.git('tag', '-l'), '')
+
+
+@real_git('clean: the fake lacks git clean (and a throwaway GIT_INDEX_FILE)')
+class AbandonExpectLandedDirty(RemoveCase):
+    """`expect` on a landed tree holding leftovers: saved under the tag, as --abandon saves them."""
+
+    abandon = AbandonExpect.abandon
+
+    def test_a_landed_tree_holding_leftovers_has_them_saved_and_is_removed(self):
+        path = self.workstream('landed')
+        self.land('kit/landed')
+        self.fx.write('wip.txt', 'x\n', root=path)
+        rc, out = self.abandon(path, self.git('rev-parse', 'kit/landed'))
+        self.assertEqual(rc, remove_checks.OK, out)
+        self.assertFalse(os.path.exists(path), out)
+        self.assertEqual(self.git('show', 'archive/landed:wip.txt'), 'x')
 
     def test_the_checked_commit_is_abandoned(self):
         path = self.workstream('held')

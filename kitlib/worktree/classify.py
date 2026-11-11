@@ -741,11 +741,14 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None, fe
 
 
 def mark_bar(t):
-    """Why `--mark-stale` (marks.mark) would refuse the B or C row `t`, or None: a dirty tree, a
-    tip in the base (no `ahead`: landed, or nothing of its own) or a claim it shows."""
-    if t.get('dirty'):
-        return '%d dirty file(s): it marks a clean tree only' % t['dirty']
-    if 'ahead' not in t:
+    """Why `--mark-stale` (marks.mark) would refuse the B or C row `t`, or None: an unlanded
+    dirty tree, a clean tree whose tip is in the base (no `ahead`: landed, or nothing of its own)
+    or a claim it shows. A dirty tree whose tip is in the base takes a mark: the sweep saves its
+    leftovers under the archive tag."""
+    landed = 'ahead' not in t
+    if t.get('dirty') and not landed:
+        return '%d dirty file(s): an unlanded tree is marked only when clean' % t['dirty']
+    if landed and not t.get('dirty'):
         return 'its tip is in the base: landed work needs no mark'
     if isinstance(t.get('claims'), list) and t['claims']:
         return 'a backlog record still pulls it (%s): release it first' % ', '.join(t['claims'])

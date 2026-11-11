@@ -32,7 +32,7 @@ landing's own predicate (ownercommits.deletes_only).
 
 `.kit.json` "review_pack" as the BASE holds it (a branch cannot switch its own check off):
 "coauthor" (default false) lists the branch's commits with no Co-Authored-By trailer, each with
-the verdict of the trailers rule (kitlib.reviewpack.trailers); the list is a warning and never
+the verdict of the trailers rule (kitlib.trailerscheck.trailers); the list is a warning and never
 changes the exit status. An Owner-Approved or `Owner-Authored: yes` trailer excuses a commit only when the
 owner authored it; on anyone else's commit it is printed as an unproven claim and the commit is
 judged as if it carried none.
@@ -72,8 +72,9 @@ from kitlib.records import gate_ok
 from kitlib import verdict
 from kitlib.docs import callers as doc_callers
 from kitlib.proc import spawn
+from kitlib.trailerscheck import trailers
 
-from . import quality, trailers
+from . import quality
 
 TOOL = 'review_pack'
 OK, FAILED, USAGE = 0, 1, 2

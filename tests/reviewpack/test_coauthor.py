@@ -1,10 +1,10 @@
 """The pack's co-author section end to end: `.kit.json` "review_pack".coauthor as the base holds
-it, judged by kitlib.reviewpack.trailers, including the owner check on Owner-Authored and
+it, judged by kitlib.trailerscheck.trailers, including the owner check on Owner-Authored and
 Owner-Approved claims. The section lists; it never changes the pack's exit status."""
 import json
 from unittest import mock
 
-from kitlib.reviewpack import trailers
+from kitlib.trailerscheck import trailers
 from tests.gitfixture import EMAIL
 from tests.reviewpack.repo import AGENT, TRAILERED_MSG, PackCase
 

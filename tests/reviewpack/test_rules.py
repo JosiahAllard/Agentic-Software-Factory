@@ -7,7 +7,7 @@ import unittest
 
 from kitlib import reviewpack
 from kitlib.config.owner import Rules
-from kitlib.reviewpack import trailers
+from kitlib.trailerscheck import trailers
 from tests.reviewpack.repo import cli
 
 OWNER = 'owner@example.invalid'

@@ -7,7 +7,7 @@ import subprocess
 from unittest import mock
 
 from tests.gitfixture import fixture_env
-from kitlib.reviewpack import trailers
+from kitlib.trailerscheck import trailers
 from tests.reviewpack.repo import PackCase
 from tests.realgit import real_git
 

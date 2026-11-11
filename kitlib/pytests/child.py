@@ -1,17 +1,18 @@
 """What runs inside one unit's process (kitlib.pytests.runner starts it as `tools/pytests.py
 --child`): the unittest run of one module, class or shard, the `PY SKIP` lines, and the --audit
 hook. The checkout root and its tools folder are passed
-in, and the log goes to the stream given.
+in, and the log goes to the stream given. --audit needs the tool_deps module: the entry
+point (tools/pytests.py) hands it in, so this package does not import it.
 
 --audit: the child records every file its tests open or list under the checkout, outside
 <tools>/__pycache__, .git and each host's agent worktrees folder (hosts.json, .claude/worktrees on
-Claude: other checkouts, when a merged gate runs this in the main one), and FAILs (`[FAIL] audit:` lines) any read that kitlib.tooldeps does not map to the
+Claude: other checkouts, when a merged gate runs this in the main one), and FAILs (`[FAIL] audit:` lines) any read that tool_deps does not map to the
 unit's module: a tools .py in its closure (any tools .py when the closure holds tool_deps, whose
 scan reads them all), an `extra` file its closure reads, a `pinned`/`patterns` entry naming it, or
 any read by a `whole_tree` class - its tests, setUpClass and tearDownClass. A read at import time
 is labelled `<module> (import)` and needs a table entry like any other. Named limits: reads made by
 a subprocess (git, a copied tool run as a child) are not seen; a `pinned` piece entry is a
-ConfigError here (kitlib.tooldeps is given no pieces table).
+ConfigError here (tool_deps is given no pieces table).
 """
 import os
 import sys
@@ -20,7 +21,6 @@ import unittest
 
 from kitlib.git.batch import fixture_env
 from kitlib.host import registry
-from kitlib.tooldeps import deps as tool_deps
 
 SKIP_LINE = 'PY SKIP %s %s'
 
@@ -34,14 +34,15 @@ def shard(suite, i, n):
 class Audit(object):
     """Records real-tree reads the unit's module is not mapped to (see the module docstring)."""
 
-    def __init__(self, module, root, tools=None, cfg=None):
-        self.td = tool_deps
+    def __init__(self, module, root, deps, tools=None, cfg=None):
+        """`deps` is the tool_deps deps module, handed in by the entry point."""
+        self.td = deps
         self.module = module
         self.root = os.path.normcase(os.path.normpath(root))
-        self.cfg = tool_deps.config(root) if cfg is None else cfg
-        graph = tool_deps.scan(tools, self.cfg, root)
+        self.cfg = deps.config(root) if cfg is None else cfg
+        graph = deps.scan(tools, self.cfg, root)
         self.tools_rel = graph.tools_rel
-        self.pins = tool_deps.pinned(self.cfg)
+        self.pins = deps.pinned(self.cfg)
         self.reach = graph.closure(module) | {module}
         self.worktrees = registry.union('worktrees_directory')
         self.current = None
@@ -148,16 +149,17 @@ def set_path(tools, path=None, drop=()):
     sys.path[:0] = [d for d in (path, tools) if d]
 
 
-def run_child(name, shard_spec, audit, root, tools, out, path=None):
+def run_child(name, shard_spec, audit_deps, root, tools, out, path=None):
     """Run one unit in this process; return 0 if every test passed and the audit found nothing,
-    else 1. `tools` is the checkout's tools folder, already first on sys.path (set_path)."""
+    else 1. `audit_deps` is the tool_deps deps module to audit with, or None for no audit.
+    `tools` is the checkout's tools folder, already first on sys.path (set_path)."""
     # No auto gc or auto maintenance in any git this unit starts: every
     # fixture commit would otherwise start a second git process.
     os.environ.update(fixture_env())
     module = name.split('.')[0]
     auditor = None
-    if audit:
-        auditor = Audit(module, root, tools=tools)
+    if audit_deps:
+        auditor = Audit(module, root, audit_deps, tools=tools)
         sys.addaudithook(auditor.hook)
     loader = unittest.TestLoader()
     if auditor:

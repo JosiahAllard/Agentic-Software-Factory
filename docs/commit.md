@@ -123,7 +123,7 @@ An octopus merge carries nothing. The merge commit itself then changes nothing b
 
 Known limit: the signature binds each path's blob, not its mode. At commit time `staged_error` checks only that a path is a regular file, so a commit that writes a path as 100755 where the owner saw 100644 (or the reverse) passes it. The landing check (`approvals.delta_error`) refuses that mode change whenever the parent holds the file; it accepts either regular mode only for a new file (no file at the parent). The consume step runs that same check (`delta_error`) on the commit just made, so a mode flip there is refused at consume too: the commit stands, and the approval stays unconsumed.
 
-Elsewhere the trailer is shown and claims nothing. The review pack's co-author section shows `| owner approval hub:A-<n>` on the commit's row (`kitlib.reviewpack.coauthor_section`). Neither it nor `tools/trailers.py` reads the trailer as an owner claim (`kitlib.reviewpack.trailers`), and `"owner".trailer` may not be `Owner-Approval` in any case (`kitlib.config.owner.trailer_problem`).
+Elsewhere the trailer is shown and claims nothing. The review pack's co-author section shows `| owner approval hub:A-<n>` on the commit's row (`kitlib.reviewpack.coauthor_section`). Neither it nor `tools/trailers.py` reads the trailer as an owner claim (`kitlib.trailerscheck.trailers`), and `"owner".trailer` may not be `Owner-Approval` in any case (`kitlib.config.owner.trailer_problem`).
 
 ## machine_paths.py
 

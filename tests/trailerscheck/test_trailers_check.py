@@ -1,6 +1,6 @@
 """tools/trailers.py over kitlib.trailerscheck (docs/repo-checks.md "trailers"): the gate step that
 warns on each branch commit with no agent Co-Authored-By trailer and never fails for one, judged
-by the rule review_pack uses (kitlib.reviewpack.trailers). The fixture repository is the
+by the rule review_pack uses (kitlib.trailerscheck.trailers). The fixture repository is the
 review-pack one: `main` names the fixture identity as the owner, an agent commit passes
 `-c user.email=agent@example.invalid`."""
 import contextlib

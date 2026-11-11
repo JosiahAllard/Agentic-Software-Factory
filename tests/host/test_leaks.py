@@ -18,7 +18,7 @@ HOST_WORDS = re.compile(r'claude|codex|anthropic|openai', re.I)
 # refactor). Prose in help strings stays. Step 9
 # registered Codex in hosts.json and removed its placeholders (attribution, lock, owner paths).
 ALLOWED = {
-    'kitlib/commit/__init__.py':           1,    # an example family in an error message
+    'kitlib/config/policy.py':             1,    # an example family in an error message
     'kitlib/config/schema.py':             2,    # a key's help text; the owner-guarded managed-settings template
     'kitlib/config/user.py':               1,    # a key's help text
     'kitlib/guard/rules.py':               1,    # the guard refactor

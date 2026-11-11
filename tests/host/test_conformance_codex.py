@@ -39,7 +39,7 @@ class CodexConformance(conformance.HostConformance, bridge_conformance.mixin('co
     # Upper bounds on 'codex' where section 2.7 forbids it: test_leaks counts every host's name file by
     # file, exactly; these are its Codex-only lines. Shrink only.
     LEAK_ALLOWED = {
-        'kitlib/commit/__init__.py': 1,          # an example family in an error message
+        'kitlib/config/policy.py': 1,            # an example family in an error message
         'kitlib/launcher/usage.py': 9,           # the launcher wave: Codex's usage line
         'kitlib/pmwatch/__init__.py': 1,         # the usage line's codex account
     }

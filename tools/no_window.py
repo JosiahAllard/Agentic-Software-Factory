@@ -37,6 +37,7 @@ USAGE = 'USAGE: pythonw no_window.py PROGRAM [ARGS...]'
 def note(argv, why):
     """The incident line; a failure to write it never replaces the exit code or the exception."""
     try:
+        from kitlib.config import user   # noqa: F401  (registers the kit's incident folder)
         from kitlib.proc import console   # only on the way out: a carried run starts no sooner
         console.note_carrier_failure(argv[0], why)
     except Exception:

@@ -153,12 +153,15 @@ def _holds(forms, target):
     return any(flat == target or flat.startswith(target + os.sep) for flat in forms)
 
 
-def _newest(root, label, skip=()):
+def _newest(root, label, skip=(), drop=()):
     """`((mtime, path), None)` of the newest entry under `root` (links not followed; names in
-    `skip` at the top left out, and then the top's own mtime too), or `(None, why)`."""
+    `skip` at the top left out, and then the top's own mtime too; folders in `drop` at the top
+    neither read nor walked into), or `(None, why)`."""
     best, errors, seen = [0.0, None], [], 0
     top = extended(root)
     for where, dirs, files in os.walk(top, onerror=errors.append):
+        if where == top:
+            dirs[:] = [d for d in dirs if d not in drop]
         seen += len(dirs) + len(files)
         if seen > WALK_MAX:
             return None, '%s could not be read in full: more than %d entries' % (label, WALK_MAX)
@@ -189,8 +192,9 @@ def _newest(root, label, skip=()):
 
 def activity(main, path, branch, head):
     """`((newest time, what), None)` or `(None, why)`. A tree on a branch: sweep.last_activity. A
-    detached tree: the same reads without a branch (the tree, its git dir but the index, and the
-    HEAD commit's committer date)."""
+    detached tree: the same reads without a branch (the tree, its git dir but the index and
+    `logs/`, its HEAD reflog's newest entry (sweep.reflog_newest), and the HEAD commit's committer
+    date)."""
     if branch:
         return sweep.last_activity(main, path, branch)
     got, why = _newest(path, 'the tree')
@@ -199,15 +203,19 @@ def activity(main, path, branch, head):
     rc, gitdir, err = git(path, 'rev-parse', '--path-format=absolute', '--git-dir')
     if rc != 0 or not gitdir:
         return None, failure(('rev-parse', '--git-dir'), rc, err)
-    inner, why = _newest(os.path.normpath(gitdir), 'its git dir', skip=('index', 'index.lock'))
+    gitdir = os.path.normpath(gitdir)
+    inner, why = _newest(gitdir, 'its git dir', skip=('index', 'index.lock'), drop=('logs',))
     if inner is None:
+        return None, why
+    logged, why = sweep.reflog_newest(os.path.join(gitdir, 'logs', 'HEAD'), 'its HEAD reflog')
+    if why:
         return None, why
     args = ('log', '-1', '--format=%ct', head, '--')
     rc, stamp, err = git(main, *args)
     if rc != 0 or not stamp.isdigit():
         return None, failure(args, rc, err)
-    return max([got, inner, (float(stamp), 'the commit date of %s' % head[:10])],
-               key=lambda pair: pair[0]), None
+    return max([got, inner, (float(stamp), 'the commit date of %s' % head[:10])] +
+               ([logged] if logged else []), key=lambda pair: pair[0]), None
 
 
 def landing_branches(ctx):

@@ -6,6 +6,7 @@ the checks of a stale-marked tree before the sweep abandons it (`sweep_skip`, `s
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -20,6 +21,7 @@ from .remove_checks import failure, git
 
 SWEEP_IDLE_S = 24 * 3600            # idle 24h+
 FETCH_TIMEOUT_S = 300
+_ZONE = re.compile(rb'[+-]\d{4}')       # a reflog entry's time zone (reflog_newest)
 
 
 def fetch_args(s):
@@ -126,22 +128,50 @@ def machine_lock_holder(entries, path, branch):
     return None
 
 
+def reflog_newest(path, label):
+    """`((time, 'an entry of <label>'), None)`: the newest entry of the reflog file `path` by the
+    entry's own timestamp, never the file's mtime (a `git reflog expire --all`, alone or in a gc,
+    rewrites every reflog of the repository and adds no entry); `(None, None)` when the file is
+    missing or holds no entry (no source); `(None, why)` when it cannot be read or a line does not
+    parse as `<old> <new> <ident> <unix time> <zone>\\t<message>`: cannot tell, never idle."""
+    try:
+        with open(extended(path), 'rb') as f:
+            data = f.read()
+    except FileNotFoundError:
+        return None, None
+    except OSError as e:
+        return None, '%s cannot be read (%s)' % (label, e)
+    best = None
+    for n, line in enumerate(data.splitlines(), 1):
+        if not line.strip():
+            continue
+        head = line.split(b'\t', 1)[0].rsplit(b' ', 2)
+        if len(head) != 3 or not head[1].isdigit() or not _ZONE.fullmatch(head[2]):
+            return None, '%s has an entry that cannot be read (line %d)' % (label, n)
+        best = max(best or 0.0, float(head[1]))
+    return ((best, 'an entry of %s' % label), None) if best is not None else (None, None)
+
+
 def last_activity(main, path, branch):
     """`((newest time, what), None)`, or `(None, why)` when it cannot be read in full: the mtime of
-    everything in the tree; everything in the worktree's own git dir except `index`, `index.lock`
-    and the dir's own mtime (a status rewrites the index: a read, not work); the branch's reflog;
-    the branch tip's committer date. A tree that cannot be read in full is never called idle."""
+    everything in the tree; everything in the worktree's own git dir except `index`, `index.lock`,
+    the dir's own mtime (a status rewrites the index: a read, not work) and `logs/`, whose HEAD
+    reflog counts by its newest entry's time (reflog_newest); the branch reflog's newest entry; the
+    branch tip's committer date. A tree that cannot be read in full is never called idle."""
     best = [0.0, None]
 
     def see(when, what):
         if when > best[0]:
             best[0], best[1] = when, what
 
-    def walk(root, label, skip=()):
+    def walk(root, label, skip=(), drop=()):
+        # `drop`: folders at the top neither read nor walked into (`skip` names are still walked).
         errors = []
         top = extended(root)
         seen = 0
         for where, dirs, files in os.walk(top, onerror=errors.append):
+            if where == top:
+                dirs[:] = [d for d in dirs if d not in drop]
             seen += len(dirs) + len(files)
             if seen > WALK_MAX:
                 return '%s could not be read in full: more than %d entries' % (label, WALK_MAX)
@@ -171,19 +201,21 @@ def last_activity(main, path, branch):
     rc, gitdir, err = git(path, 'rev-parse', '--path-format=absolute', '--git-dir')
     if rc != 0 or not gitdir:
         return None, failure(('rev-parse', '--git-dir'), rc, err)
-    why = walk(os.path.normpath(gitdir), 'its git dir', skip=('index', 'index.lock'))
+    gitdir = os.path.normpath(gitdir)
+    why = walk(gitdir, 'its git dir', skip=('index', 'index.lock'), drop=('logs',))
     if why:
         return None, why
     rc, common, err = git(main, 'rev-parse', '--path-format=absolute', '--git-common-dir')
     if rc != 0 or not common:
         return None, failure(('rev-parse', '--git-common-dir'), rc, err)
     reflog = os.path.join(os.path.normpath(common), 'logs', 'refs', 'heads', *branch.split('/'))
-    try:
-        see(os.lstat(reflog).st_mtime, 'the reflog of %s' % branch)
-    except FileNotFoundError:
-        pass
-    except OSError as e:
-        return None, 'the reflog %s cannot be read (%s)' % (reflog, e)
+    for where, label in ((os.path.join(gitdir, 'logs', 'HEAD'), 'its HEAD reflog'),
+                         (reflog, 'the reflog of %s' % branch)):
+        got, why = reflog_newest(where, label)
+        if why:
+            return None, why
+        if got:
+            see(*got)
     args = ('log', '-1', '--format=%ct', 'refs/heads/' + branch, '--')
     rc, stamp, err = git(main, *args)
     if rc != 0 or not stamp.isdigit():

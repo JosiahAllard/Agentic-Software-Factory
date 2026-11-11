@@ -162,7 +162,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 - Change: on the owner's approval the hub server makes the approval's commit in the worktree the request names, with the checks `commit.py --owner-approval` runs today, and tells the asking session by push. The owner can run the same apply from an outside terminal. A change that cannot be applied shows on the approval with the reason and stays approved. The design must say how the apply and an agent's own git calls in that worktree keep out of each other's way (the private index, a refusal on a staged or changed approved path).
 - Done when: `tests/ownerfiles/test_apply.py::test_approve_commits_in_named_worktree`, `::test_commit_passes_owner_rules`, `::test_unappliable_stays_approved_with_reason`, `::test_put_back_on_refusal` pass; `tests/commit` has a test that an agent's `--owner-approval` is a usage error naming the hub; `grep -rn "owner-approval" content/skills` prints nothing.
 - Risk and tier: High. senior-worker, design first.
-- Owner: guard, and the behaviour itself. **OPEN: the owner has not decided this change** (ARCHITECTURE.md "Open items"); do not build it until the owner answers. After: W-015.
+- Owner: guard; the owner has decided the behaviour. After: W-015.
 
 **W-017 Owner-only tool names live with their owners**
 - Serves: "Layers" (the guard imports nothing from the apps layer); docs/modules/lock-design.md, guard-design.md.
@@ -394,7 +394,6 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 - Files: `docs/agent-profile.md`, `AGENTS.md`, `.claude/coordinator-profile.md`.
 - Change (the builder drafts, the owner applies): the profile's "Moves and renames" no longer asks for a stub at an old path, `tests/oldpaths` (it does not exist) or a full gate on base and tip, and asks instead for the selected tests and an equal test-name list; "Build and test" and "Known flakes" stop presenting `--full` as a branch's routine; the risk map names the new packages (`kitlib/hookrun/`, `kitlib/landing/`, `kitlib/ownerfiles/`, `kitlib/hubclient/`); `AGENTS.md` points at `docs/modules/` beside ARCHITECTURE.md.
 - Done when: `grep -n "oldpaths\|go-live" docs/agent-profile.md` prints nothing.
-- Open: how a move is checked is an open owner question (ARCHITECTURE.md "Open items"); the check named in Change is a proposal until the owner answers.
 - Risk and tier: Low. The owner's files.
 - Owner: all three files.
 

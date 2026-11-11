@@ -8,6 +8,8 @@ from types import SimpleNamespace
 
 from kitlib.config import user as kuser
 from kitlib.guard import commands as cm
+from kitlib.guard import commands_git as cg
+from kitlib.guard import commands_nested as cn
 from kitlib.guard import rolepolicy, rules
 from kitlib.guard import shell as sh
 from tests.home import fence_decoy
@@ -25,16 +27,16 @@ class HomeCallers(unittest.TestCase):
         fence_decoy(self)
 
     def test_a_command_carries_the_home_its_line_was_parsed_with(self):
-        parsed = cm.read('git status && echo x', sh.BASH, CWD, home=GIVEN)
+        parsed = cn.read('git status && echo x', sh.BASH, CWD, home=GIVEN)
         self.assertTrue(parsed.commands)
         self.assertEqual({c.home for c in parsed.commands}, {GIVEN})
-        self.assertEqual({c.home for c in cm.read('git status', sh.BASH, CWD).commands}, {None})
+        self.assertEqual({c.home for c in cn.read('git status', sh.BASH, CWD).commands}, {None})
 
     def test_git_dash_c_tilde_is_the_parsed_home(self):
-        inv = cm.invocation(cm.read('git -C ~/repo status', sh.BASH, CWD, home=GIVEN).commands[0])
-        self.assertTrue(same(cm.git_call(inv).dir, GIVEN + '\\repo'))
+        inv = cm.invocation(cn.read('git -C ~/repo status', sh.BASH, CWD, home=GIVEN).commands[0])
+        self.assertTrue(same(cg.git_call(inv).dir, GIVEN + '\\repo'))
         with self.assertRaises(kuser.HomeFenced):       # read() asks git_call too (expand)
-            cm.read('git -C ~/repo status', sh.BASH, CWD)
+            cn.read('git -C ~/repo status', sh.BASH, CWD)
 
     def test_an_edit_of_a_tilde_path_is_under_the_given_home(self):
         action = SimpleNamespace(path='~/x.txt')

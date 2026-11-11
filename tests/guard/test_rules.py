@@ -13,6 +13,8 @@ from kitlib import lockmcp as lockmcp_names, pmdata
 from kitlib.config import user as kuser
 from kitlib.git import repo
 from kitlib.guard import commands as cm, context, rules, shell as sh
+from kitlib.guard import commands_git as cg
+from kitlib.guard import commands_nested as cn
 from kitlib.lockmcp import server as lockmcp
 
 from . import test_rules_hub as TH
@@ -1462,13 +1464,13 @@ class PlainCommit(unittest.TestCase):
                 ('merge', ['--no-ff', '--no-edit', '--no-commit', 'main'], False),
                 ('merge', ['--no-commit', '--frob', 'main'], False), ('revert', ['-n', '--', 'HEAD'], False)):
             with self.subTest(sub=sub, argv=argv):
-                cmd = cm.read('git %s %s' % (sub, ' '.join(argv)), sh.BASH, W.fwd(self.w.wt)).commands[0]
-                self.assertEqual(rules.commit_scan(sub, cm.git_call(cm.invocation(cmd)).rest)[0], makes)
+                cmd = cn.read('git %s %s' % (sub, ' '.join(argv)), sh.BASH, W.fwd(self.w.wt)).commands[0]
+                self.assertEqual(rules.commit_scan(sub, cg.git_call(cm.invocation(cmd)).rest)[0], makes)
 
     def test_a_computed_word_after_a_hold_is_read_as_a_commit(self):
         # a known limit (rules.py, above COMMIT_VERBS): `$X` may be --commit, but is read as a commit
-        cmd = cm.read('git cherry-pick -n $X', sh.BASH, W.fwd(self.w.wt)).commands[0]
-        self.assertFalse(rules.commit_scan('cherry-pick', cm.git_call(cm.invocation(cmd)).rest)[0])
+        cmd = cn.read('git cherry-pick -n $X', sh.BASH, W.fwd(self.w.wt)).commands[0]
+        self.assertFalse(rules.commit_scan('cherry-pick', cg.git_call(cm.invocation(cmd)).rest)[0])
 
     def test_quit_advice_says_to_read_what_is_left_first(self):
         for text, where in (('git cherry-pick --skip', 'sequencer/todo'), ('git revert --continue', 'sequencer/todo'),
@@ -1487,8 +1489,8 @@ class PlainCommit(unittest.TestCase):
                             (['--quoted-cr', '--abort'], True), (['-C', '--abort'], True),
                             (['x.patch'], True)):
             with self.subTest(argv=argv):
-                cmd = cm.read('git am %s' % ' '.join(argv), sh.BASH, W.fwd(self.w.wt)).commands[0]
-                self.assertEqual(rules.commit_scan('am', cm.git_call(cm.invocation(cmd)).rest)[0], makes)
+                cmd = cn.read('git am %s' % ' '.join(argv), sh.BASH, W.fwd(self.w.wt)).commands[0]
+                self.assertEqual(rules.commit_scan('am', cg.git_call(cm.invocation(cmd)).rest)[0], makes)
         self.assertIsNone(self.decide('git am --show-current-patch=diff', sub=True))
 
     def test_held_form_keeps_strategy_and_drops_an_unplaced_value(self):

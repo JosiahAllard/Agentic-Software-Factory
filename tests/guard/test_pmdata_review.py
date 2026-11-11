@@ -70,7 +70,7 @@ class CallSubexpressionAgents(Base):
 
 
 class HomeByArithmetic(Base):
-    """HOME is counted only when the line assigns it literally (commands.line_env_names): let,
+    """HOME is counted only when the line assigns it literally (commands_env.line_env_names): let,
     arithmetic and select are not read (honest mistakes only), and a push after them is judged as any push."""
 
     def test_reads_and_other_names_pass(self):

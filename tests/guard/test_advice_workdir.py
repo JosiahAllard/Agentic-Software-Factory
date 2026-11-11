@@ -8,6 +8,7 @@ import time
 import unittest
 
 from kitlib.guard import commands as cm
+from kitlib.guard import commands_nested as cn
 from kitlib.guard import shell as sh
 
 from . import world as W
@@ -26,7 +27,7 @@ class RunDir(unittest.TestCase):
     """commands.run_dir: the folder a Start-Process -WorkingDirectory names, else the command's."""
 
     def inv(self, text, cwd='C:\\w'):
-        parsed = cm.read(text, sh.PS, cwd)
+        parsed = cn.read(text, sh.PS, cwd)
         # a subexpression's command is read too (Get-Location in `(Get-Location)`): take the outer one
         return [cm.invocation(c) for c in parsed.commands if c.text == text][0]
 

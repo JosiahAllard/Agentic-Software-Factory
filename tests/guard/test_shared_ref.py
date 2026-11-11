@@ -74,7 +74,7 @@ class SharedRefsFromAWorktree(SharedRefBase):
                            'git update-ref --create-reflog refs/heads/main HEAD',
                            'git.exe update-ref -d refs/heads/main',
                            'cd "%s" && git update-ref -d refs/heads/main' % self.wt,
-                           # a global option's value is not the subcommand (commands.GIT_VALUE_OPTS)
+                           # a global option's value is not the subcommand (commands_git.GIT_VALUE_OPTS)
                            'git --attr-source HEAD update-ref -d refs/heads/main',
                            'git --attr-source=HEAD update-ref -d refs/heads/main',
                            'git --shallow-file x update-ref -d refs/heads/main',

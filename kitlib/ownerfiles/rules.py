@@ -383,9 +383,9 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
                 return None, why
             locked = [q for q in locked if q != p or not shrinks]
         for p in (list(locked) if len(parents) == 2 else []):
-            row, why = _blob_entry(root, sha, p, env)
-            joins, why = (None, why) if row is None else deletion_merge(root, p, parents[0],
-                                                                       parents[1], row, env)
+            known, row = tree_entry(root, sha, p, env, noreplace=True)
+            joins, why = (deletion_merge(root, p, parents[0], parents[1], row, env) if known else
+                          (None, 'git ls-tree could not list %s at %s' % (p, sha[:10])))
             if joins is None:
                 return None, why
             locked = [q for q in locked if q != p or not joins]
@@ -416,10 +416,10 @@ def describe(rules, bad, limit=5):
                    '.kit.json); ask the owner to make the change')
 
 
-def run_git(root, *args, timeout=None):
+def run_git(root, *args, timeout=None, env=None):
     """`(rc, stdout text unstripped, stderr text)`; rc None when git did not run."""
     kw = {} if timeout is None else {'timeout': timeout}
-    r = cmd.call(list(args), root, **kw)
+    r = cmd.call(list(args), root, env=env, **kw)
     return r.rc, r.out.decode('utf-8', 'replace'), r.err
 
 
@@ -463,10 +463,12 @@ def index_entry(root, path):
     return True, (rows[0][0], rows[0][1])
 
 
-def tree_entry(root, rev, path):
+def tree_entry(root, rev, path, env=None, noreplace=False):
     """`(known, entry)`: `path`'s entry in commit `rev` as `(mode, oid)`, or None when the commit
-    has none (it deleted the path). `known` is False when git cannot say."""
-    rc, out, _ = run_git(root, 'ls-tree', '-z', rev, '--', path)
+    has none (it deleted the path). `known` is False when git cannot say. `noreplace` reads it
+    with --no-replace-objects, as violations reads every commit."""
+    rc, out, _ = run_git(root, *((NOREPLACE if noreplace else []) +
+                                 ['ls-tree', '-z', rev, '--', path]), env=env)
     if rc != 0:
         return False, None
     rows = _entries(out, path)
@@ -477,11 +479,12 @@ def tree_entry(root, rev, path):
     return True, (rows[0][0], rows[0][2])
 
 
-def merge_bases(root, head):
-    """Every merge base of HEAD and `head`, or None when git cannot say (or finds none)."""
-    rc, out, _ = run_git(root, 'merge-base', '--all', 'HEAD', head)
-    bases = out.split() if rc == 0 else []
-    return bases or None
+def merge_bases(root, head, rev='HEAD', env=None, noreplace=False):
+    """Every merge base of `rev` and `head`; [] when they have none, None when git cannot say.
+    `noreplace` as for tree_entry."""
+    rc, out, _ = run_git(root, *((NOREPLACE if noreplace else []) + ['merge-base', '--all', rev,
+                                                                    head]), env=env)
+    return out.split() if rc == 0 else [] if rc == 1 and not out.strip() else None
 
 
 def carries_merged_copy(root, path, head, bases):
@@ -658,18 +661,6 @@ def combines_deletions(ours, theirs, result, bases):
     return True
 
 
-def _blob_entry(root, rev, path, env=None):
-    """`((mode, oid), None)` for `path`'s entry in `rev` when it is one regular file, `((), None)`
-    when it is absent or anything else, `(None, why)` when git cannot say."""
-    out, why = _git(root, ['ls-tree', '-z', rev, '--', path], env)
-    if out is None:
-        return None, why
-    rows = _entries(out, path)
-    if len(rows) == 1 and len(rows[0]) == 3 and rows[0][0] in REGULAR_MODES and rows[0][1] == 'blob':
-        return (rows[0][0], rows[0][2]), None
-    return (), None
-
-
 def deletion_merge(root, path, one, two, result, env=None):
     """`(True, None)` when `result`, the `(mode, oid)` entry a merge of the commits `one` and `two`
     gives `path` (its tree's, or the index's), only combines their deletions (combines_deletions,
@@ -678,21 +669,19 @@ def deletion_merge(root, path, one, two, result, env=None):
     mode change, a result that is no regular file); `(None, why)` when git cannot tell."""
     if not result or result[0] not in REGULAR_MODES:
         return False, None
-    r = cmd.call(NOREPLACE + ['merge-base', '--all', one, two], root, env=env)
-    if r.rc not in (0, 1):
-        return None, 'git merge-base failed for %s and %s: %s' % (one[:10], two[:10],
-                                                                 r.err or 'exit %s' % r.rc)
-    bases = cmd.text(r.out).split()
+    bases = merge_bases(root, two, one, env, noreplace=True)
+    if bases is None:
+        return None, 'git merge-base --all failed for %s and %s' % (one[:10], two[:10])
     if not bases:
         return False, None
     oids = []
     for rev in [one, two] + bases:
-        row, why = _blob_entry(root, rev, path, env)
-        if row is None:
-            return None, why
-        if not row or row[0] != result[0]:
+        known, entry = tree_entry(root, rev, path, env, noreplace=True)
+        if not known:
+            return None, 'git ls-tree could not list %s at %s' % (path, rev[:10])
+        if not entry or entry[0] != result[0]:     # result[0] is a regular mode: a blob
             return False, None
-        oids.append(row[1])
+        oids.append(entry[1])
     data = []
     for oid in oids + [result[1]]:
         r = cmd.call(NOREPLACE + ['cat-file', 'blob', oid], root, env=env)

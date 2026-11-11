@@ -691,15 +691,17 @@ class DeletionMerges(OwnerCommitsCase):
     def test_a_git_failure_is_an_error_not_a_pass(self):
         merge = self.resolve(self.without(3, 4))
         real = oc.cmd.call
-
-        def call(args, *a, **kw):
-            if 'cat-file' in args:
-                return oc.cmd.Result(128, b'', 'fatal: bad object')
-            return real(args, *a, **kw)
-        with mock.patch.object(oc.cmd, 'call', call):
-            found, why = oc.violations(self.repo.root, self.rules, merge, [self.main])
-        self.assertIsNone(found)
-        self.assertIn('fatal: bad object', why)
+        for verb, said in [('cat-file', 'fatal: bad object'),
+                           ('merge-base', 'git merge-base --all failed'),
+                           ('ls-tree', 'git ls-tree could not list CLAUDE.md')]:
+            def call(args, *a, **kw):
+                if verb in args and '-r' not in args and '--is-ancestor' not in args:
+                    return oc.cmd.Result(128, b'', 'fatal: bad object')
+                return real(args, *a, **kw)
+            with self.subTest(verb), mock.patch.object(oc.cmd, 'call', call):
+                found, why = oc.violations(self.repo.root, self.rules, merge, [self.main])
+                self.assertIsNone(found)
+                self.assertIn(said, why)
 
 
 class MergeTreePieces(unittest.TestCase):

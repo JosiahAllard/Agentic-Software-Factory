@@ -2245,6 +2245,22 @@ class AMergeOfDeletions(JoinCase):
         self.put(self.F, SEVEN.replace('line 3\n', '').replace('line 4\n', ''))
         self.assert_refused(tip)
 
+    def test_when_what_the_merge_carries_cannot_be_judged_nothing_is_exempt(self):
+        tip, _ = self.merge_deletions('A-001', 'A-002')
+        self.put(self.F, SEVEN.replace('line 3\n', '').replace('line 4\n', ''))
+        real = ownerrules.merge_owned
+
+        def merge_owned(root, rules, staged, *a, **kw):     # only the named owner-only path's ask
+            return (set(), 'merge-tree stubbed to fail') if self.F in staged else real(
+                root, rules, staged, *a, **kw)
+        with mock.patch.object(ownerrules, 'merge_owned', merge_owned):
+            code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assertEqual(code, 1, out)
+        self.assertIn('refused: CLAUDE.md is owner-only', out)
+        self.assertIn('what the merge carries could not be judged: merge-tree stubbed to fail.',
+                      out)
+        self.assertEqual(self.head(), tip)
+
 
 @gitfixture.real_fixture('a committed .gitattributes with merge=union: the fake git refuses the '
                          'attribute')

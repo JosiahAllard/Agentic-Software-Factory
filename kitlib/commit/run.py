@@ -693,19 +693,22 @@ def _commit(req, lines):
         raise _Stop(REFUSED, *(refusal + ['Nothing was committed.']))
     approved = canonical_approved(rules, req.owner_approved, paths)
     locked = locked_paths(rules, paths + [p for p in rendered if p not in paths])
-    shrunk, joined, carried = set(), set(), set()   # shrunk, joined: judged again in _stage
+    shrunk, joined, carried, carry_why = set(), set(), set(), None  # shrunk, joined: in _stage too
     if locked and not req.owner_authored:
         if len(heads) == 1:
             # A path the merge would carry unnamed, as it is staged now, is refused with the hint
-            # to leave it out; any other may be a merge of deletions only (docs/commit.md).
-            carried = ownerrules.merge_owned(root, rules, set(locked) & set(status_before),
-                                             heads, landed)[0]
-            joined = deletion_merge_paths(root, rules, set(locked) - carried, heads[0], landed)
+            # to leave it out; any other may be a merge of deletions only (docs/commit.md). When
+            # git cannot say which the merge carries, nothing is exempt and the refusal says why.
+            carried, carry_why = ownerrules.merge_owned(
+                root, rules, set(locked) & set(status_before), heads, landed)
+            if not carry_why:
+                joined = deletion_merge_paths(root, rules, set(locked) - carried, heads[0], landed)
         elif not merge_heads(root):     # a shrink: never a merge
             shrunk = shrunk_paths(root, rules, locked)
         locked = [p for p in locked if p not in shrunk | joined]
     if locked and not req.owner_authored:
-        raise _Stop(REFUSED, owner_only_refusal(locked, sorted(carried)))
+        note = ['what the merge carries could not be judged: %s.' % carry_why] if carry_why else []
+        raise _Stop(REFUSED, owner_only_refusal(locked, sorted(carried)), *note)
     for p in unapproved_locked(rules, locked, approved):
         raise _Stop(REFUSED, 'refused: %s is owner-only and no --owner-approved value names it.' % p)
     if req.owner_authored:

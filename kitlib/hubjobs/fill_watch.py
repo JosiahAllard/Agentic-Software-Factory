@@ -314,7 +314,7 @@ def read_limits(top, cfg=None):
 
 def read_survey(top, cfg):
     """(queued, idle) of the repository whose main checkout is `top` (module docstring), `cfg` its
-    Config (gate_state's gate_once). Read-only. StandDownUnread when main as fetched, the git
+    Config (unread here: the survey seam's shape). Read-only. StandDownUnread when main as fetched, the git
     common dir, the verdict queue or the worktrees cannot be read."""
     from kitlib.coordstate import render
     from kitlib.gate import verdicts
@@ -352,7 +352,7 @@ def read_survey(top, cfg):
             idle += 1                   # not in main, or git cannot tell: idle
         if t['class'] in ('A', 'E', 'O') or not t.get('branch') or t['branch'] in queued:
             continue
-        gate = t.get('gate') or classify.gate_state(top, t['head'], cfg)
+        gate = t.get('gate') or classify.gate_state(top, t['head'])
         if gate != 'green':
             continue
         landed, _why = refs.is_ancestor(t['head'], main, top)

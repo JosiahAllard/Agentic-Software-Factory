@@ -4,13 +4,13 @@ kinds table, the repo hook module and its gate checks (policy) - and the machine
 (user). docs/kit-json.md lists every key.
 """
 from .types import ConfigError
-from .load import Config, config_path, load, load_at
+from .load import Config, config_path, load, load_at, retired_warnings
 from .owner import Rules as OwnerRules, merge as merge_owner_rules
 from .policy import (HEAVY_DEFAULTS, ROLE_DEFAULTS, commit_settings, gate_checks, heavy_match, heavy_programs,
                      kinds_table, load_gate_checks, load_hook_module, permissions, role_name, roles)
 from .user import ledger_dir, ledger_files, ledger_path, user_config
 
-__all__ = ['ConfigError', 'Config', 'config_path', 'load', 'load_at', 'OwnerRules',
+__all__ = ['ConfigError', 'Config', 'config_path', 'load', 'load_at', 'retired_warnings', 'OwnerRules',
            'merge_owner_rules', 'HEAVY_DEFAULTS', 'ROLE_DEFAULTS', 'heavy_match', 'heavy_programs',
            'kinds_table', 'gate_checks', 'load_gate_checks', 'load_hook_module', 'permissions', 'role_name', 'roles', 'ledger_path',
            'ledger_dir', 'ledger_files', 'user_config']

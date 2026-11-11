@@ -17,14 +17,14 @@ StrictCase = test_land_strict.StrictCase
 BRANCH = test_land_strict.BRANCH
 STRICT = test_land_strict.STRICT
 LIST_FILE = test_land_strict.LIST_FILE
-FULL_GATE = test_land_strict.LandsAloneFullFresh.GATE     # only --full selects the strict path
+STRICT_GATE = test_land_strict.LandsAloneFresh.GATE     # `unit` always, `api` for src/*
 
 
 class CarriedVerdict(StrictCase):
     """A verdict carried over main merges (tools/verdict.py carry; docs/gate-landing-policy.md "Carrying a
     verdict forward") lets the merge land, and only when kitlib.gate.carry passes it again here
     against the base, never on the facts stored."""
-    GATE = FULL_GATE
+    GATE = STRICT_GATE
 
     def synced(self):
         """kit/feature reviewed and queued at a strict change, then main moved and was merged in:
@@ -42,17 +42,17 @@ class CarriedVerdict(StrictCase):
                             'queue the tip, or carry the verdict (tools/verdict.py carry)'
                             % (reviewed[:10], tip[:10]))
 
-    def test_a_carried_verdict_lands_with_a_full_fresh_merged_gate(self):
+    def test_a_carried_verdict_lands_with_a_fresh_merged_gate(self):
         _, reviewed, tip = self.synced()
         verdicts.carry(self.common(), self.repo.root, BRANCH, self.main)
         lander, out, said = self.land_it(BRANCH, tip)
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(self.remote_main(), out.merge)
-        self.assertTrue(lander.full and lander.fresh)
+        self.assertTrue(lander.fresh and not lander.full)
         self.assertEqual(lander.strict_carry['from'], reviewed)
         self.assertIn('STRICT: %s changes strict path %s: reviewed by pm-kit:reviewer on opus '
-                      '(agent-r1) at %s, carried over 1 main merge; the merged gate runs --full '
-                      '--fresh' % (BRANCH, STRICT, reviewed[:10]), said)
+                      '(agent-r1) at %s, carried over 1 main merge; the merged gate runs fresh '
+                      '(nothing reused)' % (BRANCH, STRICT, reviewed[:10]), said)
 
     def test_the_carry_is_checked_against_the_base_landed_on(self):
         _, reviewed, tip = self.synced()
@@ -192,7 +192,7 @@ class DryCheck(StrictCase):
         r = run(BRANCH, '--check-strict')
         self.assertEqual(r.returncode, G.OK, (r.stdout, r.stderr))
         self.assertTrue(r.stdout.startswith('STRICT %s: %s (' % (BRANCH, STRICT)), r.stdout)
-        for extra in (['--expect-tip', 'b' * 40], ['--full'], ['--queue'], ['--submit']):
+        for extra in (['--expect-tip', 'b' * 40], ['--fresh'], ['--queue'], ['--submit']):
             r = run(BRANCH, '--check-strict', *extra)
             self.assertEqual(r.returncode, G.USAGE, (extra, r.stdout, r.stderr))
         for args in (['--check-strict'], ['--sweep-landed', '--check-strict']):

@@ -570,7 +570,7 @@ class NamedReview(SubmitCase):
         lines = {'allow': rules.allow_lines('Z:/pm-kit/plugin/0123456789ab', root),
                  'deny': rules.deny_lines('Z:/pm-kit/plugin/0123456789ab', root)}
         self.assertEqual(rules.decide(lines, 'PowerShell', line), 'allow')
-        for extra, said in ((['--expect-main', tip, '--summary', 'one', '--wait', '5', '--full',
+        for extra, said in ((['--expect-main', tip, '--summary', 'one', '--wait', '5',
                               '--fresh', '--keep-branch'], 'allow'),
                             (['--summary', 'two words'], 'deny'),     # quoted: the normal prompt
                             (['--log-dir', 'Y:/logs'], 'deny')):
@@ -596,7 +596,7 @@ class NamedReview(SubmitCase):
         for tool, argv in (('land.py', [LAND_PY, '-C', self.repo.root, BRANCH]),
                            ('gate.py', [GATE_PY, 'land', BRANCH, '-C', self.repo.root])):
             with self.subTest(tool=tool):
-                r = self.run_tool(*(argv + ['--expect-tip', tip, '--full', '--submit']))
+                r = self.run_tool(*(argv + ['--expect-tip', tip, '--fresh', '--submit']))
                 self.assertEqual(r.returncode, G.USAGE, (r.stdout, r.stderr))
                 lines = r.stdout.splitlines()
                 self.assertTrue(lines[0].startswith('USAGE: a submission names the review'),
@@ -604,7 +604,7 @@ class NamedReview(SubmitCase):
                 head = ('-C %s %s' % (root, BRANCH) if tool == 'land.py'
                         else 'land %s -C %s' % (BRANCH, root))
                 self.assertEqual(lines[1:], [
-                    'Instead: python %s/tools/%s %s --expect-tip %s --full --reviewed-by '
+                    'Instead: python %s/tools/%s %s --expect-tip %s --fresh --reviewed-by '
                     'agent-r1 --submit' % (kit, tool, head, tip)])
                 rec, why = result.read(self.repo.root, BRANCH, 'land')
                 self.assertIsNone(rec, (rec, why))

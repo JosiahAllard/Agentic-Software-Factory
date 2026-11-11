@@ -23,9 +23,9 @@ test modules that import, name or load what changed, or list a folder it is in; 
 transitive closure), prints each selected test package or single module with the reasons it was
 picked, and runs those test modules. Only a change to a `full` path of the table runs the full
 suite, and says why; a path nothing reads runs `always` only. --full runs `python -m unittest
-discover -s tests -t .`'s modules; the landing's merged gate ("landing".gate_once), the daily
-full run and go-live use it, and catch what a direct-users selection leaves out. --plan prints
-and runs nothing.
+discover -s tests -t .`'s modules; the merged gate of a landing whose merge changes a gate config
+file, the daily full run and go-live use it, and catch what a direct-users selection leaves out.
+--plan prints and runs nothing.
 The modules run in parallel worker processes (kitlib.tooldeps.selfrun), --jobs at a time - by
 default the logical processors the machine lock run holds - longest first by the times recorded
 in the git common dir (kit-tests-times.json), long modules split by class - then the table's

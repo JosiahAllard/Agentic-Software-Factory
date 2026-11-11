@@ -747,7 +747,7 @@ class Survey(unittest.TestCase):
                                   lambda c, e, m: 'landed' if e['branch'] in self.expired else None), \
                 mock.patch.object(classify, 'classify', fake_classify), \
                 mock.patch.object(classify, 'gate_state',
-                                  lambda main, head, cfg=None: 'green' if head in self.green
+                                  lambda main, head: 'green' if head in self.green
                                   else 'none'), \
                 mock.patch.object(refs, 'is_ancestor', is_ancestor):
             return W.read_survey('/top', None)

@@ -1,10 +1,10 @@
 """kitlib.gate.land and strict paths (docs/gate-landing-policy.md "Strict paths"): a branch that changes a path
 matching the list in kitlib/gate/strict_defaults.py, read from the base and never from the branch,
 lands only alone, with a queued verdict (kitlib.gate.verdicts) at its tip from a strong-tier
-reviewer who is not its author, whoever built it; its merged gate then runs --full --fresh
-whatever the caller passed. Anything unreadable refuses (fail closed). The landing tests are split
+reviewer who is not its author, whoever built it; its merged gate then runs fresh (its
+selection, nothing reused) whatever the caller passed. Anything unreadable refuses (fail closed). The landing tests are split
 over three modules so each one's real-git run stays well under the test pool's unit timeout: this
-one (a verdict's checks, landing alone with a full fresh gate, the pure helpers),
+one (a verdict's checks, landing alone with a fresh gate, the pure helpers),
 test_land_strict_review and test_land_strict_base."""
 import json
 import os
@@ -113,33 +113,37 @@ class NeedsAVerdict(StrictCase):
         self.assert_refused(out, 'its verdict entry is marked failed (red gate)')
 
 
-class LandsAloneFullFresh(StrictCase):
-    # a glob-only step: a landing that is not --full selects nothing for kitlib/gate/thing.py
-    # and is refused (test_land.NoStepSelected); only the escalation to --full runs it
-    GATE = {'steps': [{'name': 'unit', 'globs': ['src/*'], 'cmd': fixtures.RED_AWARE,
+class LandsAloneFresh(StrictCase):
+    # `unit` always runs and `api` only for src/*: the strict merge selects `unit` alone and
+    # runs it fresh, never --full (ARCHITECTURE.md "What a landing runs")
+    GATE = {'steps': [{'name': 'unit', 'always': True, 'cmd': fixtures.RED_AWARE,
+                       'pass': '^ok$'},
+                      {'name': 'api', 'globs': ['src/*'], 'cmd': fixtures.RED_AWARE,
                        'pass': '^ok$'}]}
 
-    def test_a_reviewed_strict_branch_lands_with_a_full_fresh_merged_gate(self):
+    def test_a_reviewed_strict_branch_lands_with_a_fresh_merged_gate(self):
         _, tip = self.branch('feature', {STRICT: 'x = 1\n'})
         self.queue(BRANCH, tip)
         lander, out, said = self.land_it(BRANCH, tip)
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(self.remote_main(), out.merge)
-        self.assertTrue(lander.full and lander.fresh)
+        self.assertTrue(lander.fresh and not lander.full)
         self.assertIn('STRICT: %s changes strict path %s: reviewed by pm-kit:reviewer on opus '
-                      '(agent-r1); the merged gate runs --full --fresh' % (BRANCH, STRICT), said)
+                      '(agent-r1); the merged gate runs fresh (nothing reused)' % (BRANCH, STRICT),
+                      said)
         rec, why = gate_ok.verify(self.repo.root, out.merge)
         self.assertIsNone(why)
-        self.assertEqual([s['name'] for s in rec['steps']], ['unit'])
+        self.assertEqual((gate_ok.mode_of(rec), [s['name'] for s in rec['steps']]),
+                         ('select', ['unit']))
 
     def test_a_full_model_id_naming_the_strong_tier_counts(self):
         _, tip = self.branch('feature', {STRICT: 'x = 1\n'})
         self.queue(BRANCH, tip, reviewer_model='claude-opus-5-5')
         lander, out, said = self.land_it(BRANCH, tip)
         self.assertEqual(out.code, G.OK, out.lines)
-        self.assertTrue(lander.full and lander.fresh)
+        self.assertTrue(lander.fresh and not lander.full)
         self.assertIn('STRICT: %s changes strict path %s: reviewed by pm-kit:reviewer on '
-                      'claude-opus-5-5 (agent-r1); the merged gate runs --full --fresh'
+                      'claude-opus-5-5 (agent-r1); the merged gate runs fresh (nothing reused)'
                       % (BRANCH, STRICT), said)
 
     def test_a_reviewed_plain_branch_is_not_escalated(self):

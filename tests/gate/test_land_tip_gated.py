@@ -1,10 +1,13 @@
-"""kitlib.gate.land: a branch tip lands only with a full-gate OK record for exactly that commit
-(docs/gate-landing.md "Landing", the locked checks): a record a `gate.py --full` pass wrote (`full` true).
-A default-mode or --only run, a record from before records said whether the gate was --full, a
-record for another commit and one git no longer agrees with are each REFUSED before any merge.
-The refusal says what gates the tip whole (merge the base first, in the kit, when the tip's record
-lacks the `full` key); a base gate --full selects no step from is refused first; the record's
-gate_config is not compared."""
+"""kitlib.gate.land: a branch tip lands only with a gate-OK record for exactly that commit that the
+landing takes (docs/gate-landing.md "Landing", the locked checks): a `gate.py --full` or a
+default-mode pass's, or a docs-only pass's of a change docs-only under the base. No branch needs a
+--full run (ARCHITECTURE.md "What a landing runs"). No record, a record of no mode a landing
+takes, one from before records said whether the gate was --full, a record for another commit and
+one git no longer agrees with are each REFUSED before any merge. The refusal says what gates the
+tip (merge the base first, in the kit, when the tip's record lacks the `full` key); a base gate
+--full selects no step from is refused first; the record's gate_config is not compared. A merge
+that changes a gate config file, or whose diff git cannot list, runs every step in full once
+(Lander.config_escalate)."""
 import json
 import os
 import re
@@ -17,7 +20,7 @@ from kitlib.records import gate_ok
 from tests.gate import fixtures, test_land
 
 BRANCH = test_land.BRANCH
-COMMAND = re.compile(r'python "([^"]+)" -C "([^"]+)" --full')
+COMMAND = re.compile(r'python "([^"]+)" -C "([^"]+)"')
 
 
 class TipCase(test_land.LandCase):
@@ -31,10 +34,10 @@ class TipCase(test_land.LandCase):
 
     def assert_refused(self, out, branch, tip, wt, *says):
         """REFUSED before any merge: main and the remote unmoved, no merge record, and the first
-        line names the tip, each of `says` and the command that gates the tip whole."""
+        line names the tip, each of `says` and the default-mode command that gates the tip."""
         self.assertEqual(out.code, G.REFUSED, out.lines)
         first = out.lines[0]
-        self.assertIn('%s tip %s has no full-gate OK record' % (branch, tip[:10]), first)
+        self.assertIn('%s tip %s has no gate-OK record that lands it' % (branch, tip[:10]), first)
         for s in says:
             self.assertIn(s, first)
         self.assertIn('nothing was merged', first)
@@ -42,10 +45,15 @@ class TipCase(test_land.LandCase):
         self.assertIsNotNone(m, first)
         self.assertTrue(m.group(1).endswith(os.path.join('tools', 'gate.py')), first)
         self.assertTrue(os.path.samefile(m.group(2), wt), first)
+        self.assertNotIn('--full', first[m.end():m.end() + 8])
         self.assertEqual(self.main_now(), self.main)
         self.assertEqual(self.remote_main(), self.main)
         self.assertIsNone(self.lock().read())
         self.assertEqual([r for r in self.records() if r != tip + '.json'], [])
+
+
+GATE_FIRST = 'gate that tip first: '
+MERGE_FIRST = 'merge origin/main (%s) into %s first'
 
 
 class Refused(TipCase):
@@ -53,14 +61,6 @@ class Refused(TipCase):
         wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
         out = self.lander(BRANCH, self.main, tip).run()
         self.assert_refused(out, BRANCH, tip, wt, 'no gate-OK record for %s' % tip)
-
-    def test_a_default_mode_record_does_not_count(self):
-        wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.gate(wt)
-        rec, why = gate_ok.verify(self.repo.root, tip)
-        self.assertIsNone(why)                      # a real pass, only not --full
-        out = self.lander(BRANCH, self.main, tip).run()
-        self.assert_refused(out, BRANCH, tip, wt, 'without --full')
 
     def test_a_record_from_before_the_full_key_does_not_count(self):
         wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
@@ -71,12 +71,12 @@ class Refused(TipCase):
         out = self.lander(BRANCH, self.main, tip).run()
         self.assert_refused(out, BRANCH, tip, wt, 'does not say whether the gate ran --full')
         # not the kit: the running kit's gate.py writes `full`, so no merge is asked for
-        self.assertIn(GATE_WHOLE, out.lines[0])
+        self.assertIn(GATE_FIRST, out.lines[0])
         self.assertNotIn('merge origin/main', out.lines[0])
 
     def test_a_record_of_the_commit_before_the_tip_does_not_count(self):
         wt, first = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.gate(wt, full=True)
+        self.gate(wt)
         self.repo.write('b.py', 'y = 2\n', root=wt)
         tip = self.repo.commit('more', 'b.py', cwd=wt)
         out = self.lander(BRANCH, self.main, tip).run()
@@ -87,20 +87,31 @@ class Refused(TipCase):
 
     def test_a_record_git_no_longer_agrees_with_does_not_count(self):
         wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.gate(wt, full=True)
+        self.gate(wt)
         rec, _ = gate_ok.read(self.repo.root, tip)
         rec['tree'] = '0' * 40
         gate_ok.write(self.repo.root, rec)
         out = self.lander(BRANCH, self.main, tip).run()
         self.assert_refused(out, BRANCH, tip, wt, 'names tree %s' % ('0' * 40))
 
+    def test_a_record_of_no_mode_a_landing_takes_is_refused(self):
+        wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        self.gate(wt)
+        rec, _ = gate_ok.read(self.repo.root, tip)
+        rec['mode'] = 'partial'
+        gate_ok.write(self.repo.root, rec)
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assert_refused(out, BRANCH, tip, wt, 'the record for %s is of no mode a landing '
+                            'takes (mode partial, full False)' % tip)
+
     def test_a_batch_with_one_ungated_tip_lands_nothing(self):
         wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.gate(wt, full=True)
+        self.gate(wt)
         wt2, tip2 = self.branch('other', {'o.py': 'o = 1\n'})
         out = self.lander([BRANCH, 'kit/other'], self.main, [tip, tip2]).run()
         self.assertEqual(out.code, G.REFUSED, out.lines)
-        self.assertIn('kit/other tip %s has no full-gate OK record' % tip2[:10], out.lines[0])
+        self.assertIn('kit/other tip %s has no gate-OK record that lands it' % tip2[:10],
+                      out.lines[0])
         self.assertTrue(os.path.samefile(COMMAND.search(out.lines[0]).group(2), wt2))
         os.remove(gate_ok.record_path(self.repo.root, tip))
         self.assert_refused(out, 'kit/other', tip2, wt2)
@@ -112,7 +123,7 @@ class GitCopy(TipCase):
 
     def test_with_a_dev_drive_the_gate_writes_no_git_copy_and_a_git_copy_alone_does_not_land(self):
         wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.gate(wt, full=True)
+        self.gate(wt)
         self.assertFalse(os.path.exists(gate_ok.legacy_path(self.repo.root, tip)))
         path = gate_ok.record_path(self.repo.root, tip)
         with open(path, encoding='utf-8') as f:
@@ -145,17 +156,14 @@ def same_path(a, b):
     return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
 
 
-GATE_WHOLE = 'gate that tip whole first: '
-MERGE_FIRST = 'merge origin/main (%s) into %s first'
-
-
 class GateCommand(TipCase):
     """The refusal's command names the worktree's own tools/gate.py when the repository being
     landed is the kit (its main checkout has the kit's layout, kitlib.content.oncommit.is_kit),
-    wherever the running kit came from; any other repository is gated by the running kit's. In
-    the kit, a tip whose record lacks the `full` key is told to merge the base in first: the
-    branch's own gate.py is from before records said `full` (Lander.full_gate_advice). Being
-    behind the base alone does not ask for a merge."""
+    wherever the running kit came from; any other repository is gated by the running kit's. It
+    is the default-mode gate: no tip needs --full. In the kit, a tip whose record lacks the
+    `full` key is told to merge the base in first: the branch's own gate.py is from before
+    records said `full` (Lander.gate_advice). Being behind the base alone does not ask for a
+    merge."""
 
     def kit_layout(self):
         self.repo.write('content/roles/worker.md', 'role\n')
@@ -187,28 +195,28 @@ class GateCommand(TipCase):
     def test_another_repository_is_gated_by_the_running_kit(self):
         gate_py, _, first = self.refusal()
         self.assertTrue(same_path(gate_py, os.path.join(S.kit_live(), 'tools', 'gate.py')), gate_py)
-        self.assertIn(GATE_WHOLE, first)
+        self.assertIn(GATE_FIRST, first)
 
     def test_another_repository_behind_its_base_is_not_told_to_merge(self):
         # the running kit's gate.py writes `full` whatever the branch holds
         gate_py, _, first = self.refusal(behind=True)
         self.assertTrue(same_path(gate_py, os.path.join(S.kit_live(), 'tools', 'gate.py')), gate_py)
-        self.assertIn(GATE_WHOLE, first)
+        self.assertIn(GATE_FIRST, first)
         self.assertNotIn('merge origin/main', first)
 
     def test_the_kit_is_gated_by_the_worktrees_own_gate(self):
         self.kit_layout()
         gate_py, wt, first = self.refusal()
         self.assertTrue(same_path(gate_py, os.path.join(wt, 'tools', 'gate.py')), gate_py)
-        self.assertIn(GATE_WHOLE, first)            # the tip holds the base: no merge to make
+        self.assertIn(GATE_FIRST, first)            # the tip holds the base: no merge to make
         self.assertNotIn('merge origin/main', first)
 
-    def test_a_kit_branch_behind_its_base_with_no_record_is_told_to_gate_it_whole(self):
+    def test_a_kit_branch_behind_its_base_with_no_record_is_told_to_gate_it(self):
         # behind says nothing about the age of its gate.py: no record is asked for, no merge
         self.kit_layout()
         gate_py, wt, first = self.refusal(behind=True)
         self.assertTrue(same_path(gate_py, os.path.join(wt, 'tools', 'gate.py')), gate_py)
-        self.assertIn(GATE_WHOLE, first)
+        self.assertIn(GATE_FIRST, first)
         self.assertNotIn('merge origin/main', first)
 
     def test_a_kit_tip_whose_record_lacks_full_is_told_to_merge_the_base_first(self):
@@ -218,8 +226,8 @@ class GateCommand(TipCase):
         self.assertTrue(same_path(gate_py, os.path.join(wt, 'tools', 'gate.py')), gate_py)
         self.assertIn('does not say whether the gate ran --full', first)
         self.assertIn(MERGE_FIRST % (self.main[:10], BRANCH), first)
-        self.assertIn('then gate the merge whole and land that tip: python', first)
-        self.assertNotIn(GATE_WHOLE, first)
+        self.assertIn('then gate the merge and land that tip: python', first)
+        self.assertNotIn(GATE_FIRST, first)
 
 
 class NoFullStep(TipCase):
@@ -265,20 +273,21 @@ class NoFullStep(TipCase):
             {'name': 'slow', 'manual': True, 'cmd': fixtures.RED_AWARE, 'pass': '^ok$'},
             dict(fixtures.GATE['steps'][0])]})
         wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.gate(wt, full=True)
+        self.gate(wt)
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
 
 
 class TipConfig(TipCase):
     """The tip record's `gate_config` is not compared with any config (Lander.tip_gate_check):
-    a branch that changes its own gate is gated whole by it and lands; the merged gate runs the
-    base's. .kit.json is owner-only, so the base names an owner and the owner commits the change
+    a branch that changes its own gate is gated by it and lands; the merged gate runs the base's,
+    every step in full once, as the merge changes a gate config file (Lander.config_escalate).
+    .kit.json is owner-only, so the base names an owner and the owner commits the change
     (tests/gate/test_land_owner.py)."""
     OWNER = 'owner@example.invalid'
     KIT = dict(test_land.LandCase.KIT, owner={'email': OWNER})
 
-    def test_a_branch_that_changes_its_gate_lands_on_its_own_full_record(self):
+    def test_a_branch_that_changes_its_gate_lands_on_its_own_record(self):
         gate = {'steps': [dict(fixtures.GATE['steps'][0]),
                           dict(fixtures.GATE['steps'][0], name='lint')]}
         wt = self.repo.worktree('feature')
@@ -286,14 +295,17 @@ class TipConfig(TipCase):
         self.repo.git('add', '.kit.json', cwd=wt)
         self.repo.git('-c', 'user.email=%s' % self.OWNER, 'commit', '-q', '-m', 'gate', cwd=wt)
         tip = self.repo.git('rev-parse', 'HEAD', cwd=wt)
-        self.gate(wt, full=True)
-        rec, why = gate_ok.verify_full(self.repo.root, tip)
+        self.gate(wt)
+        rec, why = gate_ok.verify(self.repo.root, tip)
         self.assertIsNone(why)
         self.assertNotEqual(rec['gate_config'],
                             gate_ok.config_hash(gate_ok.gate_config_at(self.repo.root, self.main)))
         self.assertEqual([s['name'] for s in rec['steps']], ['unit', 'lint'])
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
+        merged = gate_ok.read(self.repo.root, out.merge)[0]
+        self.assertEqual((gate_ok.mode_of(merged), [s['name'] for s in merged['steps']]),
+                         ('full', ['unit']))         # the base's gate, run in full
 
 
 class Lands(TipCase):
@@ -307,12 +319,15 @@ class Lands(TipCase):
         self.assertIsNone(why)
         self.assertIs(rec['full'], False)           # the merged gate ran in its default mode
 
-    def test_a_full_landing_records_its_merge_as_full(self):
+    def test_a_default_mode_record_of_the_tip_lands(self):
         wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.gate(wt, full=True)
-        out = self.lander(BRANCH, self.main, tip, full=True).run()
+        self.gate(wt)
+        self.assertEqual(gate_ok.mode_of(gate_ok.read(self.repo.root, tip)[0]), 'select')
+        out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
-        self.assertIs(gate_ok.read(self.repo.root, out.merge)[0]['full'], True)
+        rec, why = gate_ok.verify(self.repo.root, out.merge)
+        self.assertIsNone(why)
+        self.assertEqual((rec['full'], gate_ok.mode_of(rec)), (False, 'select'))
 
 
 def _step(name, **kw):
@@ -328,14 +343,11 @@ SELECT_GATE = {
 
 class SelectRecords(TipCase):
     """A record that is not --full lands a tip when the BASE's config takes it
-    (Lander.select_refusal): its diff covers the landing diff, and either it is a default-mode pass
-    in which every base "gate".smoke_steps step passed and no gate config file changes, or the
-    change is docs-only under the base's "gate".docs_only and its steps passed. A docs-only merge
-    runs only the docs_only steps and is recorded with mode "docs". Without smoke_steps the base
-    takes only a --full record (Refused.test_a_default_mode_record_does_not_count)."""
+    (Lander.select_refusal): its diff covers the landing diff, and either it is a default-mode
+    pass, or the change is docs-only under the base's "gate".docs_only and its steps passed. The
+    merged gate selects by the merge's diff, the smoke steps included; a docs-only merge runs
+    only the docs_only steps and is recorded with mode "docs"."""
     GATE = SELECT_GATE
-    OWNER = 'owner@example.invalid'
-    KIT = dict(test_land.LandCase.KIT, owner={'email': OWNER})
 
     def gated(self, files, **kw):
         wt, tip = self.branch('feature', files)
@@ -354,26 +366,23 @@ class SelectRecords(TipCase):
         self.assert_refused(out, BRANCH, tip, wt, *says)
         return out
 
-    def test_a_default_mode_record_with_the_smoke_steps_lands(self):
+    def test_a_default_mode_record_lands_and_the_merge_runs_its_selection(self):
         wt, tip, rec = self.gated({'a.py': 'x = 1\n'})
         self.assertEqual((gate_ok.mode_of(rec), [s['name'] for s in rec['steps']]),
                          ('select', ['unit', 'boot']))
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
         merged = gate_ok.read(self.repo.root, out.merge)[0]
-        self.assertEqual(gate_ok.mode_of(merged), 'select')   # the merged gate as before
-        self.assertEqual([s['name'] for s in merged['steps']], ['unit', 'scrub'])
+        self.assertEqual((gate_ok.mode_of(merged), [s['name'] for s in merged['steps']]),
+                         ('select', ['unit', 'boot']))     # the smoke step, not the *.md one
 
-    def test_a_record_missing_a_smoke_step_is_refused(self):
+    def test_a_record_missing_a_smoke_step_lands_and_the_merge_runs_it(self):
         wt, tip, rec = self.gated({'a.py': 'x = 1\n'})
         self.edit_record(tip, steps=[s for s in rec['steps'] if s['name'] != 'boot'])
-        self.refused(wt, tip, 'without --full', "the base's smoke step boot did not pass in it")
-
-    def test_a_smoke_step_that_was_skipped_does_not_count(self):
-        wt, tip, rec = self.gated({'a.py': 'x = 1\n'})
-        self.edit_record(tip, steps=[dict(s, result='skip') if s['name'] == 'boot' else s
-                                     for s in rec['steps']])
-        self.refused(wt, tip, "the base's smoke step boot did not pass in it")
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        merged = gate_ok.read(self.repo.root, out.merge)[0]
+        self.assertIn('boot', [s['name'] for s in merged['steps']])
 
     def test_a_record_whose_diff_does_not_cover_the_landing_is_refused(self):
         wt, first = self.branch('feature', {'a.py': 'x = 1\n'})
@@ -381,27 +390,8 @@ class SelectRecords(TipCase):
         tip = self.repo.commit('more', 'b.py', cwd=wt)
         self.gate(wt)
         self.edit_record(tip, base=first)           # its steps were picked for b.py alone
-        self.refused(wt, tip, 'whose diff to the tip leaves out a.py')
-
-    def test_a_tip_that_changes_the_gate_config_needs_a_full_record(self):
-        wt = self.repo.worktree('feature')
-        kit = dict(self.KIT, gate=dict(SELECT_GATE, steps=SELECT_GATE['steps'] + [_step('lint')]))
-        self.repo.write('.kit.json', json.dumps(kit, indent=1), root=wt)
-        self.repo.git('add', '.kit.json', cwd=wt)
-        self.repo.git('-c', 'user.email=%s' % self.OWNER, 'commit', '-q', '-m', 'gate', cwd=wt)
-        tip = self.repo.git('rev-parse', 'HEAD', cwd=wt)
-        self.gate(wt)
-        self.assertEqual(gate_ok.mode_of(gate_ok.read(self.repo.root, tip)[0]), 'select')
-        self.refused(wt, tip, "the tip changes the gate's config (.kit.json)")
-        self.gate(wt, full=True)
-        out = self.lander(BRANCH, self.main, tip).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-
-    def test_a_record_of_unknown_mode_is_refused(self):
-        wt, tip, _ = self.gated({'a.py': 'x = 1\n'})
-        self.edit_record(tip, mode='partial')
-        out = self.refused(wt, tip, 'without --full')
-        self.assertNotIn('smoke step', out.lines[0])
+        out = self.refused(wt, tip, 'whose diff to the tip leaves out a.py')
+        self.assertNotIn('without --full', out.lines[0])
 
     def test_a_docs_only_record_lands_and_the_merge_runs_only_the_docs_steps(self):
         wt, tip, rec = self.gated({'docs/guide.md': 'words\n'})
@@ -430,14 +420,6 @@ class SelectRecords(TipCase):
         self.edit_record(tip, steps=[])
         self.refused(wt, tip, "the base's docs_only step scrub did not pass in it")
 
-    def test_a_full_landing_of_a_docs_only_change_runs_every_step(self):
-        wt, tip, _ = self.gated({'docs/guide.md': 'words\n'})
-        out = self.lander(BRANCH, self.main, tip, full=True).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-        merged = gate_ok.read(self.repo.root, out.merge)[0]
-        self.assertEqual((gate_ok.mode_of(merged), [s['name'] for s in merged['steps']]),
-                         ('full', ['unit', 'scrub']))
-
 
 class BranchGateRecord(TipCase):
     def test_full_says_whether_the_branch_gate_ran_full(self):
@@ -453,328 +435,85 @@ class BranchGateRecord(TipCase):
         self.assertIs(gate_ok.read(self.repo.root, tip)[0]['full'], True)
 
 
-# ---------------------------------------------------------------- "landing".shared_paths
-
-SCOPED_GATE = {'steps': [_step('unit'), _step('api', always=False, globs=['api/*'])]}
-SHARED = ['api/*']
-STRICT_FILE = 'kitlib/gate/x.py'        # a strict path (strict_defaults.STRICT_DEFAULTS)
-
-
-class ScopedCase(TipCase):
-    """A base that sets "landing".shared_paths (docs/gate-run.md "Shared paths"): a default-mode
-    (scoped) record lands a tip that changes no shared path and no strict path, with no
-    "gate".smoke_steps; a tip that changes one needs a --full record. The merged gate still
-    runs every step that is not manual."""
-    GATE = SCOPED_GATE
-    OWNER = 'owner@example.invalid'
-    KIT = dict(test_land.LandCase.KIT, owner={'email': OWNER},
-               landing={'shared_paths': SHARED, 'gate_once': False})
-
-    def gated(self, files, **kw):
-        wt, tip = self.branch('feature', files)
-        self.gate(wt, **kw)
-        rec, why = gate_ok.verify(self.repo.root, tip)
-        self.assertIsNone(why)
-        return wt, tip, rec
-
-    def refused(self, wt, tip, *says):
-        out = self.lander(BRANCH, self.main, tip).run()
-        self.assert_refused(out, BRANCH, tip, wt, *says)
-        return out
-
-
-class ScopedRecords(ScopedCase):
-    def test_a_scoped_record_of_a_plain_branch_lands(self):
-        wt, tip, rec = self.gated({'a.py': 'x = 1\n'})
-        self.assertEqual((gate_ok.mode_of(rec), [s['name'] for s in rec['steps']]),
-                         ('select', ['unit']))
-        out = self.lander(BRANCH, self.main, tip).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-
-    def test_the_merged_gate_still_runs_every_step(self):
-        # the branch gate ran only unit; the merged gate runs api too, as without the setting
-        _, tip, _ = self.gated({'a.py': 'x = 1\n'})
-        said = []
-        out = self.lander(BRANCH, self.main, tip, say=said.append).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-        merged = gate_ok.read(self.repo.root, out.merge)[0]
-        self.assertEqual((gate_ok.mode_of(merged), [s['name'] for s in merged['steps']]),
-                         ('select', ['unit', 'api']))
-        line = [l for l in said if l.startswith('merged-tree gate at ')]
-        self.assertTrue(line and line[0].endswith(': unit, api'), said)
-
-    def test_a_scoped_record_touching_a_shared_path_is_refused(self):
-        wt, tip, rec = self.gated({'api/x.py': 'x = 1\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'select')
-        self.refused(wt, tip, 'without --full',
-                     'the tip changes shared path api/x.py ("landing".shared_paths)')
-
-    def test_a_scoped_record_of_a_strict_branch_is_refused(self):
-        wt, tip, rec = self.gated({STRICT_FILE: 'x = 1\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'select')
-        self.refused(wt, tip, 'without --full', 'the tip changes strict path %s' % STRICT_FILE)
-
-    def test_a_scoped_record_that_changes_the_gate_config_is_refused(self):
-        wt = self.repo.worktree('feature')
-        kit = dict(self.KIT, gate=dict(SCOPED_GATE, steps=SCOPED_GATE['steps'] + [_step('lint')]))
-        self.repo.write('.kit.json', json.dumps(kit, indent=1), root=wt)
-        self.repo.git('add', '.kit.json', cwd=wt)
-        self.repo.git('-c', 'user.email=%s' % self.OWNER, 'commit', '-q', '-m', 'gate', cwd=wt)
-        tip = self.repo.git('rev-parse', 'HEAD', cwd=wt)
-        self.gate(wt)
-        self.assertEqual(gate_ok.mode_of(gate_ok.read(self.repo.root, tip)[0]), 'select')
-        self.refused(wt, tip, "the tip changes the gate's config (.kit.json)")
-
-    def test_a_full_record_of_a_shared_path_lands(self):
-        _, tip, _ = self.gated({'api/x.py': 'x = 1\n'}, full=True)
-        out = self.lander(BRANCH, self.main, tip).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-
-
-class ScopedNoSetting(ScopedCase):
-    """With no "landing".shared_paths, no smoke_steps and gate_once off: only a --full record
-    lands."""
-    KIT = dict(test_land.LandCase.KIT)
-
-    def test_without_the_setting_a_scoped_record_is_refused(self):
-        wt, tip, rec = self.gated({'a.py': 'x = 1\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'select')
-        out = self.refused(wt, tip, 'without --full', 'sets no "gate".smoke_steps or '
-                                     '"gate".docs_only, so only a --full record lands')
-        self.assertNotIn('shared path', out.lines[0])
-
-
-class ScopedWithSmoke(ScopedCase):
-    """A base that sets both "gate".smoke_steps and "landing".shared_paths: a smoke select record
-    of a tip that changes a shared or a strict path is refused too; one of a plain tip lands once
-    its smoke steps passed."""
-    GATE = dict(SCOPED_GATE, smoke_steps=['boot'],
-                steps=SCOPED_GATE['steps'] + [_step('boot', always=False, manual=True)])
-
-    def test_a_smoke_record_touching_a_shared_path_is_refused(self):
-        wt, tip, rec = self.gated({'api/x.py': 'x = 1\n'})
-        self.assertIn('boot', [s['name'] for s in rec['steps']])
-        self.refused(wt, tip, 'the tip changes shared path api/x.py')
-
-    def test_a_smoke_record_of_a_strict_branch_is_refused(self):
-        wt, tip, rec = self.gated({STRICT_FILE: 'x = 1\n'})
-        self.assertIn('boot', [s['name'] for s in rec['steps']])
-        self.refused(wt, tip, 'the tip changes strict path %s' % STRICT_FILE)
-
-    def test_a_smoke_record_of_a_plain_branch_lands(self):
-        _, tip, rec = self.gated({'a.py': 'x = 1\n'})
-        self.assertEqual([s['name'] for s in rec['steps']], ['unit', 'boot'])
-        out = self.lander(BRANCH, self.main, tip).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-
-
-class ScopedDocsOnly(ScopedCase):
-    """A base that sets both "gate".docs_only and "landing".shared_paths: a docs-only change that
-    touches a shared path needs a --full record (the shared check runs before the docs-only
-    route); one that touches none lands on its docs record as before."""
-    GATE = {'docs_only': {'globs': ['*.md'], 'steps': ['scrub']},
-            'steps': [_step('unit'), _step('scrub', always=False, globs=['*.md'])]}
-    # not content/skills/**: a strict path, which reuse.docs_only_change already bars
-    KIT = dict(ScopedCase.KIT, landing={'shared_paths': ['shared/*'], 'gate_once': False})
-
-    def test_a_docs_record_touching_a_shared_path_is_refused(self):
-        wt, tip, rec = self.gated({'shared/x.md': 'words\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'docs')
-        self.refused(wt, tip, 'without --full',
-                     'the tip changes shared path shared/x.md ("landing".shared_paths)')
-
-    def test_a_docs_record_off_the_shared_paths_lands(self):
-        _, tip, rec = self.gated({'docs/guide.md': 'words\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'docs')
-        out = self.lander(BRANCH, self.main, tip).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-
-
-class ScopedStrictUnreadable(ScopedCase):
-    """A base whose strict list cannot be read refuses a scoped record in the tip check
-    (Lander.shared_refusal), before the strict check would."""
-
-    def test_a_scoped_record_is_refused_when_the_strict_paths_cannot_be_read(self):
-        self.repo.write('kitlib/gate/strict_defaults.py', 'STRICT_DEFAULTS = list()\n')
-        self.main = self.repo.commit('unreadable strict list', 'kitlib/gate/strict_defaults.py')
-        self.repo.git('push', '-q', 'origin', 'main')
-        wt, tip, rec = self.gated({'a.py': 'x = 1\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'select')
-        self.refused(wt, tip, 'without --full', 'cannot read the strict paths from main at %s'
-                     % self.main[:10])
-
-
-# ---------------------------------------------------------------- "landing".gate_once
+# ---------------------------------------------------------------- a gate config change
 
 FAILS = ['{python}', '-c', 'import sys; print("ok"); sys.exit(1)']
-ONCE = 'GATE ONCE: '
+CONFIG = 'GATE CONFIG: '
 
 
-class GateOnce(ScopedCase):
-    """A base that sets "landing".gate_once (docs/gate-run.md "Gate once at landing"): a default-mode
-    record lands a tip that changes no gate config file, shared and strict paths included, and the
-    merged gate runs --full (each step's full_cmd) once on the merged tree (--full --fresh for a
-    strict tip)."""
-    KIT = dict(ScopedCase.KIT, landing={'shared_paths': SHARED, 'gate_once': True})
+class ConfigCase(TipCase):
+    """A base whose steps are `unit` (always) and `api` (api/*); the owner may commit .kit.json."""
+    GATE = {'steps': [_step('unit'), _step('api', always=False, globs=['api/*'])]}
+    OWNER = 'owner@example.invalid'
+    KIT = dict(test_land.LandCase.KIT, owner={'email': OWNER})
 
-    def landed(self, tip, **kw):
-        said = []
-        out = self.lander(BRANCH, self.main, tip, say=said.append, **kw).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-        return out, said, gate_ok.read(self.repo.root, out.merge)[0]
-
-    def test_a_scoped_record_touching_a_shared_path_lands_and_the_merge_runs_full(self):
-        _, tip, rec = self.gated({'api/x.py': 'x = 1\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'select')
-        out, said, merged = self.landed(tip)
-        self.assertEqual((gate_ok.mode_of(merged), [s['name'] for s in merged['steps']]),
-                         ('full', ['unit', 'api']))
-        self.assertIs(merged['full'], True)
-        self.assertTrue(any(l.startswith(ONCE) for l in said), said)
-
-    def test_a_scoped_record_of_a_plain_branch_lands_and_the_merge_runs_full(self):
-        _, tip, _ = self.gated({'a.py': 'x = 1\n'})
-        _, _, merged = self.landed(tip)
-        self.assertEqual(gate_ok.mode_of(merged), 'full')
-
-    def test_a_scoped_record_of_a_strict_branch_lands_and_the_merge_runs_full_fresh(self):
-        _, tip, rec = self.gated({STRICT_FILE: 'x = 1\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'select')
-        from kitlib.gate import verdicts        # a strict tip lands on a strong-tier review
-        from kitlib.git import repo as repomod
-        verdicts.add(repomod.common_dir(self.repo.root)[0],
-                     dict(fixtures.REVIEW, branch=BRANCH, tip=tip, range='main..%s' % tip,
-                          risk='High', reviewer_model='opus'))
-        out, said, merged = self.landed(tip)
-        self.assertEqual(gate_ok.mode_of(merged), 'full')
-        self.assertTrue(any(l.startswith('STRICT: ') and l.endswith('--full --fresh')
-                            for l in said), said)
-
-    def test_a_scoped_record_that_changes_the_gate_config_is_still_refused(self):
+    def config_branch(self):
+        """A branch whose one change is to .kit.json (a gate config file however little of the
+        gate it touches), committed by the owner and gated in default mode: (worktree, tip)."""
         wt = self.repo.worktree('feature')
-        kit = dict(self.KIT, gate=dict(SCOPED_GATE, steps=SCOPED_GATE['steps'] + [_step('lint')]))
+        kit = dict(self.KIT, gate=self.GATE, landing={'self_review_max_lines': 99})
         self.repo.write('.kit.json', json.dumps(kit, indent=1), root=wt)
         self.repo.git('add', '.kit.json', cwd=wt)
-        self.repo.git('-c', 'user.email=%s' % self.OWNER, 'commit', '-q', '-m', 'gate', cwd=wt)
-        tip = self.repo.git('rev-parse', 'HEAD', cwd=wt)
+        self.repo.git('-c', 'user.email=%s' % self.OWNER, 'commit', '-q', '-m', 'config', cwd=wt)
         self.gate(wt)
-        self.assertEqual(gate_ok.mode_of(gate_ok.read(self.repo.root, tip)[0]), 'select')
-        self.refused(wt, tip, "the tip changes the gate's config (.kit.json)")
-
-    def test_a_full_record_lands_and_the_merge_runs_full_once(self):
-        _, tip, _ = self.gated({'a.py': 'x = 1\n'}, full=True)
-        _, _, merged = self.landed(tip)
-        self.assertEqual(gate_ok.mode_of(merged), 'full')
-
-    def test_a_batch_of_scoped_records_lands_and_the_batched_tree_runs_full(self):
-        _, tip_a, _ = self.gated({'api/x.py': 'x = 1\n'})
-        wt_b, tip_b = self.branch('other', {'b.py': 'y = 2\n'})
-        self.gate(wt_b)
-        said = []
-        out = self.lander([BRANCH, 'kit/other'], self.main, [tip_a, tip_b],
-                          say=said.append).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-        merged = gate_ok.read(self.repo.root, out.merge)[0]
-        self.assertEqual(gate_ok.mode_of(merged), 'full')
-        self.assertEqual(len([l for l in said if l.startswith(ONCE)]), 1, said)
+        return wt, self.repo.git('rev-parse', 'HEAD', cwd=wt)
 
 
-class GateOnceNoShared(ScopedCase):
-    """"landing".gate_once alone, with no shared_paths and no smoke_steps, lands a scoped record;
-    gate_once false opts out (ScopedNoSetting, GateOnceOff), and unset is on (GateOnceUnset)."""
-    KIT = dict(test_land.LandCase.KIT, owner={'email': ScopedCase.OWNER},
-               landing={'gate_once': True})
-
-    def test_a_scoped_record_lands_on_gate_once_alone(self):
-        _, tip, rec = self.gated({'a.py': 'x = 1\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'select')
-        out = self.lander(BRANCH, self.main, tip).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-        self.assertEqual(gate_ok.mode_of(gate_ok.read(self.repo.root, out.merge)[0]), 'full')
-
-
-class GateOnceUnset(ScopedCase):
-    """A .kit.json with no "landing" section: gate_once is on by default, so a scoped record
-    lands and the merged gate runs --full once."""
-    KIT = {'owner': {'email': ScopedCase.OWNER}}
-
-    def test_an_unset_gate_once_lands_a_scoped_record_and_gates_once(self):
-        _, tip, rec = self.gated({'a.py': 'x = 1\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'select')
-        said = []
-        out = self.lander(BRANCH, self.main, tip, say=said.append).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-        self.assertTrue([s for s in said if s.startswith(ONCE)], said)
-        self.assertEqual(gate_ok.mode_of(gate_ok.read(self.repo.root, out.merge)[0]), 'full')
-
-
-class GateOnceOff(ScopedCase):
-    KIT = dict(test_land.LandCase.KIT, owner={'email': ScopedCase.OWNER},
-               landing={'gate_once': False})
-
-    def test_gate_once_false_still_takes_only_a_full_record(self):
-        wt, tip, _ = self.gated({'a.py': 'x = 1\n'})
-        self.refused(wt, tip, 'without --full', 'sets no "gate".smoke_steps or "gate".docs_only')
-
-
-class GateOnceDocs(ScopedCase):
-    """Under "landing".gate_once a docs-only merge stays docs-only: its merged gate runs only
-    the docs_only steps, not --full."""
-    GATE = {'docs_only': {'globs': ['*.md'], 'steps': ['scrub']},
-            'steps': [_step('unit'), _step('scrub', always=False, globs=['*.md'])]}
-    KIT = dict(ScopedCase.KIT, landing={'gate_once': True})
-
-    def test_a_docs_record_lands_and_the_merge_stays_docs_only(self):
-        _, tip, rec = self.gated({'docs/guide.md': 'words\n'})
-        self.assertEqual(gate_ok.mode_of(rec), 'docs')
-        said = []
-        out = self.lander(BRANCH, self.main, tip, say=said.append).run()
-        self.assertEqual(out.code, G.OK, out.lines)
-        merged = gate_ok.read(self.repo.root, out.merge)[0]
-        self.assertEqual((gate_ok.mode_of(merged), [s['name'] for s in merged['steps']]),
-                         ('docs', ['scrub']))
-        self.assertFalse(any(l.startswith(ONCE) for l in said), said)
-
+class ConfigEscalation(ConfigCase):
     def test_a_merge_diff_git_cannot_list_escalates_to_full(self):
-        # Lander.once_escalate: the first diff that is not to the tip is the merge's (base..merge)
-        _, tip, _ = self.gated({'docs/guide.md': 'words\n'})
+        # Lander.config_escalate lists base..merge: the first such call, failed here
+        wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        self.gate(wt)
         real, failed = runner.changed_between, []
 
-        def changed_between(root, a, b):
-            if b != tip and not failed:
+        def changed_between(root, a, b, *rest, **kw):
+            if a == self.main and b != tip and not failed:
                 failed.append(b)
                 return None, 'git broke'
-            return real(root, a, b)
+            return real(root, a, b, *rest, **kw)
         said = []
+        lander = self.lander(BRANCH, self.main, tip, say=said.append)
         with mock.patch.object(runner, 'changed_between', changed_between):
-            out = self.lander(BRANCH, self.main, tip, say=said.append).run()
+            out = lander.run()
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(failed, [out.merge])
-        self.assertEqual(gate_ok.mode_of(gate_ok.read(self.repo.root, out.merge)[0]), 'full')
-        self.assertTrue(any(l.startswith(ONCE) for l in said), said)
+        self.assertTrue(lander.full and lander.escalated)
+        merged = gate_ok.read(self.repo.root, out.merge)[0]
+        self.assertEqual((gate_ok.mode_of(merged), [s['name'] for s in merged['steps']]),
+                         ('full', ['unit', 'api']))
+        self.assertIn(CONFIG + 'git cannot list what the merge changes (git broke): the merged '
+                      'gate runs every step in full on the merged tree', said)
+
+    def test_a_plain_merge_is_not_escalated(self):
+        wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        self.gate(wt)
+        said = []
+        lander = self.lander(BRANCH, self.main, tip, say=said.append)
+        out = lander.run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertFalse(lander.full or lander.escalated)
+        self.assertEqual([l for l in said if l.startswith(CONFIG)], [])
+        merged = gate_ok.read(self.repo.root, out.merge)[0]
+        self.assertEqual((gate_ok.mode_of(merged), [s['name'] for s in merged['steps']]),
+                         ('select', ['unit']))
 
 
-class GateOnceRed(ScopedCase):
-    """The merged gate under "landing".gate_once runs each step's full_cmd: here it fails where
-    the cmd the branch gate ran passes, so the landing is red and nothing moves."""
+class ConfigRed(ConfigCase):
+    """The escalated merged gate runs each step's full_cmd: here it fails where the cmd the
+    branch gate ran passes, so the landing of a config change is red and nothing moves; a plain
+    change's merged gate runs cmd and lands."""
     GATE = {'steps': [dict(fixtures.GATE['steps'][0], full_cmd=FAILS)]}
-    KIT = dict(ScopedCase.KIT, landing={'shared_paths': SHARED, 'gate_once': True})
 
-    def test_the_merged_gate_runs_the_full_cmd(self):
-        _, tip, _ = self.gated({'a.py': 'x = 1\n'})
+    def test_the_escalated_merged_gate_runs_the_full_cmd(self):
+        _, tip = self.config_branch()
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.FAILED, out.lines)
         self.assertTrue(out.verdict.startswith('GATE FAILED: unit'), out.verdict)
         self.assertEqual(self.main_now(), self.main)
         self.assertEqual(self.remote_main(), self.main)
 
-
-class GateOnceRedOff(ScopedCase):
-    """The same base with gate_once off: the merged gate runs cmd, which passes."""
-    GATE = GateOnceRed.GATE
-    KIT = dict(ScopedCase.KIT, landing={'shared_paths': SHARED, 'gate_once': False})
-
-    def test_without_gate_once_the_merged_gate_runs_the_cmd(self):
-        _, tip, _ = self.gated({'a.py': 'x = 1\n'})
+    def test_a_plain_merged_gate_runs_the_cmd(self):
+        wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        self.gate(wt)
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)

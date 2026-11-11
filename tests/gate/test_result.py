@@ -734,8 +734,8 @@ class LandingWrites(fixtures.GateRepoCase):
         out = self.lander('kit/feature', self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
         rec = result.read(self.repo.root, 'kit/feature', 'land')[0]
-        # no "landing" section: gate_once is on by default, so the merged gate ran --full
-        self.assertEqual((rec['gate_once'], rec['escalated']), (True, True))
+        # a plain change: the merged gate ran its selection, not every step in full
+        self.assertEqual((rec['gate_once'], rec['escalated']), (None, False))
         line, = ledger_lines(self.repo.root)
         self.assertEqual(line, dict(dict((k, rec[k]) for k in result.LEDGER_FIELDS),
                                     batch_size=1, folded_into=None))

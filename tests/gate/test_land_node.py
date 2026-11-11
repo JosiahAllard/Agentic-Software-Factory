@@ -185,7 +185,7 @@ class OnANode(NodeCase):
         _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
         routes = Routes()
         self.no_main_gate()
-        lander = self.node_lander(routes, tip, full=False)
+        lander = self.node_lander(routes, tip)
         out = lander.run()
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertTrue(out.lines[-1].startswith('LANDED kit/feature on main at %s' % out.merge))

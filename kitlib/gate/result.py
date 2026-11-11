@@ -65,13 +65,14 @@ The record (SCHEMA 1), every key always present:
                   a submitted landing's running records until the detached landing records
                   itself (kitlib.gate.submit restore), and a record written before the keys.
                   Added after the schema, like source
-  gate_once       a landing's final and error records: whether the base's config sets
-                  "landing".gate_once (Lander.gate_once); null for a branch gate, a running
-                  record, a landing that ended before it read the base's config, a record
-                  another writer finished (kitlib.gate.submit, finish_dead) and one written
-                  before the key. Added after the schema, like source
-  escalated       the same records: whether gate_once made the merged gate run --full
-                  (Lander.once_escalate); null where gate_once is
+  gate_once       always null: the "landing".gate_once key it reported is retired, and the
+                  field stays so a record keeps its shape (one written before the retirement
+                  may hold true or false). Added after the schema, like source
+  escalated       a landing's final and error records: whether the gate-config rule made the
+                  merged gate run every step in full (Lander.config_escalate, which says
+                  `GATE CONFIG: ...`); null for a branch gate, a running record, a landing
+                  that ended before it read the base's config, a record another writer
+                  finished (kitlib.gate.submit, finish_dead) and one written before the key
   turn_at         a submitted landing's records: when its own process was given its landing
                   turn (kitlib.gate.submit turn), or null: still queued. No other landing folds a
                   submission whose turn came (docs/gate-landing.md "Folding queued submissions")

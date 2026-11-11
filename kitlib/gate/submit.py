@@ -353,7 +353,7 @@ GATE_TOOL, LAND_TOOL = 'gate.py', 'land.py'
 def _landing_tail(a, log_dir):
     """The arguments after the branches, tips and base that both tools write alike, in this order:
     --summary, --wait, --log-dir (`log_dir`: as given or absolute, the caller's choice), then the
-    switches --full, --fresh, --keep-branch."""
+    switches --fresh, --keep-branch."""
     args = []
     if a.summary:
         args += ['--summary', a.summary]
@@ -361,14 +361,14 @@ def _landing_tail(a, log_dir):
         args += ['--wait', str(a.wait)]
     if log_dir:
         args += ['--log-dir', log_dir]
-    return args + [flag for flag, on in (('--full', a.full), ('--fresh', a.fresh),
-                                         ('--keep-branch', a.keep_branch)) if on]
+    return args + [flag for flag, on in (('--fresh', a.fresh), ('--keep-branch', a.keep_branch))
+                   if on]
 
 
 def again_args(tool, a, root, branches, tips):
     """The submission's arguments for the Instead: command of one that did not name its
     reviewers (again_line): -C `root` absolute with forward slashes, --log-dir as given. `a`: the
-    tool's parsed arguments (expect_main, summary, wait, log_dir, full, fresh, keep_branch, and
+    tool's parsed arguments (expect_main, summary, wait, log_dir, fresh, keep_branch, and
     for land.py wait_result). Where the two tools differ:
       gate.py  `land BRANCH -C ROOT --expect-tip SHA [--expect-main SHA]` then the tail
       land.py  `-C ROOT BRANCH... --expect-tip SHA... [--expect-main SHA]` (the land permission
@@ -908,14 +908,14 @@ def redirect_output(path):
 MINE, FOLDED, WAIT = 'mine', 'folded', 'wait'
 FLAG_VALUES = {'--summary': 'summary', '--log-dir': 'log_dir'}
 FLAG_SKIP = ('-C', '--expect-tip', '--expect-main', '--wait')
-FLAG_ON = {'--full': 'full', '--fresh': 'fresh', '--keep-branch': 'keep_branch'}
+FLAG_ON = {'--fresh': 'fresh', '--keep-branch': 'keep_branch'}
 
 
 def flags_of(args):
     """The landing flags of the detached landing's arguments `args` (child_args) that a batch
-    shares, so a fold takes only a submission run as this one is: {summary, log_dir, full,
-    fresh, keep_branch}. Branches, tips, the base and --wait are not among them."""
-    got = {'summary': None, 'log_dir': None, 'full': False, 'fresh': False, 'keep_branch': False}
+    shares, so a fold takes only a submission run as this one is: {summary, log_dir, fresh,
+    keep_branch}. Branches, tips, the base and --wait are not among them."""
+    got = {'summary': None, 'log_dir': None, 'fresh': False, 'keep_branch': False}
     args, i = [str(a) for a in args], 0
     while i < len(args):
         a = args[i]
@@ -940,7 +940,7 @@ def same_flags(a, b):
     def norm(f):
         d = f.get('log_dir')
         return (f.get('summary'), os.path.normcase(os.path.abspath(d)) if d else None,
-                f.get('full') is True, f.get('fresh') is True, f.get('keep_branch') is True)
+                f.get('fresh') is True, f.get('keep_branch') is True)
     return norm(a) == norm(b)
 
 

@@ -51,7 +51,8 @@ import shutil
 
 from kitlib import kitroot
 from kitlib import pieces
-from kitlib.backlog import store as backlog_store, store_folder, store_open, store_read
+from kitlib.backlog import store as backlog_store
+from kitlib.backlog import store_folder, store_open, store_read
 from kitlib.backlog.errors import Failure as BacklogFailure
 from kitlib.config import ConfigError, load
 from kitlib.config import user as kuser

@@ -238,7 +238,8 @@ from kitlib.backlog import at_landing
 from kitlib.backlog import narrowed as nmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as scmod
-from kitlib.backlog import store as smod, store_folder, store_open, store_read, store_ref
+from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder, store_open, store_read, store_ref
 from kitlib.backlog.errors import Refusal
 import kitlib.config as kconfig
 from kitlib.config import policy as kpolicy

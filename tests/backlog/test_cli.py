@@ -6,6 +6,8 @@ import json
 import os
 import subprocess
 import tempfile
+import time
+import types
 import unittest
 from unittest import mock
 
@@ -13,7 +15,7 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog import store_ref
 from kitlib.backlog.errors import Refusal
-from kitlib.worktree import quiet
+from kitlib.worktree import classify, quiet
 from tests.backlog import ownertree
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, TODAY, kit_json_ref, priced
@@ -127,6 +129,28 @@ class Cli(unittest.TestCase):
             self.assertEqual(rc, 1, (args, out))
             self.assertIn('ERROR: `next` cannot compute an offer: an in-flight record has '
                           '`scope: a/*.py`', out, args)
+
+    def test_a_pull_whose_worktree_went_dead_is_blocked_through_the_worktrees_probes(self):
+        # tools/backlog.py opens the store with quiet.PROBES: with none, the holder's branch
+        # would count as live and this block would be refused.
+        other = 'tools/other'
+        path = self.repo.worktree('other', other)
+        self.repo.write('w.txt', 'work\n', root=path)
+        self.repo.commit('work', 'w.txt', cwd=path)
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+            store = smod.Store(backend, rmod.Rules())
+            backend.publish(store.load(), priced('FOO', state='pulled', pulled_at=TODAY,
+                                                 pulled_by=other), 'seed\n')
+        later = time.time() + 3 * 24 * 3600        # days on, nothing has touched the worktree
+        run_probes = classify.run_probes           # no machine lock or process scan on this host
+        with mock.patch.object(classify, 'time', types.SimpleNamespace(time=lambda: later)),                 mock.patch.object(classify, 'run_probes', lambda ctx, machine, procs: run_probes(
+                    ctx, lambda: ([], None), lambda: (([], 0, 1), None))):
+            rc, out = self.run_tool('block', 'FOO', '--on', 'live-client',
+                                    '--reason', 'its tree went quiet')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('was pulled_by: %s (its worktree is dead)' % other, out)
+        self.assertIn('blocked', self.ok('show', 'FOO'))
 
     def test_refusals_exit_2_and_write_nothing(self):
         self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py', *ADD_FLAGS)

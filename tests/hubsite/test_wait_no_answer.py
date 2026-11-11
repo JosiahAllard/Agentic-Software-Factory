@@ -1,8 +1,8 @@
 """client.Client.wait against a stand-in hub on port 0 that takes a poll and holds it past the
 client's socket time (serve.NoAnswer): the wait asks again and ends on the item the next poll
 answers, until its own timeout or client.NO_ANSWER_TURNS unanswered polls in a row, and only when
-asking again loses no write; an answer that is not the hub's still ends it. api.WAIT_MAX_S and
-client.WAIT_MARGIN_S are made small so a held poll costs about two seconds, and the margin is
+asking again loses no write; an answer that is not the hub's still ends it.
+hubvalidate.WAIT_MAX_S and client.WAIT_MARGIN_S are made small so a held poll costs about two seconds, and the margin is
 still wide enough that a prompt answer on a loaded machine is not read as no answer."""
 import json
 import socket

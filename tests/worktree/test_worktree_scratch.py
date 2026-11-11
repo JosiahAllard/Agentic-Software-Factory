@@ -10,7 +10,7 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib.worktree import remove, scratch
+from kitlib.worktree import remove, remove_checks, scratch
 from tests import gitfixture
 from tests.realgit import real_git
 from tests.platforms import windows_only
@@ -257,7 +257,7 @@ class Refused(ScratchCase):
 
     def test_an_unreadable_status_refuses(self):
         path = self.scratch_tree()
-        with mock.patch.object(remove, 'dirty', return_value=(None, None, None, 'boom')):
+        with mock.patch.object(remove_checks, 'dirty', return_value=(None, None, None, 'boom')):
             rc, out = self.run_scratch(path)
         self.assertKept(path, rc, out, 'its status could not be read (boom)')
 
@@ -276,13 +276,13 @@ class HashBatches(ScratchCase):
         for i, rel in enumerate(rels):
             self.fx.write(rel, 'content %d\n' % i, root=path)
         calls = []
-        real = remove.git
+        real = remove_checks.git
 
         def spy(tree, *args):
             calls.append(args)
             return real(tree, *args)
 
-        with mock.patch.object(scratch, 'BATCH_CHARS', 40), mock.patch.object(remove, 'git', spy):
+        with mock.patch.object(scratch, 'BATCH_CHARS', 40), mock.patch.object(remove_checks, 'git', spy):
             got, why = scratch.hashes(path, rels)
         self.assertIsNone(why)
         self.assertGreater(len(calls), 1)
@@ -292,7 +292,7 @@ class HashBatches(ScratchCase):
 
     def test_a_failing_batch_fails_the_whole_hash(self):
         with mock.patch.object(scratch, 'BATCH_PATHS', 1), \
-                mock.patch.object(remove, 'git', return_value=(1, '', 'boom')):
+                mock.patch.object(remove_checks, 'git', return_value=(1, '', 'boom')):
             got, why = scratch.hashes(self.repo, ['a', 'b'])
         self.assertIsNone(got)
         self.assertIn('boom', why)
@@ -361,7 +361,7 @@ class Failures(ScratchCase):
     """Every read that fails, and every git step that fails, keeps the tree."""
 
     def wrap_git(self, when, then):
-        real = remove.git
+        real = remove_checks.git
 
         def wrapped(cwd, *args, **kw):
             hit = when(args)
@@ -371,7 +371,7 @@ class Failures(ScratchCase):
             if hit:
                 then()
             return got
-        return mock.patch.object(remove, 'git', wrapped)
+        return mock.patch.object(remove_checks, 'git', wrapped)
 
     def test_a_failed_checkout_keeps_the_tree(self):
         path = self.scratch_tree()
@@ -467,14 +467,14 @@ class Failures(ScratchCase):
         path = self.scratch_tree()
         self.fx.write('README.md', 'hello, topic\n', root=path)
         seen = []
-        real = remove.git
+        real = remove_checks.git
 
         def record(cwd, *args, **kw):
             if args[:1] == ('checkout',):
                 seen.append((kw.get('env') or {}).get('GIT_LITERAL_PATHSPECS'))
             return real(cwd, *args, **kw)
 
-        with mock.patch.object(remove, 'git', record):
+        with mock.patch.object(remove_checks, 'git', record):
             rc, out = self.run_scratch(path)
         self.assertRemoved(path, rc, out)
         self.assertEqual(seen, ['1'])
@@ -499,9 +499,9 @@ class Refs(ScratchCase):
 
     @windows_only('junctions are Windows')
     def test_a_tree_in_the_worktree_folder_through_its_junction_is_refused(self):
-        ctx, refused = remove.open_ctx(self.repo)
+        ctx, refused = remove_checks.open_ctx(self.repo)
         self.assertIsNone(refused)
-        home = remove.home_of(ctx)
+        home = remove_checks.home_of(ctx)
         if os.path.isdir(home):
             os.rmdir(home)
         os.makedirs(os.path.dirname(home), exist_ok=True)
@@ -518,13 +518,13 @@ class RefFormat(ScratchCase):
     """The reflog is read from logs/HEAD, which only the files ref format writes."""
 
     def answer(self, rc, out):
-        real = remove.git
+        real = remove_checks.git
 
         def wrapped(cwd, *args, **kw):
             if args == ('rev-parse', '--show-ref-format'):
                 return rc, out, 'boom' if rc else ''
             return real(cwd, *args, **kw)
-        return mock.patch.object(remove, 'git', wrapped)
+        return mock.patch.object(remove_checks, 'git', wrapped)
 
     def test_a_reftable_repository_is_refused(self):
         path = self.scratch_tree()
@@ -543,13 +543,13 @@ class PerWorktreeRefs(ScratchCase):
     """The per-worktree refs (scratch.PER_WORKTREE) go with the tree: an unread list refuses."""
 
     def answer(self, rc, out):
-        real = remove.git
+        real = remove_checks.git
 
         def wrapped(cwd, *args, **kw):
             if args[:1] == ('for-each-ref',) and 'refs/worktree' in args:
                 return rc, out, 'boom' if rc else ''
             return real(cwd, *args, **kw)
-        return mock.patch.object(remove, 'git', wrapped)
+        return mock.patch.object(remove_checks, 'git', wrapped)
 
     def test_an_unreadable_per_worktree_ref_list_is_refused(self):
         path = self.scratch_tree()
@@ -579,7 +579,7 @@ class Reflog(ScratchCase):
         self.git('tag', '-a', '-m', 'on a blob', 'a-blob', blob)
         self.git('tag', '-a', '-m', 'on a tree', 'b-tree', self.base + '^{tree}')
         path = self.scratch_tree(commit=first)
-        real, failed = remove.git, {}
+        real, failed = remove_checks.git, {}
 
         def record(cwd, *args, **kw):
             got = real(cwd, *args, **kw)
@@ -587,7 +587,7 @@ class Reflog(ScratchCase):
                 failed[args[-1]] = got[0]
             return got
 
-        with mock.patch.object(remove, 'git', record):
+        with mock.patch.object(remove_checks, 'git', record):
             rc, out = self.run_scratch(path)
         self.assertRemoved(path, rc, out)
         self.assertIn('in refs/tags/z-reach', out)

@@ -30,7 +30,7 @@ from kitlib.git import repo as gitrepo
 from kitlib.launcher.pythonw import base_pythonw, refusal
 from kitlib.proc.spawn import CARRIER      # tools/no_window.py, beside the tool the task runs
 
-from .remove import OK, REFUSED, Outcome, GitReadError, canon, main_checkout
+from .remove_checks import OK, REFUSED, Outcome, GitReadError, canon, main_checkout
 
 USAGE = 2
 AT = '03:00'

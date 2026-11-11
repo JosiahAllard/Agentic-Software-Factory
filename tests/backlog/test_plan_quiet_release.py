@@ -13,7 +13,7 @@ from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog.errors import Refusal
 from kitlib.records import verdict_entry
-from kitlib.worktree import classify, holders, remove
+from kitlib.worktree import classify, holders, remove_checks
 from tests.backlog.helpers import BRANCH, TODAY, StoreCase, messages, priced
 from tests.realgit import real_git
 
@@ -260,7 +260,7 @@ class QuietHoldProbe(QuietCase):
         self.assertIn('is locked with `git worktree lock`: owner keeps it', why)
 
     def test_an_exempt_tree_refuses(self):
-        with mock.patch.object(remove, 'exemption', return_value='kept by ruling X') as ex:
+        with mock.patch.object(remove_checks, 'exemption', return_value='kept by ruling X') as ex:
             why, _ = self.hold()
         self.assertIn('is exempt (kept by ruling X)', why)
         self.assertTrue(ex.called)

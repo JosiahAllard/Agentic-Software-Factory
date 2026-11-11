@@ -952,18 +952,18 @@ def remove_fresh(main, branch):
     """Remove the worktree on `branch` that auto_pull just made, and the branch while its tip is
     still the tree's head: `git worktree remove` (never forced: anything written in it keeps it)
     and `git update-ref -d` against that head. True when both went."""
-    from kitlib.worktree import remove
+    from kitlib.worktree import remove_checks
     try:
-        trees = remove.worktree_entries(remove.worktree_listing(main))
-    except remove.GitReadError:
+        trees = remove_checks.worktree_entries(remove_checks.worktree_listing(main))
+    except remove_checks.GitReadError:
         return False
     tree = next((t for t in trees if t['branch'] == branch), None)
     if tree is None or not tree['head']:
         return False
-    rc, _out, _err = remove.git(main, 'worktree', 'remove', tree['path'])
+    rc, _out, _err = remove_checks.git(main, 'worktree', 'remove', tree['path'])
     if rc != 0:
         return False
-    rc, _out, _err = remove.git(main, 'update-ref', '-d', 'refs/heads/' + branch, tree['head'])
+    rc, _out, _err = remove_checks.git(main, 'update-ref', '-d', 'refs/heads/' + branch, tree['head'])
     return rc == 0
 
 

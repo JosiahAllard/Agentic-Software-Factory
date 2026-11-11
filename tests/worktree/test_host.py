@@ -9,7 +9,7 @@ from unittest import mock
 
 from kitlib.config import load
 from kitlib.host import registry
-from kitlib.worktree import hostdirs, new, remove
+from kitlib.worktree import hostdirs, new, remove, remove_checks
 from tests.worktree.test_new_worktree import WorktreeCase
 
 
@@ -79,10 +79,10 @@ class HostWorktrees(WorktreeCase):
         result = new.create(self.repo, 'codex/worker', host='codex')
         self.assertEqual(result.code, 0, result.lines)
         path = self.slug_path('worker', '.codex/worktrees')
-        ctx = remove.Ctx(self.repo, load(self.repo), cwd=self.repo)
-        self.assertIsInstance(remove.registered_target(ctx, path), tuple)
+        ctx = remove_checks.Ctx(self.repo, load(self.repo), cwd=self.repo)
+        self.assertIsInstance(remove_checks.registered_target(ctx, path), tuple)
         elsewhere = os.path.join(self.repo, 'not-a-host', 'worker')
-        self.assertEqual(remove.registered_target(ctx, elsewhere), remove.REFUSED)
+        self.assertEqual(remove_checks.registered_target(ctx, elsewhere), remove_checks.REFUSED)
         with mock.patch.object(remove.holders, 'blockers', return_value=[]):
             result = remove.remove(self.repo, path, keep_branch=True, cwd=self.repo)
         self.assertEqual(result.code, 0, result.lines)
@@ -91,5 +91,5 @@ class HostWorktrees(WorktreeCase):
 
     def test_an_unreadable_registry_leaves_cleanup_to_repo_worktrees_dir(self):
         with mock.patch.object(registry, 'PATH', os.path.join(self.repo, 'missing.json')):
-            self.assertEqual(remove.host_folders(load(self.repo)),
+            self.assertEqual(remove_checks.host_folders(load(self.repo)),
                              (os.path.normpath('.claude/worktrees'),))

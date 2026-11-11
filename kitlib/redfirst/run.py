@@ -5,7 +5,7 @@ judged (kitlib.redfirst.verdict). Nothing is edited in place: the caller's workt
 The throwaway tree is a scratch tree (kitlib.worktree.scratch),
 `<main checkout>/<worktrees_dir>/redfirst-<base10>-<pid>`. It is removed on
 every exit this process controls - pass, fail, error, Ctrl-C - by putting back the base's version
-of every file it checked out, then kitlib.worktree.remove's checks (status, links, holders, the
+of every file it checked out, then kitlib.worktree.remove_checks's checks (status, links, holders, the
 registration) and its git_remove, never forced. A tree still held after `"redfirst".hold_wait`
 seconds is left registered and intact, named with the worktree_remove command that removes it,
 and the exit is 4.
@@ -65,7 +65,7 @@ from kitlib.proc.job import Job
 from kitlib.records import place as rplace
 from kitlib.redfirst import verdict as V
 from kitlib.tooldeps.selfrun import UNIT_TIMEOUT
-from kitlib.worktree import remove, scratch
+from kitlib.worktree import remove_checks, scratch
 
 CHILD_FLAG = '--cleanup-child'
 SIGNALS = tuple(s for s in (signal.SIGINT, getattr(signal, 'SIGBREAK', None)) if s is not None)
@@ -99,7 +99,7 @@ def rev(cwd, name):
 
 def object_types(cwd, specs):
     """{spec: git's object type, or None when missing} for every `<rev>:<path>`, in one cat-file."""
-    found, why = batch.cat_file(list(dict.fromkeys(specs)), cwd, env=remove.git_env())
+    found, why = batch.cat_file(list(dict.fromkeys(specs)), cwd, env=remove_checks.git_env())
     if found is None:
         raise V.Usage('refused: git cat-file failed in %s: %s' % (cwd, why))
     return {s: (v[0] if v else None) for s, v in found.items()}
@@ -397,9 +397,9 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
                       % (where, place.kind, ': ' + place.detail if place.detail else ''))
     top = place.top
     try:
-        main = remove.main_checkout(top)
+        main = remove_checks.main_checkout(top)
         cfg = load_config(main)
-    except remove.GitReadError as e:
+    except remove_checks.GitReadError as e:
         raise V.Usage('refused: cannot find the main checkout: %s' % e)
     except ConfigError as e:
         raise V.Usage('refused: kit configuration: %s' % e)

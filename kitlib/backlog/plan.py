@@ -2202,7 +2202,7 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
     released as quiet (plan_release; docs/backlog.md "Stopping a pull"). Quiet means: no process
     has its current directory in a worktree on `branch` (and, when some process could not be
     read, every folder of it opens for delete: holders.held_folder), no such tree is exempt
-    (remove.exemption) or locked with `git worktree lock`, no machine lock record names
+    (remove_checks.exemption) or locked with `git worktree lock`, no machine lock record names
     it (sweep.machine_lock_holder), the landing lock does not name `branch`, no verdict-queue
     entry for `branch` waits (kitlib.records.verdict_entry: one that has not expired with `main`, the code
     main's commit, None: every entry waits), and the newest activity is QUIET_AFTER_S old or more.
@@ -2214,15 +2214,15 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
     classify.run_probes takes. Read-only; kitlib.worktree and kitlib.records import lazily, as
     opener.liveness does: kitlib.worktree imports this package's store."""
     from kitlib.records import verdict_entry
-    from kitlib.worktree import classify, holders, remove, sweep
-    wctx, refused = remove.open_ctx(root)
+    from kitlib.worktree import classify, holders, remove_checks, sweep
+    wctx, refused = remove_checks.open_ctx(root)
     if refused:
         return 'the worktrees cannot be read (%s)' % ' '.join(refused.lines), None
     try:
-        listing = remove.worktree_listing(wctx.main)
-    except remove.GitReadError as e:
+        listing = remove_checks.worktree_listing(wctx.main)
+    except remove_checks.GitReadError as e:
         return 'the worktrees cannot be read (%s)' % e, None
-    entries = remove.worktree_entries(listing)
+    entries = remove_checks.worktree_entries(listing)
     if entries and entries[0]['branch'] == branch:
         return 'the main checkout is on %s' % branch, None
     on = [e for e in classify.trees_besides_main(wctx.main, listing) if e['branch'] == branch]
@@ -2237,7 +2237,7 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
         path = entry['path']
         # classify.live_reason's own holds on a tree: a worktree_remove exemption ruling and
         # `git worktree lock` (an entry that cannot say is taken as locked: fail closed).
-        ruling = remove.exemption(wctx.s, path)
+        ruling = remove_checks.exemption(wctx.s, path)
         if ruling:
             return 'the tree %s is exempt (%s)' % (os.path.normpath(path), ruling), None
         if entry.get('locked', '') is not None:
@@ -2262,7 +2262,7 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
     why = _queued_verdict(verdict_entry, wctx.main, branch, main)
     if why:
         return why, None
-    newest, why = _quiet_activity(classify, remove, wctx.main, branch, on)
+    newest, why = _quiet_activity(classify, remove_checks, wctx.main, branch, on)
     if newest is None:
         return why, None
     now = time.time() if now is None else now
@@ -2303,18 +2303,18 @@ def _queued_verdict(verdict_entry, main_tree, branch, main):
         branch, entry.get('state'), str(entry.get('tip'))[:10])
 
 
-def _quiet_activity(classify, remove, main_tree, branch, on):
+def _quiet_activity(classify, remove_checks, main_tree, branch, on):
     """`((newest time, what), None)` or `(None, why)`: quiet_hold's activity reads."""
     ref = 'refs/heads/%s' % branch
     args = ('log', '-1', '--format=%ct', ref, '--')
-    rc, stamp, err = remove.git(main_tree, *args)
+    rc, stamp, err = remove_checks.git(main_tree, *args)
     if rc != 0 or not stamp.isdigit():
-        return None, 'no local branch %s to read (%s)' % (branch, remove.failure(args, rc, err))
+        return None, 'no local branch %s to read (%s)' % (branch, remove_checks.failure(args, rc, err))
     found = [(float(stamp), 'the commit date of %s' % branch)]
     args = ('reflog', 'show', '--date=unix', '--format=%gd', ref, '--')
-    rc, out, err = remove.git(main_tree, *args)
+    rc, out, err = remove_checks.git(main_tree, *args)
     if rc != 0:
-        return None, 'its reflog cannot be read (%s)' % remove.failure(args, rc, err)
+        return None, 'its reflog cannot be read (%s)' % remove_checks.failure(args, rc, err)
     for line in out.splitlines():
         got = _REFLOG_STAMP_RE.search(line.strip())
         if got:

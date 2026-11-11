@@ -234,7 +234,7 @@ class WorktreeChecks(unittest.TestCase):
 
     def found(self, *rows):
         res = mock.Mock(data={'trees': list(rows)}, lines=[])
-        with mock.patch.object(worktrees.remove, 'open_ctx', return_value=(None, None)):
+        with mock.patch.object(worktrees.remove_checks, 'open_ctx', return_value=(None, None)):
             got, _ = worktrees.findings('top', classify=lambda top: res)
         return got
 

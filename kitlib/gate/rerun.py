@@ -71,7 +71,7 @@ from kitlib.lock import run as lockrun
 from kitlib.lock.store import LockError, Store
 from kitlib.proc.job import JobError
 from kitlib.records import gate_ok, place
-from kitlib.worktree import remove, scratch
+from kitlib.worktree import remove_checks, scratch
 
 DIR_NAME = 'kit-gate-rerun'
 SCHEMA = 1
@@ -811,7 +811,7 @@ def classes_of(red):
 def _control_tree(top, cfg, base, say):
     """`(path, None)` of a throwaway detached tree at `base`, or `(None, why)`."""
     try:
-        main = remove.main_checkout(top)
+        main = remove_checks.main_checkout(top)
     except Exception as e:          # noqa: BLE001 - no control, said; never the verdict
         return None, None, 'the main checkout cannot be found: %s' % e
     path, why = scratch.make_tree(main, cfg.repo['worktrees_dir'], base)

@@ -21,7 +21,7 @@ The classes, decided first-match in this order:
   pseudo-refs); one that does, or cannot be read, is left for the owner. So is one outside every
   worktree folder and scratch root (remove.orphan_outside: an unmounted or remapped drive looks
   the same): reported only.
-- A landed: the tip is in the base AND off its first-parent chain (remove.merged_worktrees's
+- A landed: the tip is in the base AND off its first-parent chain (remove_checks.merged_worktrees's
   rule), the tree is clean, and a branch's reflog shows a commit made on it (own_commit; a
   reflog that cannot be read, C). Also A, empty: clean, tip in the base, nothing of its own, and
   no commit to lose (unsaved_reflog), when the live backlog stores can be read and none claims
@@ -60,9 +60,9 @@ from kitlib.records import gate_ok
 from kitlib.git import refs
 from kitlib.platform.linux import paths as linux_paths
 
-from . import holders, marks, remove, scratch, sweep
+from . import holders, marks, remove, remove_abandon, remove_checks, scratch, sweep
 from .holders import WALK_MAX, canon, extended, plain, prune
-from .remove import OK, REFUSED, failure, git
+from .remove_checks import OK, REFUSED, failure, git
 
 Result = collections.namedtuple('Result', 'code lines data')
 # live_claims: {lower-cased branch: sorted ids pulled by it}, {id: the checkout whose backlog.py
@@ -268,10 +268,10 @@ def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s)
     path, branch = entry['path'], entry['branch']
     if run_wide:
         return 'unreadable: %s' % run_wide, None
-    ruling = remove.exemption(ctx.s, path)
+    ruling = remove_checks.exemption(ctx.s, path)
     if ruling:
         return 'exempt (%s)' % ruling, None
-    if remove.is_workstream(ctx, path) and \
+    if remove_checks.is_workstream(ctx, path) and \
             os.path.normcase(os.path.basename(os.path.normpath(path))) == LANDING_TREE:
         return 'the landing tree (kitlib/gate/land.py)', None
     if entry['locked'] is not None:
@@ -414,7 +414,7 @@ def judge(ctx, entry, base, chain, ancestors, claims=(None, 'not read')):
     (live_claims): an empty tree is A, and an evidence-named one on a branch E, only when it is
     readable and names no claim (evidence_keep)."""
     path, branch, head = entry['path'], entry['branch'], entry['head']
-    work, disposable, ignored, why = remove.dirty(ctx, path)
+    work, disposable, ignored, why = remove_checks.dirty(ctx, path)
     if work is None:
         return 'L', {'reason': 'unreadable: its status (%s)' % why}
     dirt = len(work) + len(disposable) + len(ignored)
@@ -430,7 +430,7 @@ def judge(ctx, entry, base, chain, ancestors, claims=(None, 'not read')):
             return 'C', fields
         if own:
             return 'A', fields
-    outside = not remove.is_workstream(ctx, path)
+    outside = not remove_checks.is_workstream(ctx, path)
     if branch is None and outside:
         return 'E', fields
     kept = None
@@ -488,7 +488,7 @@ def classify(top, now=None, machine=sweep.machine_lock_entries, procs=process_cw
     seams. Read-only unless `apply`: then `top` must be the main checkout, a held landing lock
     refuses the run before anything is read, and each A, E and O tree goes through `apply_tree`
     (`environ`: the scratch roots' environment, scratch.roots; `today`: the abandon tag's date)."""
-    ctx, refused = remove.open_ctx(top, cwd)
+    ctx, refused = remove_checks.open_ctx(top, cwd)
     if refused:
         return Result(refused.code, refused.lines, {'error': ' '.join(refused.lines)})
     now = time.time() if now is None else now
@@ -510,7 +510,7 @@ def trees_besides_main(main, listing):
     """worktree_entries but the main checkout, each with its canon path (one canon per tree)."""
     home = canon(main)
     out = []
-    for entry in remove.worktree_entries(listing):
+    for entry in remove_checks.worktree_entries(listing):
         entry['canon'] = canon(entry['path'])
         if entry['canon'] != home:
             out.append(entry)
@@ -542,12 +542,12 @@ def branch_liveness(top, branch, now=None, machine=sweep.machine_lock_entries,
     (kitlib/backlog/opener.py hands it to plan.Context as `liveness`). Anything that cannot be
     read, and a branch no worktree here is on, is live: only a dead tree's pull may be stopped by
     anyone but its holder. Read-only."""
-    ctx, refused = remove.open_ctx(top, cwd)
+    ctx, refused = remove_checks.open_ctx(top, cwd)
     if refused:
         return 'the worktrees cannot be read (%s)' % ' '.join(refused.lines), None
     try:
-        listing = remove.worktree_listing(ctx.main)
-    except remove.GitReadError as e:
+        listing = remove_checks.worktree_listing(ctx.main)
+    except remove_checks.GitReadError as e:
         return 'the worktrees cannot be read (%s)' % e, None
     on = [e for e in trees_besides_main(ctx.main, listing) if e['branch'] == branch]
     if not on:
@@ -569,13 +569,13 @@ def _fail(ctx, why):
 def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None):
     s, main = ctx.s, ctx.main
     try:
-        listing = remove.worktree_listing(main)
-    except remove.GitReadError as e:
+        listing = remove_checks.worktree_listing(main)
+    except remove_checks.GitReadError as e:
         return _fail(ctx, str(e))
-    base, why = remove.base_commit(ctx)
+    base, why = remove_checks.base_commit(ctx)
     if base is None:
         return _fail(ctx, 'cannot read %s (%s)' % (s['upstream'], why))
-    got, why = remove.ancestry(ctx, base)
+    got, why = remove_checks.ancestry(ctx, base)
     if got is None:
         return _fail(ctx, 'git rev-list --parents %s: %s' % (base, why))
     chain, ancestors = got
@@ -673,8 +673,8 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None):
                         ' --reason "<why>"` to keep the branch)' % (
                             kitroot.command('backlog', writer), rid, t['class'], rid))
             ctx.say('next      %s %s --abandon "<why>"   (%s, after it is taken up or'
-                    ' recorded)' % (s['tool'], remove.handle(ctx, t['path']), t['class']))
-            if not t['branch'] or marks_error or not remove.is_workstream(ctx, t['path']):
+                    ' recorded)' % (s['tool'], remove_checks.handle(ctx, t['path']), t['class']))
+            if not t['branch'] or marks_error or not remove_checks.is_workstream(ctx, t['path']):
                 continue
             if t.get('mark') and not t['mark']['void']:
                 ctx.say('next      %s %s --unmark-stale   (%s, marked stale: the nightly sweep'
@@ -829,7 +829,7 @@ def apply_tree(ctx, entry, row, base, environ=None, today=None):
     elif verb == 'scratch':
         code = scratch._remove_scratch(sub, path, environ)
     else:
-        code = remove._abandon(sub, path, 'evidence', False, today)
+        code = remove_abandon._abandon(sub, path, 'evidence', False, today)
     lines = list(sub.out)
     tags = [line.split()[1] for line in lines if line.startswith('tagged    ')] + \
         [line.split()[2] for line in lines if line.startswith('reused    tag ')]

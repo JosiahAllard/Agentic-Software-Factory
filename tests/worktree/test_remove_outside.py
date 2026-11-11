@@ -14,7 +14,7 @@ import unittest
 from unittest import mock
 
 from kitlib.config import load
-from kitlib.worktree import remove
+from kitlib.worktree import remove, remove_abandon, remove_checks
 from tests import gitfixture
 from tests.realgit import real_git
 from tests.platforms import windows_only
@@ -56,7 +56,7 @@ class OutsideCase(unittest.TestCase):
         return got.code, '\n'.join(got.lines)
 
     def run_abandon(self, argument, why='red evidence, done'):
-        got = remove.abandon(self.repo, argument, why, cwd=self.repo)
+        got = remove_abandon.abandon(self.repo, argument, why, cwd=self.repo)
         return got.code, '\n'.join(got.lines)
 
     def registered(self):
@@ -205,8 +205,8 @@ class Refused(OutsideCase):
 
     def test_an_unreadable_worktree_list_refuses(self):
         path = self.tree()
-        with mock.patch.object(remove, 'worktree_listing',
-                               side_effect=remove.GitReadError('git worktree list failed')):
+        with mock.patch.object(remove_checks, 'worktree_listing',
+                               side_effect=remove_checks.GitReadError('git worktree list failed')):
             rc, out = self.run_remove(path)
         self.assertEqual(rc, 1, out)
         self.assertIn('could not be read', out)
@@ -270,7 +270,7 @@ class ReflogOnly(OutsideCase):
     def test_a_head_moved_after_the_merge_check_is_refused(self):
         # kit/topic reaches the new HEAD, so only the merge check's HEAD tells it is unlanded.
         path = self.tree()
-        real = remove.merge_check
+        real = remove_checks.merge_check
 
         def then_move(*args):
             got = real(*args)
@@ -310,7 +310,7 @@ class ReflogOnly(OutsideCase):
             self.git('checkout', '-q', '--detach', self.topic_tip, cwd=path)
             return real(ctx, p)
 
-        with mock.patch.object(remove, 'clear_disposable', commit_and_return):
+        with mock.patch.object(remove_abandon, 'clear_disposable', commit_and_return):
             rc, out = self.run_abandon(path)
         self.assertKept(path, rc, out, 'its HEAD reflog or a per-worktree ref changed after it was checked')
         self.assertIn('kept     tag archive/red', out)
@@ -401,7 +401,7 @@ class MoreRefusals(OutsideCase):
 
     def test_no_head_is_refused(self):
         path = self.tree()
-        real = remove.worktree_entries
+        real = remove_checks.worktree_entries
 
         def headless(listing):
             got = real(listing)
@@ -409,7 +409,7 @@ class MoreRefusals(OutsideCase):
                 if os.path.normcase(os.path.realpath(e['path'])) == os.path.normcase(path):
                     e['head'] = None
             return got
-        with mock.patch.object(remove, 'worktree_entries', side_effect=headless):
+        with mock.patch.object(remove_checks, 'worktree_entries', side_effect=headless):
             rc, out = self.run_remove(path)
         self.assertKept(path, rc, out, 'git reported no HEAD for it')
 
@@ -425,7 +425,7 @@ class MoreRefusals(OutsideCase):
 
     def test_a_failed_reach_walk_refuses_abandon(self):
         path = self.tree(commit=self.topic_tip)
-        real = remove.git
+        real = remove_checks.git
 
         def failing(cwd, *args, **kw):
             if args[:1] == ('rev-list',):
@@ -436,7 +436,7 @@ class MoreRefusals(OutsideCase):
         from kitlib.worktree import scratch
         logged = mock.patch.object(scratch, 'reflog',
                                    return_value=([self.base, self.topic_tip], None))
-        with mock.patch.object(remove, 'git', failing), logged:
+        with mock.patch.object(remove_checks, 'git', failing), logged:
             rc, out = self.run_abandon(path)
         self.assertKept(path, rc, out, 'whether a ref reaches its HEAD reflog is unknown')
         self.assertIn('refs unreadable', out)
@@ -474,8 +474,8 @@ class SlugRedirect(OutsideCase):
         self.assertIn('"%s" --scratch' % path, out)
 
     def test_an_unreadable_list_for_a_missing_slug_is_still_nothing(self):
-        with mock.patch.object(remove, 'worktree_listing',
-                               side_effect=remove.GitReadError('git worktree list failed')):
+        with mock.patch.object(remove_checks, 'worktree_listing',
+                               side_effect=remove_checks.GitReadError('git worktree list failed')):
             rc, out = self.run_remove('nowhere')
         self.assertEqual(rc, 0, out)
         self.assertIn('nothing   ', out)
@@ -583,9 +583,9 @@ class Unchanged(OutsideCase):
     def test_the_landing_cleanup_entry_still_refuses_an_outside_tree_on_a_branch(self):
         path = os.path.join(self.outside, 'landed')
         self.git('worktree', 'add', '-q', path, '-b', 'kit/landed', self.base)
-        ctx = remove.Ctx(self.repo, load(self.repo), cwd=self.repo)
+        ctx = remove_checks.Ctx(self.repo, load(self.repo), cwd=self.repo)
         code = remove._remove(ctx, path, False)
-        self.assertEqual(code, remove.REFUSED, ctx.out)
+        self.assertEqual(code, remove_checks.REFUSED, ctx.out)
         self.assertIn('only a detached tree', '\n'.join(ctx.out))
         self.assertTrue(os.path.isdir(path))
         self.assertIn(os.path.normcase(path), self.registered())

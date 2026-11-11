@@ -16,7 +16,7 @@ import kitlib.platform
 from kitlib import kitroot
 from kitlib.config import pmdata
 from kitlib.records import gate_ok
-from kitlib.worktree import classify, holders, marks, remove, sweep
+from kitlib.worktree import classify, holders, marks, remove, remove_checks, sweep
 from tests import gitfixture
 from tests.home import result_drive
 from tests.realgit import real_git
@@ -886,7 +886,7 @@ class StaleMarkShown(ClassifyCase):
         self.assertEqual(self.row(data, path)['class'], 'C')
         self.assert_no_mark_offered(out, '1 dirty file(s): it marks a clean tree only')
         got = marks.mark(self.repo, 'kit/wip', 'stale', liveness=lambda m, b: (None, 'tip'))
-        self.assertEqual(got.code, remove.REFUSED, got.lines)    # the note agrees with the tool
+        self.assertEqual(got.code, remove_checks.REFUSED, got.lines)    # the note agrees with the tool
 
     def test_a_landed_dirty_tree_takes_no_mark(self):
         path = self.workstream('after')

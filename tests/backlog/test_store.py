@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_claim, plan_edit
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.fs import replace as fsreplace
@@ -33,8 +34,8 @@ def clone(case, name):
 
 def add(store, rid, scope=None):
     ctx = pmod.Context(store, store.backend.root, branch=BRANCH)
-    return store.write(lambda s: pmod.plan_add(s, ctx, rid, 'summary of %s' % rid,
-                                               [scope or 'area/%s/**' % rid.lower()], **ADD_NONE))
+    return store.write(lambda s: plan_edit.plan_add(s, ctx, rid, 'summary of %s' % rid,
+                                                    [scope or 'area/%s/**' % rid.lower()], **ADD_NONE))
 
 
 def added(rid):
@@ -114,7 +115,7 @@ class CompareAndSwap(StoreCase):
 
         def interfere(attempt):
             if attempt == 0:
-                other.write(lambda s: pmod.plan_set(s, octx, 'FOO', [('summary', ['renamed by B'])]))
+                other.write(lambda s: plan_edit.plan_set(s, octx, 'FOO', [('summary', ['renamed by B'])]))
         self.store.before_publish = interfere
         self.verb('set', 'FOO', [('effort', ['l'])])
         foo = self.get('FOO')
@@ -157,7 +158,7 @@ class CompareAndSwap(StoreCase):
 
         def interfere(attempt):
             if attempt == 0:
-                other.write(lambda s: pmod.plan_pull(s, octx, 'FOO'))
+                other.write(lambda s: plan_claim.plan_pull(s, octx, 'FOO'))
         self.store.before_publish = interfere
         with self.assertRaises(Exception) as cm:
             self.verb('pull', 'FOO')
@@ -327,8 +328,8 @@ class PushFailures(StoreCase):
                 return None
             done.append(1)
             r = real()
-            second.write(lambda s: pmod.plan_add(s, sctx, 'BAR', 'other', ['area/bar/**'],
-                                                           **ADD_NONE))
+            second.write(lambda s: plan_edit.plan_add(s, sctx, 'BAR', 'other', ['area/bar/**'],
+                                                                **ADD_NONE))
             return r
         wrap_git(self, on)
         self.verb('set', 'FOO', [('effort', ['s'])])
@@ -578,8 +579,8 @@ class NoRemote(StoreCase):
 
         def interfere(attempt):
             if attempt == 0:
-                second.write(lambda s: pmod.plan_add(s, sctx, 'BAR', 'other', ['area/bar/**'],
-                                                           **ADD_NONE))
+                second.write(lambda s: plan_edit.plan_add(s, sctx, 'BAR', 'other', ['area/bar/**'],
+                                                                **ADD_NONE))
         self.store.before_publish = interfere
         self.verb('set', 'FOO', [('effort', ['s'])])
         snap = self.store.load()
@@ -592,8 +593,8 @@ class NoRemote(StoreCase):
 
         def interfere(attempt):
             if attempt == 0:
-                second.write(lambda s: pmod.plan_add(s, sctx, 'BAR', 'other', ['area/bar/**'],
-                                                           **ADD_NONE))
+                second.write(lambda s: plan_edit.plan_add(s, sctx, 'BAR', 'other', ['area/bar/**'],
+                                                                **ADD_NONE))
         self.store.before_publish = interfere
         self.verb('add', 'FOO', 'a summary', ['area/foo/**'], **ADD_NONE)
         self.assertEqual(sorted(r.id for r in self.store.load().records), ['BAR', 'FOO'])
@@ -871,8 +872,8 @@ class OtherBackends(TempHomeCase):
     def test_the_main_backend_writes_files_and_commits_nothing(self):
         repo, root, store, ctx = self.main_store()
         head = repo.git('rev-parse', 'HEAD', cwd=root)
-        store.write(lambda s: pmod.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
-                                                     **ADD_NONE))
+        store.write(lambda s: plan_edit.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
+                                                          **ADD_NONE))
         self.assertTrue(os.path.isfile(os.path.join(root, 'docs', 'backlog', 'FOO.md')))
         self.assertEqual(repo.git('rev-parse', 'HEAD', cwd=root), head)
         foo = store.load().get('FOO')
@@ -887,15 +888,15 @@ class OtherBackends(TempHomeCase):
         store = smod.Store(smod.MainBackend(repo.root, 'docs/backlog'), rmod.Rules())
         ctx = pmod.Context(store,repo.root, branch=BRANCH)
         with self.assertRaises(Failure) as cm:
-            store.write(lambda s: pmod.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
-                                                     **ADD_NONE))
+            store.write(lambda s: plan_edit.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
+                                                          **ADD_NONE))
         self.assertIn('main checkout', str(cm.exception))
         self.assertFalse(os.path.exists(repo.path('docs', 'backlog')))
 
     def test_the_main_backend_re_plans_when_a_record_changed_under_it(self):
         repo, root, store, ctx = self.main_store()
-        store.write(lambda s: pmod.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
-                                                     **ADD_NONE))
+        store.write(lambda s: plan_edit.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
+                                                          **ADD_NONE))
         path = os.path.join(root, 'docs', 'backlog', 'FOO.md')
         attempts = []
 
@@ -905,7 +906,7 @@ class OtherBackends(TempHomeCase):
                 with open(path, 'a', encoding='utf-8', newline='\n') as f:
                     f.write('\nedited by hand\n')
         store.before_publish = edit
-        store.write(lambda s: pmod.plan_set(s, ctx, 'FOO', [('summary', ['renamed'])]))
+        store.write(lambda s: plan_edit.plan_set(s, ctx, 'FOO', [('summary', ['renamed'])]))
         self.assertEqual(attempts, [0, 1])
         with open(path, encoding='utf-8') as f:
             text = f.read()
@@ -916,8 +917,8 @@ class OtherBackends(TempHomeCase):
         """A plain `git status` may take index.lock to refresh the index, which a concurrent
         store write's _IndexLock would then wait on or report Busy."""
         repo, root, store, ctx = self.main_store()
-        store.write(lambda s: pmod.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
-                                            **ADD_NONE))
+        store.write(lambda s: plan_edit.plan_add(s, ctx, 'FOO', 'a summary', ['area/foo/**'],
+                                                 **ADD_NONE))
         seen = []
         wrap_git(self, lambda args, real: seen.append(args))
         self.assertEqual(store.backend.pending(), [('added', 'docs/backlog/FOO.md')])

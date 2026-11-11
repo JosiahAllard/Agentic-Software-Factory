@@ -1,4 +1,4 @@
-"""KIT-BLOCKS-AUTO-CLEAR: an `owner` block cites the hub ask that ends it (plan.plan_block,
+"""KIT-BLOCKS-AUTO-CLEAR: an `owner` block cites the hub ask that ends it (plan_hold.plan_block,
 record.owner_citation_error); `next` prints one REVIEW line per record to review
 (offer.Banner.review_lines) and, under `--session`, a NOTE naming the pullable records that key
 never offers (offer.Banner.session_note); a lead may end an `owner` hold on the owner's own

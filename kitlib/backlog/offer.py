@@ -154,7 +154,7 @@ class Banner(object):
             why, '%s (%d)' % largest if largest else 'none - nothing is held')
 
 
-ANSWER_REVIEW = 'owner-answer'      # the mark plan.plan_answer writes for a free-text answer
+ANSWER_REVIEW = 'owner-answer'      # the mark plan_hold.plan_answer writes for a free-text answer
 
 
 def review_line(rec):
@@ -1215,7 +1215,7 @@ def _split(c_scopes, parts, tree, shared=()):
 def narrows_line(offer):
     """`next`'s NARROWS line for an offer made by narrowing (Offer.split): what the candidate,
     then each live pull, drops and keeps. `next` writes nothing; `pull` of the record recomputes
-    the split and writes it (plan.plan_pull)."""
+    the split and writes it (plan_claim.plan_pull)."""
     s = offer.split
     return 'NARROWS %s (rank %s) with %s: %s %s; %s' % (
         offer.rec.id, offer.rank,
@@ -1229,7 +1229,7 @@ def side_text(changes, plan=True, named=', '.join):
     """One side of a narrowing (Split.c_changes or l_changes): `drops D from M (keeps K)` per
     member changed, or `keeps its scope` (` (no ## Files)` when `plan` is False: only the
     candidate is narrowed). `named(paths)` lists D and K. The one text of `next`'s NARROWS line
-    (_named, cut short) and `pull`'s NARROWED lines (plan._apply_split, every path)."""
+    (_named, cut short) and `pull`'s NARROWED lines (plan_claim._apply_split, every path)."""
     if not changes:
         return 'keeps its scope%s' % ('' if plan else ' (no ## Files)')
     return '; '.join('drops %s from %s (keeps %s)' % (named(d) or 'nothing', m,

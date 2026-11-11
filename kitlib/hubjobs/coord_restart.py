@@ -49,14 +49,14 @@ offers a record id that it did not offer on the first run after that stop that r
 baseline, kept as `held` {stop_at, ids}). So a coordinator woken for some records that stops again
 is not woken for them again. The offer is read only for an entry held on a deliberate stop whose
 autostart and pace_hold (DOWN_RUNS, the cap, the backoff) pass, through kitlib.backlog
-(opener.open_store with no fetch, plan.offer_for), from the store the repo's .kit.json names, else
-the PM data worktree's (store.pm_data_live_store). A store that cannot be read wakes nothing and is
-a note, not a failure. The wake judges session liveness as `next` does (session_liveness, from the
-run's own sessions.json and process listing): a record of a session that is not running takes no
-place in the offer, so the wake sees what `next` offers. An owner wake (an answered or filed question it
-asked, class ones included, or a decided approval of its repo, newer than the stopped session's
-start) is read first, on the same terms, and needs no baseline. A wake start passes `--prompt` with the reason, the new ids and the
-entry's state note path.
+(opener.open_store with no fetch, plan_narrow.offer_for), from the store the repo's .kit.json names,
+else the PM data worktree's (store.pm_data_live_store). A store that cannot be read wakes nothing
+and is a note, not a failure. The wake judges session liveness as `next` does (session_liveness,
+from the run's own sessions.json and process listing): a record of a session that is not running
+takes no place in the offer, so the wake sees what `next` offers. An owner wake (an answered or
+filed question it asked, class ones included, or a decided approval of its repo, newer than the
+stopped session's start) is read first, on the same terms, and needs no baseline. A wake start
+passes `--prompt` with the reason, the new ids and the entry's state note path.
 
 The account: accounts.restart_pick, the signed-in account whose week resets first of those whose
 week has reset (accounts.week_state: a recorded reset passed, 0%, even on a stale reading) or
@@ -467,13 +467,13 @@ def read_offer(settings, key, entry, with_cap=False, session_live=None):
     with `with_cap`, `.kit.json` backlog.cap of the repo's main checkout (opener.repo_cap), else
     None. No fetch: the hub's own backlog fetch keeps the local store fresh. `session_live` (an
     offer.SessionLiveness, session_liveness) judges whether another session's record reserves its
-    scope; None: it always does. With it, the same offer `next` prints (plan.offer_for: live
+    scope; None: it always does. With it, the same offer `next` prints (plan_narrow.offer_for: live
     pulls, unmet `requires:`, the fold-in guard, session liveness). BacklogUnread when
     the store or the cap cannot be read (a backlog Refusal, a ConfigError, a PartitionError, an
     OSError). A LaunchError is not caught here: store_root already makes a repo missing from
     launcher.repos BacklogUnread, so any other is a fault of the run. coord-restart's wake
     (offered_ids) and the fill watch (kitlib.hubjobs.fill_watch) both read it."""
-    from kitlib.backlog import opener, plan
+    from kitlib.backlog import opener, plan_narrow
     from kitlib.backlog import offer as omod
     from kitlib.backlog.errors import Refusal
     from kitlib.config import ConfigError
@@ -489,7 +489,8 @@ def read_offer(settings, key, entry, with_cap=False, session_live=None):
             if snap is None:            # one read of the store and its live pulls for both offers
                 snap = ctx.store.load()
                 holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
-            offers, _passed, _holding, _own = plan.offer_for(snap, ctx, cap=None, holding=holding)
+            offers, _passed, _holding, _own = plan_narrow.offer_for(snap, ctx, cap=None,
+                                                                    holding=holding)
             ids.extend(o.rec.id for o in offers if o.rec.id not in ids)
     except (Refusal, ConfigError, omod.PartitionError, OSError) as exc:
         raise BacklogUnread('the store could not be read (%s)' % type(exc).__name__)

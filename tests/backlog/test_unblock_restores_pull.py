@@ -1,16 +1,16 @@
-"""An unblock that opens a record whose pull a `block` stopped gives the pull back while its
-branch still holds the stopped tip, unlanded (kitlib.backlog.plan restore_pull, plan_unblock,
-plan_answer; docs/backlog.md "Commands", the block/unblock row). A scope that collides with
-another live pull or folds into one's work is never restored: that is a lead's call (the
-pull-collision row). A record opened any other way (dependent_rewrites) gets a line that ends the
-stopped pull, so no later unblock revives it."""
+"""An unblock that opens a record whose pull a `block` stopped gives the pull back while its branch
+still holds the stopped tip, unlanded (kitlib.backlog.plan_claim restore_pull, plan_hold
+plan_unblock and plan_answer; docs/backlog.md "Commands", the block/unblock row). A scope that
+collides with another live pull or folds into one's work is never restored: that is a lead's call
+(the pull-collision row). A record opened any other way (dependent_rewrites) gets a line that ends
+the stopped pull, so no later unblock revives it."""
 import os
 import unittest
 from unittest import mock
 
 from kitlib.backlog import offer as omod
 from kitlib.backlog.errors import Failure
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_claim, plan_narrow
 from kitlib.git import refs
 from tests.backlog.helpers import BRANCH, TODAY, StoreCase, priced
 
@@ -220,7 +220,7 @@ class Unblock(RestoreCase):
         self.pulled(scope='area/foo/**')
         self.block()
         self.newcomer_pull()
-        with mock.patch.object(pmod, '_code_main', return_value=('origin/nosuch', '')):
+        with mock.patch.object(plan_narrow, '_code_main', return_value=('origin/nosuch', '')):
             self.unblock()
         self.assert_open('FOO', 'cannot tell whether its scope folds into another pull\'s work '
                                 '(code main origin/nosuch does not resolve here')
@@ -353,12 +353,12 @@ class BlockedPull(unittest.TestCase):
 
     def test_the_note_must_be_followed_by_the_blocked_line(self):
         note = 'Stopped on branch kit/x at abcdef1234, branch kept.'
-        self.assertEqual(pmod.blocked_pull('%s\nBlocked on owner (2026-10-01): R-1: why' % note),
+        self.assertEqual(plan_claim.blocked_pull('%s\nBlocked on owner (2026-10-01): R-1: why' % note),
                          ('kit/x', 'abcdef1234'))
-        self.assertIsNone(pmod.blocked_pull('%s\nReleased (2026-10-01): why' % note))
-        self.assertIsNone(pmod.blocked_pull(note))
-        self.assertIsNone(pmod.blocked_pull('no note'))
-        self.assertIsNone(pmod.blocked_pull(
+        self.assertIsNone(plan_claim.blocked_pull('%s\nReleased (2026-10-01): why' % note))
+        self.assertIsNone(plan_claim.blocked_pull(note))
+        self.assertIsNone(plan_claim.blocked_pull('no note'))
+        self.assertIsNone(plan_claim.blocked_pull(
             '%s\nBlocked on owner (2026-10-01): why\n\nUnblocked (2026-10-02): pull by kit/x '
             'restored.' % note))
 

@@ -293,7 +293,7 @@ class OwnPull(Base):
 
 class AsFromItsWorktree(Base):
     """`-C <store> --as <branch>` from that branch's linked worktree (backlogrole._worktree_on):
-    the form the tool's own refusal names (plan.holder_form). A builder blocking its own pull of a
+    the form the tool's own refusal names (plan_claim.holder_form). A builder blocking its own pull of a
     store in another checkout was refused as not its own (role=subagent). The store here is the
     main checkout, whose branch is main; read_record is patched, so any folder serves."""
 

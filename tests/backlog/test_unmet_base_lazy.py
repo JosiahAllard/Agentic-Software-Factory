@@ -6,6 +6,7 @@ from unittest import mock
 
 from kitlib.backlog import pull_branch
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_narrow
 from kitlib.git import refs
 
 from tests.backlog.helpers import BRANCH, StoreCase, priced
@@ -28,7 +29,7 @@ class UnmetBaseLazy(StoreCase):
     def run_next_and_pull(self, rid):
         patch, calls = self.count_unmet_bases()
         with patch:
-            pmod.offer_for(self.store.load(), self.ctx)
+            plan_narrow.offer_for(self.store.load(), self.ctx)
             self.store.write(lambda s: pull_branch.plan_pull(s, self.ctx, rid))
         return calls
 

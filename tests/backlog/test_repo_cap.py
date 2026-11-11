@@ -133,7 +133,7 @@ class RepoCapCli(unittest.TestCase):
             self.assertIn('"backlog".cap must be a whole number >= 1', out)
 
     def test_pull_takes_a_record_only_the_offer_without_the_branch_holds(self):
-        # `also` (plan.current_offer): the offer as the main checkout prints it. WT_BRANCH holds
+        # `also` (plan_narrow.current_offer): the offer as the main checkout prints it. WT_BRANCH holds
         # R01 and its diff touches R00's scope, so the main checkout passes R00 over (it folds into
         # that branch) and offers R02..R11, while the branch's own offer keeps R00 to bundle and
         # stops at R10. R11 is in order only through `also`, at the repository's cap of 10.

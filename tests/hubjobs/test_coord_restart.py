@@ -875,7 +875,7 @@ class Offered(unittest.TestCase):
 
     def offered(self, key, entry, pm=(None, None, None), **kw):
         from kitlib.backlog import offer as omod
-        from kitlib.backlog import opener, plan
+        from kitlib.backlog import opener, plan_narrow
         from kitlib.backlog import store as bstore
 
         class Store(object):
@@ -900,7 +900,7 @@ class Offered(unittest.TestCase):
             self.lives.append(getattr(ctx, 'session_live', 'unset'))
             return [mock.Mock(rec=Rec(r)) for r in self.by_session.get(ctx.session, ())], [], holding, None
         with mock.patch.object(opener, 'open_store', open_store), \
-                mock.patch.object(plan, 'offer_for', offer_for), \
+                mock.patch.object(plan_narrow, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split', lambda snap, root, remote: (['pull'], [], None)), \
                 mock.patch.object(bstore, 'pm_data_live_store', pm if callable(pm) else lambda root: pm):
             return C.offered_ids(self.settings, key, entry, **kw)

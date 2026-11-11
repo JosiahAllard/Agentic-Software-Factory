@@ -10,8 +10,14 @@ docs/backlog-store.md). Logic only: no argparse, no printing, no exit.
   policy    tools/backlog.py's role check: a write's rows (roles.py ACTIONS) and who may take them
   offer     partition, rank, in flight, requires, the `next` offer
   check     every `check` line with its own denominator
-  plan      the write verbs as plans: add, set, block, unblock, pull, release, close, retire,
-            delete, set-status, unpark, clear-review
+  plan      the write verbs as plans: the shared Context, checks and refusals
+  plan_narrow  the scope and resource rules the verbs share: next's offer and its narrowing,
+            the live pulls and their diffs, the fold-in guard
+  plan_edit  add, set, clear-review, and the keys only a verb writes (WRITTEN_BY)
+  plan_claim  pull (a takeover among them), release, and the stopped-pull notes
+  plan_hold  block, unblock, set-status, unpark, and filing the owner's answer
+  plan_end  close, retire, delete
+  plan_citations  uncite
   retarget  `backlog.py retarget`: a moved path rewritten across every record in one commit
   landable  may a branch land without leaving a dead pull
   at_landing  the store at `gate.py land`: the ancestry refusal and closing the landed pulls

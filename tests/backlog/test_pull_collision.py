@@ -7,7 +7,7 @@ around the pull check. A taken collision names its row on the Change and marks i
 import unittest
 
 from kitlib.backlog import audit_check
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_narrow
 from kitlib.backlog import policy
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Failure, Refusal, Usage
@@ -163,12 +163,12 @@ class PullCollision(StoreCase):
     def test_the_offer_next_prints_as_the_branch_leaves_its_own_pulls_out(self):
         self.seed_x_y()
         snap = self.store.load()
-        offers, passed, _holding, own = pmod.offer_for(snap, self.ctx)
+        offers, passed, _holding, own = plan_narrow.offer_for(snap, self.ctx)
         self.assertEqual(own, BRANCH)
         self.assertEqual([o.rec.id for o in offers], ['X'])
         self.assertEqual([p.rec.id for p in passed], ['Y'])
         self.ctx.branch = 'main'                      # a main never bundles: its pulls hold scope
-        offers, passed, _holding, own = pmod.offer_for(snap, self.ctx)
+        offers, passed, _holding, own = plan_narrow.offer_for(snap, self.ctx)
         self.assertIsNone(own)
         self.assertEqual([o.rec.id for o in offers], [])     # X waits on MINE and reserves
         self.assertEqual([p.rec.id for p in passed], ['X', 'Y'])
@@ -218,7 +218,7 @@ class PullCollision(StoreCase):
         snap = self.store.load()
         for name in (BRANCH.upper(), 'tools/some', BRANCH + '-two', 'refs/heads/' + BRANCH):
             self.ctx.branch = name
-            offers, passed, _holding, own = pmod.offer_for(snap, self.ctx)
+            offers, passed, _holding, own = plan_narrow.offer_for(snap, self.ctx)
             self.assertEqual(own, name)
             self.assertEqual([o.rec.id for o in offers], [], name)
             self.assertEqual([p.rec.id for p in passed], ['X', 'Y'], name)
@@ -227,10 +227,10 @@ class PullCollision(StoreCase):
     def test_a_detached_head_names_no_branch_of_its_own(self):
         self.repo.git('checkout', '-b', 'tools/other')
         self.ctx.branch = None
-        self.assertEqual(pmod.own_branch(self.ctx), 'tools/other')   # the control: HEAD is read
+        self.assertEqual(plan_narrow.own_branch(self.ctx), 'tools/other')   # the control: HEAD is read
         self.repo.git('checkout', '--detach')
-        self.assertIsNone(pmod.own_branch(self.ctx))
-        self.assertEqual(pmod.own_branch(self.ctx, 'tools/named'), 'tools/named')
+        self.assertIsNone(plan_narrow.own_branch(self.ctx))
+        self.assertEqual(plan_narrow.own_branch(self.ctx, 'tools/named'), 'tools/named')
 
     def test_a_pull_takes_what_next_offers_as_the_branch_when_its_own_pull_has_a_bad_scope(self):
         # `next` as the branch leaves its own pulls out, so their scopes are never read there; the
@@ -238,7 +238,7 @@ class PullCollision(StoreCase):
         # not make `pull` refuse a record `next` offered.
         self.seed(mine('a/*.py'), priced('Y', scope='docs/y.md'))
         snap = self.store.load()
-        offers, _passed, _holding, own = pmod.offer_for(snap, self.ctx)
+        offers, _passed, _holding, own = plan_narrow.offer_for(snap, self.ctx)
         self.assertEqual((own, [o.rec.id for o in offers]), (BRANCH, ['Y']))
         change = self.verb('pull', 'Y')
         self.assertEqual((self.get('Y').get('state'), self.get('Y').get('preempt')),
@@ -364,34 +364,34 @@ class SetScopeWidening(StoreCase):
 
 
 class LiveHits(unittest.TestCase):
-    """pmod.live_hits directly: the arms an end-to-end store cannot reach."""
+    """plan_narrow.live_hits directly: the arms an end-to-end store cannot reach."""
 
     def pulled(self, rid, scope, by=HOLDER):
         return parse(stem=rid, id=rid, scope=scope, state='pulled', pulled_at=TODAY,
                      pulled_by=by, priority='2', priority_by='agent')
 
     def test_a_scope_that_cannot_be_compared_is_a_hit(self):
-        hits = pmod.live_hits(['kitlib/backlog/plan.py'], [self.pulled('BAD', 'kitlib/*.py')])
+        hits = plan_narrow.live_hits(['kitlib/backlog/plan.py'], [self.pulled('BAD', 'kitlib/*.py')])
         self.assertEqual(len(hits), 1, hits)
         self.assertIn('cannot be compared with BAD (in flight on %s)' % HOLDER, hits[0])
 
     def test_skip_drops_the_record_itself(self):
         holding = [self.pulled('SELF', 'a/x.py'), self.pulled('OTHER', 'b/y.py')]
-        self.assertEqual(pmod.live_hits(['a/**'], holding, skip='SELF'), [])
-        self.assertEqual(len(pmod.live_hits(['a/**'], holding)), 1)
+        self.assertEqual(plan_narrow.live_hits(['a/**'], holding, skip='SELF'), [])
+        self.assertEqual(len(plan_narrow.live_hits(['a/**'], holding)), 1)
 
     def test_a_pull_on_the_exempt_branch_is_no_hit(self):
         holding = [self.pulled('SIB', 'a/x.py', by=BRANCH), self.pulled('OTHER', 'a/y.py')]
-        hits = pmod.live_hits(['a/**'], holding, branch=BRANCH)
+        hits = plan_narrow.live_hits(['a/**'], holding, branch=BRANCH)
         self.assertEqual(len(hits), 1, hits)
         self.assertIn('OTHER', hits[0])
 
 
 class Widened(unittest.TestCase):
-    """pmod.widened_members: the new members no old member covers."""
+    """plan_narrow.widened_members: the new members no old member covers."""
 
     def check(self, old, new, want):
-        self.assertEqual(pmod.widened_members(old, new), want, (old, new))
+        self.assertEqual(plan_narrow.widened_members(old, new), want, (old, new))
 
     def test_cover_rules(self):
         self.check(['a/**'], ['a/b.py'], [])

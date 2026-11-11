@@ -17,7 +17,7 @@ docs/backlog.md).
                        `uncite`); Usage for any other verb, raised before a plan exists
   retarget_dry(args, ctx) -> the Change `retarget` would write, checked as a write would be;
                        nothing is published
-  uncite_dry(ctx)    -> the same for `uncite` (plan.plan_uncite)
+  uncite_dry(ctx)    -> the same for `uncite` (plan_citations.plan_uncite)
 
 `planner` and `retarget_dry` take an object with tools/backlog.py's argument names (`verb`, `id`,
 `f_<field>`, `old`, `new`...).
@@ -29,6 +29,7 @@ from kitlib.config.types import is_note
 from kitlib.git import repo as gitrepo
 
 from . import plan as pmod
+from . import plan_citations, plan_claim, plan_edit, plan_end, plan_hold
 from . import policy
 from . import pull_branch as pullmod
 from . import record as rmod
@@ -37,7 +38,7 @@ from . import scope as bscope
 from . import store as smod
 from .errors import Failure, Refusal, Usage
 
-# `set --<field>` for every field; plan_set refuses the ones a verb writes (plan.WRITTEN_BY).
+# `set --<field>` for every field; plan_set refuses the ones a verb writes (plan_edit.WRITTEN_BY).
 FIELD_FLAGS = list(rmod.FIELDS)
 WRITES = ('add', 'set', 'block', 'unblock', 'pull', 'release', 'close', 'retire', 'delete',
           'set-status', 'unpark', 'clear-review')
@@ -178,48 +179,48 @@ def set_changes(args):
 def planner(args, ctx):
     v = args.verb
     if v == 'add':
-        body = pmod.read_body_file(args.body_file) if args.body_file else None
-        return lambda s: pmod.plan_add(s, ctx, args.id, args.summary, args.scope, args.effort,
-                                       args.ref, args.reopen, session=ctx.session,
-                                       found_on=args.found_on, why_not_folded=args.why_not_folded,
-                                       body=body, summary_max=pmod.SUMMARY_MAX, uses=args.uses)
+        body = plan_edit.read_body_file(args.body_file) if args.body_file else None
+        return lambda s: plan_edit.plan_add(s, ctx, args.id, args.summary, args.scope, args.effort,
+                                            args.ref, args.reopen, session=ctx.session,
+                                            found_on=args.found_on, why_not_folded=args.why_not_folded,
+                                            body=body, summary_max=plan_edit.SUMMARY_MAX, uses=args.uses)
     if v == 'set':
-        body = pmod.read_body_file(args.body_file) if args.body_file else None
+        body = plan_edit.read_body_file(args.body_file) if args.body_file else None
         changes = set_changes(args)
         # A widening into a live pull is the plan's to find; the role decides whether it may.
-        may_collide = policy.may(pmod.WIDEN_ROW)
-        return lambda s: pmod.plan_set(s, ctx, args.id, changes, args.unset, body=body,
-                                       role_checked=True, may_collide=may_collide)
+        may_collide = policy.may(plan_edit.WIDEN_ROW)
+        return lambda s: plan_edit.plan_set(s, ctx, args.id, changes, args.unset, body=body,
+                                            role_checked=True, may_collide=may_collide)
     if v == 'block':
-        return lambda s: pmod.plan_block(s, ctx, args.id, args.on, args.owner_ask,
-                                         reason=args.reason, until=args.until,
-                                         role_checked=True)
+        return lambda s: plan_hold.plan_block(s, ctx, args.id, args.on, args.owner_ask,
+                                              reason=args.reason, until=args.until,
+                                              role_checked=True)
     if v == 'retarget':
         return lambda s: retmod.plan_retarget(s, ctx, args.old, args.new)
     if v == 'uncite':
-        return lambda s: pmod.plan_uncite(s, ctx)
+        return lambda s: plan_citations.plan_uncite(s, ctx)
     if v == 'unblock':
-        return lambda s: pmod.plan_unblock(s, ctx, args.id, args.on, args.reason,
-                                           role_checked=True)
+        return lambda s: plan_hold.plan_unblock(s, ctx, args.id, args.on, args.reason,
+                                                role_checked=True)
     if v == 'pull':
         may_collide = policy.may('pull-collision')
         batch = policy.cli_role() == policy.TOPIC
         return lambda s: pullmod.plan_pull(s, ctx, args.id, args.reason, may_collide,
                                            args.blocker, batch=batch)
     if v == 'release':
-        return lambda s: pmod.plan_release(s, ctx, args.id, args.reason)
+        return lambda s: plan_claim.plan_release(s, ctx, args.id, args.reason)
     if v == 'close':
-        return lambda s: pmod.plan_close(s, ctx, args.id, args.reason, role_checked=True)
+        return lambda s: plan_end.plan_close(s, ctx, args.id, args.reason, role_checked=True)
     if v == 'set-status':
-        return lambda s: pmod.plan_set_status(s, ctx, args.id, args.status, args.q)
+        return lambda s: plan_hold.plan_set_status(s, ctx, args.id, args.status, args.q)
     if v == 'unpark':
-        return lambda s: pmod.plan_unpark(s, ctx, args.id)
+        return lambda s: plan_hold.plan_unpark(s, ctx, args.id)
     if v == 'retire':
-        return lambda s: pmod.plan_retire(s, ctx, args.id, args.why, role_checked=True)
+        return lambda s: plan_end.plan_retire(s, ctx, args.id, args.why, role_checked=True)
     if v == 'delete':
-        return lambda s: pmod.plan_delete(s, ctx, args.id, args.why, role_checked=True)
+        return lambda s: plan_end.plan_delete(s, ctx, args.id, args.why, role_checked=True)
     if v == 'clear-review':
-        return lambda s: pmod.plan_clear_review(s, ctx, args.id, args.reason)
+        return lambda s: plan_edit.plan_clear_review(s, ctx, args.id, args.reason)
     # The caller's mistake, so Usage (errors.py); raised here, before any plan could run.
     raise Usage('`%s` is not a write verb: `planner` plans %s'
                 % (v, ', '.join(WRITES + ('retarget', 'uncite'))))
@@ -234,7 +235,7 @@ def retarget_dry(args, ctx):
 def uncite_dry(ctx):
     """`uncite` without `--apply`: the change it would write (its NEEDS HAND EDIT list included),
     planned and checked as `retarget_dry`'s is; nothing is published."""
-    return _dry(ctx, lambda snap: pmod.plan_uncite(snap, ctx))
+    return _dry(ctx, lambda snap: plan_citations.plan_uncite(snap, ctx))
 
 
 def _dry(ctx, plan):

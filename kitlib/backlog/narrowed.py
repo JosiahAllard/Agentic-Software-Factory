@@ -2,14 +2,14 @@
 
 A narrowing writes a `narrowed: <original member> <other id> <other branch>` line on each of two
 colliding records (kitlib/backlog/record.py): `pull` of a record `next` offers by narrowing
-(plan.plan_pull), or a lead's `set --narrowed`. A commit on the branch holding one of them may not record a path inside an original
-member that its record no longer covers while the other record is still pulled: that part was
-given to the other branch. Both sides of a rename are named paths of the commit, so each is
-checked; a refused side names the other only for a rename with its content unchanged (the same
-blob: rename_pairs), and an edited move names only the refused side. One hit refuses the whole
-commit. Paths and members
-compare as the landing scope check compares them (scope.covers), a member of the store shared by
-repositories read without its area prefix (scope.in_repo).
+(plan_claim.plan_pull), or a lead's `set --narrowed`. A commit on the branch holding one of them may
+not record a path inside an original member that its record no longer covers while the other record
+is still pulled: that part was given to the other branch. Both sides of a rename are named paths of
+the commit, so each is checked; a refused side names the other only for a rename with its content
+unchanged (the same blob: rename_pairs), and an edited move names only the refused side. One hit
+refuses the whole commit. Paths and members compare as the landing scope check compares them
+(scope.covers), a member of the store shared by repositories read without its area prefix
+(scope.in_repo).
 
   check(root, paths)          `(refusal lines, warnings)` for the commit in `root` naming `paths`
   hits(records, branch, ...)  the same over records already read (pure)

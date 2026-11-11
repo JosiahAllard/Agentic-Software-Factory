@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_end
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Ended, Failure, NotFound, Usage
@@ -164,7 +165,7 @@ class MainStoreUncommittedClose(StoreCase):
 
     def test_a_record_closed_and_not_yet_committed_reports_as_closed(self):
         r, root, store, ctx = self.main_store()
-        store.write(lambda s: pmod.plan_close(s, ctx, 'FOO', 'the work is finished'))
+        store.write(lambda s: plan_end.plan_close(s, ctx, 'FOO', 'the work is finished'))
         self.assertFalse(os.path.exists(os.path.join(root, 'docs', 'backlog', 'FOO.md')))
         said = self.shown(store, ctx, 'FOO')
         self.assertIn('FOO is no longer in', said)
@@ -193,7 +194,7 @@ class MainStoreUncommittedClose(StoreCase):
 
     def test_once_committed_it_names_the_closing_commit(self):
         r, root, store, ctx = self.main_store()
-        store.write(lambda s: pmod.plan_close(s, ctx, 'FOO', 'the work is finished'))
+        store.write(lambda s: plan_end.plan_close(s, ctx, 'FOO', 'the work is finished'))
         r.git('add', '-A', '--', 'docs/backlog', cwd=root)
         r.git('commit', '-q', '-m', 'closes FOO: the work is finished\n\nSession: wt-session',
               cwd=root)

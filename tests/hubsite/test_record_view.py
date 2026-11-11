@@ -368,7 +368,7 @@ class TheTemplate(RecordCase):
         self.assertIs(by_key["blocked_on"]["required"], brecord.FIELDS["blocked_on"][0] in
                       (brecord.ONE, brecord.ONE_PLUS))
         self.assertEqual(by_key["pulled_by"]["written_by"],
-                         __import__("kitlib.backlog.plan", fromlist=["x"]).WRITTEN_BY.get("pulled_by"))
+                         __import__("kitlib.backlog.plan_edit", fromlist=["x"]).WRITTEN_BY.get("pulled_by"))
         self.assertEqual(got["states"], list(brecord.STATES))
         self.assertEqual(got["blocked_on"], {"plain": list(brecord.BLOCKED_ON_PLAIN),
                                              "prefixes": list(brecord.BLOCKED_ON_PREFIXES)})

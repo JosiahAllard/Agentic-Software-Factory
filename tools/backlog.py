@@ -46,6 +46,7 @@ from kitlib.backlog import find as findmod                        # noqa: E402
 from kitlib.backlog import landable as landmod                      # noqa: E402
 from kitlib.backlog import offer as omod                            # noqa: E402
 from kitlib.backlog import plan as pmod                             # noqa: E402
+from kitlib.backlog import plan_narrow                              # noqa: E402
 from kitlib.backlog import policy                                   # noqa: E402
 from kitlib.backlog import record as rmod                           # noqa: E402
 from kitlib.backlog import stale as stalemod                        # noqa: E402
@@ -263,11 +264,11 @@ def do_next(args, ctx, snap):
                  if rec.get('session') else '')
         say('DEAD PULL %s (pulled_by %s has no branch): %s`release %s --reason ...`'
             % (rec.id, rec.get('pulled_by'), taker, rec.id))
-    # The offer `pull` checks against (plan.offer_for): the branch's own pulls take no scope.
+    # The offer `pull` checks against (plan_narrow.offer_for): the branch's own pulls take no scope.
     # A record held only by one live pull's protected set is offered narrowed (NARROWS below);
     # `next` writes nothing, and `pull` of it writes the narrowing.
-    offers, passed, _holding, own = pmod.offer_for(snap, ctx, cap=cap, seeds=args.seeds,
-                                                   holding=holding, narrow=True)
+    offers, passed, _holding, own = plan_narrow.offer_for(snap, ctx, cap=cap, seeds=args.seeds,
+                                                          holding=holding, narrow=True)
     mine = [r.id for r in holding if own and r.get('pulled_by') == own]
     if mine:
         say('as branch %s: its own pulls (%s) take no scope here, so a record overlapping only '
@@ -330,8 +331,8 @@ def narrow_lines(ctx, passed, holding, own):
     pass-over asks for it."""
     if not omod.wants_narrowing(passed):
         return []
-    changes, _notes, unknown = pmod._live_changes(ctx, holding, own)
-    dirty = pmod.live_dirty(ctx, holding, changes)
+    changes, _notes, unknown = plan_narrow._live_changes(ctx, holding, own)
+    dirty = plan_narrow.live_dirty(ctx, holding, changes)
     return omod.narrowings(passed, holding, changes, unknown, dirty)
 
 
@@ -342,7 +343,7 @@ def do_show(args, ctx, snap):
     say('%s  rank %s  %s  (%s)' % (rec.id, omod.rank_label(rec, ranks), bucket, rec.path))
     if rmod.is_owner_held(rec):
         say('OWNER HOLD (%s): %s' % (rmod.owner_hold_label(rec), rec.get('owner_ask')))
-    uses = pmod.uses_shown(snap, ctx, rec)
+    uses = plan_narrow.uses_shown(snap, ctx, rec)
     if uses:
         say(uses)
     say('')
@@ -476,7 +477,7 @@ def do_write(args, ctx, store):
     say('  %s' % change.subject)
     if stale is not None:
         index_stale(stale)
-    # the row a plan found (a collision with a live pull, plan._collision_change) is audited too
+    # the row a plan found (a collision with a live pull, plan_narrow._collision_change) is audited too
     rows.extend(r for r in getattr(change, 'rows', ()) if r not in rows)
     audit_line(args.verb, getattr(args, 'id', None), rows, tip, args.session)
     coordlog.note_backlog(args.verb, getattr(args, 'id', None), getattr(args, 'branch', None))

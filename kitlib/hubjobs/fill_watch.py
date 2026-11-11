@@ -47,8 +47,9 @@ coord_restart.read_offer (the reader coord-restart's wake shares):
              coord_restart.wake_sessions (no `session:` counts for the repo's main coordinator).
              Inference: one live pull is about one slot. The hub cannot see a host's running
              agents, so a pull waiting to land counts as busy and a reviewer is not seen.
-  offered    `next --all` for the same sessions (plan.offer_for, cap None, no fetch), so every
-             collision, hold, other session's record and unmet `requires:` is already passed over.
+  offered    `next --all` for the same sessions (plan_narrow.offer_for, cap None, no fetch), so
+             every collision, hold, other session's record and unmet `requires:` is already
+             passed over.
 The offer judges session liveness as `next` does (coord_restart.session_liveness, from the run's
 own sessions.json and process listing; FillWatch.liveness).
 free = cap - in_flight (at least 0). Free and something offered: one deliver to the coordinator's
@@ -235,7 +236,7 @@ def read_waits(settings, key, entry, session_live=None):
     (offer.outranks, PassedOver.waits), each pair once, read as coord_restart.read_offer reads
     the offer (no fetch, every session of wake_sessions) and with `next`'s narrowing. BacklogUnread
     when it cannot be read, the live pulls' branches included."""
-    from kitlib.backlog import opener, plan
+    from kitlib.backlog import opener, plan_narrow
     from kitlib.backlog import offer as omod
     from kitlib.backlog.errors import Refusal
     from kitlib.config import ConfigError
@@ -252,8 +253,8 @@ def read_waits(settings, key, entry, session_live=None):
                     raise coord_restart.BacklogUnread('the branches could not be read (%s)'
                                                       % why)
             # As `next --all` reads it: no cap, and a record a narrowing clears is offered.
-            _offers, passed, _holding, _own = plan.offer_for(snap, ctx, cap=None, holding=holding,
-                                                             narrow=True)
+            _offers, passed, _holding, _own = plan_narrow.offer_for(snap, ctx, cap=None, holding=holding,
+                                                                    narrow=True)
             for p in passed:
                 for other in p.waits:
                     row = (p.rec.id, p.rec.get('priority'), other.id, other.get('priority'),

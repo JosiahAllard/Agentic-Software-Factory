@@ -1,13 +1,13 @@
 """The topic session (content/roles/topic.md, docs/backlog.md "Roles"): a launched plain session
 marked `topic`, a builder whose writes name only the records batched for its branch
 (`batch: <branch>`, set by a lead), and which files no records (`add` is refused). Its pull of a record batched for its own branch takes the
-whole batch first (plan.batch_members as current_offer's seeds), so rank order is no refusal and
+whole batch first (plan_narrow.batch_members as current_offer's seeds), so rank order is no refusal and
 no `preempt` is written; every other refusal stands. A record batched for one branch is held from
 every other branch's pull and `next`."""
 import tempfile
 import unittest
 
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_narrow
 from kitlib.backlog import policy
 from kitlib.backlog import record as rmod
 from kitlib.backlog import roles as R
@@ -113,12 +113,12 @@ class TopicPull(StoreCase):
         snap = self.store.load()
         for branch in (BRANCH, 'main'):
             with self.subTest(branch=branch):
-                offers, passed, _holding, _own = pmod.offer_for(snap, self.ctx, branch=branch)
+                offers, passed, _holding, _own = plan_narrow.offer_for(snap, self.ctx, branch=branch)
                 self.assertEqual([o.rec.id for o in offers], ['FREE'])
                 self.assertEqual([(p.rec.id, p.why) for p in passed],
                                  [('HELD', 'held for the batch on %s' % OTHER)])
         self.repo.git('branch', OTHER)
-        offers, _passed, _holding, _own = pmod.offer_for(snap, self.ctx, branch=OTHER)
+        offers, _passed, _holding, _own = plan_narrow.offer_for(snap, self.ctx, branch=OTHER)
         self.assertEqual([o.rec.id for o in offers], ['HELD', 'FREE'])
 
 

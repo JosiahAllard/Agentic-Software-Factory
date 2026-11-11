@@ -1,4 +1,4 @@
-"""`delete ID --why T` (kitlib/backlog/plan.py plan_delete; docs/backlog.md
+"""`delete ID --why T` (kitlib/backlog/plan_end.py plan_delete; docs/backlog.md
 "Commands"): the record goes with the subject `deletes ID: <why>`, which history reads as it
 reads `closes` and `retires` (store._last_closing), so `add` again needs `--reopen`, `show`
 names the deleting commit and a `requires: item:` on it is never met. Retire's owner gates; a
@@ -135,7 +135,7 @@ class States(DeleteCase):
 
 
 class RetireShares(DeleteCase):
-    """`retire` runs delete's live-pull guard (plan._refuse_live_pulls): it removes the record
+    """`retire` runs delete's live-pull guard (plan_end._refuse_live_pulls): it removes the record
     just as `delete` does, so a branch building it must release it first."""
 
     def test_a_live_pull_refuses_and_a_dead_one_goes_with_the_record(self):

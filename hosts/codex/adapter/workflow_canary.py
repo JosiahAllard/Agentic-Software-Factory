@@ -236,7 +236,7 @@ def _prepare_or_isolate(task, coordinator, env):
         # The new-worktree/claim workflow remains failed, visibly in the report.
         _git(task.coordinator, ('worktree', 'add', '-q', '-b', task.branch, task.worker), env)
         from kitlib.backlog.opener import NO_PROBES, open_store
-        from kitlib.backlog.plan import plan_pull
+        from kitlib.backlog.plan_claim import plan_pull
         ctx = open_store(task.coordinator, session=task.session, branch=task.branch,
                          probes=NO_PROBES)
         ctx.store.write(lambda snapshot: plan_pull(snapshot, ctx, task.item))

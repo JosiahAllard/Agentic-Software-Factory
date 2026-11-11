@@ -8,6 +8,7 @@ from kitlib.backlog import check as checkmod
 from kitlib.backlog import offer as omod
 from kitlib.backlog import opener
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_narrow
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Failure, Refusal, Usage
@@ -47,8 +48,8 @@ class Base(StoreCase):
 
     def offer(self, cap=5, branch='main', seeds=()):
         snap = self.store.load()
-        offers, passed, _holding, _own = pmod.offer_for(snap, self.ctx, branch=branch, cap=cap,
-                                                        seeds=seeds)
+        offers, passed, _holding, _own = plan_narrow.offer_for(snap, self.ctx, branch=branch, cap=cap,
+                                                               seeds=seeds)
         return [o.rec.id for o in offers], {p.rec.id: p for p in passed}
 
 
@@ -279,12 +280,12 @@ class Load(Base):
                                 resources={'dev-clone': 1, 'gpu': 2})
         self.seed(held('X'), mine('A', uses=['dev-clone', 'gpu', 'nope']))
         snap = self.store.load()
-        self.assertEqual(pmod.uses_shown(snap, self.ctx, snap.get('A')),
+        self.assertEqual(plan_narrow.uses_shown(snap, self.ctx, snap.get('A')),
                          'uses dev-clone (1/1: X on %s), gpu (0/2), nope (not declared in '
                          '.kit.json)' % HOLDER)
         self.seed(mine('B'))
-        self.assertIsNone(pmod.uses_shown(self.store.load(), self.ctx,
-                                          self.store.load().get('B')))
+        self.assertIsNone(plan_narrow.uses_shown(self.store.load(), self.ctx,
+                                                 self.store.load().get('B')))
 
     def test_show_says_when_the_capacity_cannot_be_read(self):
         def broken():
@@ -292,7 +293,7 @@ class Load(Base):
         self.ctx = pmod.Context(self.store, self.repo.root, branch=BRANCH, resources=broken)
         self.seed(mine('A', uses='dev-clone'))
         snap = self.store.load()
-        self.assertEqual(pmod.uses_shown(snap, self.ctx, snap.get('A')),
+        self.assertEqual(plan_narrow.uses_shown(snap, self.ctx, snap.get('A')),
                          'uses dev-clone (capacity not read: bad file)')
 
     def test_a_store_with_no_uses_line_never_reads_the_key(self):

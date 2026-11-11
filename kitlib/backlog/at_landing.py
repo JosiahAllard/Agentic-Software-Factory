@@ -41,6 +41,7 @@ from kitlib.git import repo as gitrepo
 
 from . import offer
 from . import plan as pmod
+from . import plan_claim, plan_end
 from . import record as rmod
 from . import store as smod
 from .errors import Dirty, IndexStale, Overtaken, Refusal, Uncommitted
@@ -303,7 +304,7 @@ def _close_plan(ctx, rid, branch, reason, named=False):
                 not named and rec.get('pulled_by') != branch):
             return smod.Change({}, '', ['%s is no longer pulled%s; left as it is'
                                         % (rid, '' if named else ' by %s' % branch)])
-        return pmod.plan_close(snap, ctx, rid, reason)
+        return plan_end.plan_close(snap, ctx, rid, reason)
     return plan
 
 
@@ -323,7 +324,7 @@ def _release_plan(ctx, rid, branch, reason):
         if rec is None or rec.get('state') != 'pulled' or rec.get('pulled_by') != branch:
             return smod.Change({}, '', ['%s is no longer pulled by %s; left as it is'
                                         % (rid, branch)])
-        change = pmod.plan_release(snap, ctx, rid, reason, kept=False)
+        change = plan_claim.plan_release(snap, ctx, rid, reason, kept=False)
         change.subject = 'releases %s: %s' % (rid, ' '.join(reason.split()))
         return change
     return plan

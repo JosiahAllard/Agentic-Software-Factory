@@ -74,7 +74,7 @@ Claims = collections.namedtuple('Claims', 'index stores pm_root')
 
 def claimed(got, branch):
     """The ids `got` (Claims) holds pulled by `branch`, matched without regard to case as
-    backlog.py matches `pulled_by` (plan.py)."""
+    backlog.py matches `pulled_by` (plan_edit.py, plan_narrow.py)."""
     return got.index.get(branch.lower(), []) if branch else []
 
 DEAD_AFTER_S = 24 * 3600                       # owner answer Q3: 24 h, the sweep's idle bar

@@ -275,7 +275,7 @@ def _review(v, rules=None):
 
 
 # The one spelling of an answer's `at`: no `Z`, no fractional seconds, no compact form, so a
-# repeat filing of one answer matches its line exactly (plan.py plan_answer).
+# repeat filing of one answer matches its line exactly (plan_hold.py plan_answer).
 ANSWER_AT_RE = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
                           r'[+-][0-9]{2}:[0-9]{2}$')
 
@@ -308,7 +308,7 @@ def _narrowed(v, rules):
     """`<original member> <other id> <other branch>`: this record was narrowed off its original
     scope member for the other record, pulled on that branch (docs/commit.md "A narrowed
     record"), one line per (original member, other id). `pull` of a record `next` offers by
-    narrowing writes it on both records (plan.plan_pull); a lead's `set --narrowed` writes it by
+    narrowing writes it on both records (plan_claim.plan_pull); a lead's `set --narrowed` writes it by
     hand and `set --unset narrowed` clears it (the `set-other` row), as `next`'s RESTORE line says.
     commit.py (kitlib/backlog/narrowed.py) and the landing scope check read them."""
     shape = ('`%s` is not a narrowed line - `<original member> <other id> <other branch>`' % v)

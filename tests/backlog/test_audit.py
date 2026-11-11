@@ -17,7 +17,7 @@ from kitlib.host import sessionmark
 from kitlib.backlog import audit
 from kitlib.backlog import audit_check
 from kitlib.backlog import opener
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_end, plan_hold
 from kitlib.backlog import record as rmod
 from kitlib.backlog import roles
 from kitlib.backlog import store as smod
@@ -394,8 +394,8 @@ class AnswerCheck(unittest.TestCase):
         hub's own plan, so only the commit's Session: line tells the writer)."""
         ctx = opener.open_store(self.repo.root, fetch=False, session=session,
                                 probes=opener.NO_PROBES)
-        ctx.store.write(lambda s: pmod.plan_answer(s, ctx, 'FOO', qid, at, 'which way',
-                                                   'this way', role_checked=True))
+        ctx.store.write(lambda s: plan_hold.plan_answer(s, ctx, 'FOO', qid, at, 'which way',
+                                                        'this way', role_checked=True))
 
     def report(self, docs=(), calls=None):
         _top, cfg, rules = opener.open_repo(self.repo.root)
@@ -528,8 +528,8 @@ class AnswerCheck(unittest.TestCase):
         self.add()
         ctx = opener.open_store(self.repo.root, fetch=False, session='kit', probes=opener.NO_PROBES)
         ctx.store.write(lambda s: smod.Change(
-            pmod.plan_answer(s, ctx, 'FOO', 'Q-1001', AT, 'which way', 'this way',
-                             role_checked=True).writes,
+            plan_hold.plan_answer(s, ctx, 'FOO', 'Q-1001', AT, 'which way', 'this way',
+                                  role_checked=True).writes,
             'backlog: catch up 1 record path'))
         self.assertEqual(self.answers(self.report([question()])), [])
         self.assertEqual(len(self.answers(self.report([]))), 1)
@@ -558,7 +558,7 @@ class CheckFolder(unittest.TestCase):
         pmc.PmDataStore.setUp(self)
 
     def test_the_pm_data_worktree_is_read(self):
-        self.store.write(lambda snap: pmod.plan_close(snap, self.ctx, 'BAR', 'the work is done'))
+        self.store.write(lambda snap: plan_end.plan_close(snap, self.ctx, 'BAR', 'the work is done'))
         r = audit_check.check(self.backend, rmod.Rules(), [], 0)
         self.assertEqual(kinds(r), ['UNAUDITED', 'UNKNOWN'])            # the close, then the seed
         self.assertIn('BAR', r.findings[0].text)

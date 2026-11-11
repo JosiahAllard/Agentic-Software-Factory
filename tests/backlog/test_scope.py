@@ -8,6 +8,7 @@ from unittest import mock
 from kitlib.backlog import check as checkmod
 from kitlib.backlog import offer as omod
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_narrow
 from kitlib.backlog import record as rmod
 from kitlib.backlog import scope as smod
 from kitlib.backlog import store as sstore
@@ -255,13 +256,13 @@ class SharedPathCallers(unittest.TestCase):
 
     def test_pull_live_hits_exempt_the_listed_path_and_report_the_share(self):
         held = rparse(pulled('HOLD', LIST))
-        self.assertEqual(len(pmod.live_hits(['docs/**'], [held])), 1)
-        self.assertEqual(pmod.live_hits(['docs/**'], [held], shared=SHARED), [])
-        self.assertEqual(pmod.live_shares(['docs/**'], [held], shared=SHARED),
+        self.assertEqual(len(plan_narrow.live_hits(['docs/**'], [held])), 1)
+        self.assertEqual(plan_narrow.live_hits(['docs/**'], [held], shared=SHARED), [])
+        self.assertEqual(plan_narrow.live_shares(['docs/**'], [held], shared=SHARED),
                          ['shares %s with HOLD (shared path)' % LIST])
-        self.assertEqual(len(pmod.live_hits(['docs/**', 'area/hold/**'],
-                                            [rparse(pulled('HOLD', [LIST, 'area/hold/a.py']))],
-                                            shared=SHARED)), 1)
+        self.assertEqual(len(plan_narrow.live_hits(['docs/**', 'area/hold/**'],
+                                                   [rparse(pulled('HOLD', [LIST, 'area/hold/a.py']))],
+                                                   shared=SHARED)), 1)
 
     def test_check_refuses_a_glob_or_a_folder_and_exempts_a_good_entry(self):
         s = osnap(pulled('ONE', [LIST, 'kit/a.py'], by='kit/one'),

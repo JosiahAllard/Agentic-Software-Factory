@@ -5,6 +5,7 @@ write, and prints both narrowings. Narrowing the other branch's live record is t
 from unittest import mock
 
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_narrow
 from kitlib.backlog import policy
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Refusal
@@ -75,7 +76,7 @@ class PullNarrows(StoreCase):
 
     def test_a_split_without_files_narrows_only_the_puller_s_record_for_any_role(self):
         self.seed_pair(hold_scope='kitlib/x/**', files='')
-        offers, _p, _h, _o = pmod.offer_for(self.store.load(), self.ctx, narrow=True)
+        offers, _p, _h, _o = plan_narrow.offer_for(self.store.load(), self.ctx, narrow=True)
         keep = offers[0].split.keep
         self.assertFalse([m for m in keep if m.startswith('kitlib/x')], keep)
         change = self.pull(may_collide=False)
@@ -88,7 +89,7 @@ class PullNarrows(StoreCase):
 
     def test_t_grown_since_the_offer_is_recomputed_and_the_smaller_keep_written(self):
         self.seed_pair()
-        offers, _p, _h, _o = pmod.offer_for(self.store.load(), self.ctx, narrow=True)
+        offers, _p, _h, _o = plan_narrow.offer_for(self.store.load(), self.ctx, narrow=True)
         self.assertEqual(offers[0].split.keep, ['kitlib/x/b.py', 'kitlib/y/d.py'])
         self.repo.write('kitlib/x/b.py', 'dirty\n', root=self.wt)
         change = self.pull()
@@ -116,8 +117,8 @@ class PullNarrows(StoreCase):
 
     def test_an_unshared_store_never_narrows_the_live_record(self):
         before = self.seed_pair()
-        with mock.patch.object(pmod, '_shared_store', lambda ctx: False):
-            offers, _p, _h, _o = pmod.offer_for(self.store.load(), self.ctx, narrow=True)
+        with mock.patch.object(plan_narrow, '_shared_store', lambda ctx: False):
+            offers, _p, _h, _o = plan_narrow.offer_for(self.store.load(), self.ctx, narrow=True)
             self.assertEqual(offers, [])
             with self.assertRaises(Refusal):
                 self.pull()
@@ -181,7 +182,7 @@ class PullNarrowsTwoHolders(StoreCase):
     def test_one_holder_that_cannot_be_narrowed_narrows_nothing(self):
         # HOLD2's `## Files` cannot be read: no narrowing, though HOLD alone would narrow.
         before = self.seed_three(files2='## Files\n- kitlib/y/**\n')
-        offers, passed, _h, _o = pmod.offer_for(self.store.load(), self.ctx, narrow=True)
+        offers, passed, _h, _o = plan_narrow.offer_for(self.store.load(), self.ctx, narrow=True)
         self.assertEqual(offers, [])
         self.assertIsNotNone([p for p in passed if p.rec.id == 'FOO'][0].pair)
         with self.assertRaises(Refusal) as cm:
@@ -196,10 +197,10 @@ class SharedStore(StoreCase):
     is not the PM data worktree is that checkout's own copy."""
 
     def test_a_ref_store_is_shared(self):
-        self.assertTrue(pmod._shared_store(self.ctx))
+        self.assertTrue(plan_narrow._shared_store(self.ctx))
 
     def test_a_folder_store_outside_the_pm_data_worktree_is_not(self):
         store = smod.Store(smod.MainBackend(self.repo.root, 'docs/backlog'), self.rules)
         ctx = pmod.Context(store, self.repo.root, branch=BRANCH, today=TODAY)
-        self.assertFalse(pmod._shared_store(ctx))
-        self.assertFalse(pmod._shared_store(pmod.Context(None, self.repo.root)))
+        self.assertFalse(plan_narrow._shared_store(ctx))
+        self.assertFalse(plan_narrow._shared_store(pmod.Context(None, self.repo.root)))

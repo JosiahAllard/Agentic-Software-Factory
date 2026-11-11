@@ -8,9 +8,14 @@ import unittest
 from unittest import mock
 
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import (plan_citations, plan_claim, plan_edit, plan_end, plan_hold,
+                            plan_narrow)
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from tests.gitfixture import TempRepo, fixture_env
+
+# The modules a verb's plan_<name> lives in (kitlib/backlog/__init__.py).
+PLAN_MODULES = (pmod, plan_narrow, plan_edit, plan_claim, plan_hold, plan_end, plan_citations)
 from tests.home import temp_home
 
 BASE = [
@@ -169,7 +174,8 @@ class StoreCase(unittest.TestCase):
 
     def verb(self, name, *args, **kw):
         """Run plan_<name> through Store.write; returns the Change."""
-        plan = getattr(pmod, 'plan_' + name)
+        plan = next(getattr(m, 'plan_' + name) for m in PLAN_MODULES
+                    if hasattr(m, 'plan_' + name))
         change, _tip = self.store.write(lambda s: plan(s, self.ctx, *args, **kw))
         return change
 

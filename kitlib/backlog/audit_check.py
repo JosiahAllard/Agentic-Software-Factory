@@ -74,7 +74,7 @@ ANSWER_WRITER = 'owner-hub'
 CATCH_UP = 'backlog: catch up '
 ANSWERED = ('answered', 'filed', 'logged', 'done')
 
-# (subject prefix, verb): kitlib.backlog.plan's (`uncite` among them), retarget's and
+# (subject prefix, verb): the plan_* modules' (`uncite` among them), retarget's and
 # store.catch_up's subjects, and `migrate: `, the subject of a store's first commit in old store
 # history (the store migration's; kept so that history stays audited).
 SUBJECTS = (
@@ -91,7 +91,7 @@ SUBJECTS = (
     ('backlog: retarget ', 'retarget'), ('backlog: uncite ', 'uncite'),
     ('backlog: catch up ', 'catch-up'),
 )
-# Keys only a verb writes (kitlib.backlog.plan.WRITTEN_BY): a `set` that changed them did so
+# Keys only a verb writes (kitlib.backlog.plan_edit.WRITTEN_BY): a `set` that changed them did so
 # itself, so they say nothing about what it was given.
 _SET_WRITES = ('priority_ruling', 'hold_ruling')
 

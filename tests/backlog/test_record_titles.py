@@ -3,14 +3,14 @@
 
 `add` keeps the summary to the title: `--body-file` writes the body at add time, and where the
 finding was made and why it was not folded go into a `## Found` body section, not the summary. The
-CLI refuses a summary over plan.SUMMARY_MAX; the Action Hub's add (no `summary_max`) does not.
+CLI refuses a summary over plan_edit.SUMMARY_MAX; the Action Hub's add (no `summary_max`) does not.
 `priority: -1` no longer marks a record awaiting the owner: `blocked_on: owner` is the only owner
 hold, and a -1 is refused, naming `block --on owner`."""
 import os
 import tempfile
 import unittest
 
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_edit
 from kitlib.backlog import record as rmod
 from kitlib.backlog.errors import Refusal, Usage
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
@@ -49,37 +49,37 @@ class AddBody(StoreCase):
         self.assertTrue(new.body.startswith('## Found\n\nFound on no branch'), new.body)
 
     def test_a_summary_over_the_cap_is_refused_only_when_a_cap_is_given(self):
-        long = 'x' * (pmod.SUMMARY_MAX + 1)
+        long = 'x' * (plan_edit.SUMMARY_MAX + 1)
         with self.assertRaises(Usage) as cm:
-            self.verb('add', 'NEW', long, ['docs/y.md'], summary_max=pmod.SUMMARY_MAX, **ADD_NONE)
+            self.verb('add', 'NEW', long, ['docs/y.md'], summary_max=plan_edit.SUMMARY_MAX, **ADD_NONE)
         self.assertIn('--body-file', str(cm.exception))
         self.assertIn('%d characters' % len(long), str(cm.exception))
         self.assertIsNone(self.get('NEW'))
-        self.verb('add', 'NEW', 'y' * pmod.SUMMARY_MAX, ['docs/y.md'],
-                  summary_max=pmod.SUMMARY_MAX, **ADD_NONE)
+        self.verb('add', 'NEW', 'y' * plan_edit.SUMMARY_MAX, ['docs/y.md'],
+                  summary_max=plan_edit.SUMMARY_MAX, **ADD_NONE)
         self.verb('add', 'HUB', long, ['docs/y.md'], **ADD_NONE)       # the Action Hub's add
         self.assertEqual(self.get('HUB').get('summary'), long)
 
 
 class BodyFile(unittest.TestCase):
-    """plan.read_body_file, which `add --body-file` reads through."""
+    """plan_edit.read_body_file, which `add --body-file` reads through."""
 
     def test_an_empty_body_file_is_usage(self):
         for text in ('', '  \r\n\n', '﻿\n'):
             path = body_file(self, text)
             with self.assertRaises(Usage) as cm:
-                pmod.read_body_file(path)
+                plan_edit.read_body_file(path)
             self.assertIn('is empty', str(cm.exception))
 
     def test_a_missing_body_file_is_usage(self):
         path = os.path.join(tempfile.mkdtemp(), 'nope.md')
         self.addCleanup(os.rmdir, os.path.dirname(path))
         with self.assertRaises(Usage) as cm:
-            pmod.read_body_file(path)
+            plan_edit.read_body_file(path)
         self.assertIn('cannot read `--body-file', str(cm.exception))
 
     def test_a_body_file_drops_its_bom_and_crlf(self):
-        self.assertEqual(pmod.read_body_file(body_file(self, '﻿one\r\ntwo\r\n')),
+        self.assertEqual(plan_edit.read_body_file(body_file(self, '﻿one\r\ntwo\r\n')),
                          'one\ntwo\n')
 
 

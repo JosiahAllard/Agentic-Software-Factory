@@ -257,17 +257,10 @@ def build_message(subject, body, trailers):
     return '\n\n'.join(parts) + '\n'
 
 
-def _git(root, *args, timeout=None):
-    """`(rc, stdout text unstripped, stderr text)`; rc None when git did not run."""
-    kw = {} if timeout is None else {'timeout': timeout}
-    r = cmd.call(list(args), root, **kw)
-    return r.rc, r.out.decode('utf-8', 'replace'), r.err
-
-
 def author_email(root):
     """The author email git will record for a commit in `root`, or None when git cannot say.
     `git var GIT_AUTHOR_IDENT` honours the GIT_AUTHOR_* environment."""
-    rc, out, _ = _git(root, 'var', 'GIT_AUTHOR_IDENT')
+    rc, out, _ = ownerrules.run_git(root, 'var', 'GIT_AUTHOR_IDENT')
     email = ownermod.email_of(out.strip()) if rc == 0 else ''
     return email or None
 
@@ -293,7 +286,8 @@ def owner_identity_error(rules, email):
 def staged_status(root):
     """`{path: status letter}` of every staged change (renames off: A, M or D only); raises _Stop
     when git cannot list them."""
-    rc, out, err = _git(root, 'diff', '--cached', '--name-status', '--no-renames', '-z')
+    rc, out, err = ownerrules.run_git(root, 'diff', '--cached', '--name-status', '--no-renames',
+                                      '-z')
     if rc != 0:
         raise _Stop(REFUSED, 'git diff --cached failed: %s' % (err or 'exit %s' % rc))
     cols = [c for c in out.split('\0') if c]
@@ -473,7 +467,7 @@ def unstage_added(root, rels, status_before, lines):
     """`lines` plus how the index was left, as one refusal text, after resetting the paths among
     `rels` this call staged that were not staged before it."""
     added = sorted(set(rels) - set(status_before))
-    rc, _out, gerr = _git(root, 'reset', '-q', '--', *added) if added else (0, '', '')
+    rc, _out, gerr = ownerrules.run_git(root, 'reset', '-q', '--', *added) if added else (0, '', '')
     return lines + ['Nothing was committed; %s' % (
         'fix it and run this again.' if rc == 0 else
         'the files this call staged are still staged (git reset failed: %s).' % gerr)]
@@ -517,12 +511,12 @@ def left_staged_line(others):
 def head_commit(root):
     """HEAD's commit id, or '' on an unborn branch (HEAD names a branch that does not exist yet).
     Any other failure to read HEAD raises _Stop: an empty tree is never guessed."""
-    rc, out, err = _git(root, 'rev-parse', '-q', '--verify', 'HEAD^{commit}')
+    rc, out, err = ownerrules.run_git(root, 'rev-parse', '-q', '--verify', 'HEAD^{commit}')
     if rc == 0 and out.strip():
         return out.strip()
-    src, ref, _e = _git(root, 'symbolic-ref', '-q', 'HEAD')
+    src, ref, _e = ownerrules.run_git(root, 'symbolic-ref', '-q', 'HEAD')
     if src == 0 and ref.strip():
-        rrc, rout, _e = _git(root, 'rev-parse', '-q', '--verify', ref.strip())
+        rrc, rout, _e = ownerrules.run_git(root, 'rev-parse', '-q', '--verify', ref.strip())
         if rrc == 1 and not rout.strip():
             return ''
     raise _Stop(REFUSED, 'refused: git could not read HEAD (rev-parse HEAD: %s). Nothing was '
@@ -533,7 +527,7 @@ def index_snapshot(root, keep):
     """`{path: (mode, oid), or None for a deletion}`: the real index's entry for each path of
     `keep` ({path: status letter}), read in one `git ls-files --stage`. Raises _Stop when git cannot
     list the index or a kept path is not one stage-0 entry (unmerged, or changed meanwhile)."""
-    rc, out, err = _git(root, 'ls-files', '--stage', '-z')
+    rc, out, err = ownerrules.run_git(root, 'ls-files', '--stage', '-z')
     if rc != 0:
         raise _Stop(REFUSED, 'git ls-files --stage failed: %s. Nothing was committed.'
                     % (err or 'exit %s' % rc))
@@ -700,8 +694,9 @@ def undo_commit(root, new, parent, saved, merged):
     """Point HEAD back at `parent` if it is still `new` (update-ref with the old value), and, when
     `new` is a merge commit (`merged`: it consumed the merge state), write back the merge-state
     files `saved` that it removed. The refusal lines either way."""
-    rc, _out, err = _git(root, 'update-ref', '-m', 'commit.py: undo a commit made on a moved HEAD',
-                         'HEAD', parent, new)
+    rc, _out, err = ownerrules.run_git(root, 'update-ref', '-m',
+                                       'commit.py: undo a commit made on a moved HEAD',
+                                       'HEAD', parent, new)
     if rc != 0:
         return ['refused, and NOT undone: commit %s was made on the moved HEAD and lacks the other '
                 'writer\'s change; git update-ref failed: %s. Undo it by hand: git update-ref HEAD '
@@ -804,7 +799,7 @@ def commit_only(root, head, snap, msg, allow_empty=False):
     gout = r.out.decode('utf-8', 'replace')
     if r.rc != 0:
         return r.rc, gout, r.err, '', [], None
-    rc, out, err = _git(root, 'log', '-1', READ_BACK_FORMAT, 'HEAD')
+    rc, out, err = ownerrules.run_git(root, 'log', '-1', READ_BACK_FORMAT, 'HEAD')
     first, _nl, body = out.partition('\n')
     ids = first.split()
     if rc != 0 or len(ids) < 2:
@@ -843,9 +838,9 @@ def commit_only(root, head, snap, msg, allow_empty=False):
                         % (now[:12], base[:12], ours_base[:12] or 'an unborn branch'))
         return _undo_moved(root, head, now, base, saved, len(parents) > 1)
     if ours_base == head:
-        rc, _out, _err = _git(root, 'merge-base', '--is-ancestor', ours, now)
+        rc, _out, _err = ownerrules.run_git(root, 'merge-base', '--is-ancestor', ours, now)
         if rc == 0:
-            trc, made, _err = _git(root, 'rev-parse', '%s^{tree}' % ours)
+            trc, made, _err = ownerrules.run_git(root, 'rev-parse', '%s^{tree}' % ours)
             return 0, gout, r.err, ours, [
                 'NOTE: another writer has since committed %s on top of this commit.' % now[:12]], (
                     tree, made.strip() if trc == 0 else '')
@@ -883,7 +878,8 @@ def align_index(root, trees, ours):
     built, made = trees
     if made == built:
         return [], []
-    rc, out, err = _git(root, 'diff-tree', '-r', '-z', '--no-renames', built, made) if made else (
+    rc, out, err = ownerrules.run_git(root, 'diff-tree', '-r', '-z', '--no-renames', built,
+                                      made) if made else (
         None, '', 'its tree could not be read')
     if rc != 0:
         return [], ['refused: commit %s stands, but a hook may have changed it, and it could not be '
@@ -894,7 +890,7 @@ def align_index(root, trees, ours):
         meta = cols[i].lstrip(':').split()
         if len(meta) >= 4:
             changed[cols[i + 1]] = (_tree_entry(meta[0], meta[2]), _tree_entry(meta[1], meta[3]))
-    rc, out, err = _git(root, 'ls-files', '--stage', '-z')
+    rc, out, err = ownerrules.run_git(root, 'ls-files', '--stage', '-z')
     if rc != 0:
         return [], ['refused: commit %s stands, but a hook changed %s in it, and the index could '
                     'not be read to bring it into line (%s). Run: git restore --staged --source=%s '
@@ -1022,7 +1018,7 @@ def _stage(req, root, paths, rendered, named, merged, status_before, msg_warning
     to_add = [p for p in paths
               if not (status_before.get(p) == 'D' and not os.path.lexists(os.path.join(root, p)))]
     if to_add:
-        rc, _out, err = _git(root, 'add', '--', *to_add, timeout=None)
+        rc, _out, err = ownerrules.run_git(root, 'add', '--', *to_add, timeout=None)
         if rc != 0:
             raise _Stop(REFUSED, 'git add failed: %s' % (err or 'exit %s' % rc))
     err = oncommit.stage(root, rendered) if rendered else None
@@ -1066,7 +1062,7 @@ def _put_back(root, written, paths, stop_lines):
     was refused once the approved content was written: the files put back, the paths unstaged
     (none was staged before the call: _approval_before_write)."""
     failed = approval.restore(written)
-    rc, _out, gerr = _git(root, 'reset', '-q', '--', *paths)
+    rc, _out, gerr = ownerrules.run_git(root, 'reset', '-q', '--', *paths)
     if not failed and rc == 0:
         return stop_lines + ['The work tree is as it was, and nothing this call staged is staged.']
     return stop_lines + ['The work tree and index could not be put back: %s. Check `git status` by '
@@ -1080,7 +1076,8 @@ def _consume(req, lines):
     did = approval.doc_id(req.owner_approval)
     value = req.consume.strip()
     rc, out, _err = ((1, '', '') if not value or value.startswith('-')
-                     else _git(req.root, 'rev-parse', '-q', '--verify', value + '^{commit}'))
+                     else ownerrules.run_git(req.root, 'rev-parse', '-q', '--verify',
+                                             value + '^{commit}'))
     sha = out.strip()
     if rc != 0 or not sha:
         raise _Stop(REFUSED, 'refused: --consume %s is not a commit here. Nothing was consumed.'
@@ -1246,7 +1243,7 @@ def _commit(req, lines):
         if written is None:
             raise
         raise _Stop(stop.code, *_put_back(root, written, paths, stop.lines))
-    _rc, short, _err = _git(root, 'rev-parse', '--short', new)
+    _rc, short, _err = ownerrules.run_git(root, 'rev-parse', '--short', new)
     lines.append('committed %s  %s' % (short.strip() or new[:12], req.subject))
     lines.append('files     %s' % (', '.join(
         paths + sorted((merged & set(status_after)) - set(paths))) or 'none (--allow-empty)'))

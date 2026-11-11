@@ -406,7 +406,7 @@ def describe(rules, bad, limit=5):
                    '.kit.json); ask the owner to make the change')
 
 
-def _run(root, *args, timeout=None):
+def run_git(root, *args, timeout=None):
     """`(rc, stdout text unstripped, stderr text)`; rc None when git did not run."""
     kw = {} if timeout is None else {'timeout': timeout}
     r = cmd.call(list(args), root, **kw)
@@ -442,7 +442,7 @@ def index_entry(root, path):
     """`(known, entry)`: `path`'s staged index entry as `(mode, oid)`, or None when the index holds
     none (a staged deletion). `known` is False when git cannot say, or when the path is unmerged
     (a conflict stage is in the index): nothing is proven then."""
-    rc, out, _ = _run(root, 'ls-files', '--stage', '-z', '--', path)
+    rc, out, _ = run_git(root, 'ls-files', '--stage', '-z', '--', path)
     if rc != 0:
         return False, None
     rows = _entries(out, path)
@@ -456,7 +456,7 @@ def index_entry(root, path):
 def tree_entry(root, rev, path):
     """`(known, entry)`: `path`'s entry in commit `rev` as `(mode, oid)`, or None when the commit
     has none (it deleted the path). `known` is False when git cannot say."""
-    rc, out, _ = _run(root, 'ls-tree', '-z', rev, '--', path)
+    rc, out, _ = run_git(root, 'ls-tree', '-z', rev, '--', path)
     if rc != 0:
         return False, None
     rows = _entries(out, path)
@@ -469,7 +469,7 @@ def tree_entry(root, rev, path):
 
 def merge_bases(root, head):
     """Every merge base of HEAD and `head`, or None when git cannot say (or finds none)."""
-    rc, out, _ = _run(root, 'merge-base', '--all', 'HEAD', head)
+    rc, out, _ = run_git(root, 'merge-base', '--all', 'HEAD', head)
     bases = out.split() if rc == 0 else []
     return bases or None
 
@@ -500,7 +500,7 @@ def dropped_owner_changes(root, rules, heads):
     if len(heads) != 1:
         return []
     bases = merge_bases(root, heads[0])
-    rc, out, _ = _run(root, 'diff', '--name-only', '--no-renames', '-z', 'HEAD', heads[0])
+    rc, out, _ = run_git(root, 'diff', '--name-only', '--no-renames', '-z', 'HEAD', heads[0])
     if not bases or rc != 0:
         return []
     dropped = []
@@ -534,12 +534,12 @@ def merge_owned(root, rules, staged, heads, landed=(), join=True):
     candidates = set(staged)
     if len(heads) != 1 or not candidates:
         return set(), None
-    rc, out, err = _run(root, 'merge-tree', '--write-tree', '--name-only', '--no-messages', '-z',
-                        'HEAD', heads[0])
+    rc, out, err = run_git(root, 'merge-tree', '--write-tree', '--name-only', '--no-messages', '-z',
+                           'HEAD', heads[0])
     tree, conflicted = parse_merge_tree(out) if rc in (0, 1) else ('', set())
     if not tree:
         return set(), 'git merge-tree failed (rc %s): %s' % (rc, err or out.strip() or 'no output')
-    rc, out, err = _run(root, 'diff', '--cached', '--name-only', '--no-renames', '-z', tree)
+    rc, out, err = run_git(root, 'diff', '--cached', '--name-only', '--no-renames', '-z', tree)
     if rc != 0:
         return set(), 'git diff --cached against the merge result failed: %s' % (err or 'no output')
     differs = {p for p in out.split('\0') if p}
@@ -566,11 +566,11 @@ def merge_attribute_unset(root, path):
     driver to every path whose attribute is unspecified); anything else, or a git that cannot
     say, is False: a merge driver (merge=union, -merge, a custom one) makes a result
     merge-tree's alone does not prove."""
-    rc, _, _ = _run(root, 'config', '--get', 'merge.default')
+    rc, _, _ = run_git(root, 'config', '--get', 'merge.default')
     if rc != 1:                     # 0: a driver is set; any other code: git could not say
         return False
     for extra in ((), ('--cached',)):
-        rc, out, _ = _run(root, 'check-attr', '-z', *extra, 'merge', '--', path)
+        rc, out, _ = run_git(root, 'check-attr', '-z', *extra, 'merge', '--', path)
         fields = out.split('\0') if rc == 0 else []
         if len(fields) < 3 or fields[0] != path or fields[2] != 'unspecified':
             return False

@@ -67,7 +67,7 @@ class Hub(object):
     client.Client whose transport calls it in process. `asked` lists each call."""
 
     def __init__(self, test, checkout):
-        folder = tempfile.mkdtemp(prefix='kit-hubapprove-')
+        folder = tempfile.mkdtemp(prefix='kit-ownerfiles-')
         test.addCleanup(shutil.rmtree, folder, True)
         store_dir = os.path.join(folder, 'store')
         os.makedirs(store_dir)
@@ -104,7 +104,7 @@ class Case(unittest.TestCase):
         self.repo.git('remote', 'add', 'origin', URL)
         own(self.repo.root)
         self.hub = Hub(self, self.repo.root)
-        self.dir = tempfile.mkdtemp(prefix='kit-hubapprove-content-')
+        self.dir = tempfile.mkdtemp(prefix='kit-ownerfiles-content-')
         self.addCleanup(shutil.rmtree, self.dir, True)
 
     def content(self, data, name='proposed.txt'):

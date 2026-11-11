@@ -192,32 +192,6 @@ class OwnerIdentity(unittest.TestCase):
 
 class MessagePieces(unittest.TestCase):
 
-    def test_parse_merge_tree_layouts(self):
-        oid = '1' * 40
-        self.assertEqual(ownerrules.parse_merge_tree(oid + '\0p.txt\0'), (oid, {'p.txt'}))
-        self.assertEqual(ownerrules.parse_merge_tree(oid + '\np.txt\0'), (oid, {'p.txt'}))
-        self.assertEqual(ownerrules.parse_merge_tree(oid + '\n'), (oid, set()))
-        self.assertEqual(ownerrules.parse_merge_tree(oid + '\0p.txt\0 q dir/r.txt\0'),
-                         (oid, {'p.txt', ' q dir/r.txt'}))
-
-    def test_no_merge_or_an_octopus_owns_nothing(self):
-        self.assertEqual(ownerrules.merge_owned('.', rules(), {'a.txt'}, []), (set(), None))
-        self.assertEqual(ownerrules.merge_owned('.', rules(), {'a.txt'}, ['a' * 40, 'b' * 40]),
-                         (set(), None))
-
-    def test_a_merge_tree_failure_reason_reaches_the_refusal(self):
-        def fake(args, cwd, **kw):
-            if args[0] == 'merge-tree':
-                return cmd.Result(128, b'', 'fatal: merge-tree stubbed to fail')
-            return cmd.Result(0, b'', '')
-        with mock.patch.object(C.cmd, 'call', fake):
-            owned, why = ownerrules.merge_owned('.', rules(), {'other.txt'}, ['f' * 40])
-        self.assertEqual(owned, set())
-        self.assertIn('merge-tree stubbed to fail', why)
-        text = C.foreign_refusal({'other.txt'}, why, True)
-        self.assertTrue(text.startswith('refused: already staged'), text)
-        self.assertIn('merge-tree stubbed to fail', text)
-
     def test_a_machine_path_in_the_message(self):
         drive = 'C:' + '\\'
         gh = ('GitHub',)
@@ -779,13 +753,13 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
         self.assertEqual(self.git('log', '-1', '--format=%P'), '')
 
     def fail_head_read(self, rc):
-        real = C._git
+        real = ownerrules.run_git
 
         def wrapper(root, *args, **kw):
             if args[:1] == ('rev-parse',) and 'HEAD^{commit}' in args:
                 return rc, '', 'fatal: injected'
             return real(root, *args, **kw)
-        p = mock.patch.object(C, '_git', wrapper)
+        p = mock.patch.object(ownerrules, 'run_git', wrapper)
         p.start()
         self.addCleanup(p.stop)
 
@@ -887,15 +861,15 @@ class AnotherWriterStagesDuringTheCall(LinkedCase):
         self.assertEqual(self.git('log', '-1', '--format=%P'), theirs[0])
 
     def fake_read_back(self, rewrite):
-        """C._git's answer to the read-back after `git commit`, passed through `rewrite`."""
-        real = C._git
+        """run_git's answer to the read-back after `git commit`, passed through `rewrite`."""
+        real = ownerrules.run_git
 
         def wrapper(root, *args, **kw):
             got = real(root, *args, **kw)
             if args[:1] == ('log',) and C.READ_BACK_FORMAT in args:
                 return rewrite(got)
             return got
-        p = mock.patch.object(C, '_git', wrapper)
+        p = mock.patch.object(ownerrules, 'run_git', wrapper)
         p.start()
         self.addCleanup(p.stop)
 

@@ -968,13 +968,14 @@ class SweepNewest(unittest.TestCase):
         newest = self.put('sub/new', 3000)
         self.put('index', 5000)
         self.put('logs/HEAD', 6000)
-        for folder in ('sub', 'logs', ''):
+        for folder in ('sub', 'logs'):
             os.utime(os.path.join(self.dir, folder), (2000, 2000))
+        os.utime(self.dir, (9000, 9000))
         for name, kwargs, want in [
-            ('everything counts', {}, (6000, None)),
-            ('a dropped folder is not read', {'drop': ('logs',)}, (5000, None)),
-            ('a skipped name at the top is left out', {'skip': ('index',), 'drop': ('logs',)},
-             (3000, newest)),
+            ('the top counts when nothing is skipped', {}, (9000, None)),
+            ('a skip leaves out the top too', {'skip': ('index',)}, (6000, None)),
+            ('a skipped name and a dropped folder are left out',
+             {'skip': ('index',), 'drop': ('logs',)}, (3000, newest)),
         ]:
             with self.subTest(name):
                 got, why = sweep.newest(self.dir, 'the tree', **kwargs)

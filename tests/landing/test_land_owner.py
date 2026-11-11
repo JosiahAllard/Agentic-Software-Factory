@@ -31,6 +31,16 @@ class OwnerLandCase(test_land.LandCase):
         self.repo.git(*args, cwd=wt)
         return wt, self.repo.git('rev-parse', 'HEAD', cwd=wt)
 
+    def move_main(self, files):
+        """An owner commit of `files` on main, pushed: the new main."""
+        for rel, text in files.items():
+            self.repo.write(rel, text)
+        self.repo.git('add', '--', *files)
+        self.repo.git('-c', 'user.email=%s' % OWNER, 'commit', '-q', '-m', 'main moves on')
+        self.main = self.repo.git('rev-parse', 'HEAD')
+        self.repo.git('push', '-q', 'origin', 'main')
+        return self.main
+
 
 class OwnerPaths(OwnerLandCase):
     def test_an_agent_commit_to_an_owner_only_path_is_refused_before_any_merge(self):
@@ -94,6 +104,21 @@ class OwnerPaths(OwnerLandCase):
         tip = self.repo.git('rev-parse', 'HEAD', cwd=wt)
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
+
+    def test_an_agent_merge_that_only_joins_both_deletions_lands(self):
+        lines = ['line %d\n' % n for n in range(1, 8)]
+        self.move_main({'CLAUDE.md': ''.join(lines)})
+        wt, _ = self.branch_as(OWNER, {'CLAUDE.md': ''.join(lines[:2] + lines[3:])})
+        self.move_main({'CLAUDE.md': ''.join(lines[:3] + lines[4:])})
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'merge', '-q', '--no-ff', '--no-commit', 'main',
+                      cwd=wt, check=False)
+        self.repo.write('CLAUDE.md', ''.join(lines[:2] + lines[4:]), root=wt)
+        self.repo.git('add', 'CLAUDE.md', cwd=wt)
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'commit', '-q', '--no-edit', cwd=wt)
+        tip = self.repo.git('rev-parse', 'HEAD', cwd=wt)
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.remote_main(), out.merge)
 
     def test_an_agent_change_then_revert_of_an_owner_only_path_lands(self):
         wt, edit = self.branch_as(AGENT, {'CLAUDE.md': 'agent\n', 'a.py': 'a\n'})
@@ -163,16 +188,6 @@ class OwnerApproval(OwnerLandCase):
         patcher = mock.patch.object(ownerrules, 'default_approvals', lambda: hub)
         patcher.start()
         self.addCleanup(patcher.stop)
-
-    def move_main(self, files):
-        """An owner commit of `files` on main, pushed: the new main."""
-        for rel, text in files.items():
-            self.repo.write(rel, text)
-        self.repo.git('add', '--', *files)
-        self.repo.git('-c', 'user.email=%s' % OWNER, 'commit', '-q', '-m', 'main moves on')
-        self.main = self.repo.git('rev-parse', 'HEAD')
-        self.repo.git('push', '-q', 'origin', 'main')
-        return self.main
 
     def test_an_approved_commit_on_a_main_moved_by_other_paths_lands(self):
         approved_on = self.main

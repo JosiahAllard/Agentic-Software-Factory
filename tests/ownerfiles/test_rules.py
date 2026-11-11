@@ -577,6 +577,133 @@ class MergesOnRealGit(MergeCase):
                          [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
 
 
+SIX = b''.join(b'line %d\n' % n for n in range(1, 7))
+
+
+def drop(text, *numbers):
+    """`text` (bytes) without its lines `numbers` (1-based)."""
+    rows = text.splitlines(keepends=True)
+    return b''.join(r for n, r in enumerate(rows, 1) if n not in numbers)
+
+
+class CombinesDeletions(unittest.TestCase):
+    """oc.combines_deletions: a merge's copy that only joins the deletions both sides made from
+    the base (ours drops line 2, theirs line 5, unless a case says otherwise)."""
+
+    O, T = drop(SIX, 2), drop(SIX, 5)
+    BOTH = drop(SIX, 2, 5)
+    CRLF = SIX.replace(b'\n', b'\r\n')
+    CASES = [
+        # (name, ours, theirs, result, bases, combines)
+        ("both sides' deletions", O, T, BOTH, [SIX], True),
+        ('the same deletion on both sides', O, O, O, [SIX], True),
+        ('CRLF lines deleted', drop(CRLF, 2), drop(CRLF, 5), drop(CRLF, 2, 5), [CRLF], True),
+        ('one copy of a duplicate deleted', b'a\nb\n', b'a\na\n', b'a\n', [b'a\na\nb\n'], True),
+        ('a line one side deleted kept', O, T, T, [SIX], False),
+        ('a new line', O, T, BOTH + b'new\n', [SIX], False),
+        ('a line moved', O, T, drop(SIX, 2, 3, 5).replace(b'line 4\n', b'line 4\nline 3\n'),
+         [SIX], False),
+        ('a line both kept dropped', O, T, drop(SIX, 2, 3, 5), [SIX], False),
+        ("both copies of a duplicate dropped", b'a\nb\n', b'a\na\n', b'', [b'a\na\nb\n'], False),
+        ("one side's addition dropped", SIX + b'added\n', T, T, [SIX], False),
+        ('an addition against one base of two', SIX + b'added\n', SIX, SIX,
+         [SIX + b'added\n', SIX], False),
+        ('a changed line end is a change', O, T, BOTH.replace(b'line 1\n', b'line 1\r\n'), [SIX],
+         False),
+        ('the last line end dropped', O, T, BOTH[:-1], [SIX], False),
+        ('a NUL byte', O + b'\0', T + b'\0', BOTH + b'\0', [SIX + b'\0'], False),
+        ('no base', O, T, BOTH, [], False),
+    ]
+
+    def test_the_table(self):
+        for name, ours, theirs, result, bases, combines in self.CASES:
+            with self.subTest(name):
+                self.assertIs(oc.combines_deletions(ours, theirs, result, bases), combines)
+
+
+@real_git('commit-tree for a forged parent and an octopus merge: the fake has none')
+class DeletionMerges(OwnerCommitsCase):
+    """oc.violations and a two-parent commit whose owner-only copy only joins the deletions both
+    sides made (deletion_merge): the merge is not a violation; any other resolution is, and every
+    commit on either side is still judged on its own."""
+
+    def setUp(self):
+        OwnerCommitsCase.setUp(self)
+        self.base = self.commit_as(OWNER, 'base', {'CLAUDE.md': LINES})
+        self.wt = self.repo.worktree('x')
+        self.ours = self.commit_as(OWNER, 'branch drops line 3', {'CLAUDE.md': self.without(3)},
+                                   cwd=self.wt)
+        self.main = self.commit_as(OWNER, 'main drops line 4', {'CLAUDE.md': self.without(4)})
+
+    @staticmethod
+    def without(*numbers):
+        return drop(LINES.encode(), *numbers).decode()
+
+    def resolve(self, text):
+        """Merge main into the branch (CLAUDE.md conflicts), resolve it to `text`, commit as the
+        agent; returns the merge."""
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'merge', '-q', '--no-ff', '--no-commit',
+                      'main', cwd=self.wt, check=False)
+        self.assertIn('CLAUDE.md', self.repo.git('diff', '--name-only', '--diff-filter=U',
+                                                 cwd=self.wt))
+        self.repo.write('CLAUDE.md', text, root=self.wt)
+        self.repo.git('add', 'CLAUDE.md', cwd=self.wt)
+        self.repo.git('-c', 'user.email=%s' % AGENT, 'commit', '-q', '--no-edit', cwd=self.wt)
+        return self.repo.git('rev-parse', 'HEAD', cwd=self.wt)
+
+    def forge(self, text, *parents):
+        """An agent's commit of CLAUDE.md = `text` with `parents`, made with commit-tree."""
+        self.repo.write('CLAUDE.md', text, root=self.wt)
+        self.repo.git('add', 'CLAUDE.md', cwd=self.wt)
+        tree = self.repo.git('write-tree', cwd=self.wt)
+        args = []
+        for p in parents:
+            args += ['-p', p]
+        return self.repo.git('-c', 'user.email=%s' % AGENT, 'commit-tree', tree, *args, '-m',
+                             'forged', cwd=self.wt)
+
+    def test_a_merge_that_only_joins_both_deletions_is_not_a_violation(self):
+        merge = self.resolve(self.without(3, 4))
+        self.assertEqual(self.bad(merge), [])
+        self.assertEqual(oc.changed(self.repo.root, merge, [self.ours, self.main])[0],
+                         ['CLAUDE.md'])               # the merge does change it: the rule passes it
+
+    def test_any_other_resolution_is_a_violation(self):
+        # (A copy equal to main's is a main sync, not counted on that main: Merges.)
+        for name, text in [('a deleted line kept', self.without(3)),
+                           ('a line added', self.without(3, 4) + 'agent\n'),
+                           ('a line both kept dropped', self.without(3, 4, 5))]:
+            with self.subTest(name):
+                self.repo.git('reset', '-q', '--hard', self.ours, cwd=self.wt)
+                merge = self.resolve(text)
+                self.assertEqual(self.bad(merge), [oc.Violation(merge, AGENT, ['CLAUDE.md'])])
+
+    def test_a_forged_parent_is_judged_on_its_own(self):
+        forged = self.forge(self.without(1, 2, 3), self.base)
+        merge = self.forge(self.without(1, 2, 3, 4), forged, self.main)
+        self.assertEqual(self.bad(merge), [oc.Violation(forged, AGENT, ['CLAUDE.md'])])
+
+    def test_an_octopus_merge_is_a_violation(self):
+        other = self.forge(self.without(3), self.base)
+        merge = self.forge(self.without(3, 4), self.ours, self.main, other)
+        self.assertIn(oc.Violation(merge, AGENT, ['CLAUDE.md']), self.bad(merge))
+
+    def test_a_git_failure_is_an_error_not_a_pass(self):
+        merge = self.resolve(self.without(3, 4))
+        real = oc.cmd.call
+        for verb, said in [('cat-file', 'fatal: bad object'),
+                           ('merge-base', 'git merge-base --all failed'),
+                           ('ls-tree', 'git ls-tree could not list CLAUDE.md')]:
+            def call(args, *a, **kw):
+                if verb in args and '-r' not in args and '--is-ancestor' not in args:
+                    return oc.cmd.Result(128, b'', 'fatal: bad object')
+                return real(args, *a, **kw)
+            with self.subTest(verb), mock.patch.object(oc.cmd, 'call', call):
+                found, why = oc.violations(self.repo.root, self.rules, merge, [self.main])
+                self.assertIsNone(found)
+                self.assertIn(said, why)
+
+
 class MergeTreePieces(unittest.TestCase):
     """The merge-tree parse and merge_owned on their own (moved from tests/commit)."""
 

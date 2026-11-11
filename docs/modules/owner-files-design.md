@@ -12,6 +12,7 @@ Low-level design of `kitlib/ownerfiles` and `kitlib/delegations`. The high-level
 - **An approval holds until its change is on main**, with a 30-day backstop from the decision. A rebuild, rebase, merge or re-land that carries the same change needs no second approval. Only lines added or removed beyond what was approved need a new one. Once a commit main reaches carries the trailer, the approval is spent and any other commit carrying it is refused.
 - **A sync merge carries an owner-only path** with no new approval when the staged copy equals `git merge-tree`'s result, the path is not conflicted, and every commit on either side that changed it is the owner's or approved. A rename, a mode change, a non-default merge attribute or an octopus merge refuses. Merge-tree only, never merge-file.
 - **Shrink-only paths** (`owner.shrink_only`): a one-parent commit that only deletes lines of such a path needs no approval.
+- **A merge that only deletes** needs no new approval: a two-parent merge whose copy of an owner-only file only combines its parents' deletions. It adds, moves or re-ends no line, keeps no deleted line and drops no kept line. The agent may resolve such a conflict and commit it, the one owner-only write an agent makes. Each side's commits are still judged on their own.
 - **Everything fails closed**: a git failure, a hub that cannot be asked, a merge or root commit carrying an approval, any doubt.
 - **The delegation list** (`delegations`) is the owner's own file naming the operations the PM may run on the owner's behalf. It is read, never written, by the kit; the guard closes it to agents. A run checks its preconditions, places itself, and where the list says so takes a one-run hub approval. Checks that read an app (the PM start checklist) are handed in by the entry point.
 
@@ -19,7 +20,7 @@ Low-level design of `kitlib/ownerfiles` and `kitlib/delegations`. The high-level
 
 | Path | Holds |
 |---|---|
-| `ownerfiles/rules.py` | Which commits and merges touch owner-only paths: `violations`, the net change, shrink-only, the clean-merge rule |
+| `ownerfiles/rules.py` | Which commits and merges touch owner-only paths: `violations`, the net change, shrink-only, the clean-merge rule, the merge of deletions (`deletion_merge`) |
 | `ownerfiles/approvals.py` | The approval record: the delta rule, verify, consume, spent, the 30-day life |
 | `ownerfiles/request.py` | Building a request from a checkout (the CLI and the hub MCP tool call it) |
 | `ownerfiles/apply.py` | The hub's apply of an approved change on the request's branch in its linked worktree: checks, a commit on a private index, the branch moved by compare-and-swap, files and index written, put back on a failure |

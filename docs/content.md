@@ -33,7 +33,7 @@ renderer).
 | key | value |
 |---|---|
 | `name` | the file's stem |
-| `description` | one line: plain, or quoted as YAML needs (a `: ` inside) |
+| `description` | one line: plain, or quoted as YAML needs (a `: ` inside). The dispatch trigger only: every session holds every agent type's description, so the routing detail is in skill coordinator-dispatch's roster.md. At most 160 characters once each host fills its tokens (`DESCRIPTION_MAX`, checked by each renderer: `{{tool:dispatch}}` and `{{launch_agent}}` fill much longer on Codex) |
 | `tier` | `light`, `standard`, `strong` or `deep`; each host maps a tier to a model (docs/ROSTER.md) |
 | `effort` | optional: `low`, `medium`, `high`, `xhigh`, `max` |
 | `sandbox` | `read-only` or `workspace-write` |

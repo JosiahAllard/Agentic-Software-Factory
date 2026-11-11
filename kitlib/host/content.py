@@ -94,6 +94,9 @@ TOKENS = ARG_TOKENS + ('profile_path', 'coordinator_profile_path', 'instructions
                        'launch_agent')
 REQUIRED = ('name', 'description', 'tier', 'sandbox', 'capabilities')
 OPTIONAL = ('effort', 'cache', 'compact', 'mode', 'writes', 'group', 'run', 'summary')
+# A description's longest, in characters, once a host fills its tokens: every agent type's
+# description is in every session's context, so it holds the dispatch trigger only (docs/content.md).
+DESCRIPTION_MAX = 160
 
 _FM = re.compile(r'\A---(\r?\n)(.*?)\r?\n---\r?\n', re.S)
 _TOKEN = re.compile(r'\{\{([a-z_]+)(?::([a-z0-9-]+))?\}\}')
@@ -216,6 +219,15 @@ def quote(value):
     if not needs_quotes(value):
         return value
     return '"%s"' % value.replace('\\', '\\\\').replace('"', '\\"')
+
+
+def capped(description, source):
+    """`description`, a role's description with one host's tokens filled; a ContentError when it is
+    longer than DESCRIPTION_MAX. Each host's renderer calls it, since its tokens fill to its own lengths."""
+    if len(description) > DESCRIPTION_MAX:
+        raise ContentError('%s: description is %d characters once rendered, over %d'
+                           % (source, len(description), DESCRIPTION_MAX))
+    return description
 
 
 def _list(value, label):

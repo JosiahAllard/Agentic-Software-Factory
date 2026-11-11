@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: worker
-description: Default coder for routine low- and medium-risk work - additive content, UI, pure logic with tests, small known-cause fixes (even on a High-risk path; the review stays strong), behaviour-neutral moves, plan-only and sync work. Otherwise networking, concurrency, ordering, CI, crash hunts or design go to `pm-kit:strong-worker` or `pm-kit:senior-worker`; small, well-defined low-risk changes can go to `pm-kit:weak-worker`.
+description: "Default coder for routine low- and medium-risk work: additive content, UI, pure logic with tests, small known-cause fixes, moves, plan-only and sync work."
 model: sonnet
 effort: medium
 experimental:

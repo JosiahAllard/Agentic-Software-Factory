@@ -55,7 +55,9 @@ class DispatchNamesTest(unittest.TestCase):
             with self.subTest(file=rel):
                 self.assertEqual([b for b in bad if (rel, b[1]) not in ALLOWED], [],
                                  '%s names a kit agent without %r' % (rel, agentname.PREFIX))
-        self.assertGreater(seen, 10, 'the scan found almost no qualified names: is it reading the files?')
+        # The descriptions held most qualified names until they were cut to the dispatch trigger
+        # (docs/content.md "Role front matter"); the two main-session launch lines and the bodies keep a few.
+        self.assertGreater(seen, 3, 'the scan found almost no qualified names: is it reading the files?')
 
     def test_the_scan_catches_each_form_and_passes_the_qualified_one(self):
         p = agentname.PREFIX

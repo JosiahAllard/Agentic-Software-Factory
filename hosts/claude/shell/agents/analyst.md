@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/analyst.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: analyst
-description: Read-only analyst - reviews a design before it is built or one branch after it, against its author's brief, researches a question (new modes, features, prior art, fit with this codebase), or critiques one round of art against its style sheet. Reports findings or concepts with evidence; never edits, builds, runs tests or lands, and never reviews its own change. Needs the brief and the design or diff range for a review, the question, settled constraints and what to read for research, or the style sheet and the builder's sheet and numbers for a critique.
+description: "Read-only analyst: reviews a design or a branch against its brief, researches a question, or critiques one round of art. Never edits, builds, tests or lands."
 tools: Read, Grep, Glob, Bash, WebSearch, WebFetch, Skill
 model: haiku
 effort: high

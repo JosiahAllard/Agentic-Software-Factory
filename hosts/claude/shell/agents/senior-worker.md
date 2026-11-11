@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/senior-worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: senior-worker
-description: "High-risk changes, builds and designs included - networking, concurrency, simulation or ordering, migrations, CI config, landing, gate or lock tools, build-cache correctness and codegen design, known-area crash fixes, changes nobody can observe directly - and what strong-worker hands up. Defeated: a deep-worker session (skill coordinator-dispatch). Never landings, record-keeping, moves or routine changes."
+description: "High-risk builds and designs: networking, concurrency, ordering, migrations, CI config, landing, gate or lock tools, build-cache or codegen design, crash fixes."
 model: opus
 effort: high
 ---

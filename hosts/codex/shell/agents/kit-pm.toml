@@ -2,7 +2,7 @@
 # Review template: do not install until live acceptance (hosts/codex/README.md).
 # Codex hooks do not see which agent runs: hosts/codex/README.md, "Not verified".
 name = "kit-pm"
-description = "The project manager, the owner's one session across every repository. Run as the MAIN session (`python <kit>/hosts/codex/shell/scripts/launch.py --role kit-pm`), never a subagent. Keeps coordinators running, relays and logs owner decisions, schedules heavy work, runs the Action Hub. Writes no repository code."
+description = "The project manager, the owner's one session. Run as the MAIN session (`python <kit>/hosts/codex/shell/scripts/launch.py --role kit-pm`), never a subagent."
 model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 developer_instructions = """

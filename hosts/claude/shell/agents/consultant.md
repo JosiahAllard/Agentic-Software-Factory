@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/consultant.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: consultant
-description: NEVER dispatch with the Agent tool. A long-lived launched session per repository (`launch.py consultant`), named consultant-<repo>, that answers coordinators' and workers' engineering questions and owns those calls. Never edits, lands or dispatches. Ask it by SendMessage.
+description: "NEVER dispatch with the Agent tool: a session per repo (`launch.py consultant`) for engineering questions."
 model: opus
 effort: high
 ---

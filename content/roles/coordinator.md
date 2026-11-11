@@ -1,6 +1,6 @@
 ---
 name: coordinator
-description: Multi-agent coordinator, run as the MAIN session (`{{launch_agent}} {{agent:coordinator}}`), never a subagent. Splits work into workstreams, dispatches agents, reviews every design and branch, queues LAND verdicts for landing, brings decisions to the owner. Writes no code.
+description: Multi-agent coordinator, run as the MAIN session (`{{launch_agent}} {{agent:coordinator}}`), never a subagent. Writes no code.
 tier: strong
 effort: medium
 sandbox: workspace-write

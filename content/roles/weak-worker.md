@@ -1,6 +1,6 @@
 ---
 name: weak-worker
-description: "A coder for small, well-defined, low-risk changes sized by what the brief lists (named files, named edits, a few files) - a doc line, a small additive change with its test, a mechanical fix with a known cause. Runs on {{model:light}} at high effort (worker is {{model:standard}}/medium). Escalate to `{{agent:worker}}` when the task is bigger or less clear than briefed. Never for plans, designs, moves or renames, merges or syncs, networking, concurrency, CI config, crash hunts or anything the profile marks Medium or High risk: those go to `{{agent:worker}}` or above. Repository specifics come from `{{profile_path}}`."
+description: "Small, well-defined, low-risk changes the brief names exactly: a doc line, a small additive change with its test, a mechanical fix with a known cause."
 tier: light
 effort: high
 compact: 170000

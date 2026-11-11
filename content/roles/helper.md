@@ -1,6 +1,6 @@
 ---
 name: helper
-description: Bulk menial reads and mechanical bulk writes for the agent that dispatches it, in that agent's worktree. Read and edit work only: runs no shell command, so no commit, gate, test or landing. Needs the exact files and the exact change or question; the caller checks every result.
+description: "Bulk menial reads and mechanical bulk writes in the caller's worktree. Read and edit only: no shell, so no commit, test or landing. Needs exact files."
 tier: light
 effort: medium
 compact: 170000

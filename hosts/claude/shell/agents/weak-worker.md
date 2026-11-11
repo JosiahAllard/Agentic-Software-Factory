@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/weak-worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: weak-worker
-description: "A coder for small, well-defined, low-risk changes sized by what the brief lists (named files, named edits, a few files) - a doc line, a small additive change with its test, a mechanical fix with a known cause. Runs on haiku at high effort (worker is sonnet/medium). Escalate to `pm-kit:worker` when the task is bigger or less clear than briefed. Never for plans, designs, moves or renames, merges or syncs, networking, concurrency, CI config, crash hunts or anything the profile marks Medium or High risk: those go to `pm-kit:worker` or above. Repository specifics come from `.claude/agent-profile.md`."
+description: "Small, well-defined, low-risk changes the brief names exactly: a doc line, a small additive change with its test, a mechanical fix with a known cause."
 model: haiku
 effort: high
 autoCompactWindow: 170000

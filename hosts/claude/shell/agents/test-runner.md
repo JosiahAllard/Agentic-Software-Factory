@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/test-runner.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: test-runner
-description: Runs a repository's test tiers in a given worktree and reports only PASS/FAIL plus failing lines, keeping verbose output out of your context. Must be told the worktree, the tiers, and ports for anything networked; asks rather than guesses.
+description: Runs a repository's test tiers in a given worktree and reports only PASS/FAIL plus failing lines. Needs the worktree, the tiers and any ports.
 tools: Bash, PowerShell, EnterWorktree, Grep, Read, Glob
 model: haiku
 autoCompactWindow: 170000

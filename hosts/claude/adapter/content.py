@@ -38,7 +38,7 @@ import json
 from kitlib.host import agentname
 from kitlib.hookrun import main as hookrun
 from kitlib.host import registry
-from kitlib.host.content import ContentError, banner, quote, role_source, substitute
+from kitlib.host.content import ContentError, banner, capped, quote, role_source, substitute
 
 HOST = 'claude'
 SHELL_REL = 'hosts/claude/shell'
@@ -186,7 +186,7 @@ class ClaudeContent:
         fill = lambda text: substitute(text, values, agent_name, names, src, models=tiers,    # noqa: E731
                                        tools=TOOLS)
         lines = ['---', '# ' + banner(role_source(role.name)), 'name: %s' % role.name,
-                 'description: %s' % quote(fill(role.description))]
+                 'description: %s' % quote(capped(fill(role.description), role_source(role.name)))]
         for key, value in self.settings(role, tiers, role_models):
             lines += ['experimental:', '  cacheTtl: %s' % value] if key == 'cacheTtl' else ['%s: %s' % (key, value)]
         lines.append('---')

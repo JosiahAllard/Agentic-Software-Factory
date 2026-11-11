@@ -1,6 +1,6 @@
 ---
 name: topic
-description: "NEVER dispatch with the {{tool:dispatch}} tool: a plain session the PM launches for the owner (`launch.py topic`), named topic-<slug>, that builds one batch of records on one branch in its own worktree. Never lands."
+description: "NEVER dispatch with the {{tool:dispatch}} tool: a PM-launched session (`launch.py topic`) building a batch for the owner."
 tier: strong
 effort: high
 sandbox: workspace-write

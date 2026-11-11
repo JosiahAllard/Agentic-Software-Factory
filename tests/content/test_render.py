@@ -14,6 +14,7 @@ import tempfile
 import unittest
 
 from hosts.claude.adapter import content as claude_content
+from hosts.codex.adapter import content as codex_content
 from kitlib import content
 from kitlib.host import content as hc
 from kitlib.host import registry
@@ -402,6 +403,19 @@ class ClaudeRendererTest(unittest.TestCase):
             with self.subTest(name):
                 self.assertIn('\nmodel: %s\n' % model, got.split('\n---\n', 1)[0])
                 self.assertIn('the 1M-context %s model' % model, got)
+
+    def test_the_description_cap_counts_each_hosts_rendered_text(self):
+        """DESCRIPTION_MAX counts the description once a host fills its tokens: {{tool:dispatch}} is
+        `Agent` on Claude and a longer phrase on Codex, so one source passes on one host and not the other."""
+        text = 'x' * (hc.DESCRIPTION_MAX - len(claude_content.TOOLS['dispatch'])) + '{{tool:dispatch}}'
+        role = hc.parse_role(BETA.replace(b'"Two: parts"', text.encode('utf-8')))
+        got = claude_content.renderer().agent_file(role, ('beta',))
+        self.assertIn(('\ndescription: %sAgent\n' % ('x' * (hc.DESCRIPTION_MAX - 5))).encode('utf-8'), got)
+        with self.assertRaisesRegex(hc.ContentError, r'content/roles/beta\.md: description is \d+ characters once rendered, over 160'):
+            codex_content.renderer().agent_file(role, ('beta',))
+        over = hc.parse_role(BETA.replace(b'"Two: parts"', b'x' + text.encode('utf-8')))
+        with self.assertRaisesRegex(hc.ContentError, 'over 160'):
+            claude_content.renderer().agent_file(over, ('beta',))
 
     def test_every_tier_and_capability_has_a_claude_value(self):
         self.assertEqual(sorted(claude_content.renderer().tier_models()), sorted(hc.TIERS))

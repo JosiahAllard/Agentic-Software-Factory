@@ -1,6 +1,6 @@
 ---
 name: strong-worker
-description: "Default coder for High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring. Concurrency, networking, simulation or ordering, migrations, CI config, landing, gate or lock logic, build-cache or codegen design: `{{agent:senior-worker}}`. Routine, plan-only or sync work: `{{agent:worker}}`."
+description: "Default coder for High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring."
 tier: strong
 effort: medium
 sandbox: workspace-write

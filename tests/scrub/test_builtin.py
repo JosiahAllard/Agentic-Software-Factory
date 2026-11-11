@@ -23,7 +23,9 @@ from tests.scrub.test_scrub import FIXTURE_FOLDERS, read_text, tracked_files
 ID_SHAPE_FOLDERS = (
     ('kitlib/hubsite/*', "the hub's store and API: question ids are its data"),
     ('kitlib/hubmcp/*', "the hub's MCP tools: question ids are its data"),
+    ('kitlib/hubvalidate/*', 'the hub id validator, moved out of kitlib/hubsite: its docstrings show the id shape'),
     ('tests/hubsite/*', "tests of the hub's store and API: question ids are its data"),
+    ('tests/hubclient/*', "tests of the hub's client, moved out of tests/hubsite: question ids are its data"),
     ('tests/hubmcp/*', "tests of the hub's MCP tools: question ids are its data"),
     ('tests/hubvalidate/*', 'tests of the hub id validator, which checks the id shape'),
     ('tests/guard/test_rules_hub*.py', "tests of the guard's hub rules, which match the id shape"),

@@ -1232,7 +1232,7 @@ class UnplacedGit(MainGit):
 
     def test_set_dashdash_git_dir_not_setter(self):
         # bash's set takes options and positional parameters, never a variable: set -- GIT_DIR and
-        # set GIT_DIR=x set $1 (commands.exporter_names); cmd's set NAME=value is the setter
+        # set GIT_DIR=x set $1 (commands_env.exporter_args); cmd's set NAME=value is the setter
         m, wt = self.main, W.fwd(self.w.wt)
         g = 'git -C "%s" branch -c main old' % wt
         self.judged_as_written(['set -- GIT_DIR; %s' % g, 'set -- GIT_DIR "%s/.git"; %s' % (m, g),

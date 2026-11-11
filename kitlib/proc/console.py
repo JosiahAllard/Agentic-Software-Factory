@@ -25,7 +25,6 @@ kernel32, so kitlib.proc.spawn and no_window_flags add nothing there.
 """
 import os
 import sys
-import tempfile
 
 from kitlib.platform.windows import console as _win
 from kitlib.platform.windows.console import (  # noqa: F401  (the face's names)
@@ -70,7 +69,11 @@ def log_path():
     in the OS temp folder. None when the provider gives no folder; raises when it does."""
     if LOG_PATH:
         return LOG_PATH
-    folder = _log_dir() if _log_dir else tempfile.gettempdir()
+    if _log_dir:
+        folder = _log_dir()
+    else:
+        import tempfile  # late: tempfile loads shutil, which the guard's import budget bars
+        folder = tempfile.gettempdir()
     return os.path.join(folder, LOG_NAME) if folder else None
 
 

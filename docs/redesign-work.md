@@ -25,10 +25,12 @@ Each entry has an id, a title and: **Serves** (the design section), **Files** (w
 | `.kit.json` (the `module-map` step stops being warn-only) | W-038 |
 | `.kit.json` (`landing.gate_once`, `landing.shared_paths` go) | W-025 |
 | `docs/agent-profile.md`, `AGENTS.md`, `.claude/coordinator-profile.md` | W-047 |
-| Changes under `kitlib/guard/` | W-002, W-007, W-009, W-012, W-015, W-016, W-017, W-031, W-042, W-044, W-045 |
-| Changes under `kitlib/lock/` | W-017, W-037, W-040 |
+| Changes under `kitlib/guard/` | W-002, W-007, W-009, W-012, W-014, W-015, W-016, W-017, W-021, W-030, W-031, W-042, W-044, W-045, W-046 |
+| Changes under `kitlib/lock/` | W-001, W-007, W-008, W-009, W-017, W-030, W-037, W-040 |
+| `kitlib/gate/strict_defaults.py` (one path each: `kitlib/platform/**`, `kitlib/landing/**`) | W-001, W-023 |
+| `.kit.json` (a listed test path follows its test) | W-036 |
 
-`kitlib/backlog/roles.py` and `kitlib/gate/strict_defaults.py` are not touched by any item.
+`kitlib/backlog/roles.py` is not touched by any item. `kitlib/gate/strict_defaults.py` stays where it is and gains one path with each package it must cover: `kitlib/platform/**` (W-001) and `kitlib/landing/**` (W-023).
 
 ## Order
 
@@ -55,12 +57,13 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 - Change: the Win32 bindings and every Windows primitive move under `kitlib/platform/windows/`. `proc` keeps the OS-neutral face and calls `platform.<primitive>`; `proc.job.Job` is the backend's. What the Linux containment needs from `proc.job` moves into `platform`.
 - Done when: `grep -rnE "kitlib\.proc|from \.\.+proc" kitlib/platform` prints nothing; `grep -rn "ctypes" kitlib/proc` prints nothing; `tests/proc`, `tests/platform`, `tests/lock` pass; the Linux ratchet baseline (`tests/linux-baseline.txt`) has not grown.
 - Risk and tier: High (process containment and kills). senior-worker.
+- Owner: lock; `kitlib/gate/strict_defaults.py` (adds `kitlib/platform/**`).
 
 **W-002 OS tests only in `platform`**
 - Serves: "Dependency rules" 8.
 - Files: the 28 uses of `sys.platform` or `os.name` outside `kitlib/platform`: `ledger/safepath.py` (4), `redfirst/verdict.py`, `pluginsource/__init__.py`, `machinesetup/linuxbox.py`, `launcher/host.py`, `guard/place.py`, `ci/ratchet.py` (2 each), `tooldeps/selfrun.py`, `redfirst/run.py`, `proc/winwatch.py`, `proc/console.py`, `pluginsource/claude.py`, `machinesetup/extras.py`, `host/hookmain.py`, `guard/rules_run.py`, `guard/context.py`, `gate/detect.py`, `config/user.py`, `kitlib/__init__.py` (1 each).
 - Change: each reads `platform.NAME` or calls a primitive. `ci/ratchet.py` stays as it is if it must run before the kit boots; then it is the one listed exception.
-- Done when: new test `tests/platform/test_os_tests.py` passes (it fails on a `sys.platform` or `os.name` in `kitlib` outside `kitlib/platform` and its exception list); the guard's decisions over `tests/guard` are identical.
+- Done when: new test `tests/platform/test_no_os_checks.py` passes (it fails on a `sys.platform` or `os.name` in `kitlib` outside `kitlib/platform` and its exception list); the guard's decisions over `tests/guard` are identical.
 - Risk and tier: Medium. worker.
 - Owner: guard. After: W-001.
 
@@ -150,7 +153,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 
 **W-015 `ownerfiles`: one home for the owner-file rules**
 - Serves: "Contracts" (Owner files), "Dependency rules" 6; docs/modules/owner-files-design.md.
-- Files: `kitlib/guard/ownercommits.py` (to `ownerfiles/rules.py`), `kitlib/hubsite/approvals.py` (to `ownerfiles/approvals.py`), `kitlib/commit/approval.py` (to `ownerfiles/apply.py`), `kitlib/hubapprove/` (to `ownerfiles/request.py`), `parse_merge_tree` in `kitlib/commit/__init__.py`. Importers: `commit/__init__.py:192,544,585`, `gate/land.py:251,2491`, `reviewpack/__init__.py:70`, `worktree/new.py:202`, `delegations/run.py:55`, `hubmcp/server.py:28,32`, `hubsite/apiapprovals.py`, `hubjobs/unblock_conditions.py:160`, `guard/prepush.py`, `tools/hub.py`.
+- Files: `kitlib/guard/ownercommits.py` (to `ownerfiles/rules.py`), `kitlib/hubsite/approvals.py` (to `ownerfiles/approvals.py`), `kitlib/commit/approval.py` (to `ownerfiles/apply.py`), `kitlib/hubapprove/` (to `ownerfiles/request.py`), `parse_merge_tree` and its owner-merge helpers in `kitlib/commit/__init__.py` (to `ownerfiles/rules.py`). Importers: `commit/__init__.py:192,544,585`, `gate/land.py:251,2491`, `reviewpack/__init__.py:70`, `worktree/new.py:202`, `delegations/run.py:55`, `hubmcp/server.py:28,32`, `hubsite/apiapprovals.py`, `hubjobs/unblock_conditions.py:160`, `guard/prepush.py`, `tools/hub.py`.
 - Change: a move. The standing rules it carries stay as they are: per-commit judgement, the merge-tree rule for sync merges, the approval that holds until its change is on main with a 30-day backstop.
 - Done when: `ls kitlib/guard/ownercommits.py kitlib/commit/approval.py kitlib/hubsite/approvals.py kitlib/hubapprove` all fail; `grep -rnE "guard\.ownercommits|guard import ownercommits" kitlib tools` prints nothing; `tests/ownerfiles`, `tests/gate/test_land_owner.py`, `tests/guard/test_prepush_owner.py` pass with test names unchanged.
 - Risk and tier: High (owner-file rules, `guard`, `commit`). senior-worker.
@@ -208,10 +211,11 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 
 **W-023 `landing` is its own package**
 - Serves: "Layers" (work: `gate`, `loadnode`, `landing`); docs/modules/landing-design.md, gate-design.md.
-- Files: `kitlib/gate/{land,submit,verdicts,carry,cleanup}.py` (to `kitlib/landing/`), `kitlib/hubsite/landings.py` (to `kitlib/landing/feed.py`); the late imports between `gate/runner.py`, `reuse.py`, `rerun.py` and `land`; importers `tools/land.py`, `tools/gate.py`, `tools/verdict.py`, `kitlib/coordstate/render.py:116-213`, `kitlib/hubjobs/{fill_watch.py:320,store_upkeep.py:64}`, `kitlib/reviewpack/__init__.py:626`; `tests/gate/test_land*.py`, `test_verdict*.py`, `test_submit*.py` (to `tests/landing`). `kitlib/gate/strict_defaults.py` stays where it is.
+- Files: `kitlib/gate/{land,submit,verdicts,carry,cleanup}.py` (to `kitlib/landing/`), `kitlib/hubsite/landings.py` (to `kitlib/landing/feed.py`); the late imports between `gate/runner.py`, `reuse.py`, `rerun.py` and `land`; importers `tools/land.py`, `tools/gate.py`, `tools/verdict.py`, `kitlib/coordstate/render.py:116-213`, `kitlib/hubjobs/{fill_watch.py:320,store_upkeep.py:64}`, `kitlib/reviewpack/__init__.py:626`; `tests/gate/test_land*.py`, `test_verdict*.py`, `test_submit*.py` (to `tests/landing`). `kitlib/gate/strict_defaults.py` stays where it is and gains `kitlib/landing/**`.
 - Change: a move. `gate` no longer imports `loadnode`, `backlog` or the hub; `landing` imports them.
 - Done when: `ls kitlib/gate/land.py` fails; `grep -rnE "kitlib\.(landing|loadnode|backlog|hubsite)|from \.\.(landing|loadnode|backlog|hubsite)" kitlib/gate --include=*.py` prints nothing; `grep -rnE "kitlib\.hubsite|from \.\.hubsite" kitlib/landing` prints nothing; `tests/landing`, `tests/gate`, `tests/loadnode` pass with test names unchanged.
-- Risk and tier: High. senior-worker. After: W-012, W-015, W-025.
+- Risk and tier: High. senior-worker.
+- Owner: `kitlib/gate/strict_defaults.py`, lock. After: W-012, W-014, W-015, W-025.
 
 **W-024 The landing is split by step**
 - Serves: "Dependency rules" 7; docs/modules/landing-design.md "Packages and files".
@@ -298,9 +302,10 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 
 **W-036 `machinesetup` takes `stubs`; `autotasks` owns its cadence**
 - Serves: "Layers" (apps); docs/modules/install-design.md.
-- Files: `kitlib/stubs/` (to `kitlib/machinesetup/memory.py` and its small outcome type); importers `kitlib/machinesetup/repo.py:332-567`, `kitlib/pmstart/__init__.py:790-852`, `tools/kit_stubs.py`; `AUTO_EVERY_MINUTES` in `kitlib/machinesetup/extras.py` (to `kitlib/autotasks/`; reader `kitlib/hubsite/apisched.py:102`); `main_checkout` read from `worktree.remove` by `kitlib/autotasks/tick.py:224` and `kitlib/machinesetup/worktreesweep.py:31` (use `git.repo`).
+- Files: `kitlib/stubs/` (to `kitlib/machinesetup/memory.py` and its small outcome type); importers `kitlib/machinesetup/repo.py:332-567`, `kitlib/pmstart/__init__.py:790-852`, `tools/kit_stubs.py`; `AUTO_EVERY_MINUTES` in `kitlib/machinesetup/extras.py` (to `kitlib/autotasks/`; reader `kitlib/hubsite/apisched.py:102`); `main_checkout` read from `worktree.remove` by `kitlib/autotasks/tick.py:224` and `kitlib/machinesetup/worktreesweep.py:31` (use `git.repo`); the `tests/stubs/test_memory.py` path in `.kit.json` (to `tests/machinesetup/test_memory.py`).
 - Done when: `ls kitlib/stubs` fails; `grep -rn "machinesetup" kitlib/hubsite --include=*.py` shows no import; `grep -rn "worktree" kitlib/autotasks --include=*.py` shows no import.
 - Risk and tier: Low to Medium. worker.
+- Owner: `.kit.json`.
 
 **W-037 `lock/run.py`, `platform/linux/contain.py` and `worktree/remove.py` are split by responsibility**
 - Serves: "Dependency rules" 7; docs/modules/lock-design.md, base-design.md, worktree-design.md.
@@ -349,7 +354,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 - Risk and tier: Medium. worker, fresh reviewer for the guard list.
 - Owner: guard.
 
-**W-043 `templates/` holds only what a setup step copies**
+**W-043 `templates/` holds only what a setup step copies or a reader uses**
 - Serves: docs/modules/install-design.md ("Adding to it").
 - Files: `templates/common/`, `templates/stacks/*/`; the copy lists in `kitlib/machinesetup/repo.py` and `kitlib/stackskill/`.
 - Change: delete each template file no setup step copies and no reader uses, or wire it in if it should be copied. A template a role or docs/install.md reads (a file the owner or an agent drafts or copies from by hand) counts as used.

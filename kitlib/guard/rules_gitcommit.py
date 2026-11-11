@@ -233,8 +233,7 @@ def commit_alternative(ctx, gc, where):
             commit
     if sub in ('merge', 'pull'):
         return ('Sync with the commit your coordinator named; the tool merges exactly it and adds the trailer. A '
-                'merge it refuses is never redone another way (commit.py refuses a merge of a commit not on the '
-                'remote main branch too): stop and tell your coordinator. The sync:',
+                'merge it refuses is never redone another way: stop and tell your coordinator. The sync:',
                 'python %s -C %s %s --model "<your model>"' % (kit_tool(ctx, 'sync_base'), top, typed_hash(revs)))
     if sub == 'am':
         return ('Apply the patch to the index, then in its own call commit it with %s:' % commit,

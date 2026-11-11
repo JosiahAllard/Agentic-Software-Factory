@@ -650,7 +650,7 @@ def _collisions(rec, holding, shared=()):
 
 def landing_merge(root, main_branch, branch, since=None, rev=None, any_case=False):
     """The landing merge of `branch` on `main_branch` (`<short sha> <subject>`, the subject
-    `Merge <branch>` or `Merge <branch>: <summary>` as kitlib/gate/land.py writes it), or None
+    `Merge <branch>` or `Merge <branch>: <summary>` as kitlib/landing/merge.py writes it), or None
     when its history has none. Only merges on the first-parent chain count: a `Merge <branch>`
     merge brought in inside another branch was not made on `main_branch`. `since` (a
     `YYYY-MM-DD` day, the record's `pulled_at`) skips a merge committed on an earlier day: an

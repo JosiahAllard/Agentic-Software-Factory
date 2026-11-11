@@ -41,7 +41,7 @@ Fail closed. Anything that raises means every step runs. Nothing is read or stor
     "landing".reuse_never, or a strict path (kitlib.gate.strict_defaults.STRICT_DEFAULTS);
   - in a landing: --fresh (a strict branch's landing too); a result record that cannot be read; a land record of a tip (it got
     past its locked checks and did not land); a gate record of a tip that did not pass; a landing
-    tree (kitlib.gate.land.TREE_NAME) that is not clean.
+    tree (landing.merge.TREE_NAME) that is not clean.
 A step's result is stored only when its key (inputs, kit, program, config, toolchain) is the
 same after the run as before it: PASS as pass, FAIL or WARN as fail; a skipped or unrun step
 stores nothing.
@@ -70,7 +70,7 @@ stored, so the relaxation never reaches the cache. Anything that raises means ev
 The input tree (input_tree). When main moved since the tip's gate, the merge's tree is not the
 tip's, and a step whose command names {base} (as a repository's test tiers may) is never cached. In a
 one-branch landing that landing_why lets reuse, and that same_tree does not serve, the gate-OK
-record the tip check accepted (kitlib.gate.land, Lander.tip_records: a --full record, or a
+record the tip check accepted (landing.lander, Lander.tip_records: a --full record, or a
 default-mode one select_refusal took; never a docs-only one, and none for a tip that lands only on a
 FLAKE rerun) serves a step the cache does not when its `input_keys` (record_keys, written by the
 branch gate) hold, for that step, the very digests the landing computes (input_parts), each part a
@@ -1103,7 +1103,7 @@ def _guarded(cfg, chosen, make):
 def planner(root, cfg, branch, tip, base, merge, prior, fresh=False, full=False, batch=1,
             now=None, record=None):
     """`reuse(chosen) -> Plan` for kitlib.gate.runner.merged_gate: a landing of `merge` (onto
-    `base`, --expect-main) in the landing tree `root` (kitlib.gate.land, step 5b; the main
+    `base`, --expect-main) in the landing tree `root` (landing.mergedgate, step 5b; the main
     checkout is never merged into). `branch`, `tip`: the first of the
     landing's; `batch` is the number of branches (a batch reuses per step like one branch; only
     a one-branch landing reads the tip's record, same_tree, and `record`, the gate-OK record the

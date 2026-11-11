@@ -2,7 +2,7 @@
 and the hand-off records ("Hand-offs"). kitlib.hubsite.api re-exports every name here.
 
 Landings (docs/hub-approvals.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
-landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
+landing feed, which tools/land.py posts for each branch it landed (kitlib.landing.feed): the
 fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
 record ids; approvals, when given, {A-<n>: commit sha} of the hub approvals the landing put on
 main, approvals.landed), and the hub sets posted_at. Each consumed file approval an event names

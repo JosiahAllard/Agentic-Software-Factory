@@ -5,12 +5,12 @@ import unittest
 from unittest import mock
 
 from kitlib.coordstate import log, render
-from kitlib.gate import verdicts as V
+from kitlib.landing import verdicts as V
 from kitlib.records import verdict_entry as VE
 from tests import inproc
 from tests.coordstate.helpers import SESSION, SLUG, TempAgentFolder
 from tests.gate.fixtures import GateRepoCase
-from tests.gate.test_verdicts import given
+from tests.landing.test_verdicts import given
 from tests.gitfixture import fixture_env
 
 COORD = inproc.load_tool('coord_state')

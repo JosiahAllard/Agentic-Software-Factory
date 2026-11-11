@@ -18,8 +18,8 @@ from kitlib.backlog import store as smod
 from kitlib.backlog import store_folder, store_ref
 from tests.backlog.helpers import priced
 from tests.backlog import test_at_landing_part as part   # not its classes: their tests run there
-from tests.gate import test_land_store as tls
-from tests.gate.test_land_store import BRANCH, StoreLandCase, pulled
+from tests.landing import test_land_store as tls
+from tests.landing.test_land_store import BRANCH, StoreLandCase, pulled
 
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                     'tools', 'backlog.py')

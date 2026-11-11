@@ -20,7 +20,7 @@
       Every branch lands only with a verdict queued for its tip (tools/verdict.py add, or carried
       to it over main merges by tools/verdict.py carry and checked again here) by a reviewer who
       is not its author (docs/gate-landing.md "Landing" step 4), strong-tier for a High-risk verdict
-      (kitlib/gate/verdicts.py tier_why). A branch that changes a strict path
+      (kitlib/landing/verdicts.py tier_why). A branch that changes a strict path
       (kitlib/gate/strict_defaults.py, read from main) lands alone, its reviewer strong-tier, and
       its merged gate runs fresh whatever was passed (docs/gate-landing-policy.md "Strict paths").
       --submit: the same landing, started detached and windowless; prints a REVIEW line for each
@@ -32,7 +32,7 @@
       tip: REFUSED (4); nothing written (docs/gate-landing.md "Submitting a landing").
       --wait-result (before --submit): once SUBMITTED is printed, wait for the landing to end
       and print its outcome lines, then each branch's RESULT line and record as gate.py
-      wait-result prints them; the exit code is the last record's (kitlib.gate.submit.follow).
+      wait-result prints them; the exit code is the last record's (kitlib.landing.submit.follow).
       Run it as a background command: it lasts as long as the landing
   land.py --queue [-C DIR]
       read-only: the landing lock's holder and the landings in the machine lock's queue
@@ -50,7 +50,7 @@ submitted landing writes them running before it starts, so every outcome, a refu
 ends in a final record. A `.kit.json` that still writes a retired key gets one WARNING line on
 stderr per run (kitlib.config.retired_text), never in the detached --submitted landing.
 
-A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate.land, prints and exits.
+A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.landing.lander, prints and exits.
 Exit codes (kitlib.gate): 0 OK (or SUBMITTED), 1 FAILED (CONFLICT included), 2 USAGE, 3 STUCK,
 4 REFUSED, 5 BUSY; 9 LANDED_UNGATED is retired (no landing gives it); a machine lock refusal
 passes its own code through (6, 8, 10, 11, 12); 130 Ctrl+C.
@@ -85,10 +85,10 @@ if __name__ == '__main__':      # from the kit's main checkout: run from pushed 
 from kitlib import config as kconfig                              # noqa: E402
 from kitlib import gate as G                                       # noqa: E402
 from kitlib.coordstate import log as coordlog                       # noqa: E402
-from kitlib.gate import cleanup                                    # noqa: E402
-from kitlib.gate import land as landmod                            # noqa: E402
+from kitlib.landing import cleanup                                 # noqa: E402
+from kitlib.landing import lander as landmod                       # noqa: E402
 from kitlib.gate import runner                                     # noqa: E402
-from kitlib.gate import submit as submitmod                        # noqa: E402
+from kitlib.landing import submit as submitmod                     # noqa: E402
 from kitlib.lock.store import LockError, Store                     # noqa: E402
 
 

@@ -562,7 +562,7 @@ def pack(path, branch, base=None, diff=None):
 
 def gate_line(top, branch, cfg=None, base=None, mb=None):
     """The `gate` line: whether `branch`'s tip has a gate-OK record its landing takes, by the
-    landing's own record rules (kitlib.gate.land: Lander.tip_refusal; docs/gate-landing.md
+    landing's own record rules (kitlib.landing.checks: Lander.tip_refusal; docs/gate-landing.md
     "Landing"). A pass of exactly that commit, --full or default-mode, lands it; a docs-only pass
     lands it only when the change is docs-only under the base's config `cfg` against the base
     `base` (Lander.diff_refusal). No branch needs a --full run: a merge that changes a gate config
@@ -606,7 +606,8 @@ def _docs_refusal(top, cfg, base, tip, mb=None):
     if cfg is None or not base:
         return None, 'no base config'
     try:
-        from kitlib.gate import land, runner
+        from kitlib.gate import runner
+        from kitlib.landing.lander import Lander
         sha, why = gitrefs.resolve(base, top)
         why2 = None
         if not mb:
@@ -616,7 +617,7 @@ def _docs_refusal(top, cfg, base, tip, mb=None):
         changed, why = runner.changed_between(top, mb, tip)
         if changed is None:
             return None, why
-        lander = land.Lander(top, [], None, [])
+        lander = Lander(top, [], None, [])
         lander.cfg, lander.expect_main = cfg, sha
         return lander.diff_refusal(changed, 'docs', None), None
     except Exception as e:      # noqa: BLE001 - the line is printed only and never fails the pack

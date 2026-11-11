@@ -48,7 +48,7 @@ A landing not submitted (`land.py` without `--submit`) has no `land_submit` even
 1. **Judgments**: `judgments-<session>.md`, verbatim.
 2. **Landings to report to the PM**, until `reported` names them.
 3. **Landings in flight**.
-4. **Verdicts queued by this session** that still wait to land (`kitlib.gate.verdicts`, the entries whose `session` is it), or why the queue cannot be read. The queue keeps an entry after its branch lands, so `show` leaves out what `records.verdict_entry.expired` names against main as last fetched, with no network: a tip in main, or a branch that is gone. It only reads: every entry stays on disk. When main as fetched cannot be read, every entry is listed and a line under them says landed ones can be among them.
+4. **Verdicts queued by this session** that still wait to land (`kitlib.landing.verdicts`, the entries whose `session` is it), or why the queue cannot be read. The queue keeps an entry after its branch lands, so `show` leaves out what `records.verdict_entry.expired` names against main as last fetched, with no network: a tip in main, or a branch that is gone. It only reads: every entry stays on disk. When main as fetched cannot be read, every entry is listed and a line under them says landed ones can be among them.
 5. **Landed and on the hub feed**, and **Reported**: the latest 5 of each.
 6. **Backlog writes**: the latest 15.
 

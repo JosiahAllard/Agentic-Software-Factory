@@ -36,7 +36,6 @@
   serveviews the Api's views over the sources: backlog, completed, repos, usage, agents, skills
   servehealth GET health's fixed and owner answers, and the status lines hub.py status prints
   serverepos the kit checkout and repository names the skill and agent pages are given
-  landings the landing feed's events, built after a landing and posted best-effort to the hub
   storecheck the store folder's findings as on disk, read only, no lock (hub.py validate)
   autostart the opt-in scheduled task that starts the server at sign-in (hub.py setup --autostart)
   control  hub.py stop and restart: ask the server to close, wait for it, start the task again

@@ -48,7 +48,7 @@ def _main(why, quiet=False, nodes=(), need=None):
 def need_of(kind, store):
     """The slots a run of the lock kind `kind` books here (route.need_of on `store`): what plan
     sizes the merged gate's kind with, and what a landing sizes again when its base's config
-    names another kind (kitlib.gate.land Lander.route_need). KeyError for a kind the kinds
+    names another kind (kitlib.landing.mergedgate Lander.route_need). KeyError for a kind the kinds
     table does not name."""
     return route.need_of(kind, store=store)
 

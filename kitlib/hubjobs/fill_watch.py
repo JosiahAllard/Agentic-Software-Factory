@@ -61,7 +61,7 @@ Stand-down (stage 4): read once per repository per run, and only for a coordinat
 with something offered. `standdown(top)` reads the main checkout's `.kit.json`:
   backlog.fill_queued_max (default 3): 0 is `off` (always stood down, nothing surveyed); else
              `queued N>=MAX` when N branches wait to land: the verdict queue's entries not expired
-             (kitlib.gate.verdicts), and every worktree branch, live or not, whose tip has a green
+             (kitlib.landing.verdicts), and every worktree branch, live or not, whose tip has a green
              gate-OK record (classify.gate_state) and is not in main as fetched; each branch once.
              A tip git cannot place against main counts.
   backlog.fill_idle_max (default 2): `idle N>=MAX` when N worktrees are class B or C under
@@ -318,7 +318,7 @@ def read_survey(top):
     StandDownUnread when main as fetched, the git common dir, the verdict queue or the worktrees
     cannot be read."""
     from kitlib.coordstate import render
-    from kitlib.gate import verdicts
+    from kitlib.landing import verdicts
     from kitlib.records import verdict_entry
     from kitlib.git import refs
     from kitlib.git import repo

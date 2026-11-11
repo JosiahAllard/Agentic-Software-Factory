@@ -78,8 +78,8 @@ FIELDS = {
         'status': _STR, 'skill': _STR, 'text': _STR, 'base_blob': _STR, 'created_at': _STR,
         'submitted_at': _STR, 'done_at': _STR, 'branch': _STR, 'blob': _STR,
         'source_blob': _STR, 'why': _STR, 'closed_at': _STR}),
-    # kitlib.hubsite.landings, the event tools/land.py posts for each branch it landed: the land
-    # ledger line's fields (kitlib.gate.result.LEDGER_FIELDS) and landings.EXTRA_FIELDS; the api
+    # kitlib.landing.feed, the event tools/land.py posts for each branch it landed: the land
+    # ledger line's fields (kitlib.gate.result.LEDGER_FIELDS) and feed.EXTRA_FIELDS; the api
     # takes these fields only and sets posted_at
     'landings': (('repo', 'branch', 'tip', 'main'), {
         'branch': _STR, 'tip': _STR, 'run_id': _STR, 'started_at': _STR, 'finished_at': _STR,

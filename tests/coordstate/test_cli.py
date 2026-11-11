@@ -10,7 +10,7 @@ from unittest import mock
 from kitlib.host import sessionmark
 from kitlib.coordstate import log
 from kitlib.gate import result
-from kitlib.hubsite import landings
+from kitlib.landing import feed as landings
 from tests import inproc
 from tests.coordstate.helpers import SESSION, SLUG, TempAgentFolder
 from tests.gitfixture import TempRepo, fixture_env

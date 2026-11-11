@@ -17,8 +17,8 @@ _spec = importlib.util.spec_from_file_location('kit_tests_entry_for_smoke_tests'
 cli = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cli)
 
-SMOKE = ['tests.guard.test_rules', 'tests.gate.test_land']
-SELECTED = ['tests.scrub.test_scrub', 'tests.gate.test_land']
+SMOKE = ['tests.guard.test_rules', 'tests.landing.test_land']
+SELECTED = ['tests.scrub.test_scrub', 'tests.landing.test_land']
 MODULES = sorted(set(SMOKE + SELECTED + ['tests.docs.test_budget']))
 
 
@@ -85,7 +85,7 @@ class KitTable(unittest.TestCase):
             self.assertIn(module, mods)
         for pkg in ('guard', 'gate', 'lock', 'commit'):
             self.assertTrue([m for m in smoke if m.startswith('tests.%s.' % pkg)], pkg)
-        self.assertIn('tests.gate.test_land', smoke)
+        self.assertIn('tests.landing.test_land', smoke)
         self.assertIn('tests.ownerfiles.test_apply', smoke)
         self.assertNotIn('tests.commit.test_commit', smoke)     # 107 s, not split by class
 

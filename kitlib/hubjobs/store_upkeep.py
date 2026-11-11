@@ -18,7 +18,7 @@ pass, in order:
      -c pack.threads=CORES gc --quiet`, untimed: step 1 wrote the graph, and packing refs would
      race the ref writes of landings and backlog writes. It runs inside a machine-lock slot
      (kind KIND, CORES cpu slots, slug SLUG) that holds the landing resource of that common dir
-     (kitlib.gate.land.queue_key), so no landing runs beside it. A lock that stays busy for
+     (kitlib.landing.lander.queue_key), so no landing runs beside it. A lock that stays busy for
      WAIT_S, or an owner or game hold, skips the gc to the next pass.
 
 It deletes nothing itself. A `.pack` with no `.idx` beside it older than PACK_AGE_S is a finding:
@@ -61,7 +61,7 @@ from kitlib import config as kconfig
 from kitlib.config import pmdata
 from kitlib.fs import replace as fsreplace
 from kitlib.config.types import ConfigError
-from kitlib.gate import land
+from kitlib.landing import lander
 from kitlib.git import cache, cmd
 from kitlib.git import repo as gitrepo
 from kitlib.hubsite import jobs
@@ -318,7 +318,7 @@ class StoreUpkeep(object):
             return
         try:
             slot = self.book(KIND, _repo_name(common), SLUG, cores=CORES, wait_s=WAIT_S,
-                             cmd=['git', 'gc'], resource=land.queue_key(common),
+                             cmd=['git', 'gc'], resource=lander.queue_key(common),
                              note='store upkeep: git gc of %s' % common)
         except LockError as e:
             if e.code in NOT_NOW:

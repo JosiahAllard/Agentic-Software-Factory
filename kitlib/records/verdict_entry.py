@@ -1,5 +1,5 @@
 """A verdict-queue entry: where it is, whether it is well formed, and whether it has expired. The
-queue itself, and every write to it, is gate.verdicts'; this module only reads.
+queue itself, and every write to it, is landing.verdicts'; this module only reads.
 
 Where: `<git common dir>/kit-verdicts/<branch>.json`, the branch name percent-encoded
 (urllib.parse.quote with no safe characters: '/' is '%2F', '%' is '%25'), so the file name gives
@@ -23,7 +23,7 @@ An entry (every key always present):
   author          the change's author: commit author and agent type (`Kit Test / worker`); it
                   picks no reviewer model: a High-risk or strict branch needs a strong-tier
                   reviewer whoever built it, and a Low or Medium branch off the strict paths has
-                  no tier rule (tier_why: add() and gate.land, Lander.review_refusal)
+                  no tier rule (tier_why: add() and landing.checks, Lander.review_refusal)
   range           the range reviewed, `<base>..<tip>`; its right side is the tip or a prefix of
                   it (7 or more hex digits), so the review covered the commit queued
   session         the coordinator session that queued it
@@ -36,11 +36,11 @@ and, only in an entry carry() moved (a re-add drops it):
 
   carried         {from, merges, main, diff, utc}: the verdict was given at `from` (the commit the
                   range ends at), and tip carries it over `merges` (main merges, oldest first, the
-                  last the tip) as gate.carry checked against `main` at `utc`; `diff` is the
+                  last the tip) as landing.carry checked against `main` at `utc`; `diff` is the
                   sha256 of the branch's normalized patch. A record of the check, never proof: a
                   landing checks it again (docs/gate-landing-policy.md "Carrying a verdict forward").
 
-add(), carry() and mark_failed() are gate.verdicts'. Nothing here prints or writes.
+add(), carry() and mark_failed() are landing.verdicts'. Nothing here prints or writes.
 """
 import os
 import re
@@ -162,7 +162,7 @@ def check(entry, stored=True):
         if not isinstance(v, str) or not v.strip() or '\n' in v or '\r' in v:
             return '%s is a non-empty one-line text, not %r' % (k, v)
     if not reviewer_types(entry['reviewer']):
-        # Fail closed: with no type, land.is_author could not tell the reviewer from the author.
+        # Fail closed: with no type, verdicts.is_author could not tell the reviewer from the author.
         return ('reviewer names no agent type: it is the reviewer\'s agent type '
                 '(pm-kit:analyst), not %r' % entry['reviewer'])
     rng = entry['range']

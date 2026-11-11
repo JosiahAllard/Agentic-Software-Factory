@@ -238,7 +238,7 @@ def _write_lease(path, sha, child=None):
 
 def lease_child(tool_file, pid, environ=None):
     """A lease on the export `tool_file` runs from, held by process `pid`: a pinned tool's
-    detached child (kitlib.gate.submit), which outlives the tool and so the tool's own lease. The
+    detached child (landing.submit), which outlives the tool and so the tool's own lease. The
     path is pins/leases/<sha12>-<pid>.json, {sha, pid, ctime}; prune removes it once that process
     is gone. True when written; False when there is nothing to lease (`tool_file` is not run
     from an export of KIT_PINNED's commit, KIT_PINNED is unset or `live`, or `pid` is already

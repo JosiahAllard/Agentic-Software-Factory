@@ -10,8 +10,8 @@ import os
 
 from kitlib import gate as G
 from kitlib.gate import runner
-from tests.gate import test_land
-from tests.gate.test_land_tip_gated import SELECT_GATE
+from tests.landing import test_land
+from tests.landing.test_land_tip_gated import SELECT_GATE
 
 BRANCH = test_land.BRANCH
 

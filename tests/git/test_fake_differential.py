@@ -208,7 +208,7 @@ WORKTREES_AND_CONFLICTS = [
     # A lease that expects the remote main absent is stale: rejected, the remote left alone.
     ('git', ['push', '-q', '--force-with-lease=refs/heads/main:%s' % ('0' * 40), 'origin',
              'HEAD:refs/heads/main']),
-    # kitlib/gate/cleanup.py's branch delete: a lease on the tip it saw.
+    # kitlib/landing/cleanup.py's branch delete: a lease on the tip it saw.
     ('git', ['push', '--quiet', '--force-with-lease=refs/heads/kit/wt:kit/wt', 'origin',
              ':refs/heads/kit/wt']),
     ('git', ['ls-remote', '--heads', 'origin']),

@@ -70,9 +70,9 @@
     "tests.guard.test_place",
     "tests.guard.test_shell",
     "tests.guard.test_selftest",
-    "tests.gate.test_land",
-    "tests.gate.test_land_select",
-    "tests.gate.test_verdicts",
+    "tests.landing.test_land",
+    "tests.landing.test_land_selected",
+    "tests.landing.test_verdicts",
     "tests.gate.test_detect",
     "tests.lock.test_api",
     "tests.lock.test_cli",
@@ -88,11 +88,11 @@
   "long": [
     "tests.docs.test_budget",
     "tests.backlog.test_store",
-    "tests.gate.test_land_queue",
+    "tests.landing.test_land_queue",
     "tests.syncbase.test_sync",
-    "tests.gate.test_land_store",
+    "tests.landing.test_land_store",
     "tests.worktree.test_new_worktree",
-    "tests.gate.test_hardening",
+    "tests.landing.test_hardening",
     "tests.worktree.test_worktree_remove"
   ]
 }

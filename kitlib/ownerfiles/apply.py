@@ -389,12 +389,12 @@ def _paths_error(root, old, paths):
 
 
 def _owner_rules(root, new):
-    """(rules, None): the owner rules the land check reads (kitlib.gate.land owner_refusal): the
+    """(rules, None): the owner rules land reads (kitlib.landing.checks owner_refusal): the
     config the commit `new` holds (the defaults when it does not load) merged with main's
     (kitlib.config.owner.merge), main being <remote>/<main> as last fetched, else the main
     checkout's HEAD; never the work tree's `.kit.json`, so an uncommitted edit there cannot loosen
     them. (None, why) when main's config cannot be read, or when the main checkout is not on the
-    main branch its HEAD's config names: as land refuses then (kitlib.gate.land config_refusal),
+    main branch its HEAD's config names: as land refuses (kitlib.landing.lander config_refusal),
     since another branch's `.kit.json` would choose the rules."""
     from kitlib import config as kconfig
     found, why = gitrepo.worktrees(root)

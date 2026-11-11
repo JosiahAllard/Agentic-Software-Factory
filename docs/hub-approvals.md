@@ -172,7 +172,7 @@ agent, docs/guard-owner.md). The steps are `kitlib/ownerfiles/apply.py`'s docstr
   no filters), one parent, the request's title and reason and `Owner-Approval: hub:A-<n>`, author and
   committer `PM kit hub <hub@pm-kit.invalid>` (`apply.AUTHOR`, never the owner), no hook. The
   owner-file rules (`kitlib.ownerfiles.rules.violations`) must pass it before the branch moves, read
-  as `gate land` reads them (`kitlib.gate.land` `owner_refusal`): the config the commit holds merged
+  as `gate land` reads them (`kitlib.landing.checks` `owner_refusal`): the config the commit holds merged
   with main's (`<remote>/<main>` as last fetched, else the main checkout's HEAD), never the work
   tree's `.kit.json`, so an uncommitted edit there cannot loosen them. A main checkout that is not on
   its main branch is refused, as `gate land` refuses it: another branch's `.kit.json` would choose
@@ -200,7 +200,7 @@ Known limits:
 The landing feed: one event per branch `tools/land.py` landed, posted by the landing itself after the
 push is verified and the landing lock released (docs/gate-landing.md "Landing feed"). The event is the land
 ledger line's fields (`result.LEDGER_FIELDS`, picked from the same land record) and the extras
-(`kitlib.hubsite.landings.EXTRA_FIELDS`); the types are `schema.FIELDS['landings']`.
+(`kitlib.landing.feed.EXTRA_FIELDS`); the types are `schema.FIELDS['landings']`.
 
 | Field | Written by | Meaning |
 |---|---|---|

@@ -34,11 +34,6 @@ from kitlib.launcher import accounts, handoff, pushdelivery, reboot, relaunch, s
 from kitlib.launcher.host import Host                               # noqa: E402
 
 USAGE = 2
-# install-autostart's refusal: the after-reboot task it registered is retired (docs/launcher.md "Autostart").
-AUTOSTART_RETIRED = ("install-autostart is retired: the hub restarts agents (docs/launcher.md \"Hub restart\"), "
-                     "started at sign-in by its own task (hub.py setup --autostart); nothing registered. Remove a "
-                     "task installed before with: Unregister-ScheduledTask -TaskName '%s' -Confirm:$false"
-                     % reboot.REBOOT_TASK)
 HOME_HELP = ("deep-worker and consultant sessions only: one whose folder is a main checkout starts in its home worktree "
              "home-<session name> in the host's worktrees folder instead (docs/launcher.md \"The home worktree\")")
 
@@ -302,7 +297,7 @@ def run(a, settings, host):
                                   None if a.what_if else push_delivery(settings), a.wait, a.what_if,
                                   permission_mode=a.permission_mode)
     if a.cmd == 'install-autostart':
-        raise S.LaunchError(AUTOSTART_RETIRED)                                    # always refuses
+        raise S.LaunchError(reboot.AUTOSTART_RETIRED)                                    # always refuses
     raise AssertionError(a.cmd)
 
 

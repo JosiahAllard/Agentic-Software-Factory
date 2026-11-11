@@ -25,8 +25,8 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 
+from kitlib import platform as kitplatform
 from kitlib.config import user as kuser
 from kitlib.host import registry
 from kitlib.launcher.settings import LaunchError
@@ -39,11 +39,10 @@ WEEK = datetime.timedelta(days=7)
 PICK_LIMIT = 95          # pick-account's default
 FRACTION = re.compile(r'\.\d{7,}')   # PowerShell ToString('o') writes 7 fraction digits
 TIMEOUT = 300
-_NOWIN = 0x08000000 if sys.platform == 'win32' else 0      # CREATE_NO_WINDOW
+_NOWIN = 0x08000000 if kitplatform.NAME == 'windows' else 0      # CREATE_NO_WINDOW
 INSTALLED = ('plugins', 'installed_plugins.json')   # Claude Code's install record, in an account folder
 KNOWN_MARKETPLACES = ('plugins', 'known_marketplaces.json')   # its marketplaces, in an account folder
 USER_SCOPE = 'user'
-PLUGIN_ID = '%s@%s' % (registry.PLUGIN_NAME, registry.PLUGIN_NAME)   # the kit plugin in an install record
 
 
 def parse_time(text):
@@ -347,7 +346,7 @@ def installed_path(folder):
     path is not checked on disk."""
     try:
         with open(os.path.join(folder, *INSTALLED), encoding='utf-8-sig') as fh:
-            recs = json.load(fh)['plugins'][PLUGIN_ID]
+            recs = json.load(fh)['plugins'][registry.PLUGIN_ID]
         paths = [(r.get('scope'), r.get('installPath')) for r in recs]
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None

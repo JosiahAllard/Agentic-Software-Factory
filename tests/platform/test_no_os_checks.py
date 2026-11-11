@@ -25,7 +25,6 @@ ALLOWED = frozenset({
     'kitlib/ledger/safepath.py',
     'kitlib/machinesetup/extras.py',
     'kitlib/pluginsource/__init__.py',
-    'kitlib/pluginsource/claude.py',
     'kitlib/redfirst/verdict.py',
     'kitlib/tooldeps/selfrun.py',
     'kitlib/worktree/scratch.py',

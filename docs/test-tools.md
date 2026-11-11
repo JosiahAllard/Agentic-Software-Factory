@@ -139,7 +139,7 @@ kitlib/git/fake answers git inside the test process (`fake.run(args, cwd, stdin,
 
 ## Temp folders
 
-The kit temp folder for a checkout is `kitlib.config.user.work_temp`. It holds kit_tests' run folders, the default gate log base (docs/gate.md) and `kit-console-incidents.log` (`kitlib.proc.console`, docs/daily-full.md "The schedule"). A gate makes thousands of files a second there, so it keeps out of every folder sessions use as TEMP (`session_temps`). On Windows it is the first of these that is not a session temp, inside one or holding one:
+The kit temp folder for a checkout is `kitlib.config.user.work_temp`. It holds kit_tests' run folders, the default gate log base (docs/gate.md) and `kit-console-incidents.log` (`kitlib.proc.console`, docs/daily-full.md "The schedule"; a process that never loaded `kitlib.config.user` writes it to the OS temp folder instead). A gate makes thousands of files a second there, so it keeps out of every folder sessions use as TEMP (`session_temps`). On Windows it is the first of these that is not a session temp, inside one or holding one:
 
 - the machine config's `temp_dir` (docs/kit-json.md), when set;
 - `kit-temp` (`kitlib.config.user.TEMP_DIR_NAME`, the kit's default), then `kit-work` (`WORK_DIR_NAME`), at the root of the checkout's drive, when the checkout is not on the drive of the user's temp folder (a Dev Drive, say);

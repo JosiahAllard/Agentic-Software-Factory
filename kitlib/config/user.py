@@ -26,6 +26,7 @@ import stat
 
 import kitlib.platform
 from kitlib.platform.linux import paths as linux_paths
+from kitlib.proc import console
 
 from .types import ConfigError, Email, Enum, Field, ListOf, MapOf, Obj, Regex, Str, T, is_note, parse_json
 
@@ -1071,3 +1072,17 @@ def dev_drive(cfg):
 
 def doc_lines():
     return ['- `%s` (%s): %s' % (k, f.type.describe(), f.doc) for k, f in SCHEMA.items()]
+
+
+def _console_log_dir():
+    """The folder of the console guard's incident log (kitlib.proc.console.set_log_dir): the kit
+    temp folder of this kit checkout (work_temp); None, no log, in a fenced test process
+    (HomeFenced). A bad machine config raises ConfigError."""
+    kit = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    try:
+        return work_temp(kit)
+    except HomeFenced:
+        return None
+
+
+console.set_log_dir(_console_log_dir)

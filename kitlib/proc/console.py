@@ -12,10 +12,11 @@ loads no Win32 binding: those load at the first such start.
 
 Incident log: each time the hook gives a process a console it appends one JSON line (time, how,
 pid, exe, this process's argv, the child's command line, the parent's pid and exe) to LOG_NAME in
-the kit temp folder (kitlib.config.user.work_temp of the kit checkout; docs/test-tools.md "Temp
-folders"). LOG_PATH overrides that (the tests). Over LOG_MAX bytes the log is moved to
-`<log>.1` first. The log can fail in any way (a fenced test process, a bad machine config, a full
-disk): the start goes on. A command line can carry a token or a prompt, so both go in redacted
+the folder the provider set_log_dir registered gives (kitlib.config.user registers the kit temp
+folder, work_temp of the kit checkout; docs/test-tools.md "Temp folders"); with none, the OS temp
+folder. LOG_PATH overrides both (the tests). Over LOG_MAX bytes the log is moved to `<log>.1`
+first. The log can fail in any way (a fenced test process, a bad machine config, a full disk): the
+start goes on. A command line can carry a token or a prompt, so both go in redacted
 (redact_command): the program and the first KEEP_WORDS words after it, each cut to WORD_MAX
 characters, with secrets masked (_mask); it never raises.
 
@@ -24,6 +25,7 @@ kernel32, so kitlib.proc.spawn and no_window_flags add nothing there.
 """
 import os
 import sys
+import tempfile
 
 from kitlib.platform.windows import console as _win
 from kitlib.platform.windows.console import (  # noqa: F401  (the face's names)
@@ -43,7 +45,8 @@ SECRET_WORDS = ('token', 'secret', 'pass', 'pw', 'key', 'auth', 'credential', 'c
 # ... once these words, which hold `pass` or `pw` and name no secret, are taken out of it
 NOT_SECRET = ('passthru', 'passthrough', 'passive', 'bypass', 'stopwatch', 'compass')
 
-LOG_PATH = None                         # tests: the incident log file; None: the kit temp folder
+LOG_PATH = None                         # tests: the incident log file; None: LOG_NAME in the provider's folder
+_log_dir = None                         # the provider set_log_dir registered
 
 
 def install():
@@ -52,15 +55,23 @@ def install():
     return _win.install(_log_incident)
 
 
+def set_log_dir(provider):
+    """Register the incident log's folder: `provider()` gives it, or None for no log (a fenced test
+    process); it may raise an Exception when the folder cannot be worked out (a bad machine config:
+    the line is skipped) but never a BaseException, which no caller catches: it converts its own
+    (as config.user's does for HomeFenced). One provider per process, the last set;
+    kitlib.config.user sets the kit's on import. None: none, so the OS temp folder."""
+    global _log_dir
+    _log_dir = provider
+
+
 def log_path():
-    """The incident log file: LOG_PATH, else LOG_NAME in the kit temp folder of this kit
-    checkout (kitlib.config.user.work_temp). Raises when that cannot be worked out (a fenced test
-    process: HomeFenced; a bad machine config: ConfigError)."""
+    """The incident log file: LOG_PATH, else LOG_NAME in the provider's folder, with no provider
+    in the OS temp folder. None when the provider gives no folder; raises when it does."""
     if LOG_PATH:
         return LOG_PATH
-    from ..config import user
-    kit = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    return os.path.join(user.work_temp(kit), LOG_NAME)
+    folder = _log_dir() if _log_dir else tempfile.gettempdir()
+    return os.path.join(folder, LOG_NAME) if folder else None
 
 
 def _parent():
@@ -362,10 +373,8 @@ def _log_incident(how, child):
     """Append one line to the incident log; any failure is swallowed (the start goes on)."""
     try:
         import json
-        from ..config import user
-        try:
-            path = log_path()
-        except user.HomeFenced:
+        path = log_path()
+        if not path:
             return
         line = json.dumps(_incident(how, child)) + '\n'
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -382,18 +391,13 @@ def _log_incident(how, child):
 
 def carrier_log_path(environ=None):
     """The file `note_carrier_failure` appends to: CARRIER_LOG_ENV when set, else `log_path()`.
-    None when that cannot be worked out (a fenced test process: HomeFenced, a BaseException; a bad
-    machine config; no LOCALAPPDATA): the line is skipped, rather than kept in a second folder
-    under the same name."""
+    None when that cannot be worked out (a fenced test process; a bad machine config; no
+    LOCALAPPDATA): the line is skipped, rather than kept in a second folder under the same name."""
     env = os.environ if environ is None else environ
     if env.get(CARRIER_LOG_ENV):
         return env[CARRIER_LOG_ENV]
     try:
-        from ..config import user
-        try:
-            return log_path()
-        except user.HomeFenced:
-            return None
+        return log_path()
     except Exception:                   # noqa: BLE001
         return None
 
@@ -404,25 +408,21 @@ def note_carrier_failure(program, why, path=None, now=None, pid=None):
     name of `program`, never its arguments), "why"}. The carrier tools/no_window.py calls it when
     it cannot start its program: under pythonw it has no stderr, so this line is all that is left.
     Returns the path written, or None when there is no log or it could not be written; never
-    raises, a HomeFenced included: it runs on the carrier's way out."""
+    raises: it runs on the carrier's way out."""
     try:
         import json
         import time
-        from ..config import user
-        try:
-            path = path or carrier_log_path()
-            if not path:
-                return None
-            name = str(program).strip().strip('"').replace('/', '\\').split('\\')[-1]
-            line = json.dumps({
-                'time': time.strftime('%Y-%m-%dT%H:%M:%SZ', now or time.gmtime()),
-                'how': CARRIER_FAIL, 'pid': os.getpid() if pid is None else pid,
-                'exe': name or '?', 'why': ' '.join(str(why).split())}) + '\n'
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-            with open(path, 'a', encoding='utf-8') as f:
-                f.write(line)
-            return path
-        except user.HomeFenced:
+        path = path or carrier_log_path()
+        if not path:
             return None
+        name = str(program).strip().strip('"').replace('/', '\\').split('\\')[-1]
+        line = json.dumps({
+            'time': time.strftime('%Y-%m-%dT%H:%M:%SZ', now or time.gmtime()),
+            'how': CARRIER_FAIL, 'pid': os.getpid() if pid is None else pid,
+            'exe': name or '?', 'why': ' '.join(str(why).split())}) + '\n'
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(line)
+        return path
     except Exception:                   # noqa: BLE001
         return None

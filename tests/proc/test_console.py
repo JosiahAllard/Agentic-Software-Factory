@@ -901,7 +901,7 @@ class CarrierFailureLine(unittest.TestCase):
         self.assertEqual(console.LOG_NAME, "kit-console-incidents.log")
 
     def test_no_work_temp_folder_skips_the_line_and_never_raises(self):
-        """A fenced test process's HomeFenced is a BaseException and is caught as well."""
+        """A fenced test process (HomeFenced) gives the provider no folder: no line."""
         for err in (RuntimeError("no drive"), kuser.HomeFenced("fenced")):
             with self.subTest(err=type(err).__name__), \
                     mock.patch.dict(os.environ, {console.CARRIER_LOG_ENV: ""}), \
@@ -909,8 +909,6 @@ class CarrierFailureLine(unittest.TestCase):
                     mock.patch.object(kuser, "work_temp", mock.Mock(side_effect=err)):
                 self.assertIsNone(console.carrier_log_path(environ={}))
                 self.assertIsNone(console.note_carrier_failure("python", "why"))
-        with mock.patch.object(console.os, "makedirs", mock.Mock(side_effect=kuser.HomeFenced("x"))):
-            self.assertIsNone(console.note_carrier_failure("python", "why", path=self.log))
 
     def test_the_carrier_logs_an_exception_through_console_and_lets_it_out(self):
         """tools/no_window.py's exit path when spawn raises (not an OSError, which carry turns

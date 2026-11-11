@@ -10,6 +10,7 @@ import unittest
 
 from kitlib.gate import carry
 from kitlib.gate import verdicts as V
+from kitlib.records import verdict_entry as VE
 from tests.gate import test_verdict_cli
 from tests.gate.test_carry import CarryCase
 from tests.gate.test_verdicts import given
@@ -47,7 +48,7 @@ class Carry(QueueCarryCase):
     def test_a_carry_moves_the_entry_to_the_head_and_records_it(self):
         _, reviewed, queued, tip = self.synced()
         path, stored = self.carry()
-        self.assertEqual(path, V.entry_path(self.common, BRANCH))
+        self.assertEqual(path, VE.entry_path(self.common, BRANCH))
         self.assertEqual(stored['tip'], tip)
         c = stored['carried']
         self.assertEqual({k: c[k] for k in ('from', 'merges', 'main', 'utc')},
@@ -58,7 +59,7 @@ class Carry(QueueCarryCase):
         self.assertEqual({k: v for k, v in stored.items() if k not in ('tip', 'carried')},
                          {k: v for k, v in queued.items() if k != 'tip'})
         self.assertEqual(self.on_disk(), [stored])
-        self.assertIsNone(V.check(stored))
+        self.assertIsNone(VE.check(stored))
 
     def test_a_second_carry_keeps_the_commit_first_reviewed(self):
         wt, reviewed, _, first = self.synced()
@@ -118,7 +119,7 @@ class Carry(QueueCarryCase):
             readded.append(self.queue(tip, reviewer_id='agent-r2', range='%s..%s' % (
                 self.main[:10], tip[:10])))
             return carry.check(root, reviewed, head, base)
-        with self.assertRaises(V.VerdictError) as cm:
+        with self.assertRaises(VE.VerdictError) as cm:
             self.carry(check=check)
         self.assertIn('changed while its carry was checked', str(cm.exception))
         self.assertEqual(self.on_disk(), readded)
@@ -130,7 +131,7 @@ class Carry(QueueCarryCase):
             facts = carry.check(root, reviewed, head, base)
             self.more(wt, {'late.py': 'late\n'})
             return facts
-        with self.assertRaises(V.VerdictError) as cm:
+        with self.assertRaises(VE.VerdictError) as cm:
             self.carry(check=check)
         self.assertIn('moved while its carry was checked', str(cm.exception))
         self.assertEqual(self.on_disk(), [queued])
@@ -163,21 +164,21 @@ class TheCarriedRecord(QueueCarryCase):
                           ({'diff': 'x' * 64}, 'carried.diff is a sha256'),
                           ({'utc': '2026-10-16'}, 'carried.utc is YYYY-MM-DDTHH:MM:SSZ')):
             with self.subTest(over=over):
-                self.assertIn(why, V.check(dict(stored, carried=dict(c, **over))))
-        self.assertIn('carried is an object of', V.check(dict(stored, carried=dict(c, more=1))))
-        self.assertIn('carried is an object of', V.check(dict(stored, carried=[reviewed])))
+                self.assertIn(why, VE.check(dict(stored, carried=dict(c, **over))))
+        self.assertIn('carried is an object of', VE.check(dict(stored, carried=dict(c, more=1))))
+        self.assertIn('carried is an object of', VE.check(dict(stored, carried=[reviewed])))
 
     def test_the_range_ends_at_the_commit_reviewed(self):
         _, tip, stored = self.carried_entry()
-        why = V.check(dict(stored, range='%s..%s' % (self.main[:10], tip[:10])))
+        why = VE.check(dict(stored, range='%s..%s' % (self.main[:10], tip[:10])))
         self.assertIn('the reviewed commit the verdict was carried from', why)
 
     def test_the_coordinator_never_states_a_carried_record(self):
         _, tip, stored = self.carried_entry()
-        given_entry = {k: stored[k] for k in V.GIVEN_KEYS}
+        given_entry = {k: stored[k] for k in VE.GIVEN_KEYS}
         self.assertIn('may not set: carried',
-                      V.check(dict(given_entry, carried=stored['carried']), stored=False))
-        with self.assertRaises(V.BadEntry):
+                      VE.check(dict(given_entry, carried=stored['carried']), stored=False))
+        with self.assertRaises(VE.BadEntry):
             V.add(self.common, dict(given_entry, carried=stored['carried']))
 
 

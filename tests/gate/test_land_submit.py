@@ -19,6 +19,7 @@ from unittest import mock
 from kitlib import gate as G
 from kitlib.allowrules import rules
 from kitlib.gate import pin, result, submit, verdicts
+from kitlib.records import verdict_entry
 from kitlib.git import repo
 from kitlib.lock import detach as lockdetach
 from kitlib.lock.store import LockError
@@ -499,16 +500,16 @@ class NamedReview(SubmitCase):
         _, tip = self.branch('feature', {'a.py': 'a\n'})
         self.queue(BRANCH, tip)
         common = self.common()
-        with open(verdicts.entry_path(common, BRANCH), encoding='utf-8') as f:
+        with open(verdict_entry.entry_path(common, BRANCH), encoding='utf-8') as f:
             held = f.read()
-        with open(verdicts.entry_path(common, 'kit/other'), 'w', encoding='utf-8') as f:
+        with open(verdict_entry.entry_path(common, 'kit/other'), 'w', encoding='utf-8') as f:
             f.write(held)
         out = submit.named_review(self.repo.root, ['kit/other'], [tip], ['agent-r1'])
         self.assertEqual((out.code, len(out.lines)), (G.REFUSED, 1), out.lines)
         self.assertTrue(out.lines[0].startswith('REFUSED: the verdict entry of kit/other cannot '
                                                 'be used: '), out.lines)
         self.assertIn('holds the entry of kit/feature, not kit/other', out.lines[0])
-        with open(verdicts.entry_path(common, BRANCH), 'w', encoding='utf-8') as f:
+        with open(verdict_entry.entry_path(common, BRANCH), 'w', encoding='utf-8') as f:
             f.write('{not json')
         for given in (['agent-r1'], []):
             out, detach = self.named([BRANCH], [tip], given)

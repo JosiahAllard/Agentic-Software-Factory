@@ -14,9 +14,9 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.fs import treelock
-from kitlib.gate import land, result, runner, steps, verdicts
+from kitlib.gate import land, result, runner, steps
 from kitlib.proc import process
-from kitlib.records import landing
+from kitlib.records import landing, verdict_entry
 from tests import gitfixture, testutil
 from tests.gate import fixtures
 from tests.home import machine_config, result_drive, temp_home
@@ -489,15 +489,6 @@ class Folder(unittest.TestCase):
                             os.path.normcase(folder))           # another repository: its own
         self.assertFalse(os.path.exists(self.old_dir))           # nothing in the old folder
 
-    def test_a_repo_key_is_the_folder_name_and_a_hash_of_the_common_dir(self):
-        a = result.repo_key(r'C:\work\My.Repo\.git')
-        self.assertRegex(a, r'^myrepo-[0-9a-f]{12}$')
-        self.assertEqual(result.repo_key(r'c:\WORK\my.repo\.GIT'), a)   # Windows ignores case
-        self.assertNotEqual(result.repo_key(r'C:\other\My.Repo\.git'), a)
-        self.assertRegex(result.repo_key(r'C:\remotes\proj.git'), r'^projgit-[0-9a-f]{12}$')
-        self.assertRegex(result.repo_key(r'C:\x\%%%\.git'), r'^repo-[0-9a-f]{12}$')
-        self.assertLessEqual(len(result.repo_key('C:\\x\\%s\\.git' % ('n' * 200))), 40 + 13)
-
     def test_with_no_dev_drive_there_is_no_result_folder_and_nothing_is_written(self):
         temp_home(self)
         machine_config(None, {}, case=self)                      # a machine config, no dev_drive
@@ -759,7 +750,7 @@ class LandingWrites(fixtures.GateRepoCase):
         self.assertEqual(out.code, G.FAILED, out.lines)
         os.remove(os.path.join(wt, 'RED'))
         green = self.repo.commit('fix', 'RED', cwd=wt)
-        os.remove(verdicts.entry_path(self.repo.common_dir(), 'kit/feature'))   # reviewed again
+        os.remove(verdict_entry.entry_path(self.repo.common_dir(), 'kit/feature'))   # reviewed again
         out = self.lander('kit/feature', self.main, green).run()
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(result.read(self.repo.root, 'kit/feature', 'land')[0]['verdict'], 'pass')

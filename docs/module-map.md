@@ -243,7 +243,7 @@ drive, a write that failed); either way the exit is the report's. A change with 
 keeps no record.
 
 - Where: `<dev_drive>/pm-kit/kit-gate-scope/<repo key>/`, a sibling of the gate's other
-  per-repository folders (`kitlib.gate.result.kit_folder` and `repo_key`): one folder for every
+  per-repository folders (`kitlib.records.place.kit_folder` and `repo_key`): one folder for every
   worktree of the repository, outside every checkout.
 - A record: one JSON file per gate run, `<YYYYMMDDTHHMMSSZ>-<pid>-<4 hex>.json`, written to a
   dot-named temp file and moved into place, so parallel gates never share a file. Keys (schema

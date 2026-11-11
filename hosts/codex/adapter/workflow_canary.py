@@ -368,7 +368,7 @@ def probe(codex_exe=None, profile=None, fixture_root=None):
                 raise RuntimeError('fixture main changed')
             from kitlib.records import gate_ok
             from kitlib.config import load
-            from kitlib.gate.runner import gate_config
+            from kitlib.records.gate_ok import gate_config
             record, why = gate_ok.verify(task.worker, tip, gate_config=gate_config(load(task.worker)))
             if not record or why or record.get('base') != task.base:
                 raise RuntimeError('real fixture gate proof does not cover the exact tip/base')

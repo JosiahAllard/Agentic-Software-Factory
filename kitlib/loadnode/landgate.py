@@ -68,7 +68,7 @@ def land_gate(wt, spec, say, merged_gate=None, kit_hash=None):
     from kitlib.config.types import ConfigError
     from kitlib.gate import runner
     from kitlib.git import cmd, refs
-    from kitlib.records import gate_ok
+    from kitlib.records import gate_ok, place
     sha, base = spec['sha'], spec['base']
     full, docs = spec['full'] is True, spec['docs'] is True
     mine = (kit_hash or kit_files)()
@@ -102,8 +102,8 @@ def land_gate(wt, spec, say, merged_gate=None, kit_hash=None):
         return EXIT_FAILED
     docs = bool(out.facts.get('docs'))
     try:
-        gate_ok.record_pass(wt, sha, runner.gate_config(cfg),
-                            dict(runner.kit_identity(), files=mine), runner.repo_name(cfg, wt),
+        gate_ok.record_pass(wt, sha, gate_ok.gate_config(cfg),
+                            dict(runner.kit_identity(), files=mine), place.repo_name(cfg, wt),
                             started, runner.record_steps(out.facts.get('results') or []),
                             base=base, config_rev=base, source=out.facts.get('source'),
                             full=full and not docs, mode='docs' if docs else None)
@@ -132,13 +132,13 @@ def expect(root, cfg, base, full, docs, tree=None):
     return {'head': info['head'], 'steps': list(info['steps']),
             'mode': 'docs' if docs else 'full' if full else 'select', 'full': full,
             'source': info['source'],
-            'gate_config': gate_ok.config_hash(runner.gate_config(cfg))}, None
+            'gate_config': gate_ok.config_hash(gate_ok.gate_config(cfg))}, None
 
 
 def check_record(root, rec, merge, base, expected, repo_name, kit_hash, gate_config):
     """`rec`, the record a land job's node wrote for the merge `merge` (a full hash), when main
     takes it: checked against main's git in `root` (commit, tree, author), the gate config main
-    read at `base` (`gate_config`, runner.gate_config of it), `expected` (expect()'s dict), main's
+    read at `base` (`gate_config`, gate_ok.gate_config of it), `expected` (expect()'s dict), main's
     repository name and main's kit files hash. RecordRefused naming the first check it fails."""
     from kitlib.records import gate_ok
     if not isinstance(rec, dict):
@@ -195,14 +195,14 @@ def checker(root, merge, base, cfg, repo_name, full, docs, tree=None, kit_hash=N
     """NodeJob's checker for a landing's land job: record -> the record, RecordRefused. What
     main's merged gate would select is read once, here (RecordRefused when main's gate would
     refuse the merge)."""
-    from kitlib.gate import runner
+    from kitlib.records import gate_ok
     expected, why = expect(root, cfg, base, full, docs, tree=tree)
     if expected is None:
         raise RecordRefused("main's own merged gate would refuse the merge: %s" % why)
     if expected['head'] != merge:
         raise RecordRefused('the landing tree is at %s, not the merge %s'
                             % (str(expected['head'])[:12], merge[:12]))
-    gate_config = runner.gate_config(cfg)
+    gate_config = gate_ok.gate_config(cfg)
     mine = kit_hash if kit_hash is not None else kit_files()
 
     def check(rec):

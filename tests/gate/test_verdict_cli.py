@@ -10,6 +10,7 @@ from unittest import mock
 
 from kitlib.gate import steps
 from kitlib.gate import verdicts as V
+from kitlib.records import verdict_entry as VE
 from tests.gate.fixtures import GateRepoCase
 
 VERDICT_PY = os.path.join(steps.KIT_TOOLS, 'verdict.py')
@@ -128,7 +129,7 @@ class VerdictCli(GateRepoCase):
         self.assertEqual(len(lines), 2, out)
 
     def test_list_names_a_file_that_is_not_an_entry_and_exits_1(self):
-        folder = V.queue_dir(self.repo.common_dir())
+        folder = VE.queue_dir(self.repo.common_dir())
         os.makedirs(folder)
         with open(os.path.join(folder, 'kit%2Fb.json'), 'w', encoding='utf-8') as f:
             f.write('{')
@@ -140,7 +141,7 @@ class VerdictCli(GateRepoCase):
                       os.path.normcase(out))
 
     def test_drop_that_cannot_list_the_queue_is_not_done(self):
-        folder = V.queue_dir(self.repo.common_dir())
+        folder = VE.queue_dir(self.repo.common_dir())
         os.makedirs(folder)
         with open(os.path.join(folder, 'kit%2Fb.json'), 'w', encoding='utf-8') as f:
             f.write('{')

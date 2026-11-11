@@ -285,7 +285,7 @@ def _record_why(rec, cfg, base, tip, merge, root, now):
             rec['ran_on'].get('node') if isinstance(rec['ran_on'], dict) else rec['ran_on'])
     if rec.get('base') != base:
         return 'the record gated against %s, not %s' % (str(rec.get('base'))[:10], base[:10])
-    if rec.get('gate_config') != gate_ok.config_hash(runner.gate_config(cfg)):
+    if rec.get('gate_config') != gate_ok.config_hash(gate_ok.gate_config(cfg)):
         return 'the record was made with another gate config'
     kit = runner.kit_identity()
     if not isinstance(rec.get('kit'), dict) or kit.get('clean') is not True \
@@ -508,7 +508,7 @@ def step_key(root, cfg, spec, step, files, kit, changed=(), probes=None):
         'argv': [_norm(a, subs) for a in step.cmd],
         'cwd': os.path.relpath(os.path.abspath(step.cwd), os.path.abspath(root)).replace('\\', '/'),
         'tools': tools_of(step, subs),
-        'config': gate_ok.config_hash(runner.gate_config(cfg)),
+        'config': gate_ok.config_hash(gate_ok.gate_config(cfg)),
         'kit': kit,
         'inputs': ins,
         'changed': changed_list(changed),
@@ -753,7 +753,7 @@ def _input_tree_why(rec, cfg, base, tip, merge, root, now):
     if parents.split()[1:] != [base, tip]:
         return 'parents: the merge %s is not the merge of %s onto %s' % (
             merge[:10], tip[:10], base[:10])
-    if rec.get('gate_config') != gate_ok.config_hash(runner.gate_config(cfg)):
+    if rec.get('gate_config') != gate_ok.config_hash(gate_ok.gate_config(cfg)):
         return 'config: the record was made with another gate config'
     max_h = cfg.section('landing')['reuse_max_age_h']
     ended = datetime.datetime.strptime(rec['ended_utc'], '%Y-%m-%dT%H:%M:%SZ').replace(

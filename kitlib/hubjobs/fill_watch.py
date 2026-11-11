@@ -318,6 +318,7 @@ def read_survey(top, cfg):
     common dir, the verdict queue or the worktrees cannot be read."""
     from kitlib.coordstate import render
     from kitlib.gate import verdicts
+    from kitlib.records import verdict_entry
     from kitlib.git import refs
     from kitlib.git import repo
     from kitlib.worktree import classify
@@ -329,8 +330,8 @@ def read_survey(top, cfg):
         raise StandDownUnread('the git common dir cannot be read (%s)' % why)
     try:
         queued = {e['branch'] for e in verdicts.entries(common)
-                  if not verdicts.expired(common, e, main)}
-    except verdicts.VerdictError as e:
+                  if not verdict_entry.expired(common, e, main)}
+    except verdict_entry.VerdictError as e:
         raise StandDownUnread('the verdict queue cannot be read (%s)' % e)
     got = classify.classify(top, dead_after_s=IDLE_AFTER_S)
     if 'error' in got.data:

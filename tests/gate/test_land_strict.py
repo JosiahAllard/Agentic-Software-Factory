@@ -13,7 +13,7 @@ import unittest
 from kitlib import gate as G
 from kitlib.gate import land, strict_defaults, verdicts
 from kitlib.git import repo as repomod
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, verdict_entry
 from tests.gate import fixtures, test_land
 
 BRANCH = test_land.BRANCH
@@ -42,8 +42,8 @@ class StrictCase(test_land.LandCase):
         entry = dict(REVIEWER, branch=branch, tip=tip, range='%s..%s' % (self.main[:10], tip),
                      queued_utc='2026-10-14T00:00:00Z', state='queued', last_result=None)
         del entry[drop]
-        os.makedirs(verdicts.queue_dir(self.common()), exist_ok=True)
-        with open(verdicts.entry_path(self.common(), branch), 'w', encoding='utf-8') as f:
+        os.makedirs(verdict_entry.queue_dir(self.common()), exist_ok=True)
+        with open(verdict_entry.entry_path(self.common(), branch), 'w', encoding='utf-8') as f:
             json.dump(entry, f)
 
     def on_main(self, files, message='main edit'):

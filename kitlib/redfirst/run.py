@@ -62,6 +62,7 @@ from kitlib.lock import run as lockrun
 from kitlib.lock.store import (EXIT_BUSY, EXIT_HOLD, EXIT_REQUIRE, EXIT_RESERVED, EXIT_TIMEOUT,
                                EXIT_USAGE, LockError, Store)
 from kitlib.proc.job import Job
+from kitlib.records import place as rplace
 from kitlib.redfirst import verdict as V
 from kitlib.tooldeps.selfrun import UNIT_TIMEOUT
 from kitlib.worktree import holders, remove
@@ -482,12 +483,12 @@ def default_log_dir(cfg, main, note=grunner.say_note):
     """A new `<gate log base>/redfirst/<time>-<pid>` folder (kitlib.gate.runner.make_log_dir:
     under fallback_log_base, with a note, when the default base cannot be made). When neither can
     be made, that path unmade: execute reports it."""
-    name = grunner.repo_name(cfg, main)
+    name = rplace.repo_name(cfg, main)
     try:
         return grunner.make_log_dir(cfg, main, name, 'redfirst', note=note, fresh=True)
     except OSError:
         stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-        return os.path.join(grunner.log_base(cfg, main, name, note), 'redfirst',
+        return os.path.join(rplace.log_base(cfg, main, name, note), 'redfirst',
                             '%s-%d' % (stamp, os.getpid()))
 
 
@@ -569,7 +570,7 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
                 landed=landed, log_dir=os.path.abspath(log_dir),
                 worktrees_dir=os.path.normpath(cfg.repo['worktrees_dir']),
                 tools_dir=cfg.tools_dir, hold_wait=section['hold_wait'],
-                lock=lock, lock_from=lock_from, repo=grunner.repo_name(cfg, main),
+                lock=lock, lock_from=lock_from, repo=rplace.repo_name(cfg, main),
                 timeout=timeout, timeout_from=timeout_from)
 
 

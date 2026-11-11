@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from kitlib.gate import verdicts as V
+from kitlib.records import verdict_entry as VE
 from tests.gate.fixtures import GateRepoCase
 
 
@@ -28,12 +29,12 @@ class Check(unittest.TestCase):
             for stored in (False, True):
                 e = given('kit/a', tip, reviewer=reviewer)
                 if stored:
-                    e.update(queued_utc='2026-01-01T00:00:00Z', state=V.QUEUED, last_result=None)
+                    e.update(queued_utc='2026-01-01T00:00:00Z', state=VE.QUEUED, last_result=None)
                 with self.subTest(reviewer=reviewer, stored=stored):
-                    self.assertIn('reviewer names no agent type', V.check(e, stored=stored) or '')
+                    self.assertIn('reviewer names no agent type', VE.check(e, stored=stored) or '')
         for reviewer in ('pm-kit:analyst', 'reviewer', 'pm-kit: / analyst'):
             with self.subTest(reviewer=reviewer):
-                self.assertIsNone(V.check(given('kit/a', tip, reviewer=reviewer), stored=False))
+                self.assertIsNone(VE.check(given('kit/a', tip, reviewer=reviewer), stored=False))
 
 
 class SelfReviewWhy(unittest.TestCase):
@@ -241,7 +242,7 @@ class QueueCase(GateRepoCase):
 
     def folder_names(self):
         try:
-            return sorted(os.listdir(V.queue_dir(self.common)))
+            return sorted(os.listdir(VE.queue_dir(self.common)))
         except FileNotFoundError:
             return []
 
@@ -399,9 +400,9 @@ class Queue(QueueCase):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
         path, stored = V.add(self.common, given('kit/a', tip))
         self.assertEqual(path, os.path.join(self.common, 'kit-verdicts', 'kit%2Fa.json'))
-        self.assertEqual(stored['state'], V.QUEUED)
+        self.assertEqual(stored['state'], VE.QUEUED)
         self.assertIsNone(stored['last_result'])
-        self.assertRegex(stored['queued_utc'], V.UTC_RE)
+        self.assertRegex(stored['queued_utc'], VE.UTC_RE)
         self.assertEqual(V.entries(self.common), [stored])
         with open(path, encoding='utf-8') as f:
             self.assertEqual(json.load(f), stored)
@@ -413,11 +414,11 @@ class Queue(QueueCase):
         _, tip = self.branch('deep/x', {'x.txt': 'x\n'})
         path, _ = V.add(self.common, given('kit/deep/x', tip))
         self.assertEqual(os.path.basename(path), 'kit%2Fdeep%2Fx.json')
-        self.assertEqual(V.branch_of('kit%2Fdeep%2Fx.json'), 'kit/deep/x')
+        self.assertEqual(VE.branch_of('kit%2Fdeep%2Fx.json'), 'kit/deep/x')
         self.assertEqual([e['branch'] for e in V.entries(self.common)], ['kit/deep/x'])
-        self.assertEqual(V.file_name('a%2Fb'), 'a%252Fb.json')       # '%' itself is encoded
-        self.assertEqual(V.branch_of('a%252Fb.json'), 'a%2Fb')
-        self.assertIsNone(V.branch_of('kit%2fdeep%2fx.json'))       # not a name file_name makes
+        self.assertEqual(VE.file_name('a%2Fb'), 'a%252Fb.json')       # '%' itself is encoded
+        self.assertEqual(VE.branch_of('a%252Fb.json'), 'a%2Fb')
+        self.assertIsNone(VE.branch_of('kit%2fdeep%2fx.json'))       # not a name file_name makes
 
     def test_add_refuses_a_tip_that_is_not_the_branch_head(self):
         self.branch('a', {'a.txt': 'a\n'})
@@ -438,13 +439,13 @@ class Queue(QueueCase):
         self.assertEqual(self.folder_names(), ['kit%2Fa.json'])
 
     def test_entries_are_oldest_first_and_the_branch_name_settles_a_tie(self):
-        folder = V.queue_dir(self.common)
+        folder = VE.queue_dir(self.common)
         os.makedirs(folder)
         queued = [('kit/c', '2026-01-01T00:00:03Z'), ('kit/b', '2026-01-01T00:00:01Z'),
                   ('kit/d', '2026-01-01T00:00:02Z'), ('kit/a', '2026-01-01T00:00:01Z')]
         for branch, when in queued:
-            with open(os.path.join(folder, V.file_name(branch)), 'w', encoding='utf-8') as f:
-                json.dump(dict(given(branch, 'a' * 40), queued_utc=when, state=V.QUEUED,
+            with open(os.path.join(folder, VE.file_name(branch)), 'w', encoding='utf-8') as f:
+                json.dump(dict(given(branch, 'a' * 40), queued_utc=when, state=VE.QUEUED,
                                last_result=None), f)
         want = ['kit/a', 'kit/b', 'kit/d', 'kit/c']          # a and b tie in time: name first
         self.assertEqual([e['branch'] for e in V.entries(self.common)], want)
@@ -468,7 +469,7 @@ class Queue(QueueCase):
             del e[missing]
             bad.append(e)
         for e in bad:
-            with self.assertRaises(V.BadEntry, msg=e):
+            with self.assertRaises(VE.BadEntry, msg=e):
                 V.add(self.common, e)
         self.assertEqual(self.folder_names(), [])
 
@@ -478,22 +479,22 @@ class Queue(QueueCase):
             for over in ({'reviewer_id': 'coord-1'}, {'reviewer': 'pm-kit:coordinator'}):
                 with self.subTest(risk=risk, **over), self.assertRaises(V.SelfReview) as cm:
                     V.add(self.common, given('kit/a', tip, risk=risk, **over))
-                self.assertIsInstance(cm.exception, V.BadEntry)
+                self.assertIsInstance(cm.exception, VE.BadEntry)
         self.assertEqual(self.folder_names(), [])
         _, stored = V.add(self.common, given('kit/a', tip, risk='Low', reviewer_id='coord-1'))
         self.assertEqual(stored['reviewer_id'], 'coord-1')       # a small Low self-read is queued
 
     def test_a_windows_device_name_is_refused(self):
         for name in ('con', 'NUL', 'com1', 'aux.x'):
-            with self.assertRaises(V.BadEntry, msg=name):
-                V.file_name(name)
+            with self.assertRaises(VE.BadEntry, msg=name):
+                VE.file_name(name)
 
     def test_a_failed_replace_leaves_no_temp_file_and_the_old_entry(self):
         wt, first = self.branch('a', {'a.txt': 'a\n'})
         path, old = V.add(self.common, given('kit/a', first))
         second = self.more(wt, 'a', {'a.txt': 'b\n'})
         with mock.patch.object(V.os, 'replace', side_effect=OSError('replace refused')) as rep:
-            with self.assertRaises(V.VerdictError) as cm:
+            with self.assertRaises(VE.VerdictError) as cm:
                 V.add(self.common, given('kit/a', second))
         self.assertEqual(rep.call_count, 1)
         self.assertIn('replace refused', str(cm.exception))
@@ -519,7 +520,7 @@ class Queue(QueueCase):
                     if written:
                         V.add(self.common, given('kit/' + name, tip))
                     else:
-                        with self.assertRaises(V.VerdictError) as cm:
+                        with self.assertRaises(VE.VerdictError) as cm:
                             V.add(self.common, given('kit/' + name, tip))
                 self.assertEqual(len(calls), tries)
                 self.assertEqual(clock.sleeps, [0.2] * (tries - 1))
@@ -535,10 +536,10 @@ class Queue(QueueCase):
         self.assertFalse(V.mark_failed(self.common, 'kit/a', 'red', tip=self.main))
         self.assertTrue(V.mark_failed(self.common, 'kit/a', 'merged gate red: unit', tip=tip))
         [e] = V.entries(self.common)
-        self.assertEqual((e['state'], e['last_result']), (V.FAILED, 'merged gate red: unit'))
+        self.assertEqual((e['state'], e['last_result']), (VE.FAILED, 'merged gate red: unit'))
         V.add(self.common, given('kit/a', tip))
         [e] = V.entries(self.common)
-        self.assertEqual((e['state'], e['last_result']), (V.QUEUED, None))
+        self.assertEqual((e['state'], e['last_result']), (VE.QUEUED, None))
         self.assertFalse(V.mark_failed(self.common, 'kit/nosuch', 'red'))
 
     def test_drop_with_a_tip_keeps_an_entry_queued_at_another_tip(self):
@@ -553,13 +554,13 @@ class Queue(QueueCase):
     def test_a_file_that_is_not_an_entry_stops_entries_and_is_named(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
         V.add(self.common, given('kit/a', tip))
-        folder = V.queue_dir(self.common)
+        folder = VE.queue_dir(self.common)
         with open(os.path.join(folder, 'kit%2Fb.json'), 'w', encoding='utf-8') as f:
             f.write('{not json')
         with open(os.path.join(folder, 'kit%2Fc.json'), 'w', encoding='utf-8') as f:
             json.dump(dict(given('kit/C', tip), queued_utc=V.utc(), state='queued',
                            last_result=None), f)                       # another branch's entry
-        with self.assertRaises(V.VerdictError) as cm:
+        with self.assertRaises(VE.VerdictError) as cm:
             V.entries(self.common)
         self.assertIn('kit%2Fb.json', str(cm.exception))
         self.assertIn('tools/verdict.py drop kit/b', str(cm.exception))
@@ -567,9 +568,9 @@ class Queue(QueueCase):
         self.assertEqual([e['branch'] for e in good], ['kit/a'])
         self.assertEqual(sorted(os.path.basename(p) for p, _ in bad), ['kit%2Fb.json', 'kit%2Fc.json'])
         _, tip_b = self.branch('b', {'b.txt': 'b\n'})
-        with self.assertRaises(V.VerdictError) as cm:
+        with self.assertRaises(VE.VerdictError) as cm:
             V.add(self.common, given('kit/b', tip_b))   # an unreadable entry is not replaced
-        self.assertIs(type(cm.exception), V.VerdictError)
+        self.assertIs(type(cm.exception), VE.VerdictError)
         self.assertIn('not a verdict entry', str(cm.exception))
         with self.assertRaises(V.OtherBranch):
             V.drop(self.common, 'kit/B')                 # unreadable, and named for kit/b
@@ -583,13 +584,13 @@ class Queue(QueueCase):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
         V.add(self.common, given('kit/a', tip))
         for t in (None, tip):
-            with self.assertRaises(V.VerdictError, msg=t) as cm:
+            with self.assertRaises(VE.VerdictError, msg=t) as cm:
                 V.drop(self.common, 'kit/A', tip=t)
             self.assertEqual(type(cm.exception).__name__, 'OtherBranch')
         self.assertEqual([e['branch'] for e in V.entries(self.common)], ['kit/a'])
 
     def test_a_temp_file_left_by_a_dead_write_is_named_and_kept(self):
-        folder = V.queue_dir(self.common)
+        folder = VE.queue_dir(self.common)
         os.makedirs(folder)
         tmp = os.path.join(folder, '.kit%2Fa.json.0123abcd.tmp')
         with open(tmp, 'w', encoding='utf-8') as f:
@@ -597,7 +598,7 @@ class Queue(QueueCase):
         good, bad = V.scan(self.common)
         self.assertEqual((good, [p for p, _ in bad]), ([], [tmp]))
         self.assertIn('temp file', bad[0][1])
-        with self.assertRaises(V.VerdictError) as cm:
+        with self.assertRaises(VE.VerdictError) as cm:
             V.entries(self.common)
         self.assertIn('remove it by hand', str(cm.exception))
         self.assertNotIn('tools/verdict.py drop', str(cm.exception))
@@ -605,22 +606,22 @@ class Queue(QueueCase):
 
     def test_a_file_holding_another_branchs_entry_is_not_offered_to_drop(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
-        folder = V.queue_dir(self.common)
+        folder = VE.queue_dir(self.common)
         os.makedirs(folder)
         with open(os.path.join(folder, 'kit%2Fc.json'), 'w', encoding='utf-8') as f:
             json.dump(dict(given('kit/C', tip), queued_utc=V.utc(), state='queued',
                            last_result=None), f)
-        with self.assertRaises(V.VerdictError) as cm:
+        with self.assertRaises(VE.VerdictError) as cm:
             V.entries(self.common)
         self.assertIn('kit%2Fc.json', str(cm.exception))
         self.assertIn('remove it by hand', str(cm.exception))
         self.assertNotIn('tools/verdict.py drop', str(cm.exception))   # drop would refuse it
-        with self.assertRaises(V.VerdictError):
+        with self.assertRaises(VE.VerdictError):
             V.drop(self.common, 'kit/c')
         self.assertEqual(self.folder_names(), ['kit%2Fc.json'])
 
     def test_drop_says_so_when_the_queue_folder_cannot_be_listed(self):
-        folder = V.queue_dir(self.common)
+        folder = VE.queue_dir(self.common)
         os.makedirs(folder)
         with open(os.path.join(folder, 'kit%2Fb.json'), 'w', encoding='utf-8') as f:
             f.write('{not json')
@@ -631,7 +632,7 @@ class Queue(QueueCase):
                 raise OSError('listing refused')
             return real(p)
         with mock.patch.object(V.os, 'listdir', side_effect=listdir):
-            with self.assertRaises(V.VerdictError) as cm:
+            with self.assertRaises(VE.VerdictError) as cm:
                 V.drop(self.common, 'kit/b')
         self.assertIn('listing refused', str(cm.exception))
         self.assertEqual(self.folder_names(), ['kit%2Fb.json'])
@@ -639,7 +640,7 @@ class Queue(QueueCase):
     def test_add_refuses_a_windows_device_name(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
         for name in ('con', 'aux.x'):
-            with self.assertRaises(V.BadEntry, msg=name):
+            with self.assertRaises(VE.BadEntry, msg=name):
                 V.add(self.common, given(name, tip))
         self.assertEqual(self.folder_names(), [])
 
@@ -754,7 +755,7 @@ class Lock(QueueCase):
 
     def assert_add_waited(self, first, second, seen, queue):
         self.assertEqual(seen, (True, False, first))     # blocked on the lock, nothing written
-        self.assertEqual([(e['tip'], e['state']) for e in queue], [(second, V.QUEUED)])
+        self.assertEqual([(e['tip'], e['state']) for e in queue], [(second, VE.QUEUED)])
 
     def test_an_add_racing_a_drop_survives(self):
         self.assert_add_waited(*self.race(lambda first: V.drop(self.common, 'kit/a', tip=first)))
@@ -768,7 +769,7 @@ class Lock(QueueCase):
         err = PermissionError('denied by test')
         with mock.patch.object(V, 'LOCK_WAIT_S', 0.3, create=True), \
                 mock.patch.object(V.os, 'open', side_effect=err) as opened:
-            with self.assertRaises(V.VerdictError) as cm:
+            with self.assertRaises(VE.VerdictError) as cm:
                 V.add(self.common, given('kit/a', tip))
         self.assertGreater(opened.call_count, 1)         # retried, as a lock being removed is
         self.assertIn(str(err), str(cm.exception))
@@ -780,7 +781,7 @@ class Lock(QueueCase):
         err = OSError('disk said no')
         with mock.patch.object(V, 'LOCK_WAIT_S', 0.3, create=True), \
                 mock.patch.object(V.os, 'open', side_effect=err) as opened:
-            with self.assertRaises(V.VerdictError) as cm:
+            with self.assertRaises(VE.VerdictError) as cm:
                 V.add(self.common, given('kit/a', tip))
         self.assertEqual(opened.call_count, 1)
         self.assertIn(str(err), str(cm.exception))
@@ -799,14 +800,14 @@ class Lock(QueueCase):
             V.add(self.common, given('kit/a', tip))
         self.assertEqual(len(denied), 1)
         self.assertEqual([(e['tip'], e['state']) for e in V.entries(self.common)],
-                         [(tip, V.QUEUED)])
+                         [(tip, VE.QUEUED)])
         self.assertEqual(self.folder_names(), ['kit%2Fa.json'])
 
     def test_a_lock_removal_held_open_is_tried_five_times_0_2_s_apart_then_left(self):
         # The equivalence test of _locked's lock removal onto kitlib.fs.replace.remove: the loop
         # it replaced tried RETRIES (5) times, sleeping RETRY_SLEEP (0.2 s) between, and a lock
         # it could not remove was left to the stale-lock rule; the add itself stands either way.
-        folder = V.queue_dir(self.common)
+        folder = VE.queue_dir(self.common)
         lock = os.path.join(folder, V.LOCK_NAME)
         for fails, tries, removed in ((2, 3, True), (4, 5, True), (5, 5, False), (9, 5, False)):
             with self.subTest(fails=fails):
@@ -832,13 +833,13 @@ class Lock(QueueCase):
 
     def test_a_held_lock_is_waited_for_and_a_stale_one_removed(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
-        folder = V.queue_dir(self.common)
+        folder = VE.queue_dir(self.common)
         os.makedirs(folder)
         lock = os.path.join(folder, '.queue.lock')
         with open(lock, 'w', encoding='utf-8') as f:
             f.write('pid 1\n')
         with mock.patch.object(V, 'LOCK_WAIT_S', 0.3, create=True):
-            with self.assertRaises(V.VerdictError) as cm:
+            with self.assertRaises(VE.VerdictError) as cm:
                 V.add(self.common, given('kit/a', tip))
         self.assertIn('locked', str(cm.exception))
         self.assertEqual(self.folder_names(), ['.queue.lock'])

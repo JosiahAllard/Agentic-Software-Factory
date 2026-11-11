@@ -106,7 +106,7 @@ from kitlib.git import repo
 from kitlib.lock import detach as lockdetach
 from kitlib.lock import run as lockrun
 from kitlib.proc import process
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, verdict_entry
 
 FLAG = '--submitted'
 # The submission's naming of the review each branch lands on (named_review): shown on the command
@@ -446,13 +446,13 @@ def named_review(root, branches, tips, given, again=None):
     entries = []
     for b, t in zip(branches, tips):
         try:
-            e = verdicts._load(verdicts.entry_path(common, b), b)
-        except verdicts.VerdictError as x:
+            e = verdicts._load(verdict_entry.entry_path(common, b), b)
+        except verdict_entry.VerdictError as x:
             return _refused([], 'the verdict entry of %s cannot be used: %s' % (b, x))
         if e is None:
             return _refused([], '%s lands only with a verdict queued at its tip, and none is '
                                 'queued for it: queue it with tools/verdict.py add' % b)
-        if e['state'] != verdicts.QUEUED:
+        if e['state'] != verdict_entry.QUEUED:
             return _refused([], 'the verdict of %s is marked failed (%s): queue it again with '
                                 'tools/verdict.py add' % (b, e['last_result']))
         if e['tip'].lower() != t.lower():
@@ -579,12 +579,12 @@ def review_lines(root, branches, tips):
     lines = []
     for b, t in zip(branches, tips):
         try:
-            e = verdicts._load(verdicts.entry_path(common, b), b)
-        except verdicts.VerdictError:
+            e = verdicts._load(verdict_entry.entry_path(common, b), b)
+        except verdict_entry.VerdictError:
             continue
-        if e is None or e['state'] != verdicts.QUEUED or e['tip'].lower() != t.lower():
+        if e is None or e['state'] != verdict_entry.QUEUED or e['tip'].lower() != t.lower():
             continue
-        c = e.get(verdicts.CARRIED)
+        c = e.get(verdict_entry.CARRIED)
         more = ''
         if c:
             n = len(c['merges'])

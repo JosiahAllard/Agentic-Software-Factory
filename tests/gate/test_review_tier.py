@@ -11,6 +11,7 @@ from unittest import mock
 from kitlib import gate as G
 from kitlib.gate import land
 from kitlib.gate import verdicts as V
+from kitlib.records import verdict_entry as VE
 from tests.gate import test_land_strict, test_land_verdict, test_verdict_cli
 from tests.gate.fixtures import GateRepoCase
 
@@ -123,9 +124,9 @@ class Landing(test_land_verdict.VerdictCase):
         e = dict(REVIEWER, branch=branch, tip=tip, range='%s..%s' % (self.main[:10], tip),
                  queued_utc='2026-10-30T00:00:00Z', state='queued', last_result=None)
         e.update(over)
-        self.assertIsNone(V.check(e))
-        os.makedirs(V.queue_dir(self.common()), exist_ok=True)
-        with open(V.entry_path(self.common(), branch), 'w', encoding='utf-8') as f:
+        self.assertIsNone(VE.check(e))
+        os.makedirs(VE.queue_dir(self.common()), exist_ok=True)
+        with open(VE.entry_path(self.common(), branch), 'w', encoding='utf-8') as f:
             json.dump(e, f)
 
     def test_a_high_risk_haiku_verdict_queued_before_the_rule_is_refused_at_landing(self):

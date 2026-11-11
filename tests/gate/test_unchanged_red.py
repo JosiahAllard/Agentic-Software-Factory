@@ -10,6 +10,7 @@ import kitlib.config as kconfig
 from kitlib import gate as G
 from kitlib.gate import budget, gatecap, rerun, runner
 from kitlib.lock import run as lockrun
+from kitlib.records import gate_ok
 from tests.gate import fixtures, test_targeted_rerun
 
 BRANCH = 'kit/feature'
@@ -83,7 +84,7 @@ class Marks(Case):
                          (self.tree(), self.tip, BRANCH, 'full', 'fail', ['unit'],
                           out.facts['log_dir']))
         self.assertEqual(rec['gate_config'],
-                         rerun.gate_ok.config_hash(runner.gate_config(cfg)))
+                         rerun.gate_ok.config_hash(gate_ok.gate_config(cfg)))
         self.assertEqual(rec['kit'], runner.kit_identity())
         self.assertTrue(rec['ended'])
 
@@ -147,8 +148,8 @@ class Refused(Case):
     def test_another_gate_config_or_kit_runs(self):
         """Each against a red mark of the real config and kit (the --again gate before it)."""
         self.gate()
-        real = runner.gate_config
-        with mock.patch.object(runner, 'gate_config', lambda cfg: dict(real(cfg), extra=1)):
+        real = gate_ok.gate_config
+        with mock.patch.object(gate_ok, 'gate_config', lambda cfg: dict(real(cfg), extra=1)):
             self.assertEqual(self.gate().code, G.FAILED)
         self.assertEqual(self.gate(again=True).code, G.FAILED)
         with mock.patch.object(runner, 'kit_identity', return_value={'commit': 'f' * 40}):

@@ -5,7 +5,7 @@ import unittest
 
 from kitlib import config
 from kitlib.config import schema
-from kitlib.gate import runner
+from kitlib.records import gate_ok
 from tests.config.helpers import TempTree
 
 
@@ -43,8 +43,8 @@ class SharedPaths(unittest.TestCase):
 
     def test_it_does_not_change_the_gate_config_hash(self):
         gate = {'steps': [{'name': 's', 'always': True, 'cmd': ['x']}]}
-        plain = runner.gate_config(self.load({'gate': gate}))
-        shared = runner.gate_config(self.load({'gate': gate, 'landing': {'shared_paths': ['a/*']}}))
+        plain = gate_ok.gate_config(self.load({'gate': gate}))
+        shared = gate_ok.gate_config(self.load({'gate': gate, 'landing': {'shared_paths': ['a/*']}}))
         self.assertEqual(plain, shared)
 
     def test_the_doc_line_names_it(self):

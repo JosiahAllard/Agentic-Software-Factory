@@ -9,6 +9,7 @@ import unittest
 
 from kitlib import gate as G
 from kitlib.gate import land, verdicts
+from kitlib.records import verdict_entry
 from tests import gitfixture
 from tests.gate import test_land, test_land_strict
 
@@ -165,7 +166,7 @@ class DryCheck(StrictCase):
         self.assertTrue(out.lines[0].startswith('STRICT %s:' % BRANCH), out.lines)
         self.assertEqual(self.snapshot(), before)
         self.assertIsNone(self.lock().read())
-        self.assertFalse(os.path.exists(verdicts.entry_path(self.common(), BRANCH)))
+        self.assertFalse(os.path.exists(verdict_entry.entry_path(self.common(), BRANCH)))
         self.assertEqual(self.book_calls, [])
         self.assertEqual(self.remote_main(), self.main)
 

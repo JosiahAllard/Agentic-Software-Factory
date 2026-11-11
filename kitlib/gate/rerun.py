@@ -63,7 +63,6 @@ from kitlib.gate import budget
 from kitlib.gate import detect
 from kitlib.gate import gatecap
 from kitlib.gate import gitstatus
-from kitlib.gate import result
 from kitlib.gate import runner
 from kitlib.gate import stash
 from kitlib.gate import steps as S
@@ -71,7 +70,7 @@ from kitlib.git import cmd, refs, repo
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import LockError, Store
 from kitlib.proc.job import JobError
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, place
 
 DIR_NAME = 'kit-gate-rerun'
 SCHEMA = 1
@@ -119,10 +118,10 @@ def record_dir(root):
     if not common:
         raise RerunError('no git common dir for %s: %s' % (root, why))
     try:
-        base = result.kit_folder(DIR_NAME, 'gate rerun folder')
-    except result.ResultError as e:
+        base = place.kit_folder(DIR_NAME, 'gate rerun folder')
+    except place.NoKitFolder as e:
         raise RerunError(str(e))
-    return os.path.join(base, result.repo_key(common))
+    return os.path.join(base, place.repo_key(common))
 
 
 def commit_dir(root, commit):
@@ -426,7 +425,7 @@ def record_red(top, cfg, head, base, started, results, chosen, log_dir):
     cwds = {s.name: cwd_rel(top, s.cwd) for s in chosen}
     rec = {'kind': RED, 'commit': commit, 'tree': tree, 'author': author, 'base': base,
            'config_rev': commit, 'full': True,
-           'gate_config': gate_ok.config_hash(runner.gate_config(cfg)),
+           'gate_config': gate_ok.config_hash(gate_ok.gate_config(cfg)),
            'started': started, 'ended': gate_ok.utc(), 'log_dir': log_dir,
            'steps': [cover_step(r, cwds.get(r['name'])) for r in results]}
     return _write(top, rec)[0]
@@ -453,16 +452,16 @@ def mark_path(root, tree, mode):
     if not common:
         raise RerunError('no git common dir for %s: %s' % (root, why))
     try:
-        base = result.kit_folder(MARK_DIR, 'red-tree folder')
-    except result.ResultError as e:
+        base = place.kit_folder(MARK_DIR, 'red-tree folder')
+    except place.NoKitFolder as e:
         raise NoMarkFolder(str(e))
-    return os.path.join(base, result.repo_key(common), '%s.%s.json' % (tree, mode))
+    return os.path.join(base, place.repo_key(common), '%s.%s.json' % (tree, mode))
 
 
 def mark_key(cfg, mode, only, base):
     """What a mark must match beyond its tree: the gate config's hash, the kit (runner.
     kit_identity), the mode, the --only steps and the --base given (None: the default)."""
-    return {'gate_config': gate_ok.config_hash(runner.gate_config(cfg)),
+    return {'gate_config': gate_ok.config_hash(gate_ok.gate_config(cfg)),
             'kit': runner.kit_identity(), 'mode': mode,
             'only': sorted(only) if only else None, 'base': base}
 
@@ -899,7 +898,7 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     if ids:
         return G.Outcome(G.FAILED, ['RERUN REAL: %s; nothing was rerun' % _twice_text(ids)],
                          verdict=REAL)
-    if red.get('gate_config') != gate_ok.config_hash(runner.gate_config(cfg)):
+    if red.get('gate_config') != gate_ok.config_hash(gate_ok.gate_config(cfg)):
         return G.Outcome(G.REFUSED, ['REFUSED: the gate config is not the one the red run used'])
     unc = uncovered_of(red)
     if unc:
@@ -922,7 +921,7 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     if checks is None:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
     changed, _ = runner.changed_since(top, base)
-    name = runner.repo_name(cfg, top)
+    name = place.repo_name(cfg, top)
     logs = runner.new_log_dir(cfg, top, name, 'rerun-' + (branch or head[:10]), log_dir)
     started = gate_ok.utc()
     say('targeted rerun of %s at %s (red run of %s): %d class(es)%s' % (
@@ -978,7 +977,7 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
            'options': options}
     mine = {'branch': branch} if branch else {}
     out, refused = run_classes(
-        gate['kind'], name, slug or runner.slug_of(branch or head[:10]),
+        gate['kind'], name, slug or place.slug_of(branch or head[:10]),
         dict(book_kw or {}, gate_mode='rerun', **mine), red['tree'], top, classes, gate, ctx,
         logs, base, say,
         after=steps, checks=checks, timeout=timeout, scope=control_tree, each=each,

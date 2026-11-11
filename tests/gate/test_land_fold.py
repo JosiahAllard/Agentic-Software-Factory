@@ -10,8 +10,8 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.gate import land, result, submit, verdicts
-from kitlib.records import gate_ok
+from kitlib.gate import land, result, submit
+from kitlib.records import gate_ok, verdict_entry
 from tests.gate import fixtures
 from tests.gate.test_land import HANG_S
 from tests.gate.test_land_submit import LAND_PY, Detach, SubmitCase
@@ -71,7 +71,7 @@ class FoldCase(SubmitCase):
         got = {}
         skip = set(os.path.normcase(os.path.abspath(p)) for p in skip)
         for folder in (result.result_dir(self.repo.root), gate_ok.record_dir(self.repo.root),
-                       verdicts.queue_dir(self.common())):
+                       verdict_entry.queue_dir(self.common())):
             for dirpath, _, names in os.walk(folder):
                 for name in names:
                     path = os.path.join(dirpath, name)

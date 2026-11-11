@@ -152,7 +152,7 @@ The checkout's HEAD is gated `--full` on a node, and the gate-OK record it write
 into main's record folder (docs/gate-records.md "Gate-OK record"), so the branch lands as if gated here.
 
 1. Main reads what its own gate would: the repository name (`.kit.json` "repo" "name", else the
-   checkout's folder name: `kitlib.gate.runner.repo_name`), the gate's lock kind, and the default
+   checkout's folder name: `kitlib.records.place.repo_name`), the gate's lock kind, and the default
    base (docs/gate-run.md "Default base") as a commit.
 2. Main pushes HEAD to `refs/node/<job>` and the base to `refs/node/<job>-base`, then asks the
    node's `gate` verb. Main sends no command.

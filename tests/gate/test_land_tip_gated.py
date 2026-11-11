@@ -290,7 +290,7 @@ class TipConfig(TipCase):
         rec, why = gate_ok.verify_full(self.repo.root, tip)
         self.assertIsNone(why)
         self.assertNotEqual(rec['gate_config'],
-                            gate_ok.config_hash(runner.gate_config_at(self.repo.root, self.main)))
+                            gate_ok.config_hash(gate_ok.gate_config_at(self.repo.root, self.main)))
         self.assertEqual([s['name'] for s in rec['steps']], ['unit', 'lint'])
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)

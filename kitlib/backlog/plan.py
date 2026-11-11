@@ -94,7 +94,7 @@ class Context(object):
     kitlib.worktree.classify.branch_liveness).
     `quiet` (None: quiet_hold on `root`) is `quiet(branch) -> (why it is not quiet, None) or
     (None, seconds quiet)`, the probe of a quiet release (plan_release). This module imports
-    kitlib.worktree and kitlib.gate only lazily, inside quiet_hold, when a release asks it.
+    kitlib.worktree and kitlib.records only lazily, inside quiet_hold, when a release asks it.
     `cap` (None: offer.DEFAULT_CAP; a callable: read on first use) is the most records `next` offers and `pull` takes in order
     (`.kit.json` backlog.cap, opener.repo_cap); `next --cap` overrides it for that call.
     `resources` (None: none; a callable: read on first use) is {name: capacity} (`.kit.json`
@@ -2204,16 +2204,16 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
     read, every folder of it opens for delete: holders.held_folder), no such tree is exempt
     (remove.exemption) or locked with `git worktree lock`, no machine lock record names
     it (sweep.machine_lock_holder), the landing lock does not name `branch`, no verdict-queue
-    entry for `branch` waits (kitlib.gate.verdicts: one that has not expired with `main`, the code
+    entry for `branch` waits (kitlib.records.verdict_entry: one that has not expired with `main`, the code
     main's commit, None: every entry waits), and the newest activity is QUIET_AFTER_S old or more.
     Activity is the tip's committer date, the branch's reflog entry times and the mtimes in the
     worktree's tree, its top-level `.git` left out: never the git dir's own files
     (sweep.last_activity reads those, and a status rewrites them). A branch the main checkout is
     on, no local branch, and anything that cannot be read are not quiet. `machine` and `procs`
     (None: sweep.machine_lock_entries, classify.process_cwds) are the run-wide reads
-    classify.run_probes takes. Read-only; kitlib.worktree and kitlib.gate import lazily, as
+    classify.run_probes takes. Read-only; kitlib.worktree and kitlib.records import lazily, as
     opener.liveness does: kitlib.worktree imports this package's store."""
-    from kitlib.gate import verdicts
+    from kitlib.records import verdict_entry
     from kitlib.worktree import classify, holders, remove, sweep
     wctx, refused = remove.open_ctx(root)
     if refused:
@@ -2259,7 +2259,7 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
         holder = sweep.machine_lock_holder(held, branch, branch)
         if holder:
             return 'machine lock: %s' % holder, None
-    why = _queued_verdict(verdicts, wctx.main, branch, main)
+    why = _queued_verdict(verdict_entry, wctx.main, branch, main)
     if why:
         return why, None
     newest, why = _quiet_activity(classify, remove, wctx.main, branch, on)
@@ -2273,15 +2273,15 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
     return None, quiet
 
 
-def _queued_verdict(verdicts, main_tree, branch, main):
+def _queued_verdict(verdict_entry, main_tree, branch, main):
     """Why a verdict-queue entry for `branch` holds the pull, or None: there is none, or it has
     expired (landed or superseded). An entry that cannot be read holds it."""
     common, why = gitrepo.common_dir(main_tree)
     if common is None:
         return 'the verdict queue cannot be placed (%s)' % why
     try:
-        path = verdicts.entry_path(common, branch)
-    except verdicts.VerdictError as e:
+        path = verdict_entry.entry_path(common, branch)
+    except verdict_entry.VerdictError as e:
         return 'the verdict queue entry for %s cannot be named (%s)' % (branch, e)
     try:
         with open(path, encoding='utf-8') as f:
@@ -2294,10 +2294,10 @@ def _queued_verdict(verdicts, main_tree, branch, main):
         entry = json.loads(text)
     except ValueError as e:
         return 'the verdict queue entry for %s is not JSON (%s)' % (branch, e)
-    bad = verdicts.check(entry)
+    bad = verdict_entry.check(entry)
     if bad:
         return 'the verdict queue entry for %s is malformed (%s)' % (branch, bad)
-    if verdicts.expired(common, entry, main):
+    if verdict_entry.expired(common, entry, main):
         return None
     return 'a verdict for %s waits in the landing queue (%s at %s)' % (
         branch, entry.get('state'), str(entry.get('tip'))[:10])

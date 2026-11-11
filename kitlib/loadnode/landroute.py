@@ -56,7 +56,7 @@ def need_of(kind, store):
 def plan(root, repo, kind, store=None, merged_gate_fn=None, registry_file=None, runner=None,
          need=None, lock=None, is_kit=None):
     """A Route for the merged gate of a landing in the checkout `root` of the repository `repo`
-    (runner.repo_name), booked as the lock kind `kind`: where MAIN or a node's name, node the
+    (records.place.repo_name), booked as the lock kind `kind`: where MAIN or a node's name, node the
     registry Node or None, why the reason, quiet True when nothing needs saying (a kit checkout,
     a test's merged gate, no registry, no node opted in, a kind the lock does not name), nodes
     the opted-in Nodes and need the kind's slots here (for recheck). registry_file: the registry
@@ -249,7 +249,7 @@ def run_on_node(node, root, merge, base, cfg, repo, slug, full=False, docs=False
     default `root`) on `base`, run on `node` as a land job: an OK gate Outcome (outcome_of) when
     it passed and main took its record, a FAILED one when it started and did not (the module
     docstring), Fallback when nothing ran there. cfg: the config read at the base; repo:
-    runner.repo_name; full, docs: the merged gate's own arguments. open_link(node) is a context
+    records.place.repo_name; full, docs: the merged gate's own arguments. open_link(node) is a context
     giving a remote.Link (default remote.Link), make_job(link) the job.NodeJob, checker and
     kit_hash landgate's (default: read here), job_kw more NodeJob arguments: the tests'
     stand-ins. notice_dir: the lock-window notice folder; None with `store` (the landing's

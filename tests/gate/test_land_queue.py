@@ -20,6 +20,7 @@ import kitlib.config as kconfig
 from kitlib.gate import land, result, runner
 from kitlib.lock import queue as lockqueue
 from kitlib.lock.store import EXIT_USAGE, LockError
+from kitlib.records import place
 from tests import testutil
 from tests.gate import fixtures
 from tests.gate.test_land import BRANCH, HANG_S, LandCase
@@ -56,7 +57,7 @@ class QueueCase(LandCase):
         return lockqueue.load(self.store)['entries']
 
     def queued(self, branch):
-        return [e for e in self.entries() if e.get('slug') == runner.slug_of(branch)]
+        return [e for e in self.entries() if e.get('slug') == place.slug_of(branch)]
 
     def until(self, cond, what):
         end = time.monotonic() + HANG_S
@@ -127,7 +128,7 @@ class OneBooking(QueueCase):
         call = self.book_calls[0]
         cfg = kconfig.load(self.repo.root)
         self.assertEqual((call['kind'], call['repo'], call['slug']),
-                         (cfg.section('gate')['kind'], runner.repo_name(cfg, self.repo.root),
+                         (cfg.section('gate')['kind'], place.repo_name(cfg, self.repo.root),
                           'kit-feature'))
         self.assertEqual({k: call.get(k) for k in ('gate', 'resource', 'priority', 'store',
                                                    'wait_s', 'no_wait', 'cores', 'detached')},

@@ -325,7 +325,7 @@ class LocalAcceptance(fixtures.GateRepoCase):
         # The one gate runs after review: none was booked and the tip has no gate record.
         self.assertFalse(any(d.get('kind') == 'test' for d in self.store.history_records(1)))
         from kitlib.config import load
-        from kitlib.gate.runner import gate_config
+        from kitlib.records.gate_ok import gate_config
         from kitlib.records import gate_ok
         record, _ = gate_ok.verify(self.task.worker, result['tip'],
                                    gate_config=gate_config(load(self.task.worker)))

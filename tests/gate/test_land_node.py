@@ -16,7 +16,7 @@ from kitlib.gate import land
 from kitlib.lock import queue as lockqueue
 from kitlib.lock import run as lockrun
 from kitlib.loadnode import landroute, route
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, place
 from tests.gate.test_land import BRANCH, HANG_S, LandCase
 
 Node = collections.namedtuple('Node', 'name')
@@ -261,7 +261,7 @@ class RefreshesTheMirrors(NodeCase):
         self.refresh_with(refresh)
         out = lander.run()
         self.assertEqual(out.code, G.OK, out.lines)
-        repo = land.runner.repo_name(lander.cfg, lander.root)
+        repo = place.repo_name(lander.cfg, lander.root)
         self.assertEqual(self.refreshed, [(self.repo.root, repo, 'main', out.merge, self.store,
                                            None, [])])  # the lock file and the slot released
         pushed = "pushed %s to load node n1's mirror of main" % out.merge[:10]

@@ -19,6 +19,7 @@ from kitlib.gate import budget, gatecap, runner
 from kitlib.gate import steps as S
 from kitlib.lock import run as lockrun
 from kitlib.proc import process
+from kitlib.records import place
 from tests.gate import fixtures
 from tests.home import machine_config
 from tests.lock.helpers import own_affinity
@@ -97,7 +98,7 @@ class CapCase(fixtures.GateRepoCase):
         gatecap._TURN.mine = None
         self.addCleanup(gatecap._leave)
         self.wt, _ = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.name = runner.repo_name(kconfig.load(self.wt), self.wt)
+        self.name = place.repo_name(kconfig.load(self.wt), self.wt)
         self.n = 0
 
     def run_rec(self, host=HOST, **fields):

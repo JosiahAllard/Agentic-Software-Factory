@@ -12,6 +12,7 @@ from unittest import mock
 from hosts.claude.adapter import agent_models as AM
 from kitlib.backlog import record as RECORD
 from kitlib.gate import verdicts as V
+from kitlib.records import verdict_entry as VE
 from tests.gate.fixtures import GateRepoCase
 from tests.gate import test_verdict_cli as VC
 from tests.home import temp_home
@@ -296,7 +297,7 @@ class ReviewerVerdict(GateRepoCase):
         t3 = self.repo.commit('spaced', 'lib/my mod.py', cwd=wt)
         self.assertEqual(self.tool.new_sources(self.repo.root, '%s..%s' % (t2, t3)),
                          ['lib/my mod.py', 'lib/my mod.py:Spaced'])
-        with self.assertRaises(V.VerdictError):
+        with self.assertRaises(VE.VerdictError):
             self.tool.new_sources(self.repo.root, 'nosuch..%s' % t2)
 
 

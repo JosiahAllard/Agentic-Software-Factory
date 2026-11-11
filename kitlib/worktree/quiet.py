@@ -142,7 +142,7 @@ def _quiet_activity(classify, remove_checks, main_tree, branch, on):
     for entry in on:
         # The --classify walk with the top-level `.git` (a linked tree's file, or a git dir) left
         # out: the git dir's mtimes are not work.
-        got, why = classify._newest(entry['path'], 'the tree', skip=('.git',))
+        got, why = sweep.newest(entry['path'], 'the tree', skip=('.git',))
         if got is None:
             return None, why
         found.append(got)

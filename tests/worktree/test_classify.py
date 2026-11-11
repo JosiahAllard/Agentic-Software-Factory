@@ -947,6 +947,63 @@ class ReflogNewest(unittest.TestCase):
                 self.assertTrue(got[1].startswith('its HEAD reflog cannot be read ('), got)
 
 
+class SweepNewest(unittest.TestCase):
+    """sweep.newest, the one tree walker (last_activity and classify.activity both read through it)."""
+
+    def setUp(self):
+        import tempfile
+        self.dir = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir, True)
+
+    def put(self, rel, when):
+        path = os.path.join(self.dir, *rel.split('/'))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w') as f:
+            f.write('x')
+        os.utime(path, (when, when))
+        return path
+
+    def test_the_newest_entry_skip_and_drop(self):
+        self.put('old', 1000)
+        newest = self.put('sub/new', 3000)
+        self.put('index', 5000)
+        self.put('logs/HEAD', 6000)
+        for folder in ('sub', 'logs', ''):
+            os.utime(os.path.join(self.dir, folder), (2000, 2000))
+        for name, kwargs, want in [
+            ('everything counts', {}, (6000, None)),
+            ('a dropped folder is not read', {'drop': ('logs',)}, (5000, None)),
+            ('a skipped name at the top is left out', {'skip': ('index',), 'drop': ('logs',)},
+             (3000, newest)),
+        ]:
+            with self.subTest(name):
+                got, why = sweep.newest(self.dir, 'the tree', **kwargs)
+                self.assertIsNone(why)
+                self.assertEqual(got[0], want[0])
+                if want[1]:
+                    self.assertEqual(os.path.normcase(got[1]), os.path.normcase(want[1]))
+
+    def test_a_tree_that_cannot_be_read_in_full_is_never_idle(self):
+        self.put('a', 1000)
+        self.put('b', 1000)
+        real = os.lstat
+        top = os.path.normcase(self.dir)
+
+        def lstat(path, *a, **k):
+            if os.path.normcase(sweep.plain(str(path))) == top:
+                raise OSError(13, 'denied')
+            return real(path, *a, **k)
+        with mock.patch.object(sweep.os, 'lstat', lstat):
+            for name, kwargs in [('no skip', {}), ('with skip: the top is still read', {'skip': ('a',)})]:
+                with self.subTest(name):
+                    got, why = sweep.newest(self.dir, 'the tree', **kwargs)
+                    self.assertIsNone(got)
+                    self.assertTrue(why.startswith('the tree could not be read in full (1 error(s)'), why)
+        with mock.patch.object(sweep, 'WALK_MAX', 1):
+            got, why = sweep.newest(self.dir, 'the tree')
+        self.assertEqual((got, why), (None, 'the tree could not be read in full: more than 1 entries'))
+
+
 class StaleMarkShown(ClassifyCase):
 
     def write_marks(self, *records, text=None):

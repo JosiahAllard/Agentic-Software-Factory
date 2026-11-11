@@ -272,7 +272,7 @@ Known limits:
 
 ## Exclusive resources
 
-`kitlib/lock/resource.py` keeps a second queue in the same store, `resources.json`, for things one caller holds at a time and that take no slot. Nothing in the kit calls it now: a landing books `kitlib.lock.run.book(..., resource="landing:<git common dir>", priority="land")` instead, one entry in `queue.json` (Run resources and landing priority; docs/gate-landing.md "The landing queue"), and only `tests/lock/test_resource.py` exercises the module. The module is not in the snapshot and has no write call here. It is separate from a run's `resource`, which lives in the run's queue entry and is held only while that run is.
+There is no second queue for things one caller holds at a time: a landing books `kitlib.lock.run.book(..., resource="landing:<git common dir>", priority="land")`, one entry in `queue.json` (Run resources and landing priority; docs/gate-landing.md "The landing queue"). A run's `resource` lives in the run's queue entry and is held only while that run is.
 
 - `join(store, resource, label)` puts a `Turn` at the back; `try_take()` returns `[]` when the caller holds the resource, else the live entries ahead of it, holder first; `wait(timeout_s)` repeats it for `timeout_s` from the first look that finds entries ahead; `leave()` gives the turn up and never raises. `entries(store, resource)` reads the queue without writing.
 - First come, first served: the lowest ticket for a resource holds it, nothing goes ahead of an earlier entry, and nothing takes a resource from its holder.

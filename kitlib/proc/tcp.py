@@ -2,7 +2,7 @@
 is at the other end of a connection on this machine (kitlib.proc.daemons asks it of a build
 daemon). And its listening sockets, each with its owner: which processes listen on a port
 (kitlib.blendermcp asks it of its Blender's port). On Linux the listeners come from /proc/net/tcp
-and tcp6, which name no owner (proc_net_listeners); the connections are Windows only.
+and tcp6, which name no owner (kitlib.platform.linux.tcp); the connections are Windows only.
 
 An end is (family, address bytes, port): family 4 or 6, the address in network order, the port
 a number. An IPv4-mapped IPv6 address (::ffff:a.b.c.d) is named as the IPv4 end it is, so both
@@ -12,14 +12,13 @@ import struct
 
 import kitlib.platform
 from kitlib.platform.windows import tcp as _wintcp, win32 as _win32   # the tables: Windows only
+from kitlib.platform.linux import tcp as _linuxtcp                   # /proc/net: Linux
 
 LISTEN = 2                              # MIB_TCP_STATE_LISTEN
 ESTABLISHED = 5                         # MIB_TCP_STATE_ESTAB
 _V4_ROW = struct.Struct("<6I")          # MIB_TCPROW_OWNER_PID
 _V6_ROW = struct.Struct("<16sII16sIIII")  # MIB_TCP6ROW_OWNER_PID
 _MAPPED = b"\0" * 10 + b"\xff\xff"
-PROC_NET = ("/proc/net/tcp", "/proc/net/tcp6")   # Linux: the IPv4 table, then the IPv6 one
-_PROC_LISTEN = "0A"                     # TCP_LISTEN in a /proc/net row's st column
 
 
 def _port(raw):
@@ -76,42 +75,12 @@ def listeners():
     """[(local, pid)] of every listening TCP socket now, IPv4 and IPv6: local is the end it
     listens on (an any-address listener has the all-zero address). Two sockets that both set
     SO_REUSEADDR can listen on one port, so a port can have more than one row. Raises OSError
-    when a table cannot be read. On Linux each row's pid is None (proc_net_listeners)."""
+    when a table cannot be read. On Linux each row's pid is None (kitlib.platform.linux.tcp)."""
     if kitlib.platform.NAME == "linux":
-        return proc_net_listeners()
+        return _linuxtcp.proc_net_listeners()
     rows = (parse_v4(_wintcp.table(_win32.AF_INET), LISTEN)
             + parse_v6(_wintcp.table(_win32.AF_INET6), LISTEN))
     return [(local, pid) for local, _remote, pid in rows]
-
-
-def _proc_end(text, family):
-    """The end a /proc/net row names as `address:port` in hex: the address in 32-bit words, each
-    in the kernel's own byte order, the port a plain hex number."""
-    addr, port = text.rsplit(":", 1)
-    raw = b"".join(struct.pack("=I", int(addr[i:i + 8], 16)) for i in range(0, len(addr), 8))
-    if family == 6 and raw[:12] == _MAPPED:
-        return (4, raw[12:], int(port, 16))
-    return (family, raw, int(port, 16))
-
-
-def proc_net_listeners(paths=None):
-    """[(local, None)] of every listening row of Linux's /proc/net tables (paths: the IPv4 table,
-    then the IPv6 one; default PROC_NET). They name no owner. A missing IPv6 table is a kernel with
-    no IPv6, and is skipped; an IPv4 table that cannot be read raises OSError."""
-    out = []
-    for family, path in zip((4, 6), paths or PROC_NET):
-        try:
-            with open(path, encoding="ascii") as f:
-                lines = f.read().splitlines()[1:]
-        except OSError:
-            if family == 4:
-                raise
-            continue
-        for line in lines:
-            cols = line.split()
-            if len(cols) > 3 and cols[3] == _PROC_LISTEN:
-                out.append((_proc_end(cols[1], family), None))
-    return out
 
 
 def peers(pids, conns):

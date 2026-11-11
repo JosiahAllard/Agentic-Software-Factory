@@ -63,6 +63,7 @@ Only where `<kit>/docs/ROSTER.md` maps the light tier to a cheaper model than yo
 ## Never
 
 - Land, merge to the main branch, push, force-push or rewrite its history; `reset --hard` or `git clean`.
+- Redo a refused sync, a tool's `REFUSED:` or a guard or hook block another way (a `git merge --no-commit` finished with commit.py, another tool, another form): stop and report the exact command and message to your caller.
 - Weaken a test or a check to get green, or rerun a failing run other than by its one targeted rerun; any other failing run is real.
 - Review your own work as if independent, or keep going on a theory the evidence contradicts.
 - Write the owner's clear-session marker.

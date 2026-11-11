@@ -21,6 +21,7 @@ from kitlib import platform as kitplatform
 from kitlib.fs import replace as fsreplace
 from kitlib.git import batch
 from kitlib.host import registry
+from kitlib.proc import job
 from kitlib.pluginsource import layout as plugin_layout
 from kitlib.pluginsource import export as plugin_export
 from kitlib.pluginsource import state as plugin_state
@@ -30,7 +31,6 @@ from kitlib.pluginsource import prune as plugin_prune
 PIDFILE = 'refresh.pid'
 LOGFILE = 'refresh.log'
 LOCK_GRACE_S = 10                    # an empty or unreadable refresh.pid younger than this is live
-_NOWIN = 0x08000000 if kitplatform.NAME == 'windows' else 0               # CREATE_NO_WINDOW
 _DETACHED = 0x00000008 | 0x00000200 if kitplatform.NAME == 'windows' else 0  # DETACHED_PROCESS, NEW_GROUP
 
 
@@ -468,7 +468,7 @@ def spawn_refresh(kit, root):
     try:
         subprocess.Popen([pythonw.windowless(), os.path.join(kit, 'tools', 'plugin_refresh.py'), '--apply'],
                          cwd=kit, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                         close_fds=True, creationflags=0 if linux else _DETACHED | _NOWIN,
+                         close_fds=True, creationflags=0 if linux else job.no_window_flags(_DETACHED),
                          start_new_session=linux)
     finally:
         log.close()

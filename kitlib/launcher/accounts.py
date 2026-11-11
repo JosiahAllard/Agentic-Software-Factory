@@ -26,10 +26,10 @@ import re
 import shutil
 import subprocess
 
-from kitlib import platform as kitplatform
 from kitlib.config import user as kuser
 from kitlib.host import registry
 from kitlib.launcher.settings import LaunchError
+from kitlib.proc import job
 
 CREDENTIALS = '.credentials.json'
 USAGE_FILE = 'usage-status.json'
@@ -39,7 +39,6 @@ WEEK = datetime.timedelta(days=7)
 PICK_LIMIT = 95          # pick-account's default
 FRACTION = re.compile(r'\.\d{7,}')   # PowerShell ToString('o') writes 7 fraction digits
 TIMEOUT = 300
-_NOWIN = 0x08000000 if kitplatform.NAME == 'windows' else 0      # CREATE_NO_WINDOW
 INSTALLED = ('plugins', 'installed_plugins.json')   # Claude Code's install record, in an account folder
 KNOWN_MARKETPLACES = ('plugins', 'known_marketplaces.json')   # its marketplaces, in an account folder
 USER_SCOPE = 'user'
@@ -461,7 +460,7 @@ class Runner(object):
             r = self.run_proc([self.claude] + list(args), env=env_for(folder, self.home, self.environ),
                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, timeout=self.timeout,
-                              creationflags=_NOWIN)
+                              creationflags=job.no_window_flags(0))
         except subprocess.TimeoutExpired:
             return None, 'claude ran past %d s' % self.timeout
         except OSError as e:

@@ -78,6 +78,7 @@ A crossing the map does not allow (an edge of its kind, a messaging module or a 
 | records | `kitlib/records` | foundation layer (ARCHITECTURE.md Layers) |
 | redfirst | `kitlib/redfirst` | feature layer (ARCHITECTURE.md Layers) |
 | reviewpack | `kitlib/reviewpack` | feature layer (ARCHITECTURE.md Layers) |
+| schedtask | `kitlib/schedtask` | foundation layer (ARCHITECTURE.md Layers) |
 | scrub | `kitlib/scrub` | feature layer (ARCHITECTURE.md Layers) |
 | stackskill | `kitlib/stackskill` | feature layer (ARCHITECTURE.md Layers) |
 | strayrestore | `kitlib/strayrestore` | feature layer (ARCHITECTURE.md Layers) |
@@ -316,6 +317,7 @@ None: no module is open to every other.
 | hubsite | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | pmwatch | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| hubsite | schedtask | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | kitcmd | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | kitcmd | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | kitcmd | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -368,6 +370,7 @@ None: no module is open to every other.
 | machinesetup | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | machinesetup | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | machinesetup | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| machinesetup | schedtask | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | machinesetup | stackskill | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | machinesetup | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | maintlint | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -416,10 +419,12 @@ None: no module is open to every other.
 | pluginsource | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pluginsource | fs | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pluginsource | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| pluginsource | host | build | services layer uses facts layer: allowed as of 2026-11-11 |
 | pluginsource | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pluginsource | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pluginsource | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pluginsource | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| pluginsource | schedtask | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | pmdata | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmdata | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmdata | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -436,6 +441,7 @@ None: no module is open to every other.
 | pmstart | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmstart | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmstart | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| pmstart | schedtask | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | pmstart | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmwatch | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -445,6 +451,7 @@ None: no module is open to every other.
 | pmwatch | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| pmwatch | schedtask | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | preflight | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | preflight | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | preflight | docs | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -487,6 +494,8 @@ None: no module is open to every other.
 | reviewpack | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | reviewpack | trailerscheck | build | feature layer, same-layer use: allowed as of 2026-11-10 |
 | reviewpack | verdict | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| schedtask | platform | build | foundation layer, same-layer use: allowed as of 2026-11-11 |
+| schedtask | proc | build | foundation layer, same-layer use: allowed as of 2026-11-11 |
 | scrub | forbidden | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | stackskill | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | strayrestore | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -571,10 +580,10 @@ None: no module is open to every other.
 | worktree | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | worktree | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | worktree | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| worktree | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | worktree | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | worktree | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | worktree | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| worktree | schedtask | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 
 ## Ratchets
 

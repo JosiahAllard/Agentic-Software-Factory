@@ -693,18 +693,19 @@ def _commit(req, lines):
         raise _Stop(REFUSED, *(refusal + ['Nothing was committed.']))
     approved = canonical_approved(rules, req.owner_approved, paths)
     locked = locked_paths(rules, paths + [p for p in rendered if p not in paths])
-    shrunk, joined = set(), set()       # each judged again on the staged copy, in _stage
+    shrunk, joined, carried = set(), set(), set()   # shrunk, joined: judged again in _stage
     if locked and not req.owner_authored:
-        if len(heads) == 1:             # a merge of deletions only (docs/commit.md)
-            joined = deletion_merge_paths(root, rules, locked, heads[0], landed)
+        if len(heads) == 1:
+            # A path the merge would carry unnamed, as it is staged now, is refused with the hint
+            # to leave it out; any other may be a merge of deletions only (docs/commit.md).
+            carried = ownerrules.merge_owned(root, rules, set(locked) & set(status_before),
+                                             heads, landed)[0]
+            joined = deletion_merge_paths(root, rules, set(locked) - carried, heads[0], landed)
         elif not merge_heads(root):     # a shrink: never a merge
             shrunk = shrunk_paths(root, rules, locked)
         locked = [p for p in locked if p not in shrunk | joined]
     if locked and not req.owner_authored:
-        # The hint only for a path the merge would carry unnamed, as it is staged now.
-        carried = sorted(ownerrules.merge_owned(root, rules, set(locked) & set(status_before),
-                                                heads, landed)[0])
-        raise _Stop(REFUSED, owner_only_refusal(locked, carried))
+        raise _Stop(REFUSED, owner_only_refusal(locked, sorted(carried)))
     for p in unapproved_locked(rules, locked, approved):
         raise _Stop(REFUSED, 'refused: %s is owner-only and no --owner-approved value names it.' % p)
     if req.owner_authored:

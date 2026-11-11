@@ -61,6 +61,7 @@ ENV = 'PM_KIT_HOST'
 # The kit plugin's name, as .claude-plugin/plugin.json gives it (the lock MCP server's test checks the two
 # agree); every host's shell names the kit's plugin so.
 PLUGIN_NAME = 'pm-kit'
+PLUGIN_ID = '%s@%s' % (PLUGIN_NAME, PLUGIN_NAME)   # the kit plugin in an install record: plugin@marketplace, both named PLUGIN_NAME
 TIERS = ('light', 'standard', 'strong', 'deep')
 
 _NAME = re.compile(r'[a-z][a-z0-9-]*\Z')

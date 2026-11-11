@@ -19,7 +19,7 @@ resets first among those under the limit, else its last account (docs/launcher.m
   boot_action(record, uptime_s, now) RUN, MARK or None: what the boot one-shot does, pure
 
 Every EVERY_S the job lists the processes, reads sessions.json, stop.log and the usage files, and
-runs decide() for each coordinator entry (an agent entry) that kitlib.pmstart.down_entries lists.
+runs decide() for each coordinator entry (an agent entry) that kitlib.launcher.lookup.down_entries lists.
 A Start runs `<kit>/tools/launch.py start --session KEY --account N` as a child, the line the PM
 checklist prints, at most one per run. What it pushes to the PM (ctx.event, detail `KEY:aN`):
 `restarted` (or `restarted-unchecked` when the account has no usage file, so its limit was not
@@ -67,7 +67,7 @@ known, not signed in, or at or over accounts.HEADROOM_LIMIT of a week that has n
 reading under the limit still starts there.
 
 The hub is the only thing that restarts agents (the launcher's sign-in task is retired,
-kitlib.launcher.autostart). After a boot it also runs, once, `launch.py after-reboot` as a
+docs/launcher.md "Autostart"). After a boot it also runs, once, `launch.py after-reboot` as a
 detached windowless child: it starts the plain sessions and resumes the PM, and leaves the
 coordinators to this job. It runs once per boot, at any uptime: on the hub process's first run
 whose boot (now - uptime) is not the one kept, so a late sign-in still gets it and a hub restart in
@@ -614,7 +614,7 @@ class RestartJob(object):
             if t is not None:
                 created[n] = t if n not in created else min(created[n], t)
         changed = self._note_sightings(sessions, live, records, now, created)
-        down = {k: e for k, e in pmstart.down_entries(sessions, live)
+        down = {k: e for k, e in lookup.down_entries(sessions, live)
                 if not k.startswith('_') and e.get('agent') and e.get('stem')}
         for key in list(self._down):
             if key not in down:

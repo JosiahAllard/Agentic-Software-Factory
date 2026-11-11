@@ -17,6 +17,7 @@ from unittest import mock
 from kitlib import machinesetup as M
 from kitlib.machinesetup import common, extras, settings
 from kitlib.config import user as kuser
+from kitlib.launcher import accounts
 from tests.home import fence_decoy, pm_repo, temp_home
 from tests.platforms import windows_only
 
@@ -683,7 +684,7 @@ class Parts(unittest.TestCase):
         for n in ('.claude', '.claude-two', kuser.DIR_NAME, 'other'):
             os.makedirs(os.path.join(root, n))
         touch(os.path.join(root, '.claude-file'))
-        self.assertEqual([os.path.basename(d) for d in M.default_config_dirs(root)], ['.claude', '.claude-two'])
+        self.assertEqual([os.path.basename(d) for d in accounts.default_config_dirs(root)], ['.claude', '.claude-two'])
 
     def test_layout_round_trips_indent_ascii_bom_and_final_newline(self):
         for indent, ascii_, bom, final in ((4, True, True, False), (2, False, False, True), ('\t', False, False, True)):

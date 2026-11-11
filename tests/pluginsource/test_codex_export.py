@@ -15,7 +15,7 @@ from unittest import mock
 from hosts.codex.adapter import plugin_copy as codex
 from hosts.codex.adapter import plugin_install as pi
 from kitlib import pluginsource as P
-from kitlib.pluginsource import claude
+from kitlib.launcher import accounts
 from tests import gitfixture
 from tests.pluginsource import FakeProc, Kit
 from tests.pluginsource.test_codex import link
@@ -621,7 +621,7 @@ class RefreshTest(Base):
         step = codex.Step(environ={'CODEX_HOME': home, 'PM_KIT_CODEX_EXE': exe, 'PATH': ''})
         f = self.k.folders('.claude')
         self.k.seed_migrated(f)
-        runner = claude.Runner(self.k.home, claude='claude.cmd', run_proc=FakeProc())
+        runner = accounts.Runner(self.k.home, claude='claude.cmd', run_proc=FakeProc())
         import hosts.codex.adapter.plugin_install as mod
         real = mod._run
         mod._run = lambda argv, env: calls.append(argv) or Done(1, b'', b'stand-in')

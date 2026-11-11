@@ -71,7 +71,7 @@ EXEMPT = {
     ('kitlib/launcher/window.py', 'open_window', 'ref subprocess.run'): (
         1, 'the default of a test seam; the one call through it passes CREATE_NO_WINDOW, and the '
            'session window that PowerShell opens is meant to be seen'),
-    ('kitlib/pluginsource/claude.py', 'Runner.__init__', 'ref subprocess.run'): (
+    ('kitlib/launcher/accounts.py', 'Runner.__init__', 'ref subprocess.run'): (
         1, 'the default of a test seam; Runner.run, the one call through it, passes creationflags'),
     ('kitlib/schedtask/read.py', 'task_registered', 'ref subprocess.run'): (
         1, 'the default of a test seam; the one call through it passes CREATE_NO_WINDOW'),

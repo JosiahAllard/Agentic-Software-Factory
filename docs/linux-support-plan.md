@@ -377,7 +377,7 @@ the host as heavy.
    be seen; a user with no password database entry has no profile folder, so the machine lock's
    store cannot be opened.
 10. **Scheduled jobs.** Done: kitlib/platform/linux/schedule.py (systemd user timers and cron,
-    both first-class), launcher/autostart.py, hubsite/autostart.py, worktree/task.py, the sweeps,
+    both first-class), hubsite/autostart.py, worktree/task.py, the sweeps,
     pmstart/consoletasks.py read-back. Open proof: a timer fires once on the VM, a cron entry on a
     box without user systemd.
 11. **Sessions.** Done: kitlib/launcher/linuxwin.py (tmux, or a configured terminal command),

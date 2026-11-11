@@ -28,6 +28,12 @@ from kitlib.launcher import start as S
 from kitlib.launcher.settings import LaunchError
 
 LOG = 'after-reboot.log'
+REBOOT_TASK = 'Claude coordinators after reboot'   # the retired sign-in task that ran after-reboot (docs/launcher.md "Autostart"); a leftover is still the kit's
+# install-autostart's refusal: the after-reboot task it registered is retired (docs/launcher.md "Autostart").
+AUTOSTART_RETIRED = ("install-autostart is retired: the hub restarts agents (docs/launcher.md \"Hub restart\"), "
+                     "started at sign-in by its own task (hub.py setup --autostart); nothing registered. Remove a "
+                     "task installed before with: Unregister-ScheduledTask -TaskName '%s' -Confirm:$false"
+                     % REBOOT_TASK)
 TEST_NAME = 'autostart-test'
 FRESH_MINUTES = 15
 PM_AGENT = 'pm'    # the kit's PM agent (content/roles/pm.md), resumed as --agent pm-kit:pm
@@ -54,7 +60,7 @@ def desktop_app_running(procs):
     for p in procs:
         if (p.get('Name') or '').lower() != 'claude.exe':
             continue
-        if lookup.pmstart.STORE_DIR in (p.get('ExecutablePath') or '') or not lookup.rc_name(p.get('CommandLine')):
+        if lookup.STORE_DIR in (p.get('ExecutablePath') or '') or not lookup.rc_name(p.get('CommandLine')):
             return True
     return False
 

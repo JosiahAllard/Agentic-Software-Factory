@@ -23,8 +23,7 @@ ALLOWED = {
     'kitlib/config/user.py':               1,    # a key's help text
     'kitlib/guard/rules.py':               1,    # the guard refactor
     'kitlib/guard/rules_edit.py':          2,    # the guard refactor (worktree folder: lock_state_dir, WT_ADD)
-    'kitlib/launcher/accounts.py':         4,    # launcher wave
-    'kitlib/launcher/autostart.py':        2,
+    'kitlib/launcher/accounts.py':         19,   # launcher wave; the account folders and the claude runner
     'kitlib/launcher/lookup.py':           3,
     'kitlib/launcher/reboot.py':           4,
     'kitlib/launcher/settings.py':         1,
@@ -33,13 +32,12 @@ ALLOWED = {
     'kitlib/launcher/usage.py':            9,
     'kitlib/launcher/window.py':           9,
     'kitlib/lock/store.py':                1,    # legacy actor key read
-    'kitlib/machinesetup/__init__.py':     12,   # machinesetup wave
+    'kitlib/machinesetup/__init__.py':     7,    # machinesetup wave
     'kitlib/machinesetup/common.py':       2,    # Claude's shell path and its pre-move folder (step 7)
-    'kitlib/machinesetup/extras.py':       7,
-    'kitlib/machinesetup/plugin.py':       18,
+    'kitlib/machinesetup/extras.py':       3,
+    'kitlib/machinesetup/plugin.py':       11,
     'kitlib/machinesetup/settings.py':     7,
-    'kitlib/pluginsource/__init__.py':     9,    # pluginsource wave
-    'kitlib/pluginsource/claude.py':       15,
+    'kitlib/pluginsource/__init__.py':     7,    # pluginsource wave
     'kitlib/pmwatch/__init__.py':          1,    # the usage line's codex account
     'kitlib/scrub/__init__.py':            1,    # a capitalised marker word the scrub allows
 }

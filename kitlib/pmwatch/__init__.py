@@ -676,15 +676,14 @@ def rc_check(sessions, reader, dirs=None, ctime=None, rc_pids=None, accounts=Non
     The check's `limit` attribute is the LIMIT check over the same sessions and records (limit_check;
     accounts() default: account_folders of the launcher settings, read again on each call), which
     the Watcher picks up, so every builder of the REMOTE check gets LIMIT too."""
-    from kitlib import pmstart
-    from kitlib.launcher import pipes, settings as launcher_settings, stop
+    from kitlib.launcher import lookup, pipes, settings as launcher_settings, stop
     from kitlib.proc import listing, process
     if dirs is None:
         dirs = lambda: pipes.registry_dirs(launcher_settings.load())
     ctime = ctime or process.proc_ctime
     if rc_pids is None:
         # every process: only the pids of live registry records are looked up, so no image filter
-        rc_pids = lambda: {p.get("ProcessId"): pmstart.rc_name(p.get("CommandLine"))
+        rc_pids = lambda: {p.get("ProcessId"): lookup.remote_control_name(p.get("CommandLine"))
                            for p in listing.list_processes()}
 
     def alive(r):

@@ -8,7 +8,7 @@ import unittest
 
 from kitlib import pluginsource as P
 from kitlib import pmstart
-from kitlib.pluginsource import claude
+from kitlib.launcher import accounts
 from tests.home import temp_home
 from tests.pluginsource import FakeProc, Kit
 
@@ -31,7 +31,7 @@ class PluginCurrentTest(unittest.TestCase):
         return pmstart.plugin_current(settings=self.s, kit=self.k.kit, folders=self.folders)
 
     def refresh(self, folders, proc):
-        runner = claude.Runner(self.k.home, claude="claude.cmd", run_proc=proc)
+        runner = accounts.Runner(self.k.home, claude="claude.cmd", run_proc=proc)
         return P.refresh(self.k.kit, self.s, folders, lambda line: None, apply=True, runner=runner,
                          now=NOW, own=(1, 1), alive=lambda pid, ct: False)
 

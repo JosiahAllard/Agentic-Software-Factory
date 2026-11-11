@@ -10,7 +10,8 @@ import unittest
 from unittest import mock
 
 from kitlib import pluginsource as P
-from kitlib.pluginsource import claude
+from kitlib.host import registry
+from kitlib.launcher import accounts
 from tests.platforms import posix_only, windows_only
 from tests.pluginsource import FakeProc, Kit, MANIFEST, read_json
 
@@ -32,7 +33,7 @@ class Base(unittest.TestCase):
         self.lines.append(line)
 
     def refresh(self, folders, proc=None, claude_path='claude.cmd', **kw):
-        runner = claude.Runner(self.k.home, claude=claude_path, run_proc=proc or FakeProc())
+        runner = accounts.Runner(self.k.home, claude=claude_path, run_proc=proc or FakeProc())
         kw.setdefault('apply', True)
         return P.refresh(self.k.kit, self.s, folders, self.out, runner=runner, now=NOW, own=ME,
                          alive=never_alive, **kw)
@@ -318,7 +319,7 @@ class CachePruneAfterRefreshTest(Base):
             os.makedirs(os.path.join(cache, v, 'tools'))
             os.utime(os.path.join(cache, v), (old + i * 60, old + i * 60))
         with open(os.path.join(f, 'plugins', 'installed_plugins.json'), 'w', encoding='utf-8') as fh:
-            json.dump({'version': 2, 'plugins': {P.PLUGIN_ID: [
+            json.dump({'version': 2, 'plugins': {registry.PLUGIN_ID: [
                 {'scope': 'user', 'installPath': os.path.join(cache, installed)}]}}, fh)
         if seed:
             self.k.seed_migrated([f])
@@ -856,12 +857,12 @@ class AccountFoldersTest(unittest.TestCase):
     def test_default_and_dash_folders_each_once(self):
         k = Kit(self)
         a, b = k.folders('.claude', '.claude-two')
-        self.assertEqual(claude.account_folders(k.home), [a, b])
-        self.assertTrue(claude.is_default(a, k.home))
-        self.assertFalse(claude.is_default(b, k.home))
-        env = claude.env_for(a, k.home, {'CLAUDE_CONFIG_DIR': b, 'X': '1'})
+        self.assertEqual(accounts.account_folders(k.home), [a, b])
+        self.assertTrue(accounts.is_default(a, k.home))
+        self.assertFalse(accounts.is_default(b, k.home))
+        env = accounts.env_for(a, k.home, {'CLAUDE_CONFIG_DIR': b, 'X': '1'})
         self.assertNotIn('CLAUDE_CONFIG_DIR', env)
-        self.assertEqual(claude.env_for(b, k.home, {})['CLAUDE_CONFIG_DIR'], b)
+        self.assertEqual(accounts.env_for(b, k.home, {})['CLAUDE_CONFIG_DIR'], b)
 
 
 def outside_reader(pointer):

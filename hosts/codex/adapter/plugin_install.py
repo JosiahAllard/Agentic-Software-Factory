@@ -49,7 +49,7 @@ import re
 import subprocess
 import tomllib
 
-MARKET = 'pm-kit'                    # the export's marketplace (kitlib.pluginsource.NAME)
+MARKET = 'pm-kit'                    # the export's marketplace (kitlib.host.registry.PLUGIN_NAME)
 PLUGIN = 'pm-kit'
 KEY = PLUGIN + '@' + MARKET
 OLD_MARKET = 'pm-kit-local'          # the old hand-made copy: switch steps only, never written

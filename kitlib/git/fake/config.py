@@ -309,17 +309,21 @@ def system_files(env):
     return out
 
 
+def process_home():
+    """The home folder of this process: what a git run whose environment names none falls back to.
+    The kit's tests replace it with the config package's user.home_dir (tests/__init__.py), which raises
+    HomeFenced when that is a real home (docs/test-tools.md "Home fence"); the base layer cannot
+    import it."""
+    return os.path.expanduser('~')
+
+
 def home_of(env):
     """The home folder of a git run with the environment `env`: its HOME, else its USERPROFILE,
-    else the process's own through kitlib.config.user.home_dir(), which raises HomeFenced under
-    the kit's tests when that is a real home (docs/test-tools.md "Home fence"). A home the
-    environment names is taken as given. The import is here, not at the top: kitlib.config
-    imports kitlib.git."""
+    else process_home(). A home the environment names is taken as given."""
     home = env.get('HOME') or env.get('USERPROFILE')
     if home:
         return home
-    from kitlib.config import user
-    return user.home_dir()
+    return process_home()
 
 
 def expand_user(path, env, key):

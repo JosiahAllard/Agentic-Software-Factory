@@ -1,4 +1,4 @@
-"""kitlib.git.prep: the first-use repo prep (docs/new-worktree.md "First-use prep"; decisions 23 and 25
+"""kitlib.worktree.prep: the first-use repo prep (docs/new-worktree.md "First-use prep"; decisions 23 and 25
 of docs/multi-host-plan.md), against throwaway repositories with a bare remote (tests/gitfixture.py).
 
 Every case runs with the fixture's environment (no global or system git config) and its own
@@ -12,7 +12,7 @@ from unittest import mock
 
 from kitlib import kitroot
 from kitlib.git import cmd as gitcmd
-from kitlib.git import prep
+from kitlib.worktree import prep
 from tests import gitfixture
 
 FOLDERS = ('.claude/worktrees', '.codex/worktrees')

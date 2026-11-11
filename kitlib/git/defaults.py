@@ -1,5 +1,5 @@
 """What a repository with no `.kit.json` setting says about itself: its main branch and its name
-(docs/kit-json.md "With no file"). kitlib.config.load fills `repo.main_branch` and `repo.name`
+(docs/kit-json.md "With no file"). the config loader fills `repo.main_branch` and `repo.name`
 from here when the file does not set them.
 
 Read from the git files, never by starting git, so a guard hook pays no process launch for them:

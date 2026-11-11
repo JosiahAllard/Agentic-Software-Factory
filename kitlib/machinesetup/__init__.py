@@ -1,7 +1,7 @@
 """kitlib.machinesetup: set up a machine for the kit (tools/machine_setup.py,
 installer/machine-setup.ps1; docs/machine-setup.md). Plan decision 27: it writes nothing into any
 repository; a repository works with the kit with nothing committed in it, and the kit's first use
-there writes only local git settings (kitlib.git.prep).
+there writes only local git settings (kitlib.worktree.prep).
 
 survey() reads the machine and returns a Plan: the changes to make, in order, each with the text a
 dry run prints and the function --apply runs, plus the refusals that stop both. Two modes:

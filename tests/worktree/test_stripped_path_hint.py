@@ -3,7 +3,7 @@ import os
 import unittest
 
 from kitlib import git
-from kitlib.git import overlap
+from kitlib.worktree import overlap
 
 STRIPPED = 'Q:GitHubAgentic-Project_Manager-Kit'
 HINT = 'an unquoted backslash path in Git Bash loses its backslashes'

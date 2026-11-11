@@ -28,6 +28,7 @@ from kitlib.lock import holds as hl
 from kitlib.lock import layout as lay
 from kitlib.lock.store import EXIT_USAGE, LockError, iso, read_json, utc_now
 from kitlib.proc import process
+from kitlib.platform.windows import process as winproc
 
 AC_SERVICES = {"vgc": "Vanguard", "vgk": "Vanguard", "EasyAntiCheat": "EasyAntiCheat",
                "EasyAntiCheat_EOS": "EasyAntiCheat", "BEService": "BattlEye"}
@@ -54,7 +55,7 @@ def anti_cheat(exe):
 def installed_ac_services():
     """[service name] of the anti-cheat services installed here (read: the service manager is
     asked whether each exists; nothing is started or opened for change)."""
-    from kitlib.proc.win32 import ADV
+    from kitlib.platform.windows.win32 import ADV
     out = []
     scm = ADV.OpenSCManagerW(None, None, 0x0001)            # SC_MANAGER_CONNECT
     if not scm:
@@ -217,7 +218,7 @@ def _unpin(store, h, lst):
     if fake is not None:
         return fake(g.get("pinned_pid"), g)
     try:
-        return process.restore_affinity(int(g["pinned_pid"]), g.get("pinned_ctime"),
+        return winproc.restore_affinity(int(g["pinned_pid"]), g.get("pinned_ctime"),
                                         g.get("before"), g.get("pinned") == "soft")
     except (TypeError, ValueError, KeyError):
         return "failed"

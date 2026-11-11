@@ -24,16 +24,17 @@
                      log (kitlib.backlog.audit), which only tools/backlog.py appends to.
 
 A main session's backlog.py run is the tool's own check (policy.check, by its session mark).
-A host with no subagent identity (kitlib.host.hookmain.UNIDENTIFIED) gives a subagent its
+A host with no subagent identity (kitlib.hookrun.main.UNIDENTIFIED) gives a subagent its
 session's mark, so the tool's own check judges it there too.
 """
 import os
 import re
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.git import repo
 
 from . import commands as cm
+from . import commands_nested as cn
 from . import jail
 from . import rules
 
@@ -43,7 +44,7 @@ AUDIT_RULE = 'pm-data-audit'
 AUDIT_FOLDER = 'audit'                          # kitlib.backlog.audit.FOLDER
 SCRIPT = 'backlog.py'
 TOOL = 'backlog'                                # rules.kit_tool's name for it
-UNIDENTIFIED = 'unidentified'                   # kitlib.host.hookmain.UNIDENTIFIED
+UNIDENTIFIED = 'unidentified'                   # kitlib.hookrun.main.UNIDENTIFIED
 ASK = ('Ask a session whose role may take it (your coordinator; a coordinator asks the PM) to run it, '
        'and say why. Every role may read the record:')
 # python code that reaches the backlog's library or runs its tool: an import of kitlib.backlog
@@ -57,7 +58,7 @@ CODE_RE = re.compile(r'kitlib\s*[./\\]\s*backlog\b|from\s+kitlib\s+import\s+[^\n
 # recordwrite across a dot; any attribute .recordwrite (an alias: serve.recordwrite,
 # h.recordwrite; a backslash line break allowed after the dot); `from kitlib.hubsite import`
 # naming it, on one line, across backslash line breaks or inside its parentheses; or plan_answer
-# (kitlib.backlog.plan). Only the hub runs them. The file's path (kitlib/hubsite/recordwrite.py,
+# (kitlib.backlog.plan_hold). Only the hub runs them. Its path (kitlib/hubsite/recordwrite.py,
 # with either slash) is not read: code that reads the file writes nothing, and the file run as a
 # script stops at its relative import (`from .store import`) before it writes.
 HUB_WRITER_RE = re.compile(r'\bhubsite\s*\.\s*recordwrite\b|\.(?:\s|\\\n)*recordwrite\b|'
@@ -73,10 +74,10 @@ REMOTE_BRANCH_RE = re.compile(r'^refs/remotes/[^/]+/%s$' % BRANCH)
 def read_record(root, rid):
     """The record `rid` as the store the checkout `root` opens holds it locally (no fetch), or
     None: the tool's own opener, so a linked worktree whose .kit.json names no store reads its PM
-    data worktree's live store (kitlib.backlog.store.worktree_live_store). The guard's one read of
-    the store (patched in most tests)."""
+    data worktree's live store (kitlib.backlog.store_live.worktree_live_store). The guard's one read
+    of the store (patched in most tests), a read, so with no probes (opener.NO_PROBES)."""
     from kitlib.backlog import opener
-    return opener.open_store(root, fetch=False).store.load().get(rid)
+    return opener.open_store(root, fetch=False, probes=opener.NO_PROBES).store.load().get(rid)
 
 
 def shell(event, ctx, cmd, inv, cwd, role):
@@ -271,8 +272,8 @@ def own_pull_refusal(ctx, cmd, argv, who, here=None, pairs=None):
     would allow: the record read where the tool runs (_root: its -C folder, else `here`; none
     when unknown), through the store that folder opens (read_record, the tool's own opener: a
     linked worktree whose .kit.json names no store reads its PM data worktree's live store,
-    kitlib.backlog.store.worktree_live_store), its pull compared with the branch the run acts as.
-    That is the branch checked out at that folder, so `-C <worktree>` alone, from any directory,
+    kitlib.backlog.store_live.worktree_live_store), its pull compared with the branch the run acts
+    as. That is the branch checked out at that folder, so `-C <worktree>` alone, from any directory,
     is a builder's own form; or an --as branch when `here`, the directory the tool runs in
     (commands.run_dir: as the line leaves it, or a Start-Process -WorkingDirectory; None, never
     evidence, when the text cannot tell), is that branch's linked worktree (_worktree_on). Any
@@ -315,8 +316,8 @@ def own_form(ctx, argv, who, root, here, pairs):
     linked worktree as the guard sees it (the folder the tool runs in when it is one on that
     branch, else the run's -C folder when that is one), and the run written again as
     `python <tool> -C <worktree> <verb> <words>`, with no --as and no cd: one bare call, which
-    reads the store the worktree opens (read_record; kitlib.backlog.store.worktree_live_store) and
-    acts as its branch. None when no such worktree shows, its store does not hold the record
+    reads the store the worktree opens (read_record; kitlib.backlog.store_live.worktree_live_store)
+    and acts as its branch. None when no such worktree shows, its store does not hold the record
     pulled by that branch (someone else's pull, or none), or the words do not read. It never
     names a branch the run does not act as, nor a worktree whose store it did not read the record
     in; the guard does not look a branch's worktree up elsewhere."""
@@ -620,7 +621,7 @@ def _script_text(cmd, text):
     /dev/stdin), which is never opened: what it gives is not a file the guard can read."""
     if text == '/dev/null' or text.lower() == 'nul':
         return text, ''                         # empty: it runs nothing
-    if text in cm.SOURCED_STDIN or text.startswith(('/dev/', '/proc/')):
+    if text in cn.SOURCED_STDIN or text.startswith(('/dev/', '/proc/')):
         return text, NOT_REGULAR
     path = rules.sh.resolve_path(text, cmd.cwd, shell=cmd.shell, home=cmd.home) if cmd.cwd or \
         os.path.isabs(text) else None
@@ -688,7 +689,7 @@ def script_file(event, ctx, cmd, inv, cwd, role):
         return None
     line = rules.hub_line(rules.bare(cmd) if found or cmd.pipe_from is None else
                           rules.bare(cmd.pipe_from) + ' | ' + rules.bare(cmd))
-    if found and names[0] in cm.SOURCED_STDIN:
+    if found and names[0] in cn.SOURCED_STDIN:
         # /dev/stdin: its text is the line's heredoc or here-string, or the files piped in
         here = next((r.target.text for r in cmd.redirects if r.op in ('<<', '<<<') and r.target is not None), None)
         if here is not None:
@@ -971,7 +972,7 @@ def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1)
                             'write (kitlib/backlog/roles.py). %s' % (head, why, LITERAL_WHY),
                             literal_form(ctx))
     from . import fallback, gaterole
-    p = cm.read(text, kind, cmd.cwd, home=getattr(ctx, 'home', None))
+    p = cn.read(text, kind, cmd.cwd, home=getattr(ctx, 'home', None))
     for c in p.commands:
         ci = cm.invocation(c)
         d = runs(event, ctx, c, ci, cwd, role) or gaterole.shell(event, ctx, c, ci, cwd, role)

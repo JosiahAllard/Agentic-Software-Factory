@@ -35,7 +35,7 @@ Rules, in the order they are checked:
                    -m tools.hub; tools/hub.py run as the program; python -m runpy tools.hub; at
                    any depth of the line) whose arguments run an owner verb
                    (answer, open, pair, unpair, stop, restart, todos done, stories add|withdraw,
-                   to-pm add|send, inbox read, approvals approve|deny, todos add --owner; a word
+                   to-pm add|send, inbox read, approvals approve|deny|apply, todos add --owner; a word
                    the guard cannot read where the verb could be counts), in any session but the
                    owner's own. Text that only names the hub tool (prose, a pipe of a run into
                    another program) is not read
@@ -100,6 +100,8 @@ from kitlib.git import repo
 from kitlib.host import Decision
 
 from . import commands as cm
+from . import commands_git as cg
+from . import commands_nested as cn
 from . import context
 from . import modes
 from . import shell as sh
@@ -141,7 +143,7 @@ from .rules_push import (DataBranch, Judged, LAND_HOW, _branch_of, _guarded_main
                          _push_names_branches, _unknown_dir_counts, call_subexpr_pmdata, data_copy, git_push,
                          git_push_pm_data, git_push_pmdata, git_send_pack_pmdata, home_config, hookless_refusal,
                          hookless_sub, kit_judged, landing_command, pmdata_possible, pmdata_recorded)
-from .rules_push import pmdata      # kitlib.pmdata, read here and as rules.pmdata (fallback)
+from .rules_push import pmdata      # kitlib.config.pmdata, read here and as rules.pmdata (fallback)
 from .rules_edit import (BLIND_BRANCH_INSTEAD, DEV_DRIVE, DOS_WILDCARDS, GATE_RESULT, JAIL_ASK, KIT_JSON, LONG_PREFIX,
                          MACHINE_CONFIG, MACHINE_CONFIG_WHY, MAIN_CWD_HINT, OUTPUT_WRITERS, PLACE_RULES, PM_DATA_WHY,
                          PROVIDER_ITEM_WHY, REDIRECT_HINT, STANDING_WHY, UNPLACED_BRANCH_INSTEAD, UNPLACED_BRANCH_WHY,
@@ -286,7 +288,7 @@ def judge(event, ctx):
 
 
 def shell_command(event, ctx, text, shell, cwd, role):
-    parsed = cm.read(text, shell, cwd, home=ctx.home)
+    parsed = cn.read(text, shell, cwd, home=ctx.home)
     hub_rules = HubShell(event, ctx, parsed)
     late = None             # cmd-reparse's, judged last: every other rule's refusal, the fallback's too, comes first
     asked = Asked()         # an ask (the unread ledger's) waits: any refusal on the line wins over it
@@ -448,7 +450,7 @@ def shell_writes(event, ctx, cmd, inv, cwd, role):
     # PowerShell places the call's redirections and the -RedirectStandard* files from its own
     # location, the command's directory. The program's own targets are judged from both folders,
     # so a workdir never lets a write pass that the command's own directory refuses. git (and a
-    # git-* program) gives none: the git rules judge its writes, from the workdir (commands.git_call).
+    # git-* program) gives none: the git rules judge its writes, from the workdir (commands_git.git_call).
     moved = len(write_targets(cmd, None)) + len(inv.writes) \
         if inv is not None and inv.via == 'start-process' and inv.workdir is not None else None
     asked = Asked()                             # every target's refusal wins over another's ask
@@ -501,7 +503,7 @@ def alias_heavy_run(ctx, cmd, cwd, text):
     refused as heavy in turn; else None."""
     where = cmd.cwd or cwd
     try:
-        parsed = cm.read(text, cmd.shell, where, home=getattr(ctx, 'home', None))
+        parsed = cn.read(text, cmd.shell, where, home=getattr(ctx, 'home', None))
     except Exception:  # noqa: BLE001 - an alternative's text only: the plain one stands
         return None
     if not parsed.clean or len(parsed.commands) != 1:
@@ -520,7 +522,7 @@ def git_rules(event, ctx, cmd, inv, cwd, role):
     d = git_send_pack_pmdata(event, ctx, inv, role) or call_subexpr_pmdata(event, ctx, cmd, inv, cwd, role)
     if d:
         return d
-    gc = cm.git_call(inv)
+    gc = cg.git_call(inv)
     if gc is None:
         return None
     if gc.alias:

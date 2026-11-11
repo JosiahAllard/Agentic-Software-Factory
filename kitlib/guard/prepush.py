@@ -3,7 +3,7 @@
 check(root, lines, remote=<name or URL>, url=<URL>) -> (ok, message). `lines` are what git writes
 to a pre-push hook's stdin, one `<local ref> <local sha> <remote ref> <remote sha>` per ref pushed.
 
-First, when the repository's git common dir holds kit-pm-data.json (kitlib.pmdata; docs/guard-hooks.md
+First, when the repository's git common dir holds kit-pm-data.json (kitlib.config.pmdata; docs/guard-hooks.md
 "Pre-push", "PM data branch"), leak_refusal judges every line whatever its remote ref: the data
 branch, its history and its objects go only to the recorded private remote, and that remote gets
 nothing else. A record that cannot be read, or a recorded root this clone lacks, refuses every push.
@@ -20,13 +20,13 @@ lander):
   cannot tell: refused too (fail closed). Git passes such a ref to the hook only when the push is
   forced (--force, a + refspec, --force-with-lease);
 - then, when the repository sets repo.push_block, the pushed commit needs a gate-OK record, read by
-  kitlib.gate.runner.verify_record: it must name a config_rev in the pushed commit's history and
+  kitlib.records.gate_ok.verify_record: it must name a config_rev in the pushed commit's history and
   hash the gate config that commit holds. With a dev_drive only the record folder counts and a
   .git copy is not read; with none (a load node set up without one) the .git copy is the only
   record (kitlib.records.gate_ok.read);
 - then, under push_block too, a commit the push adds that changes an owner-only path the push
   changes on main (its net change) and whose author email is not the owner's is refused, record
-  or not (kitlib.guard.ownercommits; the base's
+  or not (kitlib.ownerfiles.rules; the base's
   owner rules merged with the pushed commit's): a branch gate records its own tip, so without this
   a gated agent branch could go straight to main.
 The first rule that refuses names the reason; the order is the list's.
@@ -47,12 +47,12 @@ import re
 
 from kitlib import config as kconfig
 from kitlib import kitroot
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.config import schema as kschema
 from kitlib.git import cmd, refs
 from kitlib.git import defaults as gitdefaults
 from kitlib.git import repo as gitrepo
-from kitlib.guard import ownercommits
+from kitlib.ownerfiles import rules as ownerrules
 
 ZERO = '0' * 40
 FIXED_MAIN = kschema.SECTIONS['repo']['main_branch'].default
@@ -450,11 +450,11 @@ def _cfg(root, remote_sha, remote):
 
 
 def verify_record(root, sha):
-    """kitlib.gate.runner.verify_record, imported only when a push to main needs it (its imports
-    load the Windows process modules); any failure is `(None, why)`, so the push is refused."""
+    """kitlib.records.gate_ok.verify_record, imported only when a push to main needs it (it loads
+    the git and config modules); any failure is `(None, why)`, so the push is refused."""
     try:
-        from kitlib.gate import runner
-        return runner.verify_record(root, sha)
+        from kitlib.records import gate_ok
+        return gate_ok.verify_record(root, sha)
     except Exception as e:
         return None, 'cannot read gate-OK records: %s: %s' % (type(e).__name__, e)
 
@@ -482,10 +482,10 @@ def owner_refusal(root, cfg, local_sha, remote_sha, remote):
     except kconfig.ConfigError:
         work = kconfig.OwnerRules()
     rules = kconfig.merge_owner_rules(work, cfg.owner_rules())
-    bad, why = ownercommits.violations(root, rules, local_sha, _exclude(root, cfg, remote_sha, remote))
+    bad, why = ownerrules.violations(root, rules, local_sha, _exclude(root, cfg, remote_sha, remote))
     if bad is None:
         return 'cannot check owner-only paths (%s)' % why
-    return ownercommits.describe(rules, bad) if bad else None
+    return ownerrules.describe(rules, bad) if bad else None
 
 
 def not_fast_forward(root, local_sha, remote_sha, main):

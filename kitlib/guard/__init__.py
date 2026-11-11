@@ -4,7 +4,7 @@ Guards; docs/guard.md).
 decide(action, ctx=None) -> kitlib.host.Decision: 'allow', or 'deny'/'ask' with the rule, the
 reason and the command to use instead. `action` is the neutral kitlib.host.Action; a host's
 adapter parses its own hook payload into one and renders the Decision back in its own format
-(hosts/claude/adapter for Claude Code), and kitlib.host.hookmain runs the two around decide. No module
+(hosts/claude/adapter for Claude Code), and kitlib.hookrun.main runs the two around decide. No module
 here reads a host's payload or writes a host's output. githooks/pre-push is the git entry point
 (kitlib.guard.prepush).
 """
@@ -14,8 +14,8 @@ from .context import Ctx
 from .rules import ALLOW, ASK, DENY, decide
 
 # The platforms (kitlib.platform.NAME) whose path semantics the guard has been proven on. On any
-# other, kitlib.host.hookmain denies every guarded call (guard-error) before decide runs
-# (docs/linux-support-plan.md section 3). Linux joined in slice 8 (tests/guard/test_linux_paths.py).
+# other, kitlib.hookrun.main denies every guarded call (guard-error) before decide runs.
+# Linux is covered by tests/guard/test_linux_paths.py.
 READY_PLATFORMS = ('windows', 'linux')
 
 __all__ = ['Ctx', 'Decision', 'ALLOW', 'DENY', 'ASK', 'decide', 'READY_PLATFORMS']

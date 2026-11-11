@@ -10,8 +10,8 @@
       be told, is left running and the reason said. MSBuild nodes and the compiler server
       (named pipes, whose client cannot be told) are always left. Any other run leaves them all
       running, unpinned. A locked run's Gradle builds start no shared daemon to leave
-      (kitlib.lock.run NO_SHARED_DAEMON_ENV) unless a command names --daemon. "stop" applies the
-      same test after every run, "leave" stops none.
+      (kitlib.lock.run_held NO_SHARED_DAEMON_ENV) unless a command names --daemon. "stop" applies
+      the same test after every run, "leave" stops none.
   "notice": {"dir": <absolute folder>, "kinds": [<kind>, ...]}. Set, a run that holds a heavy or
       exclusive window writes a start notice there when it starts and an end notice when it ends
       (kitlib.lock.notice). Unset: none (the default). "kinds" unset means every kind whose cpu

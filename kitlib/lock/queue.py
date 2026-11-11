@@ -23,12 +23,11 @@ the runs naming its resource, and keeps no slots when that resource's holder is 
 a holder still holds is holder_end.
 
 Wait causes: plan also gives each waiting entry not planned now its why and by, a short code
-for what kept it from starting now and its blocker (plan's docstring). wait_cause turns one look
-at the queue by a waiting run (kitlib.lock.run.acquire) into one cause, from those and the holds,
-background runs and memory acquire sees, and WaitTally adds up the seconds by cause; acquire
-writes them on the run record as wait_by and wait_on, which its history line keeps
-(Store.HISTORY_KEYS; docs/lock-api.md "Why a run waited"). They record the wait only: nothing
-plans or admits by them.
+for what kept it from starting now and its blocker (plan's docstring). wait_cause turns one look at
+the queue by a waiting run (kitlib.lock.run_wait.acquire) into one cause, from those and the holds,
+background runs and memory acquire sees, and WaitTally adds up the seconds by cause; acquire writes
+them on the run record as wait_by and wait_on, which its history line keeps (Store.HISTORY_KEYS;
+docs/lock-api.md "Why a run waited"). They record the wait only: nothing plans or admits by them.
 """
 import contextlib
 import datetime

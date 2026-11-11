@@ -20,8 +20,8 @@ On Linux the mutexes are flocks (kitlib.platform.linux.locks), on files in the s
 
 Store(root) is the machine's store when root is None; any other root is a scratch store with
 mutexes of its own (tests). Its root is ~/.claude/machine-lock under the profile folder the
-system reports (profile_dir): Windows's, or on Linux the password database's (slice 9 of
-docs/linux-support-plan.md section 8), never $HOME or USERPROFILE. Timings live in Settings, so a
+system reports (profile_dir): Windows's, or on Linux the password database's, never $HOME or
+USERPROFILE. Timings live in Settings, so a
 test shortens them by parameter, not by environment (the old MACHINE_LOCK_TEST_* seams). Nothing here prints: `say` is the caller's.
 
 Under the kit's tests the machine's store is fenced (fence; docs/test-tools.md "Home fence"): it
@@ -48,8 +48,8 @@ from kitlib.platform.linux import locks
 from kitlib.platform.linux import paths as linux_paths
 from kitlib.platform.linux import process as procfs
 from kitlib.proc import process
-from kitlib.proc import win32
-from kitlib.proc.win32 import K32, ADV
+from kitlib.platform.windows import process as winproc, win32
+from kitlib.platform.windows.win32 import K32, ADV
 
 # Exit codes (stable): the CLI returns LockError.code.
 EXIT_FAIL, EXIT_USAGE, EXIT_BUSY, EXIT_TIMEOUT = 1, 2, 6, 8
@@ -558,7 +558,7 @@ def wrapper_state(pid, ctime):
             return False
         if waited != win32.WAIT_TIMEOUT:
             return None                 # the wait failed: whether it has exited is not known
-        made = process.handle_ctime(h)
+        made = winproc.handle_ctime(h)
         if ctime is None or made is None:
             return None
         return made == ctime
@@ -782,12 +782,12 @@ class Store:
 
     def live_runs(self, prune=False):
         """Run records whose wrapper is live (run_live). prune: move the others to ended/ (acquire
-        does, kitlib.lock.run) and delete orphaned .stop and .giveback files (kitlib.lock.giveback)
-        and dead writers' .tmp files. A run that settled keeps the ended record it wrote; one
-        whose wrapper died without settling gets one with how "reaped", code None, ended now and
-        `reaped` saying what showed it gone (wrapper_state, else the run mutex), and no history
-        line (it has no measured use, and the gate budget would count it now). A record leaves
-        active/ only once its ended record is there."""
+        does, kitlib.lock.run_wait) and delete orphaned .stop and .giveback files
+        (kitlib.lock.giveback) and dead writers' .tmp files. A run that settled keeps the ended
+        record it wrote; one whose wrapper died without settling gets one with how "reaped", code
+        None, ended now and `reaped` saying what showed it gone (wrapper_state, else the run mutex),
+        and no history line (it has no measured use, and the gate budget would count it now). A
+        record leaves active/ only once its ended record is there."""
         out, folder, moved = [], self.path("active"), False
         try:
             names = sorted(os.listdir(folder))

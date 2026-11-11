@@ -204,7 +204,7 @@ class Offer:
         if not path.endswith(SUFFIX) or not os.path.isabs(path):
             return None
         o = cls(path)
-        nest = (env.get("MACHINE_LOCK_RUN") or "").split(":")[0]       # kitlib.lock.run.NEST_ENV
+        nest = (env.get("MACHINE_LOCK_RUN") or "").split(":")[0]  # kitlib.lock.run_held.NEST_ENV
         return o if nest == o.rid else None
 
     def held(self):

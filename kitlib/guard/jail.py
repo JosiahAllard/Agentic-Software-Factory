@@ -263,7 +263,7 @@ def roots(ctx, cwd, is_root, mark=None, dev=None, dropped=None):
 
 def dev_root(ctx):
     """The Dev Drive's root folder, the machine config's dev_drive read the guard's tolerant way
-    (ctx.user), or None (dev_root_of). None leaves the outer bound off. kitlib.host.header reads
+    (ctx.user), or None (dev_root_of). None leaves the outer bound off. kitlib.hookrun.header reads
     it the same way, so the start warning and the guard agree."""
     try:
         user = ctx.user()

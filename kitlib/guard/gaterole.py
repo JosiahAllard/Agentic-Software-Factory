@@ -11,16 +11,16 @@ is the first word after the script, as tools/gate.py `main` reads it, so `-C <di
 usage error at the tool) and text that only names the command pass. A computed first word is not
 read (the guard catches honest mistakes, not evasion). It needs no switch in .kit.json.
 
-A host with no subagent identity (kitlib.host.hookmain.UNIDENTIFIED, Codex) gives a marked
+A host with no subagent identity (kitlib.hookrun.main.UNIDENTIFIED, Codex) gives a marked
 session's every call, its children's too, agent UNIDENTIFIED and agent_role the mark: such a call
 is judged by that mark, so a coordinator's session there may allow, and so may a child under it.
 """
-from kitlib import agentname
+from kitlib.host import agentname
 
 from . import rules
 
 RULE = 'gate-allow'
-UNIDENTIFIED = 'unidentified'                   # kitlib.host.hookmain.UNIDENTIFIED
+UNIDENTIFIED = 'unidentified'                   # kitlib.hookrun.main.UNIDENTIFIED
 SCRIPTS = ('gate.py', 'gate')                   # commands.wrapper's names for the gate
 VERB = 'allow'
 # the main sessions that may allow more runs: the coordinator and the PM

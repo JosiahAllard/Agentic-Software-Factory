@@ -15,7 +15,7 @@ guard has established the fact), over. SESSION_ONLY roles come only from a launc
 gives None: a built-in agent, a plain session) may take only the risks in UNLISTED_MAY.
 
 The groups are not names written here: they are read from this kit's role files
-(kitlib.content.roster; docs/multi-host-plan.md section 7, decision 17), so a role is added with
+(kitlib.content.roster; ARCHITECTURE.md "Content"), so a role is added with
 one file. A role's group is its `mode:`'s (controller: lead, write: builder, read and test:
 read-only, lander: lander) unless its file names `group:` (docs-writer: docs, though its mode is write); a file
 that says `run: session` is SESSION_ONLY. An old name (kitlib.content.ALIASES) is in its new
@@ -84,7 +84,7 @@ ACTIONS = collections.OrderedDict([
     ('set-price-owner', Row(('set',), MEDIUM, TOP, (), ('set-price',))),
     ('set-other', Row(('set',), MEDIUM, LEADS, (), ())),
     # A pulled record's scope widened into another branch's live pull (or a path its branch
-    # changed): computed by the plan (kitlib/backlog/plan.py plan_set), not read from a flag.
+    # changed): computed by the plan (kitlib/backlog/plan_edit.py plan_set), not read from a flag.
     ('set-widen-collision', Row(('set',), MEDIUM, LEADS, (), ())),
     ('pull', Row(('pull',), LOW, LEADS + BUILDERS, (), ())),
     # A pull whose scope collides with a live pull on another branch, or folds into its work:

@@ -1,5 +1,5 @@
-"""The guard's refusal log (docs/guard-v2.md "Refusal log"): one JSON line per deny a hook answers,
-appended to `<pm_data>/audit/refusals.jsonl` (the machine config's pm_data.path; kitlib.pmdata)
+"""The guard's refusal log (docs/guard-core.md "Refusal log"): one JSON line per deny a hook answers,
+appended to `<pm_data>/audit/refusals.jsonl` (the machine config's pm_data.path; kitlib.config.pmdata)
 after the answer is written, so the owner can count which rules refuse which roles without asking
 any agent. The folder is the backlog audit log's (kitlib.backlog.audit): made on the first write,
 left untracked, and refused to every session's own edit (docs/guard.md rule `pm-data-audit`).
@@ -39,7 +39,7 @@ import json
 import os
 import time
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 
 FOLDER = 'audit'
 FILE = 'refusals.jsonl'
@@ -158,7 +158,7 @@ def record(decision, action, host, role, environ=None, home=None, now=None):
     try:
         if getattr(decision, 'verdict', None) != 'deny':
             return None
-        from kitlib import pmdata
+        from kitlib.config import pmdata
         settings = pmdata.machine_settings(home, location=_location(home))
         if not settings or not settings.get('path'):
             return None

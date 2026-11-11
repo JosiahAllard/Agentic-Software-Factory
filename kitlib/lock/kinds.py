@@ -87,7 +87,7 @@ LAND_PREFIX = "land-"
 def check_cap(table, agent_cap):
     """KindsError naming the first kind (by name) whose cpu is a whole number past agent_cap;
     `table` is kinds.load()'s, or one a caller passed in. A land kind (LAND_PREFIX, what a
-    landing's merged gate books: kitlib.gate.land) is not checked: past the cap it books the cap
+    landing's merged gate books: kitlib.landing) is not checked: past the cap it books the cap
     (layout.kind_cores), so a smaller machine never refuses other runs over it."""
     for name, e in sorted(table.items()):
         if isinstance(name, str) and name.startswith(LAND_PREFIX):

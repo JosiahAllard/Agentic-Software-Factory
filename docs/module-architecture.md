@@ -78,7 +78,6 @@ A crossing the map does not allow (an edge of its kind, a messaging module or a 
 | records | `kitlib/records` | foundation layer (ARCHITECTURE.md Layers) |
 | redfirst | `kitlib/redfirst` | feature layer (ARCHITECTURE.md Layers) |
 | reviewpack | `kitlib/reviewpack` | feature layer (ARCHITECTURE.md Layers) |
-| roster | `kitlib/roster` | policy layer (ARCHITECTURE.md Layers) |
 | scrub | `kitlib/scrub` | feature layer (ARCHITECTURE.md Layers) |
 | stackskill | `kitlib/stackskill` | feature layer (ARCHITECTURE.md Layers) |
 | strayrestore | `kitlib/strayrestore` | feature layer (ARCHITECTURE.md Layers) |
@@ -153,7 +152,6 @@ None: no module is open to every other.
 | content | git | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | content | host | build | policy layer, same-layer use: allowed as of 2026-11-06 |
 | content | proc | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
-| content | roster | build | policy layer, same-layer use: allowed as of 2026-11-06 |
 | coordinatorstart | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | coordinatorstart | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | coordinatorstart | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -300,7 +298,7 @@ None: no module is open to every other.
 | hubsite | pmstart | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | pmwatch | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| hubsite | roster | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| hubsite | content | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | kitcmd | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | kitcmd | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | kitcmd | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -465,7 +463,6 @@ None: no module is open to every other.
 | reviewpack | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | reviewpack | verdict | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | reviewpack | trailerscheck | build | feature layer, same-layer use: allowed as of 2026-11-10 |
-| roster | host | build | policy layer, same-layer use: allowed as of 2026-11-06 |
 | scrub | forbidden | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | stackskill | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | strayrestore | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |

@@ -8,8 +8,7 @@
       ],
       "cwd": ".",
       "env_vars": [
-        "PM_KIT_ROOT",
-        "PM_KIT_RELEASE_ID"
+        "PM_KIT_ROOT"
       ]
     },
     "hub": {
@@ -20,8 +19,7 @@
       ],
       "cwd": ".",
       "env_vars": [
-        "PM_KIT_ROOT",
-        "PM_KIT_RELEASE_ID"
+        "PM_KIT_ROOT"
       ]
     },
     "blender": {
@@ -33,7 +31,6 @@
       "cwd": ".",
       "env_vars": [
         "PM_KIT_ROOT",
-        "PM_KIT_RELEASE_ID",
         "PM_KIT_BLENDER"
       ]
     }

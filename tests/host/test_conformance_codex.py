@@ -40,7 +40,6 @@ class CodexConformance(conformance.HostConformance, bridge_conformance.mixin('co
     # file, exactly; these are its Codex-only lines. Shrink only.
     LEAK_ALLOWED = {
         'kitlib/commit/__init__.py': 1,          # an example family in an error message
-        'kitlib/kitrelease/bootstrap.py': 1,     # the release's excluded host folders, before kitlib runs
         'kitlib/launcher/usage.py': 9,           # the launcher wave: Codex's usage line
         'kitlib/pmwatch/__init__.py': 1,         # the usage line's codex account
     }

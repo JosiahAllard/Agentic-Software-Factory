@@ -1,12 +1,12 @@
-"""The kitlib.ledger functions tools/ledger.py used to hold: files.read_views,
-migrate.report_for and check_out, audit.check_all (the CLI tests pin their printed output)."""
+"""The kitlib.ledger functions tools/ledger.py used to hold: files.read_views and
+audit.check_all (the CLI tests pin their printed output)."""
 import os
 import tempfile
 import unittest
 from unittest import mock
 
-from kitlib.ledger import audit, files, migrate, vcs
-from kitlib.ledger.errors import Failed, Usage
+from kitlib.ledger import audit, files, vcs
+from kitlib.ledger.errors import Usage
 
 def rid(n):
     return 'R-%04d' % n
@@ -45,20 +45,6 @@ class FilesTest(Base):
         found = files.of_config({'ledger_dir': self.dir, 'ledger_repos': ['alpha']})
         with self.assertRaises(Usage):
             files.views(found, 'beta')
-
-
-class MigrateTest(Base):
-    def test_report_for_proposes_each_rule_and_fails_without_a_digest(self):
-        self.assertIn(rid(1), migrate.report_for(self.found))
-        os.remove(self.digest)
-        with self.assertRaises(Failed):
-            migrate.report_for(self.found)
-
-    def test_check_out_refuses_a_ledger_file_and_the_digest_only(self):
-        for bad in (self.log, self.digest, os.path.join(self.dir, 'rules', 'x.md')):
-            with self.assertRaises(Usage):
-                migrate.check_out(self.found, bad)
-        migrate.check_out(self.found, os.path.join(self.dir, 'report.txt'))
 
 
 class AuditTest(Base):

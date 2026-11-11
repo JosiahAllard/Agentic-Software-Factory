@@ -24,11 +24,6 @@ R-nnnn ledger: read by show, grep, list and check, never written. Without `ledge
   ledger.py rule-set --repo REPO (--repos A,B | --budget N | --book-title T) --prov PROV --why WHY
                 --source S [--q Q] [--a A] [commit flags]
       set REPO's rulebook header (made when absent; it then needs --repos), with a log entry.
-  ledger.py migrate-report [--out FILE] [--digest PATH]
-      read-only: tag each standing digest rule KEEP, CUT or MERGE gN (a `?` marks it unreviewed).
-  ledger.py rule-apply REPORT [--write --prov PROV --source S [--when W] [commit flags]]
-      set the KEEP and MERGE rules of a report whose `?` marks are all deleted, one log entry
-      per rule; a dry run without --write. Refuses an unreviewed or stale report, writing nothing.
   ledger.py retire ID --class spent|superseded|duplicate --why WHY [--by ID] [--ruling ID]
       turn an entry into its tombstone in place, in its own file, print its id.
   ledger.py show ID              print one entry, from the file its id names.
@@ -51,11 +46,6 @@ R-nnnn ledger: read by show, grep, list and check, never written. Without `ledge
       shared one then FOLDER's own; --all every one. Rules print under their topic headings;
       --sources adds each rule's log ids; --topic keeps the rules whose heading, key or text holds
       WORD.
-  ledger.py split-move [--apply]
-      after the owner adds ledger_dir (keeping ledger_path as the frozen file): move STANDING.md
-      and the `rules` folder from beside ledger_path into ledger_dir, each whole. A dry run
-      without --apply; refuses, moving nothing, when a destination already exists. A rerun
-      resumes an interrupted move. --apply prints the git step that stages the move.
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.ledger, prints and exits.
 Exit codes: 0 ok; 1 no ledger configured or unreadable, a refused write, a failed check, an id or
@@ -64,7 +54,6 @@ text not found, or a commit or push that failed after the entry was written; 2 u
 import argparse
 import contextlib
 import os
-import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -73,7 +62,7 @@ from kitlib import ledger                                          # noqa: E402
 from kitlib.config import user                                     # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
-from kitlib.ledger import audit, files, fmt, migrate, move, rulebook, standing, vcs, write  # noqa: E402
+from kitlib.ledger import audit, files, fmt, rulebook, standing, vcs, write  # noqa: E402
 from kitlib.ledger.errors import Failed, Refused, Usage            # noqa: E402
 
 
@@ -150,19 +139,6 @@ def parser():
     rl.add_argument('--all', action='store_true', help='every rulebook')
     rl.add_argument('--sources', action='store_true', help="add each rule's log ids")
     rl.add_argument('--topic', help='only rules whose heading, key or text holds this word')
-    mr = sub.add_parser('migrate-report', help="propose KEEP, CUT or MERGE for each standing digest rule (read-only)")
-    mr.add_argument('--out', help='write the report to this file (default: print it)')
-    mr.add_argument('--digest', help='the digest to read (default: the standing digest beside the log)')
-    ra = sub.add_parser('rule-apply', help="set the rules of an edited migrate-report (a dry run without --write)")
-    ra.add_argument('report', help='the migrate-report file, every `?` deleted from the lines judged')
-    ra.add_argument('--write', action='store_true', help='write; without it, print what would be written')
-    ra.add_argument('--prov', choices=fmt.PROVS, help='the entries\' provenance (needed with --write)')
-    ra.add_argument('--source', help='the entries\' source (needed with --write)')
-    ra.add_argument('--when', help="UTC 'YYYY-MM-DD HH:MMZ' (default: now); for backfill")
-    commit_flags(ra)
-    sm = sub.add_parser('split-move', help='move STANDING.md and rules/ from beside ledger_path into '
-                        'ledger_dir (a dry run without --apply)')
-    sm.add_argument('--apply', action='store_true', help='move; without it, print what would move')
     return p
 
 
@@ -388,100 +364,12 @@ def do_rules(a, found):
     return 0 if shown or not a.topic else 1
 
 
-def do_migrate_report(a, found):
-    """Print (or write to --out) the proposals for the standing digest's rules; read-only."""
-    report = migrate.report_for(found, a.digest)
-    if a.out is None:
-        sys.stdout.write(report)
-        return 0
-    migrate.check_out(found, a.out, a.digest)
-    try:
-        with open(a.out, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(report)
-    except OSError as e:
-        return fail('cannot write %s: %s' % (a.out, e))
-    print('wrote %s' % a.out)
-    return 0
-
-
-def do_rule_apply(a, found, repos):
-    """Check the whole report first, then (only with --write) set each KEEP and MERGE rule through
-    write_entry, one log entry per rule; a dry run prints what would be written."""
-    if a.write and not (a.prov and a.source):
-        raise Usage('rule-apply --write needs --prov and --source')
-    got = migrate.applying(found, repos, a.report)
-    books = got.books
-    for key, name in got.skips:
-        print('skip %s (already in %s)' % (key, name))
-    for e in got.errs:
-        sys.stderr.write('REFUSED: %s\n' % e)
-    if got.errs:
-        sys.stderr.write('ledger.py: %d problem(s); nothing was written\n' % len(got.errs))
-        return 1
-    for c in got.todo:
-        name = rulebook.file_name(rulebook.target(books, c.repo))
-        if not a.write:
-            print('would set %s in %s (log repo %s): %s'
-                  % (c.key, name, migrate.log_repo(c, found.split), c.text))
-            continue
-        q, ans, decides = migrate.entry_text(c, standing.NAME)
-        # Each rule's `checked` hash is taken from the books as they are now, after the last write.
-        rule = migrate.rule_change(found.rules, c, write.load_books(found.rules), found.split)
-        log = migrate.log_repo(c, found.split)
-        write_entry(argparse.Namespace(**dict(vars(a), repo=log)), found, repos, q, ans, decides,
-                    rule=rule)
-    if not a.write:
-        print('dry run: %d rule(s) to set; add --write to write them' % len(got.todo))
-    return 0
-
-
 def do_check(a, found, repos):
     """Print the whole-ledger check (kitlib.ledger.audit); 1 when it found a problem."""
     got = audit.check_all(found, repos, a.base)
     for line in got.lines:
         print(line)
     return 1 if got.problems else 0
-
-
-def split_move_line(item, moved=False):
-    if moved:
-        return 'moved   %s -> %s' % (item.src, item.dst)
-    if item.state == move.MOVE:
-        count = ' (%d files)' % item.count if item.name == rulebook.FOLDER else ''
-        return 'move    %s -> %s%s' % (item.src, item.dst, count)
-    if item.state == move.DONE:
-        return 'done    %s (already in ledger_dir)' % item.dst
-    return 'none    %s (absent)' % item.src
-
-
-def do_split_move(a, cfg):
-    """Print the move (kitlib.ledger.move); with --apply make it, then print the git step."""
-    if not a.apply:
-        got, moved = move.plan(cfg), []
-    else:
-        got, moved = move.apply(cfg)
-    if got.same:
-        print('nothing to move: ledger_dir is the ledger_path folder (%s)' % got.new)
-        return 0
-    for item in got.items:
-        print(split_move_line(item, item in moved))
-    todo = [i for i in got.items if i.state == move.MOVE]
-    if not todo and not moved:
-        print('nothing to move')
-        # Every item already in ledger_dir: an --apply whose output was lost still has its git step.
-        steps = move.git_steps(got)
-        if not steps:
-            return 0
-    elif not a.apply:
-        print('dry run: %d to move; add --apply to move them' % len(todo))
-        return 0
-    else:
-        steps = move.git_steps(got)
-    for top, paths in steps:
-        print('next: %s' % subprocess.list2cmdline(['git', '-C', top, 'add', '-A', '--'] + paths))
-    tail = 'then commit those paths, then run ' if steps else 'then run '
-    print('%spython "%s" check' % (tail, os.path.abspath(__file__).replace('\\', '/')))
-    return 0
 
 
 def run(a, p, found, repos):
@@ -508,10 +396,6 @@ def run(a, p, found, repos):
         return do_rule_set(a, found, repos)
     if a.cmd == 'conflicts':
         return do_conflicts(a, found)
-    if a.cmd == 'migrate-report':
-        return do_migrate_report(a, found)
-    if a.cmd == 'rule-apply':
-        return do_rule_apply(a, found, repos)
     if a.cmd == 'retire':
         return do_retire(a, found, repos)
     if a.cmd == 'show':
@@ -543,8 +427,6 @@ def main(argv=None):
     except ConfigError as e:
         return fail(str(e))
     try:
-        if a.cmd == 'split-move':
-            return do_split_move(a, cfg)
         found = files.of_config(cfg)
         if found is None:
             return fail('no ledger_path or ledger_dir in %s' % user.display())

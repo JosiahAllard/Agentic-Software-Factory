@@ -31,6 +31,7 @@ import shlex
 import kitlib.platform
 from kitlib import pmdata
 from kitlib.config import user
+from kitlib.git import cmd as gitcmd
 from kitlib.git import refs, repo
 from kitlib.platform.linux import paths as linux_paths
 
@@ -142,6 +143,17 @@ def read(raw=None, classify=None, branch=None):
     if bad:
         return Pointer(BAD, value, bad)
     return Pointer(OK, value, None, record)
+
+
+def ignored(pm, rels):
+    """The paths of `rels` (relative to the machine config folder) that git does not ignore in
+    the PM repository `pm`; None and why when git could not tell."""
+    paths = [user.DIR_NAME + '/' + r for r in rels]
+    r = gitcmd.call(['check-ignore', '--'] + paths, pm)
+    if r.rc not in (0, 1):
+        return None, r.err or 'git check-ignore exited %s' % r.rc
+    got = {line.strip() for line in gitcmd.text(r.out).splitlines() if line.strip()}
+    return [p for p, full in zip(rels, paths) if full not in got], None
 
 
 def quoted(path):

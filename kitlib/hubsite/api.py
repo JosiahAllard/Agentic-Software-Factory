@@ -1,5 +1,5 @@
-"""kitlib.hubsite.api: the hub's verbs as functions over the store, with no transport in them (the
-hub site design, section 2 "HTTP API" and section 9).
+"""kitlib.hubsite.api: the hub's verbs as functions over the store, with no transport in them
+(docs/modules/hub-design.md "Packages and files").
 
   ROUTES     the table every transport iterates: Route(method, pattern, role, handler). A pattern
              is a full path under BASE; a `{name}` segment takes one path segment. role is OWNER,

@@ -211,8 +211,7 @@ class InPlaceEntry(unittest.TestCase):
             home.mkdir()
             env = fixture_env({'HOME': str(home), 'USERPROFILE': str(home),
                                'GIT_CEILING_DIRECTORIES': str(base), 'PYTHONDONTWRITEBYTECODE': '1'})
-            for name in ('PM_KIT_ROOT', 'PM_KIT_RELEASE_ID'):
-                env.pop(name, None)
+            env.pop('PM_KIT_ROOT', None)
             entry = root / 'hosts' / 'codex' / 'shell' / 'scripts' / 'workflow.py'
             result = spawn.run([sys.executable, str(entry), '--help'], cwd=base, env=env,
                                shell=False, capture_output=True, text=True, timeout=15)

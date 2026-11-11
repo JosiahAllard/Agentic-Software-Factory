@@ -12,7 +12,7 @@ script has its own folder on sys.path, so `import _host` finds this file.
                                         registered host), in name order
   model_maps(rs)                        {host: (tier -> model, role -> model)} of each renderer
                                         (default: renderers()): docs/ROSTER.md's `tiers` argument
-                                        (kitlib.roster)
+                                        (kitlib.content.rosterdoc)
 """
 import importlib
 import os

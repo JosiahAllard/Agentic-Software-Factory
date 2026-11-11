@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib.autotasks import tick as T
+from kitlib.config import pointer
 from kitlib.fs.treelock import TreeLock
 from kitlib.hubsite import serve
 from tests import gitfixture
@@ -207,22 +208,19 @@ class Place(Base):
         self.assertEqual(lines, [T.HOME_NO_FOLDER % (self.pm_folder, self.home_state(), T.kuser.MOVE_DOC)
                                  + ': nothing started'])
         self.assertNotIn('Copy-Item', lines[0])
-        self.assertIn('config_move.py', lines[0])
+        self.assertIn('move the machine config into it', lines[0])
         self.assertFalse(os.path.lexists(self.pm_folder))
 
     def test_git_that_cannot_tell_is_a_problem_saying_why(self):
-        from kitlib.config import move
-        with mock.patch.object(move, 'ignored', lambda pm, rels: (None, 'fatal: no repo')):
+        with mock.patch.object(pointer, 'ignored', lambda pm, rels: (None, 'fatal: no repo')):
             why = UNIGNORED(self.pm)
         self.assertIn('git could not tell', why)
         self.assertIn('fatal: no repo', why)
 
     def test_git_that_cannot_run_is_a_problem_saying_why_never_a_raise(self):
-        from kitlib.config import move
-
         def boom(pm, rels):
             raise OSError('git.exe not found')
-        with mock.patch.object(move, 'ignored', boom):
+        with mock.patch.object(pointer, 'ignored', boom):
             why = UNIGNORED(self.pm)
         self.assertIn('git could not tell', why)
         self.assertIn('OSError: git.exe not found', why)
@@ -230,12 +228,11 @@ class Place(Base):
     def test_a_base_exception_is_not_swallowed(self):
         # KeyboardInterrupt/SystemExit must pass, and the fake git's Unsupported (a BaseException)
         # is a test trap that must stay loud rather than read as "git could not tell"
-        from kitlib.config import move
         from kitlib.git.fake.errors import Unsupported
         for exc in (Unsupported('check-ignore'), KeyboardInterrupt(), SystemExit(2)):
             def boom(pm, rels, exc=exc):
                 raise exc
-            with mock.patch.object(move, 'ignored', boom):
+            with mock.patch.object(pointer, 'ignored', boom):
                 with self.assertRaises(type(exc)):
                     UNIGNORED(self.pm)
 
@@ -252,9 +249,9 @@ class Ignored(unittest.TestCase):
         with open(os.path.join(self.folder, '.gitignore'), 'w', encoding='utf-8', newline='\n') as fh:
             fh.write(text)
 
-    def test_the_moves_ignore_file_ignores_the_state_folder(self):
-        from kitlib.config import move
-        self.ignore(move.GITIGNORE)
+    def test_machine_setups_ignore_file_ignores_the_state_folder(self):
+        from kitlib.machinesetup import machineconfig
+        self.ignore(machineconfig.GITIGNORE)
         self.assertIsNone(T.unignored(self.repo.root))
 
     def test_an_ignore_file_without_the_line_is_a_problem_naming_it(self):

@@ -85,7 +85,7 @@ MARKETPLACE = '.claude-plugin/marketplace.json'
 # own copy step's to write; this module names no host.
 _HOST_MANIFEST = re.compile(r'^hosts/([a-z][a-z0-9-]*)/shell/plugin\.json$')
 CONFIG_KEY = 'plugin'
-LEFT_OUT = 'tests'                   # the top-level folder export leaves out (kitrelease does too)
+LEFT_OUT = 'tests'                   # the top-level folder export leaves out
 _SHA12 = re.compile(r'^[0-9a-f]{12}$')
 _TMP = re.compile(r'^([0-9a-f]{12})\.tmp$')
 _CLAIMED = re.compile(r'^.+\.pruning-\d+$')

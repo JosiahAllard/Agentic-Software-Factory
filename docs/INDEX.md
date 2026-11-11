@@ -82,7 +82,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/guard-owner.md` | shell guard: owner lock tools, machine setup, delegation list, hub secrets | an owner-only tool or a hub secret is refused | kw: guard, owner, hub secrets, delegation
 - `docs/guard-hooks.md` | shell guard: pre-push, owner-only commits, self-test, go-live | a push or commit is refused | kw: guard, pre-push, owner-only, go-live
 - `docs/guard-v2.md` | guard v2 design: keep/cut list and the checks it weakened | planning guard cuts | kw: guard-v2, guard, cuts, refusals
-- `docs/kitboot.md` | boot/kitboot.py: which kit a host entry runs, the pinned release check before kitlib | a hook or the lock server will not load the kit | kw: kitboot, boot, PM_KIT_ROOT, PM_KIT_RELEASE_ID, release
+- `docs/kitboot.md` | boot/kitboot.py: which kit a host entry runs, checked before kitlib | a hook or the lock server will not load the kit | kw: kitboot, boot, PM_KIT_ROOT
 - `docs/install.md` | installing the kit in a repository | setting up a repo | kw: install, installer, junctions, plugin
 - `docs/jev-fit-audit.md` | Jev fit audit step 1: the kit's routing and labelling decisions, cost and fit findings (desk study, no trial) | weighing a structured-decision model for kit decisions | kw: jev, fit-audit, audit, cost
 - `docs/kit-json.md` | `.kit.json` keys, types and defaults | configuring | kw: kit-json, config
@@ -193,7 +193,6 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `tools/auto_tasks.py` | start the hub's due schedules, run every 15 minutes by the `kit-automatic-tasks` task (`docs/machine-setup.md` "Extras") | kw: auto_tasks, tick, schedules, kit-automatic-tasks
 - `tools/no_window.py` | run a program with no console window, for a scheduled task (`docs/daily-full.md` "The schedule") | kw: no_window, console window, scheduled task
 - `tools/account_inventory.py` | read-only: how far each Claude account folder has drifted from the shared setup (`docs/machine-setup.md` "Account inventory") | kw: account_inventory, account, inventory
-- `tools/config_move.py` | move the machine config from the home folder into the PM repository; dry run, `--apply` copies (`docs/kit-json.md` "Moving the machine config into the PM repo") | kw: config_move, machine config
 - `tools/hub.py` | the Action Hub server (`serve`) and the verbs that ask it (`docs/action-hub.md`) | kw: hub, serve
 - `tools/kit.py` | the kit command: run a kit tool of the plugin export (`docs/machine-setup.md` "Extras") | kw: kit, kit command, kit.cmd
 - `tools/node.py` | the load nodes: list, status, run (`docs/load-nodes.md`) | kw: node, load-node

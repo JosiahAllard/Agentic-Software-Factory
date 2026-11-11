@@ -57,7 +57,7 @@ policy's groups are read from it, never written by hand. `docs/ROSTER.md` is pro
 rendered regions, each between `<!-- rendered: roles -->` (or `tiers`) and
 `<!-- end rendered -->`: the role table (name, `tier`, `effort`, `summary`) and the tier table
 (each host's hosts.json `tiers`). `render_content.py` writes and checks them with every host's
-files, whatever `--host` says (`kitlib/roster`); the prose around them is the owner's.
+files, whatever `--host` says (`kitlib/content/rosterdoc.py`); the prose around them is the owner's.
 `tools/agent_roster.py` checks or writes that file alone. So a role is added or removed with one
 file and a render. tests/content/test_role_names.py fails on a `{{agent:<name>}}`, a host's
 dispatch name (`pm-kit:<name>`; Codex's `kit-<name>`, quoted, in hosts/codex/) or a role tuple in

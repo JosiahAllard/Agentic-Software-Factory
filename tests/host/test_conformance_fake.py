@@ -97,8 +97,7 @@ class FakeHostSlot(unittest.TestCase):
         self.addCleanup(stack.close)
         stack.enter_context(registered())
         stack.enter_context(mock.patch.dict(os.environ))
-        for name in ('PM_KIT_ROOT', 'PM_KIT_RELEASE_ID'):
-            os.environ.pop(name, None)
+        os.environ.pop('PM_KIT_ROOT', None)
         spec = importlib.util.spec_from_file_location(
             'fakehost_hook', os.path.join(ROOT, *fake.ENTRY.split('/')))
         self.entry = importlib.util.module_from_spec(spec)

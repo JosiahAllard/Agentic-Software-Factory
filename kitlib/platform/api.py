@@ -1,7 +1,7 @@
 """The seam's contract (docs/linux-support-plan.md section 2.1): each primitive's name, signature
 and meaning, and no OS code. Every backend provides every name: kitlib.platform.windows by
-re-exporting today's kitlib.proc function unchanged, kitlib.platform.linux by a stub that raises
-PlatformUnsupported until its slice builds it. A process is named by (pid, ctime), ctime its
+re-exporting today's kitlib.proc function unchanged, kitlib.platform.linux by its own code in
+kitlib/platform/linux/. A process is named by (pid, ctime), ctime its
 creation time in the backend's own units, so a reused pid is never taken for the process.
 
 Process (linux: slice 4)

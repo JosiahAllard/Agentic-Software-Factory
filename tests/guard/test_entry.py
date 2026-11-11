@@ -237,7 +237,7 @@ class GuardError(unittest.TestCase):
                 'for m in list(sys.modules.values()) if getattr(m, "__file__", None) '
                 'and os.path.abspath(m.__file__).startswith(root + os.sep))]))'
                 % (os.path.dirname(ENTRY), ARGS, os.path.dirname(os.path.dirname(ENTRY))))
-        env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PM_KIT_ROOT', 'PM_KIT_RELEASE_ID')}
+        env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PM_KIT_ROOT')}
 
         def loaded(tool):
             ev = json.dumps({'tool_name': tool, 'tool_input': {}, 'cwd': self.base, 'hook_event_name': 'PreToolUse'})

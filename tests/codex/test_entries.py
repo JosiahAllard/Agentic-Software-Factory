@@ -43,7 +43,7 @@ class Entries(unittest.TestCase):
         # cases write nothing. No CI workflow in the repo runs this file.
         self.env = {k: v for k, v in os.environ.items()
                     if not k.startswith('MACHINE_LOCK_')
-                    and k not in ('PM_KIT_ROLE', 'PM_KIT_RELEASE_ID', 'KIT_PM_REPO_FENCE')}
+                    and k not in ('PM_KIT_ROLE', 'KIT_PM_REPO_FENCE')}
         self.env.update(PM_KIT_ROOT=str(ROOT), HOME=str(self.home), USERPROFILE=str(self.home),
                         GIT_CEILING_DIRECTORIES=str(self.base), PYTHONDONTWRITEBYTECODE='1')
 

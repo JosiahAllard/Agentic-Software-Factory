@@ -1,5 +1,5 @@
-"""The machine config's move into the PM repository (docs/kit-json.md "Moving the machine config
-into the PM repo"). kitlib.config.user.home_location is the move's source: the home folder's file,
+"""A machine config in the home folder (docs/kit-json.md "A machine config in the home folder").
+kitlib.config.user.home_location is the owner's move's source: the home folder's file,
 the new folder's (user.DIR_NAME),
 failing closed when the new one cannot be told. kitlib.config.user.locate is what the kit reads:
 the PM repository's `.pm-kit` with a good PM-repo pointer, and a machine config still in the home
@@ -127,7 +127,7 @@ class LocateTest(_Home):
                 loc = user.locate(self.home)
                 self.assertEqual((loc.state, loc.path, loc.leftover), (user.UNMOVED, path, path))
                 self.assertIn('set the PM repo pointer', loc.error)
-                self.assertIn('config_move.py', loc.error)
+                self.assertIn(user.MOVE_DOC, loc.error)
                 with self.assertRaises(ConfigError):
                     user.ledger_path(self.home)
                 with self.assertRaises(ConfigError):

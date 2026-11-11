@@ -34,8 +34,8 @@ READ_TOOLS = {"preflight", "landed", "review_pack", "worktree_paths", "lock_rele
               "doc_index", "codemap", "trailers", "machine_paths",
               "checkout_guard", "agent_roster", "testlist", "tool_deps"}
 READ_BACKLOG = {"next", "show", "list", "check", "landable", "stale"}
-READ_LEDGER = {"show", "grep", "check", "list", "standing", "rules", "conflicts", "migrate-report"}
-COMMIT_LEDGER = {"add", "rule-drop", "rule-set", "rule-apply"}   # the PM's ledger writes that take --commit/--push
+READ_LEDGER = {"show", "grep", "check", "list", "standing", "rules", "conflicts"}
+COMMIT_LEDGER = {"add", "rule-drop", "rule-set"}   # the PM's ledger writes that take --commit/--push
 OWNER_FLAGS = {"--owner-authored", "--owner-approved", "--owner-confirmed", "--owner-said"}
 
 

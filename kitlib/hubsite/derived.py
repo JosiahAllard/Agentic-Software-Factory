@@ -20,7 +20,8 @@ import datetime
 import os
 import re
 
-from kitlib import pmstart, pmwatch, roster
+from kitlib import pmstart, pmwatch
+from kitlib.content import rosterdoc
 from kitlib.hubsite import skilledits
 from kitlib.maintlint import result as lint_result
 
@@ -169,7 +170,7 @@ def agents(agents_dir):
         except OSError:
             fm = {}
         out.append({"name": name, "description": fm.get("description", ""),
-                    "model": fm.get("model", ""), "effort": fm.get("effort", roster.NONE)})
+                    "model": fm.get("model", ""), "effort": fm.get("effort", rosterdoc.NONE)})
     return {"available": True, "agents": out}
 
 

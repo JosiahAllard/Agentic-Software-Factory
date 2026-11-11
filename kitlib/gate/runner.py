@@ -78,7 +78,7 @@ NO_CHECKS = ('GATE OK (auto-detected: no stack found, so NO checks ran; give the
 FULL_NEEDED = ('FULL NEEDED: %s; so this tip\'s final gate is gate.py -C %s --full (docs/gate-run.md '
                '"The final gate")')
 FULL_UNKNOWN = 'NOTE: cannot tell whether this tip needs a final --full gate: %s'
-PROBE_TIMEOUT = 60      # seconds a `requires` probe argv may take
+PROBE_TIMEOUT = 60      # seconds a `requires` probe argv or a reuse.py toolchain probe may take
 CANCELLED_WAITING = 'was cancelled by stop while it waited'     # kitlib.lock.run's LockError text
 # A console window the gate's run opened (window_results): False, it warns; True, it fails the
 # gate as a `windows` result. The one switch.

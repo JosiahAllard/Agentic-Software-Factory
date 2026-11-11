@@ -108,6 +108,17 @@ class Table(unittest.TestCase):
         self.assertIsNone(T.find_repo('other', repos))
 
 
+class LauncherRepos(unittest.TestCase):
+    def test_a_folder_that_is_gone_inside_another_repo_is_left_out(self):
+        home = temp_home(self)
+        repo = gitfixture.TempRepo()
+        self.addCleanup(repo.cleanup)
+        machine_config(home, {'launcher': {'repos': {'here': repo.root,
+                                                     'gone': os.path.join(repo.root, 'gone')}}}, case=self)
+        main = os.path.normpath(os.path.realpath(repo.root))
+        self.assertEqual(T.launcher_repos(home), [('here', main, os.path.basename(main))])
+
+
 class State(Base):
     def test_missing_state_is_empty(self):
         self.assertEqual(T.read_state(self.state), ({}, None))

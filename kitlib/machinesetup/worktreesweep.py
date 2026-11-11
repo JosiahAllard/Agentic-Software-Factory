@@ -109,11 +109,15 @@ def dry_run(tool, main, python, timeout=DRY_RUN_TIMEOUT, run=None):
 def repo_task(folder):
     """(main checkout, repo name) for the repository at `folder`: the name is `.kit.json`'s
     repo.name, else the main checkout's folder name (as kitlib.worktree.task.resolve names it).
-    RuntimeError when git cannot find the main checkout; ConfigError for a refused .kit.json."""
-    main = gitrepo.main_checkout_toplevel(folder)
-    if main is None:
-        raise RuntimeError('cannot find the main checkout of %s' % folder)
-    main = os.path.realpath(os.path.abspath(main))
+    The main checkout is the parent of git's common dir, in its real spelling, as the sweep tool
+    itself names it. RuntimeError when `folder` is not a directory (git would answer for the repo
+    holding its parent) or git cannot find the main checkout; ConfigError for a refused .kit.json."""
+    if not os.path.isdir(folder):
+        raise RuntimeError('cannot find the main checkout of %s: not a directory' % folder)
+    common, why = gitrepo.common_dir(folder)
+    if common is None:
+        raise RuntimeError('cannot find the main checkout of %s (%s)' % (folder, why))
+    main = os.path.realpath(os.path.abspath(os.path.dirname(common)))
     name = load_kit_config(main).repo.get('name') or os.path.basename(os.path.normpath(main))
     return main, name
 

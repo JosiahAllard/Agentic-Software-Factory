@@ -191,7 +191,6 @@ None: no module is open to every other.
 | docs | verdict | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | forbidden | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | forbidden | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| fs | git | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
 | fs | platform | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
 | fs | proc | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
 | gate | config | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
@@ -392,6 +391,7 @@ None: no module is open to every other.
 | opt-usage | config | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | packageexport | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pending | fs | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
+| pending | git | build | foundation layer, same-layer use: allowed as of 2026-11-10 (W-004: the write lock's place) |
 | pieces | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pluginsource | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pluginsource | fs | build | feature layer uses foundation layer: allowed as of 2026-11-06 |

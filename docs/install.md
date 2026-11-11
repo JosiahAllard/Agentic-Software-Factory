@@ -295,6 +295,7 @@ Per repository and per machine; each is the owner's to switch.
 - Repo switch-overs to the kit gate, lock and guard: each repository and the PM's.
 - Retirements: the per-repo test-runner wrapper scripts (the plugin's test-runner agent type stays), and heavy_run. The global `reserve_ui.pyw` is replaced by the kit window `reserve_ui.pyw` at the kit root, which stays.
 - `.claude/settings.json` for a new repository: the installer does not write one, and the kit ships no template. Open: whether `templates/common` carries one (hooks, permissions) and what it holds; until then the owner writes each repository's by hand.
+- Stack runners: `dotnet_each.py` and `js_tests.py` ship in the stack templates; `check.py` stays a repo's own gate hook pending an owner answer.
 - Specialty cutover, for each downstream repository (status unknown): the `.kit.json` `doc_index.roles` keys and the profile lines naming a retired agent type (docs/content.md "Specialty skills").
 - The hub aliases, the Action Hub site and the backlog store per repository are in docs/hub-records.md "repos/<name>", docs/hub-serving.md "Serving it" and docs/backlog-store.md "Open".
 

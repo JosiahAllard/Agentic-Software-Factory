@@ -33,7 +33,7 @@
  "host-build-guard": 6,
  "host-build-pluginsource": 3,
  "hubapprove-build-hubsite": 1,
- "hubmcp-build-hubsite": 8,
+ "hubmcp-build-hubsite": 5,
  "hubsite-build-hubjobs": 2,
  "hubsite-build-maintlint": 3,
  "kitlib-root-build-host": 2,

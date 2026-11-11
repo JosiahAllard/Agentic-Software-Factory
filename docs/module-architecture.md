@@ -556,6 +556,9 @@ None: no module is open to every other.
 | worktree | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | worktree | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | worktree | records | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| hubapprove | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
+| hubmcp | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
+| maintlint | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
 
 ## Ratchets
 

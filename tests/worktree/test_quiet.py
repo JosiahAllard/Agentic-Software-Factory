@@ -6,6 +6,7 @@ tests/backlog/test_plan_quiet_release.py."""
 import json
 import os
 import time
+import unittest
 from unittest import mock
 
 from kitlib.records import verdict_entry
@@ -141,3 +142,10 @@ class QuietHoldProbe(StoreCase):
     def test_a_branch_no_tree_is_on_reads_its_tip_and_reflog(self):
         self.assertEqual(self.hold(branch=BRANCH)[0], None)
         self.assertIn('under the 4 h quiet bar', self.hold(branch=BRANCH, now=time.time())[0])
+
+
+class Probes(unittest.TestCase):
+
+    def test_the_probes_are_the_classifiers_liveness_and_the_quiet_hold(self):
+        # What tools/backlog.py hands the backlog opener (tests/backlog/test_cli.py OpenerProbes).
+        self.assertEqual(quiet.PROBES, (classify.branch_liveness, quiet.quiet_hold))

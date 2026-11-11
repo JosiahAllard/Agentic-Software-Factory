@@ -11,6 +11,8 @@ from unittest import mock
 
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog.errors import Refusal
+from kitlib.worktree import quiet
 from tests.backlog import ownertree
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, TODAY, kit_json_ref, priced
@@ -294,6 +296,32 @@ class RulingCitesUnchecked(unittest.TestCase):
         shown = self.ok('show', 'BAZ')
         self.assertIn('priority_by: owner', shown)
         self.assertNotIn('priority_ruling', shown)
+
+
+class OpenerProbes(unittest.TestCase):
+    """The verbs that may stop another branch's pull open the store with the worktree's probes
+    (kitlib.worktree.quiet PROBES), never with none: the opener is faked and stops main there."""
+
+    def test_block_set_status_parked_and_release_open_with_the_worktrees_probes(self):
+        home = tempfile.mkdtemp(prefix='kit-home-')
+        self.addCleanup(rmtree, home)
+        env = fixture_env({'USERPROFILE': home, 'HOME': home})
+        seen = []
+
+        def opened(root, fetch=True, session=None, branch=None, *, probes):
+            seen.append(probes)
+            raise Refusal('stopped at the opener')
+
+        verbs = (['block', 'FOO', '--on', 'live-client', '--reason', 'its tree went quiet'],
+                 ['set-status', 'FOO', 'parked'],
+                 ['release', 'FOO', '--reason', 'its tree went quiet'])
+        with mock.patch.object(BACKLOG, 'open_store', opened):
+            for verb in verbs:
+                rc, out, err = inproc.run_main(BACKLOG.main, ['-C', home, '--no-fetch'] + verb,
+                                               env, home)
+                self.assertEqual(rc, 2, out + err)
+                self.assertIn('REFUSED: stopped at the opener', out + err)
+        self.assertEqual(seen, [quiet.PROBES] * 3)
 
 
 if __name__ == '__main__':

@@ -101,7 +101,7 @@ class BisectCase(Case):
         return shas['RED'], self.result('20261009-040000')
 
     def record(self, rid):
-        ctx = opener.open_store(self.main_dir, fetch=True)
+        ctx = opener.open_store(self.main_dir, fetch=True, probes=opener.NO_PROBES)
         return ctx.store.load().get(rid)
 
     def daily_head(self):
@@ -141,7 +141,7 @@ class Culprit(BisectCase):
         self.assertEqual(ids, [rid])
 
     def ids(self):
-        ctx = opener.open_store(self.main_dir, fetch=True)
+        ctx = opener.open_store(self.main_dir, fetch=True, probes=opener.NO_PROBES)
         return [r.stem for r in ctx.store.load().records]
 
 

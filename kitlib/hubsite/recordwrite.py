@@ -22,9 +22,11 @@ until the answer, the to-do done or the approval decided) and when it is withdra
 unbound (withdraw), committing under Session: hub-park (PARK_SESSION) as the owner's proxy
 (kitlib.hubsite.api park_item, unpark_item).
 
-Each opens the store `.kit.json` in `root` names (kitlib.backlog.opener open_store, fetched first)
-and writes through Store.write with the plan functions backlog.py runs (kitlib.backlog.plan
-plan_add, plan_set, plan_delete, plan_unblock, plan_answer), so every store check applies.
+Each opens the store `.kit.json` in `root` names (kitlib.backlog.opener open_store, fetched first,
+with opener.NO_PROBES: a park stops a pull as its holder would, so no write here stops another
+branch's pull) and writes through Store.write with the plan functions backlog.py runs
+(kitlib.backlog.plan plan_add, plan_set, plan_delete, plan_unblock, plan_answer), so every store
+check applies.
 "lines" is what the store said about the write, its notes included.
 
 answer files the owner's answer to hub question `qid` (answered at `at`) into the record the
@@ -73,7 +75,7 @@ STALE = 'the record changed since this page read it: read it again'
 
 def _open(root, no_store='store', session=SESSION):
     try:
-        ctx = opener.open_store(root, fetch=True, session=session)
+        ctx = opener.open_store(root, fetch=True, session=session, probes=opener.NO_PROBES)
     except Failure as e:
         raise HubError('store', str(e), 'repo')
     if getattr(ctx.store.backend, 'implicit', False):
@@ -254,7 +256,7 @@ def asks(root):
     from kitlib.backlog import conditions as condmod
     from kitlib.backlog import record as rmod
     try:
-        ctx = opener.open_store(root, fetch=False, session=PARK_SESSION)
+        ctx = opener.open_store(root, fetch=False, session=PARK_SESSION, probes=opener.NO_PROBES)
         if getattr(ctx.store.backend, 'implicit', False):
             return []
         snap = ctx.store.load()

@@ -1,8 +1,8 @@
 """The backlog store at a landing (docs/backlog-store.md "Lifecycle changes", "Merge safety";
-called by kitlib.gate.land). The configured store takes part when it is a `ref` or `branch`
-store; a main store's records travel with the branch, so a landing leaves them alone. The PM
-data branch's store (kitlib.pmdata: a folder store in the worktree that has the recorded data
-branch checked out) takes part too: the PM's records of this repository live there.
+called by the landing, tools/land.py). The configured store takes part when it is a `ref` or
+`branch` store; a main store's records travel with the branch, so a landing leaves them alone.
+The PM data branch's store (kitlib.pmdata: a folder store in the worktree that has the recorded
+data branch checked out) takes part too: the PM's records of this repository live there.
 
   ancestry_refusal  before any merge: why the branch may not land when its history holds the
                     store's root commit (a store never merges into main), or the PM data

@@ -198,7 +198,8 @@ def open_snapshot(root):
     raises."""
     from kitlib.backlog import opener
     from kitlib.hubsite import recordwrite
-    ctx = opener.open_store(root, fetch=False, session=recordwrite.CONDITION_SESSION)
+    ctx = opener.open_store(root, fetch=False, session=recordwrite.CONDITION_SESSION,
+                            probes=opener.NO_PROBES)
     if getattr(ctx.store.backend, 'implicit', False):
         return None, None
     return ctx.store.load(), ctx.store

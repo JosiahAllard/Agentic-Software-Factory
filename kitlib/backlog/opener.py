@@ -4,9 +4,10 @@ docs/backlog.md).
 
   open_repo(root)   -> (top, cfg, rules); Failure when `root` is no repository or its `.kit.json`
                        cannot be read
-  open_store(root, fetch=True, session=None, branch=None) -> plan.Context over the store, its
-                       `liveness` probe the worktree classifier's (liveness), its `cap` repo_cap's;
-                       from a linked worktree naming no store, the PM data worktree's live store
+  open_store(root, fetch=True, session=None, branch=None, *, probes) -> plan.Context over the
+                       store, its `liveness` and `quiet` the caller's `probes` bound to the
+                       store's repository (NO_PROBES: none), its `cap` repo_cap's; from a linked
+                       worktree naming no store, the PM data worktree's live store
                        (store.worktree_live_store)
   follow_up_states(root, ids) -> ({id: (state, open)}, why) from the live store (no fetch)
   repo_cap(top)     -> the main checkout's `.kit.json` backlog.cap `next` and `pull` share
@@ -40,17 +41,26 @@ from .errors import Failure, Refusal, Usage
 FIELD_FLAGS = list(rmod.FIELDS)
 WRITES = ('add', 'set', 'block', 'unblock', 'pull', 'release', 'close', 'retire', 'delete',
           'set-status', 'unpark', 'clear-review')
+# open_store's `probes` for a caller whose plans never stop another branch's pull (a read, an
+# add, a set, a pull, a stop as the pull's own branch): the context gets no liveness and no quiet
+# probe, so such a stop would be refused as live.
+NO_PROBES = (None, None)
 
 
 def open_repo(root):
     return smod.open_repo(root)
 
 
-def open_store(root, fetch=True, session=None, branch=None):
+def open_store(root, fetch=True, session=None, branch=None, *, probes):
     """The plan.Context over the store `root`'s checkout opens. A linked worktree whose
     `.kit.json` names no store opens the live store in its repository's PM data worktree, acting
     as its own checked-out branch unless `branch` (`--as`) names one (store.worktree_live_store):
-    `-C <worktree>` then reads and writes what `-C <pm data> --as <its branch>` does."""
+    `-C <worktree>` then reads and writes what `-C <pm data> --as <its branch>` does.
+    `probes` (required; the backlog has no default) is `(liveness, quiet)`, called as
+    `liveness(top, branch)` and `quiet(top, branch, main=<code main commit>)` on the store's
+    repository `top`: the worktree package's quiet.PROBES, or NO_PROBES; a None member is no
+    probe."""
+    live, quiet = probes
     # `why` (the PM data worktree unread) is the write's to refuse (default_store_refusal).
     # One worktree list for the run: the store lookup, the code config and the cap and resources
     # read lazily after all ask the one repository for it.
@@ -68,7 +78,10 @@ def open_store(root, fetch=True, session=None, branch=None):
         code_main, code_remote = code_main or code.main_branch, code.remote
     ctx = pmod.Context(store, top, remote=cfg.remote, main_branch=cfg.main_branch,
                        branch=branch, code_main=code_main or cfg.main_branch,
-                       code_remote=code_remote, liveness=lambda name: liveness(top, name),
+                       code_remote=code_remote,
+                       liveness=None if live is None else (lambda name: live(top, name)),
+                       quiet=None if quiet is None else (
+                           lambda name, main: quiet(top, name, main=main)),
                        cap=lambda: repo_cap(top, worktrees=listing),
                        resources=lambda: repo_resources(top, worktrees=listing),
                        shared=lambda: repo_shared_paths(top, worktrees=listing))
@@ -80,12 +93,13 @@ def follow_up_states(root, ids):
     (store.live_store_root: from a main checkout naming no store, its PM data worktree's), as last
     fetched: `state` the record's `state:`, None when the store holds none of that id (a closed or
     retired one), `unreadable` when it cannot be parsed; `open` True when the state is one of
-    record.STATES. `(None, why)` when the live store cannot be found or opened."""
+    record.STATES. `(None, why)` when the live store cannot be found or opened. A read, so it
+    opens the store with NO_PROBES."""
     try:
         path, why = smod.live_store_root(root)
         if why:
             return None, why
-        snap = open_store(path, fetch=False).store.load()
+        snap = open_store(path, fetch=False, probes=NO_PROBES).store.load()
     except (Failure, Refusal, Usage, kconfig.ConfigError, OSError) as e:
         return None, str(e)
     out = {}
@@ -154,14 +168,6 @@ def checked_cap(cap, where):
         raise Refusal('.kit.json "backlog".cap of %s is %r: it must be a whole number >= 1'
                       % (where, cap))
     return cap
-
-
-def liveness(top, branch):
-    """plan.Context's `liveness` probe: kitlib.worktree.classify.branch_liveness on the repository
-    `top` is in. Imported here, when a block or release asks, never at load: kitlib.worktree
-    imports this package's store."""
-    from kitlib.worktree import classify
-    return classify.branch_liveness(top, branch)
 
 
 def set_changes(args):

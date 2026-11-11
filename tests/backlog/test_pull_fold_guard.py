@@ -433,7 +433,7 @@ class PullFoldInThePmDataWorktree(PmDataWorktree):
         stale = self.later_on_main()
         self.branch_with(HOLDER, 'kitlib/y/own.py')
         self.lag_main(stale)
-        ctx = opener.open_store(self.pm_worktree(), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(), fetch=False, probes=opener.NO_PROBES)
         holding = [parse('HOLD', id='HOLD', state='pulled', pulled_at=TODAY, pulled_by=HOLDER,
                          scope='docs/held.md')]
         hits, notes = pmod._pull_fold_hits(ctx, ['kitlib/x/later.py'], holding, BRANCH)

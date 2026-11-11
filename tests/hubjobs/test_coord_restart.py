@@ -890,7 +890,8 @@ class Offered(unittest.TestCase):
             def __init__(s, root, session):
                 s.root, s.remote, s.store, s.session = root, 'origin', Store(session), session
 
-        def open_store(root, fetch=True, session=None, branch=None):
+        def open_store(root, fetch=True, session=None, branch=None, *, probes):
+            self.assertIs(probes, opener.NO_PROBES)     # an offer read stops no pull
             self.opened.append((root, fetch, session))
             return Ctx(root, session)
 

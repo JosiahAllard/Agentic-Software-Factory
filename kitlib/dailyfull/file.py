@@ -53,14 +53,15 @@ def open_filing_store(root, session=SLUG):
     """`(Context, None)` for the store a kit tool files a found record in: the repository's
     configured one, or the PM data branch's when the configured one is the implicit default;
     fetched, its commits carrying `session` as their Session: line. `(None, why)` when there is
-    neither. Raises Refusal (the store's own). kitlib.maintlint.gatetime files through it too."""
-    ctx = opener.open_store(root, fetch=True, session=session)
+    neither. Raises Refusal (the store's own). kitlib.maintlint.gatetime files through it too. A
+    filing only adds and prices, stopping no pull, so the store opens with opener.NO_PROBES."""
+    ctx = opener.open_store(root, fetch=True, session=session, probes=opener.NO_PROBES)
     if not getattr(ctx.store.backend, 'implicit', False):
         return ctx, None
     pm_root, _cfg, _backend, why = at_landing.pm_data_store(root, None)
     if pm_root is None:
         return None, why or bstore.default_store_refusal(ctx.root)
-    return opener.open_store(pm_root, fetch=True, session=session), None
+    return opener.open_store(pm_root, fetch=True, session=session, probes=opener.NO_PROBES), None
 
 
 def file(root, settings, found, red, git):

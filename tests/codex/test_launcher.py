@@ -7,11 +7,13 @@ import tomllib
 import unittest
 from unittest import mock
 
-from hosts.codex.adapter.launcher import execute, plan, launch_environment
+from hosts.codex.adapter.launcher import execute, plan, launch_environment, require_host_worktree
 from hosts.codex.adapter import content
 from hosts.codex.adapter.kit import catalog
 from kitlib import kitroot
+from tests import gitfixture
 from tests.guard.world import World
+from tests.realgit import real_git
 
 
 class Launcher(unittest.TestCase):
@@ -23,6 +25,7 @@ class Launcher(unittest.TestCase):
         assigned.parent.mkdir(parents=True)
         original.rename(assigned)
         self.world.wt = str(assigned)
+        self.main_of = self.world.stub_main_checkout(self)
         self.brief = Path(self.world.wt) / "brief.txt"
         self.brief.write_text('Exact brief\n$(literal); "quoted"\n', encoding="utf-8")
         self.codex_exe = Path(self.world.wt) / "codex.exe"
@@ -35,6 +38,7 @@ class Launcher(unittest.TestCase):
     def test_worker_uses_existing_worktree_and_inherits_model(self):
         result = self.build()
         self.assertEqual(result.cwd, self.world.wt)
+        self.main_of.assert_called_once()
         self.assertNotIn("--model", result.argv)
         self.assertNotIn("--worktree", result.argv)
         self.assertIn("--no-daemon", result.argv)
@@ -53,6 +57,11 @@ class Launcher(unittest.TestCase):
         for role in ("worker", "analyst", "test-runner"):
             with self.subTest(role=role), self.assertRaisesRegex(ValueError, ".codex/worktrees"):
                 plan(role, other, "task-1", self.brief, classify=lambda _: place, codex_exe=self.codex_exe)
+
+    def test_a_worktree_whose_main_checkout_git_cannot_tell_is_refused(self):
+        self.main_of.return_value = None
+        with self.assertRaisesRegex(ValueError, "cannot verify the main checkout"):
+            self.build()
 
     def test_reader_can_inspect_main_and_lander_requires_main(self):
         self.assertEqual(self.build("analyst", self.world.main).role, "analyst")
@@ -146,3 +155,20 @@ class Launcher(unittest.TestCase):
         self.brief.write_text("", encoding="utf-8")
         with self.assertRaises(ValueError):
             self.build()
+
+
+@real_git("the main checkout is read from git's worktree list")
+@gitfixture.real_fixture("the fixture's worktree add runs real git")
+class HostWorktreeOnRealGit(unittest.TestCase):
+    def test_a_worktree_under_the_host_folder_is_checked_against_its_main_checkout(self):
+        from kitlib.git import repo
+        fixture = gitfixture.TempRepo()
+        self.addCleanup(fixture.cleanup)
+        assigned = Path(fixture.root) / ".codex" / "worktrees" / "real"
+        fixture.git("worktree", "add", "-q", str(assigned), "-b", "codex/real")
+        got = require_host_worktree(assigned, repo.classify(str(assigned)))
+        self.assertEqual(got, assigned.resolve())
+        elsewhere = Path(fixture.root) / "elsewhere"
+        fixture.git("worktree", "add", "-q", str(elsewhere), "-b", "codex/elsewhere")
+        with self.assertRaisesRegex(ValueError, "under the host worktree folder"):
+            require_host_worktree(elsewhere, repo.classify(str(elsewhere)))

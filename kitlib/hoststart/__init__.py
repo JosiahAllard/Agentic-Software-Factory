@@ -95,8 +95,9 @@ def shared_checks(role, cwd, repo_name=None, state_note=None, now=None, pm_confi
             root = os.path.realpath(cwd)
             from kitlib.git import repo
             place = repo.classify(cwd)
-            if place.common and os.path.basename(place.common).lower() == '.git':
-                root = os.path.realpath(os.path.dirname(place.common))
+            main = repo.main_checkout_toplevel(cwd, place)
+            if main:
+                root = os.path.realpath(main)
             try:
                 inside = os.path.commonpath((note, root)) == root
             except ValueError:

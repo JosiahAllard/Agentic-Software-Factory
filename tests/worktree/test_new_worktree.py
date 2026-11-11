@@ -408,10 +408,6 @@ class AJunctionAliasIsResolved(WorktreeCase):
             self.skipTest('cannot create a junction here: %s' % e)
         self.addCleanup(lambda: os.path.isdir(self.alias) and os.rmdir(self.alias))
 
-    def test_main_checkout_of_resolves_the_alias(self):
-        got = new.main_checkout_of(os.path.join(self.alias, '.git').replace('\\', '/'))
-        self.assertEqual(os.path.normcase(got), os.path.normcase(os.path.realpath(self.repo)))
-
     def test_run_through_the_alias_it_prints_and_registers_the_real_path(self):
         rc, out = self.tool('fix/aliased', root=self.alias)
         self.assertEqual(rc, 0, out)

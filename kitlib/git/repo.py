@@ -170,13 +170,23 @@ def linked_worktrees(path):
 def main_checkout_toplevel(path, place=None):
     """The MAIN checkout's toplevel of the repository `path` is in (path may be the main checkout
     or any linked worktree), or None when git cannot place it. `place` is classify(path) when the
-    caller already has it."""
+    caller already has it. A separate git dir's linked worktree: git lists the git dir as the main
+    worktree, so the checkout is core.worktree of the common dir, or None when that is unset."""
     place = place or classify(path)
     if place.kind == MAIN:
         return place.top
     if place.kind == LINKED:
         wts, _why = worktrees(place.top)
-        return wts[0].path if wts else None
+        if not wts:
+            return None
+        first = wts[0].path
+        if wts[0].bare or (real(first) == real(place.common) and os.path.basename(first).lower() != '.git'):
+            out, _why = cmd.run_text(['config', '--get', 'core.worktree'], place.common)
+            if not out:
+                return None
+            first = os.path.normpath(os.path.join(place.common, out))
+            return first if os.path.isdir(first) else None
+        return first
     return None
 
 

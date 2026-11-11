@@ -56,7 +56,7 @@ The kit is Python on the standard library, for Windows and Linux. It runs from i
 | `docs` | Doc index, doc budget, code map. | - | checks |
 | `forbidden`, `scrub`, `machinepaths`, `pieces`, `trailerscheck` | The repo checks, one each: forbidden tokens, owner-specific text, machine paths, the path-to-piece table, commits with no agent trailer. | `scrub` uses `forbidden` | checks |
 | `modulemap` | The module map: load, detect crossings, check, isolation runs, the generated page. | `lock`, `records` | checks |
-| `pytests`, `tooldeps`, `testlist`, `ci` | The test tools: the parallel runner, which tests a change can break and the kit's own runner, test-name lists, the CI ratchet. | `tooldeps` uses `pytests`, `lock`; `ci` uses `tooldeps` | tests |
+| `pytests`, `tooldeps`, `ci` | The test tools: the parallel runner, which tests a change can break and the kit's own runner, the CI ratchet. | `tooldeps` uses `pytests`, `lock`; `ci` uses `tooldeps` | tests |
 | `launcher` | Long-running sessions: start, stop, hand-off, accounts, state files, finding a live session, pipes, usage. | `hubclient`, `ledger` | sessions |
 | `pluginsource` | The kit's export of pushed main: where it is, how one is written and pruned, the refresh. | `launcher` | install |
 | `allowrules` | The permission rules that let an agent submit a landing unprompted. | `pluginsource` | install |
@@ -241,7 +241,7 @@ None open.
 | `docs/modules/owner-files-design.md` | `ownerfiles`, `delegations` |
 | `docs/modules/ledger-design.md` | `ledger`, `pending` |
 | `docs/modules/checks-design.md` | `docs`, the repo checks, `modulemap`, `maintlint` |
-| `docs/modules/tests-design.md` | `pytests`, `tooldeps`, `testlist`, `ci`, `redfirst` |
+| `docs/modules/tests-design.md` | `pytests`, `tooldeps`, `ci`, `redfirst` |
 | `docs/modules/sessions-design.md` | `launcher`, `pmwatch`, the session starts, `coordstate` |
 | `docs/modules/backlog-design.md` | `backlog` |
 | `docs/modules/worktree-design.md` | `worktree`, `preflight`, `strayrestore` |

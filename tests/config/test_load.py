@@ -385,6 +385,28 @@ class RetiredLandingLanesTest(TreeCase):
         self.assertIn('unknown key(s) lanez', why)
 
 
+class RetiredSectionTest(TreeCase):
+    """A section named in schema.RETIRED_SECTIONS (`testlist`, for the removed test-name tool)
+    loads whatever its value, is not a schema section, and is named in Config.retired."""
+
+    def test_a_config_still_carrying_the_section_loads_and_names_it(self):
+        for value in ({'junit': ['x']}, {}, 3, 'testlist.json', {'no_such_key': 1}):
+            with self.subTest(value=value):
+                cfg = self.load({'repo': {'name': 'a'}, 'testlist': value})
+                self.assertEqual(cfg.retired, ('testlist',))
+                self.assertEqual(cfg.section('repo')['name'], 'a')
+
+    def test_the_section_is_retired_and_not_a_schema_section(self):
+        self.assertIn('testlist', schema.RETIRED_SECTIONS)
+        self.assertNotIn('testlist', schema.SECTIONS)
+
+    def test_a_config_without_it_retires_nothing_and_a_real_typo_still_refuses(self):
+        self.assertEqual(self.load({'repo': {'name': 'a'}}).retired, ())
+        why = self.refused({'testlist': {}, 'testlst': {}})
+        self.assertIn('unknown section(s) testlst', why)
+        self.assertNotIn('unknown section(s) testlist', why)
+
+
 class HookAndOwnerTest(TreeCase):
 
     def test_the_hook_is_read_from_the_hook_section(self):
@@ -520,6 +542,8 @@ class RetiredTextTest(TreeCase):
             ('two retired keys, in schema order',
              {'landing': {'shared_paths': ['x'], 'lanes': 2}},
              ('landing.lanes', 'landing.shared_paths')),
+            ('a retired section, before the retired keys',
+             {'testlist': {'trx': []}, 'landing': {'lanes': 2}}, ('testlist', 'landing.lanes')),
             ('a config that cannot load', {'repo': {'main_branch': 5}, 'landing': {'lanes': 2}},
              ()),
         )

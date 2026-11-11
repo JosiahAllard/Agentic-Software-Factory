@@ -53,7 +53,7 @@ SHARED = (
     'doc_index', 'forbidden', 'gate', 'land', 'landed', 'ledger', 'machine_paths', 'module_map',
     'new_worktree',
     'pieces', 'preflight', 'pytests', 'quality_scorecard', 'redfirst', 'review_pack', 'stack_skill',
-    'sync_base', 'testlist', 'tool_deps', 'trailers', 'verdict', 'worktree_paths',
+    'sync_base', 'tool_deps', 'trailers', 'verdict', 'worktree_paths',
     'worktree_remove',
 )
 # The kit tools that act on the machine, the owner's files or the kit itself, not on a repository

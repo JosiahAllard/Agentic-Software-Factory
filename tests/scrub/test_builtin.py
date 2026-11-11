@@ -95,7 +95,6 @@ PENDING_HISTORY = {
     ('provenance', 'kitlib/pytests/runner.py'): 2,
     ('provenance', 'kitlib/reviewpack/__init__.py'): 1,
     ('provenance', 'kitlib/syncbase/__init__.py'): 1,
-    ('provenance', 'kitlib/testlist/__init__.py'): 2,
     ('provenance', 'kitlib/tooldeps/__init__.py'): 2,
     ('provenance', 'kitlib/tooldeps/deps.py'): 2,
     ('provenance', 'kitlib/trailerscheck/trailers.py'): 1,

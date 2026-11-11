@@ -346,7 +346,7 @@ def mode_step(word):
 
 
 class FullCmd(fixtures.GateRepoCase):
-    """A step's full_cmd is what a full run (gate.py --full, land --full) runs; a gate without
+    """A step's full_cmd is what a full run (gate.py --full) runs; a gate without
     --full still runs the step's cmd, which a landing gates with."""
     GATE = {'steps': [{'name': 'suite', 'always': True, 'cmd': mode_step('select'),
                        'full_cmd': mode_step('full'), 'pass': '^mode '}]}

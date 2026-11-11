@@ -85,7 +85,7 @@ STEP = Obj({
     'globs': Field(Strs, None, 'changed paths that select the step'),
     'exclude': Field(Strs, None, 'changed paths that never select it'),
     'cmd': Field(Argv, None, 'the argv; {python} {root} {base} {here} {tools} are substituted'),
-    'full_cmd': Field(Argv, None, 'the argv a full run (gate.py --full, land --full, daily_full) runs instead of cmd; placeholders as cmd'),
+    'full_cmd': Field(Argv, None, 'the argv a full run (gate.py --full, daily_full) runs instead of cmd; placeholders as cmd'),
     'daily_cmd': Field(Argv, None, 'the argv the daily full run (daily_full) runs instead of full_cmd and cmd; placeholders as cmd'),
     'check': Field(Str(pattern=NAME_RE, what='a check name'), None, 'a gate check the repo hook module provides (GATE_CHECKS), run instead of cmd'),
     'cwd': Field(RelPath(), None, 'run directory, repo-relative'),
@@ -328,10 +328,6 @@ SECTIONS = {
     'review_pack': {
         'coauthor': Field(Bool(), False, 'list the branch\'s commits with no Co-Authored-By trailer, judged by the trailers rule; a warning, never a block'),
     },
-    'testlist': {
-        'junit': Field(Strs, ['**/build/test-results/**/*.xml'], 'JUnit result globs'),
-        'trx': Field(Strs, ['**/*.trx'], '.NET result globs'),
-    },
     'tool_tests': {
         'mentions': Field(Enum('path', 'tokens'), 'path', 'how a tool mention is found'),
         'selector_files': Field(Strs, ['tool_deps.py', 'pytests.py'], 'changes that select every test'),
@@ -388,6 +384,8 @@ MAPS = {
 # dropped unchecked (not an unknown-key refusal), so an install written before the removal works,
 # and the Config names it (Config.retired) for gate.py and land.py to warn about once a run.
 RETIRED = {'landing': ('lanes', 'lock_file', 'shared_paths', 'gate_once')}
+# Whole sections no tool reads any more: any value loads, unchecked, and the Config names the section.
+RETIRED_SECTIONS = ('testlist',)
 
 
 def section_type(name):

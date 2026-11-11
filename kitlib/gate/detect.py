@@ -1,6 +1,5 @@
 """The auto-detected gate: with no "gate" section in `.kit.json` (inline or `tools/gate.json`),
-the gate's steps come from the checkout's own files (docs/gate-run.md "Auto-detected gate";
-docs/multi-host-plan.md decision 24).
+the gate's steps come from the checkout's own files (docs/gate-run.md "Auto-detected gate").
 
 `effective(cfg, root)` is the one call the gate makes: the configured section when there is one
 (source `gate.json`: it always wins, and no detected step is added to it), else that section's
@@ -46,6 +45,7 @@ import json
 import os
 import re
 
+from kitlib import platform
 from kitlib.git import batch, cmd
 
 AUTO = 'auto'
@@ -235,7 +235,7 @@ def _has(read, rel, rx):
 def _shim(name):
     """A package manager's command: npm, pnpm and yarn are .cmd shims on Windows, which
     CreateProcess runs only when named with the extension."""
-    return name + '.cmd' if os.name == 'nt' else name
+    return name + '.cmd' if platform.NAME == 'windows' else name
 
 
 def _is_py_test(p):

@@ -5,6 +5,7 @@ import unittest
 from kitlib.backlog import offer as omod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_read, store_ref
 
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
@@ -15,7 +16,7 @@ RULES = rmod.Rules('upper', ('L0', 'L1'))
 
 def snapshot(*pairs):
     recs = [rmod.parse('backlog/%s.md' % rid, text, rid) for rid, text in pairs]
-    return smod.Snapshot(recs, None, 'test', RULES)
+    return store_read.Snapshot(recs, None, 'test', RULES)
 
 
 def priced(rid, scope=None, **over):
@@ -65,7 +66,7 @@ class NextAllCli(unittest.TestCase):
         self.assertIn('NEXT (5 offered)', self.ok('next'))
 
     def test_a_dead_pull_names_its_session_as_the_taker(self):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snap = smod.Store(backend, rmod.Rules()).load()
         dead = dict(state='pulled', pulled_by='tools/gone-branch', pulled_at='2026-10-07')
         backend.publish(snap, {'FOO': record_text(id='FOO', session='sess-a', **dead),
@@ -77,7 +78,7 @@ class NextAllCli(unittest.TestCase):
                       '`release BAR --reason ...`', out)
 
     def test_next_and_all_print_the_blockers_after_the_passed_over_lines(self):
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snap = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snap, {
             'HOLD': record_text(id='HOLD', priority='1', priority_by='agent', session='other',

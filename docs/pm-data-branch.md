@@ -1,6 +1,6 @@
 # PM data on a private branch of the kit repo
 
-Status: built. The owner's PM data repository moved onto `pmdata` with `pm_data.py init --adopt` on 2026-10-11. In daily use since 2026-10-11: committed on `pmdata` and pushed to the private remote throughout the day; the hub's git sync runs on it (docs/go-live.md). Unverified: no live test has yet shown the `git-push-pmdata` guard and the pre-push stage refusing a push to the public remote.
+Status: built. The owner's PM data repository moved onto `pmdata` with `pm_data.py init --adopt` on 2026-10-11. In daily use since 2026-10-11: committed on `pmdata` and pushed to the private remote throughout the day; the hub's git sync runs on it. Unverified: no live test has yet shown the `git-push-pmdata` guard and the pre-push stage refusing a push to the public remote.
 
 One git repository holds the public kit and one user's private PM data (rulings ledger, backlog, refusals log, handoffs, state). The data lives on an orphan branch, `pmdata`, that shares no history with `main`, is never merged, and is pushed only to a second, private remote. Other users who clone the kit get `main` only.
 
@@ -12,7 +12,7 @@ One git repository holds the public kit and one user's private PM data (rulings 
 | PM data | a linked worktree of the same repository, branch `pmdata`, at a path the user picks (often the old PM folder) |
 | Private remote | any other remote name; default `private`; only `pmdata` is ever pushed there |
 | Record of the split | `<git common dir>/kit-pm-data.json`: `{"branch": "pmdata", "remote": "private", "root": "<sha of the data branch's root commit>"}` |
-| Machine config | The machine config's `pm_data`: `{"path": "<abs>", "branch": "pmdata", "remote": "private"}` (`Owned('kitlib.pmdata')`), derived and never written: the PM repo pointer (docs/machine-setup.md "PM repo pointer") set to the data worktree gives `path`, and that repository's record `branch` and `remote` (`kitlib.config.user.locate`, `kitlib.pmdata.machine_settings`) |
+| Machine config | The machine config's `pm_data`: `{"path": "<abs>", "branch": "pmdata", "remote": "private"}` (`Owned('kitlib.config.pmdata')`), derived and never written: the PM repo pointer (docs/machine-setup.md "PM repo pointer") set to the data worktree gives `path`, and that repository's record `branch` and `remote` (`kitlib.config.user.locate`, `kitlib.config.pmdata.machine_settings`) |
 | Machine config files | `.pm-kit/config.json` in the data worktree, tracked (the policy keys), and `local.json` beside it, git-ignored (`kitlib.config.user.LOCAL_KEYS`), read through the PM repo pointer (docs/kit-json.md "Machine config keys"); the session start says when `config.json` is not committed by the owner or has changes ("Moving the machine config folder") |
 | Hub store | `hub/<collection>/<doc_id>.json` in the data worktree: one folder per hub collection, one JSON file per document; written by the hub server (`tools/hub.py serve`) and committed and pushed to the data branch by its own git sync (`kitlib.hubsite.gitsync`; `hub.py status` prints it as the `git:` line). The data worktree's `.kit.json` needs the machine-path allow entry `{"glob": "hub/*", "line": ".", "why": "hub documents are the owner's own text"}` under `machine_paths.allow`, for a store folder `hub`; it is an allow-list, not a scrub. |
 
@@ -35,7 +35,7 @@ A bare `git push` in the data worktree goes to the upstream, the private remote;
 
 ## Never configure a refspec
 
-`RefBackend.ensure_refspec` (`kitlib/backlog/store.py`) adds `+refs/backlog/main:refs/backlog/main` to `remote.<remote>.fetch`, only once a fetch found the store on the remote (a refspec naming a ref the remote lacks makes every plain `git fetch` fail). Nothing here may add one. Every fetch and push in this design names its refspec on the command line (`git fetch origin refs/heads/main:refs/remotes/origin/main`, `git push private refs/heads/pmdata:refs/heads/pmdata`) and never edits `remote.*.fetch` or `remote.*.push`; `.git/config` is byte-identical after every verb except `init`.
+`RefBackend.ensure_refspec` (`kitlib/backlog/store_ref.py`) adds `+refs/backlog/main:refs/backlog/main` to `remote.<remote>.fetch`, only once a fetch found the store on the remote (a refspec naming a ref the remote lacks makes every plain `git fetch` fail). Nothing here may add one. Every fetch and push in this design names its refspec on the command line (`git fetch origin refs/heads/main:refs/remotes/origin/main`, `git push private refs/heads/pmdata:refs/heads/pmdata`) and never edits `remote.*.fetch` or `remote.*.push`; `.git/config` is byte-identical after every verb except `init`.
 
 ## Pre-push guard
 

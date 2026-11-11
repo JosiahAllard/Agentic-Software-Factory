@@ -15,7 +15,7 @@ the environment unless it is already there (kit_tests.py marks its units; a nest
 outer run's): a kit process that inherits it refuses that folder too, and the profile folder
 Windows reports. A child given a hand-built environment without the marker is not fenced.
 
-The time fence (docs/flaky-tests.md): KIT_TIME_FENCE=1 unless the environment already says
+The time fence (docs/test-tools.md "Time fence"): KIT_TIME_FENCE=1 unless the environment already says
 otherwise, so kitlib.clock.budget gives its ceiling for a degrade budget (kitlib.agentstart's) and a
 loaded machine makes a test slower, not different. The tool processes a test starts inherit it.
 
@@ -37,6 +37,7 @@ os.environ.setdefault('KIT_FAKE_GIT', '1')
 from kitlib import clock as _kclock  # noqa: E402
 from kitlib.config import user as _kuser  # noqa: E402  (after KIT_FAKE_GIT is set)
 from kitlib.config import pointer as _kpointer  # noqa: E402
+from kitlib.git.fake import config as _fakeconfig  # noqa: E402
 
 os.environ.setdefault(_kclock.FENCE_ENV, '1')   # the time fence: degrade budgets are the ceiling
 
@@ -44,6 +45,7 @@ _REAL_HOME = os.path.expanduser('~')    # read by real_install_config() only
 _REAL_POINTER = _kpointer.registry()    # the same: (value, why), the registry's PM-repo pointer
 _kuser.fence_env(os.environ)            # the marker the children of this process inherit
 _kuser.fence_home()
+_fakeconfig.process_home = _kuser.home_dir   # the fake git's no-home fallback is fenced too
 
 
 INSTALL_PM_START_KEYS = ('sessions_file', 'repos', 'hub_url')

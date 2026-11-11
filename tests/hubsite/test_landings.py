@@ -1,4 +1,4 @@
-"""kitlib.hubsite.landings and the api's landings routes (docs/hub-approvals.md "landings/L-NNN"):
+"""kitlib.landing.feed and the api's landings routes (docs/hub-approvals.md "landings/L-NNN"):
 an event is the land ledger line's fields and the extras, posted best-effort; the hub keeps it, a
 post it does not take is one WARNING and never an exception."""
 import json
@@ -11,7 +11,11 @@ import urllib.parse
 from unittest import mock
 
 from kitlib.gate import result
-from kitlib.hubsite import api, apilog, auth, client, landings, schema, serve
+from kitlib.hubclient import client
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
+from kitlib.hubsite import api, apilog, auth, schema
+from kitlib.landing import feed as landings
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import Store
 
@@ -83,11 +87,11 @@ class PostTest(unittest.TestCase):
         self.assertTrue(lines[0].endswith('the landing stands'), lines)
 
     def test_each_failure_is_one_warning_and_nothing_raises(self):
-        cases = [(serve.NotRunning(8790), 'no hub is running'),
+        cases = [(huberrors.NotRunning(8790), 'no hub is running'),
                  (client.Refused(404, {'ok': False, 'error': {'code': 'not_found'}}),
                   'no /landings route'),
-                 (serve.NoAnswer('x'), 'did not answer in 3s'),
-                 (serve.ServeError('no agent token in C:\\tokens'), 'ServeError: no agent token'),
+                 (huberrors.NoAnswer('x'), 'did not answer in 3s'),
+                 (huberrors.ServeError('no agent token in C:\\tokens'), 'ServeError: no agent token'),
                  (client.Refused(400, {'ok': False, 'error': {'code': 'invalid'}}), 'Refused'),
                  (ValueError('bad\nline'), 'ValueError: bad line'),
                  (KeyboardInterrupt(), 'Ctrl+C')]
@@ -105,7 +109,7 @@ class PostTest(unittest.TestCase):
         self.assertIn('OSError: no config', lines[0])
 
     def test_no_hub_running_skips_the_rest_of_the_batch_with_one_warning(self):
-        hub = Raises(serve.NotRunning(8790))
+        hub = Raises(huberrors.NotRunning(8790))
         evs = [event(), event(branch='kit/y'), event(branch='kit/z')]
         lines = landings.post(evs, client=hub)
         self.assertEqual(len(lines), 1, lines)
@@ -115,7 +119,7 @@ class PostTest(unittest.TestCase):
 
     def test_a_failure_that_is_not_the_hubs_absence_still_tries_the_rest(self):
         for error in (client.Refused(400, {'ok': False, 'error': {'code': 'invalid'}}),
-                      serve.NoAnswer('x'), ValueError('bad')):
+                      huberrors.NoAnswer('x'), ValueError('bad')):
             with self.subTest(error=type(error).__name__):
                 hub = Raises(error)
                 lines = landings.post([event(), event(branch='kit/y')], client=hub)
@@ -136,7 +140,7 @@ def tokens(test):
 
 
 class RealTransportTest(unittest.TestCase):
-    """serve.ask over a real loopback socket (port 0): a hub that does not answer, and none."""
+    """localask.ask over a real loopback socket (port 0): a hub that does not answer, and none."""
 
     def test_a_hub_that_takes_the_connection_and_never_answers_is_a_warning_in_its_time(self):
         lsock = socket.socket()

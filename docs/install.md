@@ -1,11 +1,10 @@
 # Installing the kit
 
-Three steps: point the machine at its PM repository, set the machine up once, then work in any repository, with nothing of the kit written into it (plan decision 27, docs/multi-host-plan.md section 7). Three repositories land through `gate.py land` on the owner's machine: this kit and two others. The zero repo setup cycle below is proven by a test (`tests/zerosetup/test_cycle.py`).
+Three steps: point the machine at its PM repository, set the machine up once, then work in any repository, with nothing of the kit written into it. Three repositories land through `gate.py land` on the owner's machine: this kit and two others. The zero repo setup cycle below is proven by a test (`tests/zerosetup/test_cycle.py`).
 
 A repository never holds a copy of the kit or stubs of its tools, and by default nothing else
 either: no `.kit.json`, no ignore lines. Skills, roles and the default profile run every kit tool from the
-kit's folder, as `python <kit>/tools/<name>.py -C <worktree>` (decision 21 in
-docs/multi-host-plan.md section 7; the kit header names `<kit>`, docs/content.md "Kit header").
+kit's folder, as `python <kit>/tools/<name>.py -C <worktree>` (the kit header names `<kit>`, docs/content.md "Kit header").
 A repository that wants its kit settings committed uses the committed setup ("Committed setup
 (--repo)").
 
@@ -33,9 +32,9 @@ down the longer the machine stays up: docs/windows-token-leak.md.
    and `<PM repo>/.pm-kit/local.json` beside it (the machine-local and personal keys, the owner's
    email among them; `kitlib/config/user.py` `LOCAL_FILE_NAME`). Keep `local.json`, the hub's
    token folder `hub/` and `auto-tasks/` out of commits: the pre-push hook refuses a push that
-   holds `local.json` or `hub/` (`kitlib/guard/prepush.py`), but nothing writes their ignore lines
-   in a new PM repository, so add `.pm-kit/.gitignore` with the lines the config move writes
-   (`kitlib/config/move.py` `GITIGNORE`: `local.json`, `hub/`, `auto-tasks/`,
+   holds `local.json` or `hub/` (`kitlib/guard/prepush.py`), but machine setup's first key write
+   adds `.pm-kit/.gitignore` when there is none; before any other write, add it with the same
+   lines (`kitlib/machinesetup/machineconfig.py` `GITIGNORE`: `local.json`, `hub/`, `auto-tasks/`,
    `managed-settings.json`, `*.bak*`, `*.move-tmp`). The kit finds that folder through one
    machine-wide registry value, the PM-repo pointer (docs/kit-json.md "The PM repo pointer"), so
    the pointer comes before anything that reads or writes the machine config.
@@ -56,7 +55,7 @@ down the longer the machine stays up: docs/windows-token-leak.md.
      terminal is not elevated (docs/machine-setup.md "PM repo pointer").
    - **Until it is set**, every tool that needs the machine config refuses rather than fall back
      to the home folder: the intended state of a new machine, not a fault. `hub.py setup` and
-     `hub.py serve` (token folder `<PM repo>/.pm-kit/hub`, `kitlib/hubsite/auth.py` `folder`) exit
+     `hub.py serve` (token folder `<PM repo>/.pm-kit/hub`, `kitlib/hubclient/token.py` `folder`) exit
      2 with one line, `machine config: no PM repo pointer is set, so the hub has no token folder:
      set it first ...`, and write nothing; machine setup (step 2) refuses to store the owner's
      email and does not ask for it.
@@ -111,7 +110,7 @@ down the longer the machine stays up: docs/windows-token-leak.md.
    do not wrap it in `machine_lock.py run`, or it books twice. The committed setup below writes a
    starting `.kit.json` and the rest in one step.
 5. **Later:** turn on `repo.push_block` only after the repository has landed once through
-   `<kit>/tools/land.py` or `gate.py land` (docs/go-live.md "Universal gate").
+   `<kit>/tools/land.py` or `gate.py land` (docs/gate-landing.md).
 
 ### Backlog records and the rulings ledger
 
@@ -127,7 +126,7 @@ the machine config (docs/kit-json.md "Machine config keys"). The first `<kit>/to
 ### What first use writes
 
 The first time the kit works in a repository (the PM's start, `tools/new_worktree.py`), the
-first-use prep (`kitlib/git/prep.py`; docs/new-worktree.md "First-use prep") writes local git
+first-use prep (`kitlib/worktree/prep.py`; docs/new-worktree.md "First-use prep") writes local git
 settings only, never a tracked or untracked file, and nothing is committed:
 
 - `.git/info/exclude` (in the git common folder, so every worktree shares it): one anchored line
@@ -162,7 +161,7 @@ Nothing in the kit needs it.
    `"backlog".store` `"ref"`, `"owner".email`, `"owner".agent_emails`), `.gitignore` and
    `.gitattributes`, a starter `docs/INDEX.md`, with
    `--stack` the stack's `tools/gate.json`, and under `memory:` the `autoMemoryDirectory` key
-   (`<the main checkout's drive>/Agent-memory/<repo folder name>`, `kitlib/stubs/memory.py`): added
+   (`<the main checkout's drive>/Agent-memory/<repo folder name>`, `kitlib/machinesetup/memory.py`): added
    to `.claude/settings.local.json` only when neither that file nor `.claude/settings.json` has it,
    kept when either names any absolute folder, refused when the local file is not JSON it can edit or
    the key is not an absolute folder. The key is a machine path, so it goes in the git-ignored local
@@ -176,7 +175,7 @@ Nothing in the kit needs it.
      there is never overwritten: only the lines it lacks are appended, under `# Added by the kit
      installer`, and the dry run lists them.
    - `docs/INDEX.md` is written only when absent, and only by this setup: it opts the repository
-     into the doc index check (decision 26). With an index file every tracked `.md` must be named
+     into the doc index check. With an index file every tracked `.md` must be named
      on an entry line of it; the starter names only itself, so the dry run and `--apply` list
      the target's tracked `.md` files it does not name (advice only, never a refusal). With no
      index file the check (run by preflight, commit and review_pack) is skipped and says so.
@@ -228,14 +227,14 @@ Nothing in the kit needs it.
 
 ### What the committed setup does not install
 
-- The stack's `.github/workflows/{quick,full}.yml` (owner-only paths; copy them by hand).
+- The stack's `templates/stacks/<stack>/.github/workflows/{quick,full}.yml` (owner-only paths; copy them by hand).
 - `templates/common/AGENTS.md` (with `templates/common/CLAUDE.md`, the one line `@AGENTS.md`) and the two profile templates (`agent-profile.TEMPLATE.md`,
   `coordinator-profile.TEMPLATE.md`): the repository's rules file and profiles are drafted from
   them with the `<PLACEHOLDER>` slots filled (docs/shipping.md "Stack templates"); their default
   rule lines (the owner's go list, the creative limits) stay unless the owner deletes one. Both profiles
   are optional: with no agent profile, every role reads the kit's `content/default-profile.md`
   plus the repository's README and instructions file (docs/agent-profile.md).
-- `.claude/settings.json`: the kit ships none (docs/go-live.md "Joint-review questions"); the
+- `.claude/settings.json`: the kit ships none ("Open switches" below); the
   setup adds only its `autoMemoryDirectory` key, to the ignored `.claude/settings.local.json`.
 - Anything outside the repository: the ledger, the lock and the user config are per machine.
 
@@ -288,6 +287,41 @@ whose plugin is not enabled from the export: it makes the export, then runs the 
 that folder through the same code (docs/machine-setup.md "Default mode"). The CLI also
 rewrites other keys of that `settings.json`, so the step backs the file up first.
 
+## Open switches
+
+Per repository and per machine; each is the owner's to switch.
+
+- Repo switch-overs to the kit gate, lock and guard: each repository and the PM's.
+- Retirements: the per-repo test-runner wrapper scripts (the plugin's test-runner agent type stays), and heavy_run. The global `reserve_ui.pyw` is replaced by the kit window `reserve_ui.pyw` at the kit root, which stays.
+- `.claude/settings.json` for a new repository: the installer does not write one, and the kit ships no template. Open: whether `templates/common` carries one (hooks, permissions) and what it holds; until then the owner writes each repository's by hand.
+- Stack runners: `dotnet_each.py` and `js_tests.py` ship in the stack templates; `check.py` stays a repo's own gate hook pending an owner answer.
+- Specialty cutover, for each downstream repository (status unknown): the `.kit.json` `doc_index.roles` keys and the profile lines naming a retired agent type (docs/content.md "Specialty skills").
+- The hub aliases, the Action Hub site and the backlog store per repository are in docs/hub-records.md "repos/<name>", docs/hub-serving.md "Serving it" and docs/backlog-store.md "Open".
+
+### Per Claude account
+
+Owner-run, once reviewed:
+1. Skills: enable the plugin so skills load from `content/skills` ("Plugin install (local marketplace)"; machine setup does it for every account). Remove each leftover per-skill link ("Existing installs"). Check with `ListSkills` that the skill names in docs/shipping.md appear once each.
+2. Statusline: point `statusLine.command` at `optional/usage/statusline-usage.ps1` in the kit checkout, and any scheduled call of `write-usage-status.ps1` at the kit's copy. Machine setup plans the re-point when the path names the older clone (`--old-kit`) or runs through a `tools` link (docs/machine-setup.md "Settings"). Confirm the line renders.
+3. Optional tools: point comfy, procwatch and usage entry points (shortcuts, scheduled tasks) at `optional/<name>` in the kit. Set env `PROCWATCH_PROTECT` for any extra processes procwatch must spare (the repo's live servers) and `KIT_MACHINE_LOCK` only if the lock tool is not the plugin's (`-OldKit` sets it; the default mode does not).
+4. Knowledge: an account's own asset-generation folder is noted and left (docs/machine-setup.md "Links"). Its LOG.md and samples are not in the kit, so move what is worth keeping before removing it.
+5. Repo-local skills (a model training skill, worktree-start) stay in their repo's `.claude/skills`.
+
+### Ported repo tools
+
+Each repo reaches the kit's tools as `python <kit>/tools/<x>.py -C <checkout>`, with no copy or stub in the repo. A new repo needs nothing; a repo that wants its kit settings committed runs the committed setup ("Committed setup (--repo)"). Per repo:
+
+- An existing repo's old stubs or tool copies can be deleted once its own scripts and docs name the kit form; the kit writes and checks none.
+- Owner identity: `.kit.json` "owner".email in each repo. commit.py `--owner-authored` and review_pack's owner-authored label need it; the PM kit's doc_budget.json identities are not read.
+- machine_paths: the PM kit's built-in allow entries are gone; a repo adds `machine_paths.allow`/`fixtures` entries. A non-empty `machine_paths.piece_fixtures` is refused (docs/commit.md).
+- pieces: a repo with a pieces table adds `"pieces": "tools/pieces.json"` to `.kit.json`; the file alone is not read.
+- forbidden: create the store (`{}` when `.kit.json` names one), add tokens with `forbidden.py -C <repo> --add` (token on stdin), then a gate step (docs/repo-checks.md).
+- trailers: add the `trailers.py` step with `merged_args` `--merged` and set `.kit.json` "owner".email in the same change (docs/repo-checks.md "trailers").
+- pytests, tool_deps, testlist and kitlib.proc.shield: a repo adopts pytests through a gate step; `python_tests` is no gate key (docs/test-tools.md).
+- PM repo: its kit/tools copies of the ported tools are dropped.
+- PM record tools: the PM repo's `tools/pending.py`, its ledger tool's `standing` and `check`, and `hooks/pre-commit` retire once its callers point at the kit: set `pending_path` in the machine config (docs/pending.md), and for the hook set `"ledger": {"pre_commit_check": true}` in its `.kit.json` and its `core.hooksPath` to `<kit>/githooks` (docs/ledger.md "Pre-commit check"). A kit older than this port refuses a `.kit.json` holding a `ledger` section (unknown sections are refused), so add it only once every kit checkout that reads that repo has the port.
+- The doc tools (tools/doc_budget.py, doc_index.py, codemap.py; docs/doc-tools.md): a repo's doc settings move from tools/doc_budget.json to `.kit.json` "doc_budget"/"doc_index", and doc_budget.json leaves the default owner paths. A repo needs no gate step for the index listing check; `.kit.json` "doc_index".enabled false skips it.
+
 ## Existing installs: a machine with the old home-folder layout
 
 A new machine skips this section. A machine an older machine setup ran on can hold leftovers of
@@ -296,9 +330,9 @@ the old layout; each is cleared once, after step 1:
 - **An older kit clone:** run machine setup with `-OldKit <that clone>` instead of the default
   mode (docs/machine-setup.md).
 - **A machine config in the home folder** (`~/.pm-kit`): with the pointer set (step 1), move it
-  into the PM repository with `tools/config_move.py`, a dry run first, then `--apply`
-  (docs/kit-json.md "Moving the machine config into the PM repo"). Until it is moved, the kit
-  reads neither copy: a leftover home config is refused with the move's command
+  into the PM repository by hand (docs/kit-json.md "A machine config in the home folder").
+  Until it is moved, the kit reads neither copy: a leftover home config is refused, naming that
+  section
   (`kitlib/config/user.py` `UNMOVED`), the Action Hub's tools included (`kitlib/hubsite/auth.py`
   `folder`).
 - **Links under `~/.claude`** (junctions an earlier setup made): each is reported, with the line
@@ -314,6 +348,6 @@ It prints the `autoMemoryDirectory` that `.claude/settings.local.json` (git-igno
 a machine path) would get (dry run), and with `--apply` adds it when neither that file nor
 `.claude/settings.json` has the key. Exit 1 when either file cannot be read as a JSON object, 2 on
 usage or a host registry it cannot read. The command it prints names the kit's main checkout, also
-when it runs from the plugin's export (`kitlib.stubs.kit_root`: the checkout the export's marker
-names, docs/plugin-source.md "Layout"). Logic: `kitlib/stubs/memory.py`; docs/pm-start.md "Memory
+when it runs from the plugin's export (`kitlib.machinesetup.outcome.kit_root`: the checkout the export's marker
+names, docs/plugin-source.md "Layout"). Logic: `kitlib/machinesetup/memory.py`; docs/pm-start.md "Memory
 folder (`memory`)".

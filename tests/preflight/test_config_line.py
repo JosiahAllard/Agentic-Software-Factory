@@ -77,7 +77,7 @@ class ConfigLineTest(unittest.TestCase):
         self.put_home({'pending_path': os.path.join(self.home, SECRET)})
         out = self.line()
         self.assertTrue(out.startswith('config    BROKEN the machine config is still in the home folder'), out)
-        self.assertIn('config_move.py', out)
+        self.assertIn('A machine config in the home folder', out)
         self.no_pointer()
         out = self.line()
         self.assertTrue(out.startswith('config    BROKEN the machine config is still in the home folder'), out)

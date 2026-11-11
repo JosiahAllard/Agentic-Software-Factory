@@ -1,5 +1,5 @@
-"""Machine setup's scheduled jobs on Linux (kitlib.machinesetup.linuxjobs, docs/linux-support-plan.md
-slice 10): the agent temp sweep, the worktree sweep and the automatic tasks' tick planned as pm-kit
+"""Machine setup's scheduled jobs on Linux (docs/machine-setup.md "Linux"): the agent temp sweep,
+the worktree sweep and the automatic tasks' tick planned as pm-kit
 jobs, procwatch's note and linger's note. kitlib.platform.NAME is patched to 'linux'; the host is
 a fake whose jobs go to a temporary home through the real schedule module with a fake systemctl,
 so nothing real is written, and linger is only ever read."""
@@ -15,6 +15,7 @@ from kitlib.git import repo as gitrepo
 from kitlib.machinesetup import agenttemp, extras, linuxjobs, procwatch, worktreesweep
 from kitlib.machinesetup.common import Plan
 from kitlib.platform.linux import schedule
+from kitlib.schedtask import read as taskread
 from kitlib.worktree import task as wtask
 from tests.platform.test_linux_schedule import FakeSystem, which_none
 
@@ -111,7 +112,7 @@ class AgentTemp(Base):
         agenttemp.task_step(plan, self.ctx())
         self.assertEqual(plan.changes, [])
         with mock.patch.object(schedule, 'exists', return_value=True) as got:
-            self.assertTrue(agenttemp.task_registered(agenttemp.TASK, run='RUN'))
+            self.assertTrue(taskread.task_registered(agenttemp.TASK, run='RUN'))
         got.assert_called_once_with(agenttemp.TASK, run='RUN')
 
     def test_no_sweep_task_is_a_note(self):

@@ -17,6 +17,7 @@ from kitlib.git import refs
 from kitlib.lock import api as lockapi
 from kitlib.lock import queue as lockqueue
 from kitlib.lock import run as lockrun
+from kitlib.records import place
 from tests.gate import fixtures
 
 HOST = [912345, 77]
@@ -29,7 +30,7 @@ class QueueCase(fixtures.GateRepoCase):
         fixtures.GateRepoCase.setUp(self)
         self.wt, self.tip = self.branch('feature', {'a.py': 'x = 1\n'})
         self.br = refs.current_branch(self.wt)[0]
-        self.name = runner.repo_name(kconfig.load(self.wt), self.wt)
+        self.name = place.repo_name(kconfig.load(self.wt), self.wt)
         self.tree = runner.tested_tree(self.wt)
         self.assertTrue(self.br and self.tree)
         self.n = 0

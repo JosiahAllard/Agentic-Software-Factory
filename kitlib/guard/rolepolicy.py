@@ -66,13 +66,14 @@ import fnmatch
 import os
 import re
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib import config as kconfig
 from kitlib import content as kcontent
 from kitlib.host.content import MODES
 from kitlib.git import repo
 
 from . import commands as cm
+from . import commands_nested as cn
 from . import jail
 from . import paths
 from . import rules
@@ -105,8 +106,8 @@ AGENT_LOCK = {'status': None, 'run': None, 'background': None, 'stop': None,
 LOCK_VERBS = {'controller': AGENT_LOCK, 'write': AGENT_LOCK, 'test': AGENT_LOCK,
               'lander': {'status': None, 'run': None},
               'read': {'status': None}}
-# The lock MCP's tools (kitlib.lockmcp.server.TOOLS, all reads) and its retired owner writes
-# (kitlib.lockmcp.OWNER_ONLY, still served by a server started from an older release) as the lock
+# The lock MCP server's TOOLS (all reads) and its retired owner writes
+# (kitlib.lock.names.OWNER_ONLY, still served by a server started from an older release) as the lock
 # CLI's verbs they match, held to LOCK_VERBS the same way. A tool under the lock's prefix that is
 # not here is refused.
 MCP_VERBS = {'lock_snapshot': ('status',), 'lock_wait_change': ('status',), 'lock_stats': ('status',),
@@ -216,7 +217,7 @@ def check(action, ctx):
     text = action.command
     if not isinstance(text, str) or not text.strip():
         return None
-    parsed = cm.read(text, rules.SHELLS.get(action.shell, sh.BASH), where or cwd, home=getattr(ctx, 'home', None))
+    parsed = cn.read(text, rules.SHELLS.get(action.shell, sh.BASH), where or cwd, home=getattr(ctx, 'home', None))
     gap = shell_gap(parsed)
     if gap:
         name, why, instead = gap
@@ -396,7 +397,7 @@ def shell_gap(parsed):
     else None. Only the interpreter's own options count: they end at the script, the command
     (-c, -m, -Command, -File, -EncodedCommand, /c) or `-`, and every word after that belongs to
     the program run (`python -m pytest -s`, `python x.py -i`). A nested shell's own commands are
-    in `parsed` too (commands.read), so `bash -c bash` is caught at the inner bash."""
+    in `parsed` too (commands_nested.read), so `bash -c bash` is caught at the inner bash."""
     for cmd in parsed.commands:
         inv = cm.invocation(cmd)
         if inv is None:
@@ -433,17 +434,17 @@ def kit_export(ctx, root, action, cwd):
     """True when the folder `root` is an export of the kit the machine runs from (rules.kit_wrapper):
     a folder named by 12 hex digits (EXPORT_NAME_RE) right under the machine's plugin export root
     (the machine config's plugin.export_dir, else %LOCALAPPDATA%\\pm-kit\\plugin:
-    kitlib.pluginsource.settings), holding EXPORT_FILES, and neither inside nor holding a folder the
+    kitlib.pluginsource.layout.settings), holding EXPORT_FILES, and neither inside nor holding a folder the
     session may write (its jail roots that are not read-only: rules.jail_roots), so a session cannot
     make one of its own. A machine config the guard cannot read, an export root it cannot name, a
     pin folder or any other place is not one."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout
     user = ctx.user()
     if not isinstance(user, dict) or user.get('error'):
         return False
     try:
-        export = pluginsource.settings(user.get(pluginsource.CONFIG_KEY), ctx.environ).export_dir
-    except (pluginsource.RefreshError, OSError, ValueError, TypeError):
+        export = plugin_layout.settings(user.get(plugin_layout.CONFIG_KEY), ctx.environ).export_dir
+    except (plugin_layout.RefreshError, OSError, ValueError, TypeError):
         return False
     parent, name = os.path.split(paths.norm(root, fold=False))
     if not EXPORT_NAME_RE.fullmatch(name) or paths.norm(parent) != paths.norm(export):

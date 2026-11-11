@@ -19,10 +19,10 @@ from kitlib.config import user as kuser
 from kitlib.delegations import place
 from kitlib.delegations import run as drun
 from kitlib.delegations import schema
-from kitlib.hubsite import approvals as hubapprovals
-from kitlib.hubsite import client as hubclient
+from kitlib.ownerfiles import approvals as hubapprovals
+from kitlib.hubclient import client as hubclient
 from kitlib.hubsite import push as hubpush
-from kitlib.hubsite import serve as hubserve
+from kitlib.hubclient import errors as huberrors
 from kitlib.ledger import write as lwrite
 from tests import gitfixture
 from tests.platforms import windows_only
@@ -479,7 +479,7 @@ class HubTrigger(Fixture):
         self.assertIn('Source: under H-kit-0002: D-001 Q-1001', self.text())
 
     def test_a_hub_that_does_not_answer_is_refused(self):
-        self.deny('cannot read Q-1001 from the hub', hub=Hub(error=hubserve.NotRunning(8765)))
+        self.deny('cannot read Q-1001 from the hub', hub=Hub(error=huberrors.NotRunning(8765)))
         self.assertNotIn('delegated', self.text())
 
     def test_the_question_runs_once(self):
@@ -573,6 +573,12 @@ class UseOnce(Fixture):
         self.refused('is not one of ledger_repos', trigger=self.rid, cfg=cfg)
 
 
+def check_line(pre):
+    """The checklist-line check as drun.with_checklist assembles it, over the real checklist."""
+    from kitlib import pmstart
+    return drun.with_checklist(lambda cfg: pmstart.checklist(cfg, check_only=True))['checklist-line'](pre)
+
+
 class Preconditions(Fixture):
 
     def setUp(self):
@@ -600,13 +606,18 @@ class Preconditions(Fixture):
                      trigger=self.rid, checks={'checklist-line': lambda pre: 'no'})
         self.assertNotIn('delegated', self.text())
 
+    def test_a_checklist_line_without_a_handed_in_checklist_is_refused(self):
+        self.refused('no check of kind', op=self.op({'kind': 'checklist-line', 'text': 'x'}),
+                     trigger=self.rid)
+        self.assertNotIn('delegated', self.text())
+
     def test_a_checklist_line_is_read_from_the_pm_start_checklist(self):
         text = 'PM session start checklist:\n- hub key: kit\n- could not check cap: kit x'
-        with mock.patch('kitlib.pmstart.load_config', return_value={}), \
+        with mock.patch('kitlib.config.pm.load_config', return_value={}), \
                 mock.patch('kitlib.pmstart.checklist', return_value=text):
-            self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}))
+            self.assertIsNone(check_line({'kind': 'checklist-line', 'text': 'hub key'}))
             self.assertIn('no PM start checklist line',
-                          drun.checklist_line({'kind': 'checklist-line', 'text': 'cap: kit'}))
+                          check_line({'kind': 'checklist-line', 'text': 'cap: kit'}))
 
     def test_a_checklist_line_check_changes_no_state(self):
         stamp = os.path.join(self.dir, 'pm-start-last.json')
@@ -622,18 +633,18 @@ class Preconditions(Fixture):
         quiet = dict.fromkeys(
             ('standing', 'eng_review', 'watcher', 'handoff', 'reminders', 'liveness', 'plugin_current',
              'plugin_enabled', 'memory', 'allow_rules', 'repo_prep', 'agent_temp_lines', 'cdrive_lines',
-             'worktree_sweep_lines', 'rulebook_lines', 'list_processes', 'pm_data_settings'), lambda *a, **k: [])
+             'worktree_sweep_lines', 'rulebook_lines', 'pm_data_settings'), lambda *a, **k: [])
         with open(stamp) as f:
             before = f.read()
-        with mock.patch('kitlib.pmstart.load_config', return_value={}),                 mock.patch.multiple('kitlib.pmstart', **quiet),                 mock.patch('kitlib.pmstart._user_config', return_value={}),                 mock.patch('kitlib.pmstart.hub_site', hub_site),                 mock.patch('kitlib.pmstart.filed_stamp_file', return_value=stamp),                 mock.patch('kitlib.pmstart.kit_sync', return_value=['synced']) as sync,                 mock.patch('kitlib.pmstart.configcheck.lines', return_value=[]),                 mock.patch('kitlib.pmstart.consoletasks.check', return_value=[]),                 mock.patch('kitlib.pmstart.fglock.check', return_value=[]):
-            self.assertIsNone(drun.checklist_line({'kind': 'checklist-line', 'text': 'hub key'}))
+        with mock.patch('kitlib.config.pm.load_config', return_value={}), mock.patch('kitlib.proc.listing.list_processes', return_value=[]), mock.patch.multiple('kitlib.pmstart', **quiet),                 mock.patch('kitlib.pmstart._user_config', return_value={}),                 mock.patch('kitlib.pmstart.hub_site', hub_site),                 mock.patch('kitlib.pmstart.filed_stamp_file', return_value=stamp),                 mock.patch('kitlib.pmstart.kit_sync', return_value=['synced']) as sync,                 mock.patch('kitlib.pmstart.configcheck.lines', return_value=[]),                 mock.patch('kitlib.pmstart.consoletasks.check', return_value=[]),                 mock.patch('kitlib.pmstart.fglock.check', return_value=[]):
+            self.assertIsNone(check_line({'kind': 'checklist-line', 'text': 'hub key'}))
             sync.assert_not_called()
             with open(stamp) as f:
                 self.assertEqual(f.read(), before)
 
     def test_no_pm_start_config_is_refused(self):
-        with mock.patch('kitlib.pmstart.load_config', return_value=None):
-            self.assertIn('no pm_start config', drun.checklist_line({'text': 'x'}))
+        with mock.patch('kitlib.config.pm.load_config', return_value=None):
+            self.assertIn('no pm_start config', check_line({'text': 'x'}))
 
 
 class BranchLanded(unittest.TestCase):
@@ -1026,7 +1037,7 @@ class HubApproval(Fixture):
                 self.assertEqual(self.events, ['verify'])
 
     def test_a_hub_that_cannot_answer_is_refused(self):
-        self.hub.verify_error = hubserve.ServeError('down')
+        self.hub.verify_error = huberrors.ServeError('down')
         msg = self.refused_approval('the hub cannot be reached: ')
         self.assertIn('nothing was run', msg)
         self.assertEqual(self.events, ['verify'])
@@ -1047,7 +1058,7 @@ class HubApproval(Fixture):
         self.assertEqual(self.events, ['verify', 'precondition'])
 
     def test_a_consume_that_fails_runs_and_logs_nothing(self):
-        for error in (hubserve.ServeError('409 conflict'), OSError('reset'), ValueError('bad')):
+        for error in (huberrors.ServeError('409 conflict'), OSError('reset'), ValueError('bad')):
             with self.subTest(error=error):
                 self.events.clear()
                 self.cwds.clear()
@@ -1215,7 +1226,7 @@ class Request(Fixture):
         self.refused_request('no hub to ask on', hub=None)
 
     def test_a_hub_refusal_is_refused(self):
-        for error in (hubserve.ServeError('409 invalid line'), OSError('down'),
+        for error in (huberrors.ServeError('409 invalid line'), OSError('down'),
                       ValueError('not json')):
             with self.subTest(error=type(error).__name__):
                 self.refused_request('the hub did not take the request',

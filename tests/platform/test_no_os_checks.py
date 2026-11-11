@@ -1,12 +1,13 @@
-"""Rule 1 of docs/linux-support-plan.md section 2.1: code asks kitlib.platform which operating
+"""Rule 1 of the seam (docs/modules/base-design.md "Contract"): code asks kitlib.platform which
+operating
 system it runs on, never os.name or sys.platform itself.
 
 The scan reads every kit .py file outside tests/ and kitlib/platform/ (and outside dot-folders
 and __pycache__) and finds each read of os.name or sys.platform, under any alias
-(`import os as _os`, `from sys import platform`). The files still doing so today are ALLOWED:
-each later slice moves its files onto kitlib.platform and takes them off the list, so the list
-only shrinks. A file not on the list that starts asking is a failure, and so is a listed file
-that no longer asks (take it off)."""
+(`import os as _os`, `from sys import platform`). The files still doing so are ALLOWED: none
+in kitlib, only the entry scripts and optional tools outside it that run before or apart from the
+kit. A file not on the list that starts asking is a failure, and so is a listed file that no
+longer asks (take it off)."""
 import ast
 import os
 import unittest
@@ -14,28 +15,10 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 ALLOWED = frozenset({
-    'kitlib/__init__.py',
-    'kitlib/ci/ratchet.py',
-    'kitlib/gate/detect.py',
-    'kitlib/guard/context.py',
-    'kitlib/guard/place.py',
-    'kitlib/guard/rules_run.py',
-    'kitlib/host/hookmain.py',
-    'kitlib/launcher/host.py',
-    'kitlib/ledger/safepath.py',
-    'kitlib/machinesetup/extras.py',
-    'kitlib/pluginsource/__init__.py',
-    'kitlib/pluginsource/claude.py',
-    'kitlib/proc/console.py',
-    'kitlib/proc/winwatch.py',
-    'kitlib/redfirst/run.py',
-    'kitlib/redfirst/verdict.py',
-    'kitlib/tooldeps/selfrun.py',
     'optional/procwatch/procwatch.py',
     'optional/usage/_usage.py',
     'optional/usage/agent_costs.py',
     'optional/usage/usage_watch.py',
-    'tools/ci_ratchet.py',
     'tools/kit.py',
 })
 
@@ -87,7 +70,7 @@ class NoOsChecks(unittest.TestCase):
         found = asking()
         self.assertEqual(sorted(set(found) - ALLOWED), [],
                          'ask kitlib.platform.NAME instead of os.name or sys.platform '
-                         '(docs/linux-support-plan.md section 2.1, rule 1): %r' % found)
+                         '(docs/modules/base-design.md "Contract"): %r' % found)
         self.assertEqual(sorted(ALLOWED - set(found)), [],
                          'these no longer ask the OS themselves: take them off ALLOWED')
 

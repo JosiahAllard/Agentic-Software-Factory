@@ -50,7 +50,7 @@ MAX_LAUNCH_MARK = 64
 
 
 def launch_mark(value):
-    """A launch mark (kitlib.sessionmark: README "Launch mark") as a plain bounded name, or None
+    """A launch mark (kitlib.host.sessionmark: README "Launch mark") as a plain bounded name, or None
     when unmarked. Anything else is refused, never shortened or cleaned."""
     if value is None:
         return None

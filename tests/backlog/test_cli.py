@@ -6,11 +6,16 @@ import json
 import os
 import subprocess
 import tempfile
+import time
+import types
 import unittest
 from unittest import mock
 
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
+from kitlib.backlog.errors import Refusal
+from kitlib.worktree import classify, quiet
 from tests.backlog import ownertree
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, TODAY, kit_json_ref, priced
@@ -114,7 +119,7 @@ class Cli(unittest.TestCase):
         # `add` refuses `a/*.py`, so the live pull is seeded through the library.
         self.repo.git('branch', 'tools/other')
         with mock.patch.dict(os.environ, self.env, clear=True):
-            backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+            backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
             store = smod.Store(backend, rmod.Rules())
             backend.publish(store.load(), dict(
                 priced('HOLD', state='pulled', pulled_at=TODAY, pulled_by='tools/other',
@@ -124,6 +129,29 @@ class Cli(unittest.TestCase):
             self.assertEqual(rc, 1, (args, out))
             self.assertIn('ERROR: `next` cannot compute an offer: an in-flight record has '
                           '`scope: a/*.py`', out, args)
+
+    def test_a_pull_whose_worktree_went_dead_is_blocked_through_the_worktrees_probes(self):
+        # tools/backlog.py opens the store with quiet.PROBES: with none, the holder's branch
+        # would count as live and this block would be refused.
+        other = 'tools/other'
+        path = self.repo.worktree('other', other)
+        self.repo.write('w.txt', 'work\n', root=path)
+        self.repo.commit('work', 'w.txt', cwd=path)
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+            store = smod.Store(backend, rmod.Rules())
+            backend.publish(store.load(), priced('FOO', state='pulled', pulled_at=TODAY,
+                                                 pulled_by=other), 'seed\n')
+        later = time.time() + 3 * 24 * 3600        # days on, nothing has touched the worktree
+        run_probes = classify.run_probes           # no machine lock or process scan on this host
+        with mock.patch.object(classify, 'time', types.SimpleNamespace(time=lambda: later)), \
+                mock.patch.object(classify, 'run_probes', lambda ctx, machine, procs: run_probes(
+                    ctx, lambda: ([], None), lambda: (([], 0, 1), None))):
+            rc, out = self.run_tool('block', 'FOO', '--on', 'live-client',
+                                    '--reason', 'its tree went quiet')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('its worktree is dead', out)
+        self.assertIn('blocked', self.ok('show', 'FOO'))
 
     def test_refusals_exit_2_and_write_nothing(self):
         self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py', *ADD_FLAGS)
@@ -222,7 +250,7 @@ class Cli(unittest.TestCase):
 
     def test_an_invalid_record_on_the_ref_makes_check_red(self):
         self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py', *ADD_FLAGS)
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snap = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snap,{'BAD': 'id: BAD\nstate: open\n'}, 'hand edit\n')
         rc, out = self.run_tool('check')
@@ -268,7 +296,7 @@ class RulingCitesUnchecked(unittest.TestCase):
     def test_check_stays_green_over_cites_the_ledger_does_not_hold(self):
         # records an older tool priced with a cite: R-9999 is absent from the ledger, R-9007 retired
         with mock.patch.dict(os.environ, self.env, clear=True):
-            backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+            backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
             store = smod.Store(backend, rmod.Rules())
             backend.publish(store.load(), dict(
                 priced('FOO', priority='1', priority_by='owner', priority_ruling='R-9999',
@@ -294,6 +322,32 @@ class RulingCitesUnchecked(unittest.TestCase):
         shown = self.ok('show', 'BAZ')
         self.assertIn('priority_by: owner', shown)
         self.assertNotIn('priority_ruling', shown)
+
+
+class OpenerProbes(unittest.TestCase):
+    """The verbs that may stop another branch's pull open the store with the worktree's probes
+    (kitlib.worktree.quiet PROBES), never with none: the opener is faked and stops main there."""
+
+    def test_block_set_status_parked_and_release_open_with_the_worktrees_probes(self):
+        home = tempfile.mkdtemp(prefix='kit-home-')
+        self.addCleanup(rmtree, home)
+        env = fixture_env({'USERPROFILE': home, 'HOME': home})
+        seen = []
+
+        def opened(root, fetch=True, session=None, branch=None, *, probes):
+            seen.append(probes)
+            raise Refusal('stopped at the opener')
+
+        verbs = (['block', 'FOO', '--on', 'live-client', '--reason', 'its tree went quiet'],
+                 ['set-status', 'FOO', 'parked'],
+                 ['release', 'FOO', '--reason', 'its tree went quiet'])
+        with mock.patch.object(BACKLOG, 'open_store', opened):
+            for verb in verbs:
+                rc, out, err = inproc.run_main(BACKLOG.main, ['-C', home, '--no-fetch'] + verb,
+                                               env, home)
+                self.assertEqual(rc, 2, out + err)
+                self.assertIn('REFUSED: stopped at the opener', out + err)
+        self.assertEqual(seen, [quiet.PROBES] * 3)
 
 
 if __name__ == '__main__':

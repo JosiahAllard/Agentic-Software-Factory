@@ -14,7 +14,8 @@ item itself is read through the hub. Nothing here imports a host: the delivery o
 
 What fires (a fingerprint per item: a question's phase (question_phase), answer.at, a digest of
 its answer and, once it is a standing rule, standing.at, a to-do's status and done_at, an
-approval's status, decided_at and phase, a story's and a skill edit's status and submitted_at,
+approval's status, decided_at and phase (and, once there is one, its commit and its failed
+apply's time), a story's and a skill edit's status and submitted_at,
 a note to the PM's status and sent_at; only a changed fingerprint fires, so a pm_ack, which leaves
 them alone, never does):
   answered    a question answered or answered again: not bound to a record, its filing failed,
@@ -29,11 +30,15 @@ them alone, never does):
   expiring    an approval still approved and not consumed EXPIRING_LEAD_S before it expires
               (approvals.expires_at: 30 days after the decision for a file approval, 24 hours
               for an op one): the one reminder, so a missed first push cannot lose it
+  applied     an approval the hub applied: consumed by its commit, with `applied`
+              (kitlib.hubsite.apiapprovals _applied)
+  unapplied   an approved approval the hub could not apply: a new `apply` {at, error}; it stays
+              approved
   submitted   a story the owner submitted (or submitted again): to the PM only; a skill edit
               the owner submitted: to the kit's coordinator (Api.kit_session_key) and the PM
   sent        a note the owner sent the PM (to_pm): to the PM only
 Recipients: the item's `from` (a launcher key, or a to-do's free name; for an approval, which has
-no `from`, Api.repo_key of its repo) unless it is the PM's (AGENT_FROM, OWNER_FROM, empty, or
+no `from`, Api.repo_key of its repo) unless it is the PM's (PM_KEY, OWNER_FROM, empty, or
 is_pm), and the PM (PM_KEY) always, once.
 
 Filed answers (`filed`, by the question's `filed_as`, kitlib.hubsite.api _filed_as):
@@ -179,12 +184,11 @@ import time
 
 from kitlib import pmwatch
 from kitlib.config.user import HomeFenced
-from kitlib.hubsite.api import AGENT_FROM, HUB_DONE_BY, OWNER_FROM, sessions_once
+from kitlib.hubclient.push import NO_SESSION, NOT_WRITTEN, PM_KEY, UNCERTAIN, WRITTEN, Sent, field
+from kitlib.hubsite.api import HUB_DONE_BY, OWNER_FROM, sessions_once
 from kitlib.hubsite import store
 from kitlib.hubsite.store import HubError
 
-PM_KEY = AGENT_FROM
-WRITTEN, NOT_WRITTEN, UNCERTAIN, NO_SESSION = 'written', 'not-written', 'uncertain', 'no-live-session'
 AMBIGUOUS, GAVE_UP = 'ambiguous', 'gave-up'
 SCHEDULE_S = (120, 300, 900, 1800, 3600)    # after the 1st, 2nd, ... try
 HOURLY_S = 3600                             # after the rest
@@ -196,7 +200,7 @@ TODO_NOTE_PUSH_MAX = 400                    # characters of a done to-do's note 
 LOG_MAX = 1 << 20                           # push-undelivered.jsonl rotates past this
 OUTBOX = 'push-outbox.json'
 # Job events owed once per detail rather than once per job: each names one thing the PM must
-# hear about (kitlib.hubjobs.unblock_conditions: one opened record each; usage_crossover: one
+# hear about (hubjobs.unblock_conditions: one opened record each; usage_crossover: one
 # session or account each), so a second one in a round must not replace the first.
 _CROSSOVER = 'The hub usage crossover job (hub health jobs.usage-crossover, usage-crossover.log): '
 # the PM's way back from a checkpoint ask: a crossing of the PM that ends without `crossed`
@@ -272,7 +276,7 @@ COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval'
 ANSWERED = ('answered', 'filed')          # a question's statuses that hold an unread answer
 FILED_AS = ('pulled', 'freed', 'held')    # what a filed answer did to its record (api._filed_as)
 EVENTS = ('answered', 'filed', 'standing', 'done', 'reopened', 'added', 'decided', 'expiring',
-          'submitted', 'sent')
+          'applied', 'unapplied', 'submitted', 'sent')
 EXPIRING_LEAD_S = 4 * 3600                  # before expires_at: an approved one's reminder
 WATCHER_STALE_S = 300                       # a heartbeat older than this: the watcher is down
                                             # (kitlib.pmstart BEAT_STALE, the same rule)
@@ -282,17 +286,6 @@ DONE_VIA = 'hub-push'                       # the `via` of that write
 # a delegation run line (kitlib.delegations.run run_line, `D-nnn` its schema.ID): not imported,
 # kitlib.delegations imports this package
 RUN_LINE = re.compile(r'run D-[0-9]{3,}(?: |\Z)')
-_FIELD = re.compile(r'[^A-Za-z0-9._:-]')
-
-Sent = collections.namedtuple('Sent', 'state name session ambiguous')
-
-
-def field(value):
-    """A header field: only [A-Za-z0-9._:-], at most 64 characters, '-' for nothing."""
-    text = _FIELD.sub('_', value if isinstance(value, str) else str(value or ''))[:64]
-    return text or '-'
-
-
 def watcher_heartbeat():
     """The pm_watch heartbeat ({pid, beat, ...}) beside the state file pm_watch uses, or None
     (kitlib.pmwatch.heartbeat_file, read_heartbeat)."""
@@ -307,7 +300,7 @@ def approval_phase(doc, now):
     if status is None:
         return None
     if status == 'approved':
-        from kitlib.hubsite import approvals as ap   # local: no cycle needs it now; kept
+        from kitlib.ownerfiles import approvals as ap   # local: no cycle needs it now; kept
         end = ap.expires_at(doc)
         if end is not None and now >= end - datetime.timedelta(seconds=EXPIRING_LEAD_S):
             return 'expiring'
@@ -355,8 +348,10 @@ def fingerprint(kind, doc, now=None):
     goes in as a digest (its time has whole seconds, so two answers in one second differ only in
     what they say; the outbox never holds that text)."""
     if kind == 'approval':
-        return [doc.get('status'), doc.get('decided_at'),
-                approval_phase(doc, now if now is not None else _utc_now())]
+        out = [doc.get('status'), doc.get('decided_at'),
+               approval_phase(doc, now if now is not None else _utc_now())]
+        commit, failed = doc.get('commit'), _apply_at(doc)
+        return out + [commit, failed] if commit or failed else out
     if kind == 'question':
         ans = doc.get('answer') if isinstance(doc.get('answer'), dict) else {}
         said = json.dumps(ans, sort_keys=True, default=str).encode('utf-8')
@@ -372,11 +367,24 @@ def fingerprint(kind, doc, now=None):
     return [doc.get('status'), doc.get('done_at')]
 
 
+def _apply_at(doc):
+    """The time of an approval's failed apply (its `apply` {at, error}), or None."""
+    failed = doc.get('apply')
+    return failed.get('at') if isinstance(failed, dict) and failed.get('error') else None
+
+
 def trigger(kind, doc, old, now=None):
     """The event a change from fingerprint `old` (None: an item not seen before) to doc fires,
-    or None. An approval fires its phase at `now` (fingerprint), except 'decided' after
-    'expiring' (module docstring)."""
+    or None. An approval fires 'applied' for a new commit the hub applied, 'unapplied' for a new
+    failed apply while it is approved, else its phase at `now` (fingerprint), except 'decided'
+    after 'expiring' (module docstring)."""
     if kind == 'approval':
+        was = list(old[3:5]) if old is not None and len(old) > 4 else [None, None]
+        if (doc.get('status') == 'consumed' and isinstance(doc.get('applied'), dict)
+                and doc.get('commit') and doc.get('commit') != was[0]):
+            return 'applied'
+        if doc.get('status') == 'approved' and _apply_at(doc) and _apply_at(doc) != was[1]:
+            return 'unapplied'
         phase = approval_phase(doc, now if now is not None else _utc_now())
         if phase == 'decided' and old is not None and len(old) > 2 and old[2] == 'expiring':
             return None
@@ -409,13 +417,13 @@ def trigger(kind, doc, old, now=None):
 
 def machine_pm_folder():
     """The folder name of the PM's own repository (the one holding the machine config's
-    pm_start sessions_file, as kitlib.pmstart.known_repos names it), '' when unknown."""
-    from kitlib import pmstart
-    cfg = pmstart.load_config() or {}
+    pm_start sessions_file, as kitlib.config.pm.known_repos names it), '' when unknown."""
+    from kitlib.config import pm as pmconfig
+    cfg = pmconfig.load_config() or {}
     path = cfg.get('sessions_file')
     if not path:
         return ''
-    return pmstart._toplevel(os.path.dirname(os.path.abspath(path))) or ''
+    return pmconfig._toplevel(os.path.dirname(os.path.abspath(path))) or ''
 
 
 def schedule(attempt):
@@ -483,6 +491,13 @@ def guidance(kind, doc_id, event, recipient, entry=None):
     if event == 'expiring':
         return ('Approved and not consumed; it expires within %d h: hub approvals show %s'
                 % (EXPIRING_LEAD_S // 3600, doc_id))
+    if event == 'applied':
+        return ('The hub applied the approved change: it committed it on the request\'s branch, '
+                'in its worktree (hub approvals show %s names the commit).' % doc_id)
+    if event == 'unapplied':
+        return ('Approved, but the hub could not apply it: hub approvals show %s says why. Put '
+                'that right in the worktree, then the owner runs hub.py approvals apply %s.'
+                % (doc_id, doc_id))
     if event == 'reopened':
         return 'Reopened by the owner: for your information, no ack needed (hub view %s).' % doc_id
     if event == 'added':

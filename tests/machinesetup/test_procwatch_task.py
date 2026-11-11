@@ -46,7 +46,7 @@ class TaskLine(unittest.TestCase):
         self.assertIn('Test-Path -LiteralPath $py', line)
 
     def test_the_default_pythonw_is_the_base_install_literal(self):
-        from kitlib.launcher import pythonw as W
+        from kitlib.schedtask import pythonw as W
         line = P.task_line('C:\\kit', 'D:\\l.log')
         self.assertIn("$py = '%s'" % W.base_pythonw().replace("'", "''"), line)
 

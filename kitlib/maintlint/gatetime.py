@@ -28,7 +28,7 @@ import os
 import re
 import statistics
 
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_edit
 from kitlib.backlog import scope as bscope
 from kitlib.backlog import store as bstore
 from kitlib.backlog.errors import Failure, Refusal
@@ -189,9 +189,9 @@ def file(root, result, now=None, opener=None):
             held = _live(s, prefix, name)
             if held is not None:
                 return bstore.Change({}, '', ['%s is already filed for gate step %s' % (held, name)])
-            return pmod.plan_add(s, ctx, rid, text, [bscope.NONE], None, REF % name,
-                                 session=conf['session'], found_on=bscope.NONE,
-                                 why_not_folded=NOT_FOLDED)
+            return plan_edit.plan_add(s, ctx, rid, text, [bscope.NONE], None, REF % name,
+                                      session=conf['session'], found_on=bscope.NONE,
+                                      why_not_folded=NOT_FOLDED)
         try:
             change, _tip = ctx.store.write(add)
         except (Refusal, Failure, ConfigError, OSError) as exc:

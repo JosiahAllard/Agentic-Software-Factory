@@ -57,13 +57,13 @@ FIELDS = {
     'pages': (('title',), {'title': _STR, 'kind': _STR, 'folder': _STR}),
     'page_html': (('html',), {'html': _STR}),
     'repos': ((), {'name': _STR, 'added_at': _STR, 'aliases': _LIST}),
-    # kitlib.hubsite.approvals, "The document"; BY_KIND adds the fields of each kind
+    # kitlib.ownerfiles.approvals, "The document"; BY_KIND adds the fields of each kind
     'approvals': (('status', 'repo', 'title', 'created_at'), {
         'status': _STR, 'repo': _STR, 'title': _STR, 'head': _STR, 'files': _LIST,
         'created_at': _STR, 'reason': _STR, 'decision': _STR, 'decided_at': _STR, 'sig': _STR,
         'commit': _STR, 'consumed_at': _STR, 'diff': _LIST, 'kind': _STR, 'op': _STR,
         'line': _STR, 'args_sha256': _STR, 'what': _STR, 'record': _DICT, 'park': _DICT,
-        'spent': _STR, 'spent_at': _STR}),
+        'spent': _STR, 'spent_at': _STR, 'branch': _STR, 'apply': _DICT, 'applied': _DICT}),
     # kitlib.hubsite.api, "Schedules": the owner's times for the kit's automatic tasks
     'schedules': (('task', 'repo', 'cadence', 'at'), {
         'task': _STR, 'repo': _STR, 'cadence': _STR, 'days': _LIST, 'at': _STR, 'set_at': _STR}),
@@ -78,8 +78,8 @@ FIELDS = {
         'status': _STR, 'skill': _STR, 'text': _STR, 'base_blob': _STR, 'created_at': _STR,
         'submitted_at': _STR, 'done_at': _STR, 'branch': _STR, 'blob': _STR,
         'source_blob': _STR, 'why': _STR, 'closed_at': _STR}),
-    # kitlib.hubsite.landings, the event tools/land.py posts for each branch it landed: the land
-    # ledger line's fields (kitlib.gate.result.LEDGER_FIELDS) and landings.EXTRA_FIELDS; the api
+    # kitlib.landing.feed, the event tools/land.py posts for each branch it landed: the land
+    # ledger line's fields (kitlib.gate.result.LEDGER_FIELDS) and feed.EXTRA_FIELDS; the api
     # takes these fields only and sets posted_at
     'landings': (('repo', 'branch', 'tip', 'main'), {
         'branch': _STR, 'tip': _STR, 'run_id': _STR, 'started_at': _STR, 'finished_at': _STR,
@@ -92,7 +92,7 @@ FIELDS = {
     'handoffs': (('from', 'kind', 'state_path', 'at'), {
         'from': _STR, 'kind': _STR, 'state_path': _STR, 'at': _STR}),
 }
-KINDS = {'to_pm': ('question', 'fyi', 'act'), 'handoffs': ('handoff', 'restart', 'stop', 'checkin')}
+KINDS = {'to_pm': ('question', 'fyi', 'act'), 'handoffs': hubvalidate.HANDOFF_KINDS}
 # {collection: {kind: more required fields}}: a document of such a collection needs its kind's
 # fields too, None standing for a document with no kind; any other kind is an error
 BY_KIND = {'approvals': {None: ('head', 'files'), 'op': ('op', 'line', 'args_sha256')}}

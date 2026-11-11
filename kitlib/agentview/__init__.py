@@ -1,5 +1,5 @@
-"""kitlib.agentview: everything one role is given and held to, on one host (decision 18 in
-docs/multi-host-plan.md section 7; docs/content.md "Agent view"). tools/agent_view.py prints it.
+"""kitlib.agentview: everything one role is given and held to, on one host (docs/content.md "Agent
+view"). tools/agent_view.py prints it.
 
   view(kit, repo, name, host, renderer, ...)   [Section(title, lines)]: GIVEN sections in the order
                                                the agent receives them, then the HELD ones
@@ -14,7 +14,7 @@ conformance suite pins to what the host writes:
                            `@<path>` lines import
   User instructions        that file name in the host's per-user folder (the `user_folder` token,
                            or the folder its `config_dir_env` names); never read
-  Kit header               kitlib.host.header.text(kit), what every host's start hook adds
+  Kit header               kitlib.hookrun.header.text(kit), what every host's start hook adds
   At start                 the adapter's start_text(event, kit, payload, environ, part) for each
                            part its start_parts(event, role) names (default: the plain hook alone),
                            the call boot/hook.py makes, past the header, for a session marked with
@@ -22,7 +22,7 @@ conformance suite pins to what the host writes:
   Skills                   content/skills, when the host has skills (hosts.json)
   Repo profile             the `profile_path` token in `repo` (and `coordinator_profile_path` when
                            the role's body names it); no profile_path file: the kit's
-                           content/default-profile.md, the roles' fallback (decision 26)
+                           content/default-profile.md, the roles' fallback
   Model, tools and mode    the role file; renderer.settings(role) (what the host's file sets) and
                            renderer.tools() (its capability -> tool map)
   Guard rules              kitlib.guard.rolepolicy.rules_for(mode) and its LOCK_VERBS
@@ -38,7 +38,7 @@ import os
 import re
 
 from kitlib import content as kcontent
-from kitlib.host import header
+from kitlib.hookrun import header
 from kitlib.host.content import tokens_in
 
 Section = collections.namedtuple('Section', 'title lines')
@@ -181,14 +181,14 @@ def user_instructions(values, environ):
 
 def kit_header(kit, event, brief):
     title = 'Kit header (%s)' % event
-    lines = ['kitlib.host.header.text: the kit folder, and what <kit> and the other placeholders mean']
+    lines = ['kitlib.hookrun.header.text: the kit folder, and what <kit> and the other placeholders mean']
     if not brief:
         lines.append(block(header.text(kit)))
     return Section(title, lines)
 
 
 def _mark(environ, role):
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     env = dict(environ)
     env[sessionmark.ENV] = role.name
     return env
@@ -246,7 +246,7 @@ def skills(content, role, host, renderer, brief):
 
 
 def profile(kit, repo, role, values):
-    """The profile in use: the repository's, or, with none (it is opt-in: decision 26), the kit's
+    """The profile in use: the repository's, or, with none (it is opt-in), the kit's
     default profile that the role falls back to for `profile_path`."""
     keys = ['profile_path'] + [k for k in ('coordinator_profile_path',)
                                if (k, None) in tokens_in(role.body)]

@@ -26,7 +26,7 @@ The names the manifests read (`SERVER_NAME`, `TOOL_NAMES`, the ports, the lock k
   - `__pycache__` is outside the pin, and Blender writes one there. Python never reads it: the bridge starts Blender with `--python-use-system-env` and an environment (`addon.launch_env`) with no PYTHON* variable of the caller's, plus `PYTHONPYCACHEPREFIX` set to a fresh empty folder for that Blender, `PYTHONDONTWRITEBYTECODE` and `PYTHONNOUSERSITE`. Python then looks for byte code only under that folder, so a `.pyc` planted beside the add-on's sources is never run. The folder is removed when the Blender ends.
   - A different version, or an edited copy, is refused with the `setup` error. An update is reviewed and pinned again in `addon.py`.
 - **The command line:** `blender --background --python-use-system-env --online-mode --command blender_mcp --host 127.0.0.1 --port <port>` (`addon.launch_argv`). `--online-mode` is Blender's own option and must come before `--command`: the add-on's parser takes the rest of the line and refuses it. Blender runs in the worktree it was opened for.
-- **Codex:** the env vars the Codex manifest passes through are `PM_KIT_ROOT`, `PM_KIT_RELEASE_ID` and `PM_KIT_BLENDER`.
+- **Codex:** the env vars the Codex manifest passes through are `PM_KIT_ROOT` and `PM_KIT_BLENDER`.
 
 ## Tools
 

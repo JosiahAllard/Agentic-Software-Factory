@@ -3,10 +3,11 @@ name here): git push from the PM data worktree, --no-verify and a changed HOME w
 exists, a push the guard cannot tell holds no PM data, the main branch's gate-OK check, and the git
 that talks to a remote with no pre-push hook (send-pack and its kin, and `& (...)`, a computed program)."""
 import os
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.git import repo
 
 from . import commands as cm
+from . import commands_nested as cn
 from .rules_base import UNPLACED, agent_session, fwd, is_owner_session, kit_tool, own_worktree, quote, refuse
 from .rules_gitcore import _canon_long, _opts, git_call_judged
 
@@ -81,7 +82,7 @@ def _branch_of(ref):
 
 def pmdata_recorded(ctx, path):
     """True when the repository `path` is in has a PM data record (kit-pm-data.json in its git
-    common dir, kitlib.pmdata), and when git cannot place `path` (fail closed); False outside git.
+    common dir, kitlib.config.pmdata), and when git cannot place `path` (fail closed); False outside git.
     The file's existence only: it is not parsed, and no git runs beyond the cached place."""
     if not path:
         return True
@@ -167,7 +168,7 @@ def git_push_pmdata(event, ctx, gc, role):
 
 def home_config(event, ctx, gc, role):
     """git push on a line that sets HOME, XDG_CONFIG_HOME, USERPROFILE, HOMEDRIVE or HOMEPATH
-    (commands.HOME_ENV_NAMES, Command.home_env), in a repository with a PM data record, in every
+    (commands_env.HOME_ENV_NAMES, Command.home_env), in a repository with a PM data record, in every
     session but the owner's own (rule git-push-pmdata): git would read another user config, whose
     url.<base>.pushInsteadOf can send the push to a public remote while the pre-push hook, reading
     the same config, takes it for the private one."""
@@ -349,13 +350,13 @@ def pmdata_possible(ctx, path):
 
 def call_subexpr_pmdata(event, ctx, cmd, inv, cwd, role):
     """PowerShell's call operator on a ( ) subexpression (`& (Get-Command git) push`,
-    commands.call_subexpr), in every session but the owner's own: the program is what the ( )
+    commands_nested.call_subexpr), in every session but the owner's own: the program is what the ( )
     computes, so the rules that need a literal program (heavy, the write jail, the git rules)
     cannot read it. In a repository with a PM data record it is denied as git-push-pmdata (it may
     be git push --no-verify); elsewhere an agent session (agent_session) is refused as unplaced
     (it may be git writing a checkout the jail cannot place; warn by default). Only the owner and
     a session the jail does not hold (`plain`) read the line as any other."""
-    if not cm.call_subexpr(inv) or is_owner_session(event, ctx):
+    if not cn.call_subexpr(inv) or is_owner_session(event, ctx):
         return None
     instead = ('& <program> %s' % ' '.join(w.text for w in inv.args)).rstrip()
     where = cmd.cwd

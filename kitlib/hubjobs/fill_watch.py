@@ -24,7 +24,7 @@ the hub pulls for it (stage 3); the nudge names the auto-pull stand-down when on
   standdown(top, survey=None)        the stand-down reason of the repository whose main checkout is
                                      `top`, or None; StandDownUnread when it cannot be read
   read_limits(top, cfg=None)         (backlog.fill_queued_max, backlog.fill_idle_max) of `top`
-  read_survey(top, cfg)              (queued, idle) of `top`; StandDownUnread when unread
+  read_survey(top)                   (queued, idle) of `top`; StandDownUnread when unread
   read_hold(path)                    the PM's holds (fill-hold.json), {} when none; StandDownUnread
   hold_reason(data, repo, now)       `hold machine`, `hold repo` or None
   set_hold(path, repo, reason, until, now), clear_hold(path, repo)
@@ -47,8 +47,9 @@ coord_restart.read_offer (the reader coord-restart's wake shares):
              coord_restart.wake_sessions (no `session:` counts for the repo's main coordinator).
              Inference: one live pull is about one slot. The hub cannot see a host's running
              agents, so a pull waiting to land counts as busy and a reviewer is not seen.
-  offered    `next --all` for the same sessions (plan.offer_for, cap None, no fetch), so every
-             collision, hold, other session's record and unmet `requires:` is already passed over.
+  offered    `next --all` for the same sessions (plan_narrow.offer_for, cap None, no fetch), so
+             every collision, hold, other session's record and unmet `requires:` is already
+             passed over.
 The offer judges session liveness as `next` does (coord_restart.session_liveness, from the run's
 own sessions.json and process listing; FillWatch.liveness).
 free = cap - in_flight (at least 0). Free and something offered: one deliver to the coordinator's
@@ -60,7 +61,7 @@ Stand-down (stage 4): read once per repository per run, and only for a coordinat
 with something offered. `standdown(top)` reads the main checkout's `.kit.json`:
   backlog.fill_queued_max (default 3): 0 is `off` (always stood down, nothing surveyed); else
              `queued N>=MAX` when N branches wait to land: the verdict queue's entries not expired
-             (kitlib.gate.verdicts), and every worktree branch, live or not, whose tip has a green
+             (kitlib.landing.verdicts), and every worktree branch, live or not, whose tip has a green
              gate-OK record (classify.gate_state) and is not in main as fetched; each branch once.
              A tip git cannot place against main counts.
   backlog.fill_idle_max (default 2): `idle N>=MAX` when N worktrees are class B or C under
@@ -193,7 +194,7 @@ def is_coordinator(key, entry):
 
 
 def nudge_text(key, free, ids, reason=None):
-    from kitlib.hubsite import push
+    from kitlib.hubclient import push
     shown = coord_restart.shown_ids([push.field(i) for i in ids])
     lines = ['[hub push] fill: %d free, %d startable: %s route:%s'
              % (free, len(ids), shown, push.field(key))]
@@ -206,7 +207,7 @@ def nudge_text(key, free, ids, reason=None):
 def pull_text(key, pulled, skipped):
     """The push of an auto-pull: `pulled` [(id, branch)] and `skipped` [(id, code)], ids,
     branches and codes only (each cut to a header field; a branch part by part)."""
-    from kitlib.hubsite import push
+    from kitlib.hubclient import push
     shown = ', '.join('%s as %s' % (push.field(rid), '/'.join(push.field(p) for p in b.split('/')))
                       for rid, b in pulled)
     lines = ['[hub push] fill: pulled %s route:%s' % (shown or 'none', push.field(key))]
@@ -218,7 +219,7 @@ def pull_text(key, pulled, skipped):
 def waits_text(key, rows):
     """The push of the waits notices: `rows` [(id, priority, live pull id, its priority, its
     branch)], ids, priorities and branches only (each cut to a header field)."""
-    from kitlib.hubsite import push
+    from kitlib.hubclient import push
     lines = ['[hub push] waits: %d record(s) wait on a lower live pull route:%s'
              % (len(rows), push.field(key))]
     lines.extend('p%s %s waits on p%s pull %s on %s (lands first)'
@@ -235,7 +236,7 @@ def read_waits(settings, key, entry, session_live=None):
     (offer.outranks, PassedOver.waits), each pair once, read as coord_restart.read_offer reads
     the offer (no fetch, every session of wake_sessions) and with `next`'s narrowing. BacklogUnread
     when it cannot be read, the live pulls' branches included."""
-    from kitlib.backlog import opener, plan
+    from kitlib.backlog import opener, plan_narrow
     from kitlib.backlog import offer as omod
     from kitlib.backlog.errors import Refusal
     from kitlib.config import ConfigError
@@ -243,7 +244,7 @@ def read_waits(settings, key, entry, session_live=None):
     rows, snap, holding = [], None, None
     try:
         for session in coord_restart.wake_sessions(key, entry):
-            ctx = opener.open_store(root, fetch=False, session=session)
+            ctx = opener.open_store(root, fetch=False, session=session, probes=opener.NO_PROBES)
             ctx.session_live = session_live
             if snap is None:            # one read of the store and its live pulls
                 snap = ctx.store.load()
@@ -252,8 +253,8 @@ def read_waits(settings, key, entry, session_live=None):
                     raise coord_restart.BacklogUnread('the branches could not be read (%s)'
                                                       % why)
             # As `next --all` reads it: no cap, and a record a narrowing clears is offered.
-            _offers, passed, _holding, _own = plan.offer_for(snap, ctx, cap=None, holding=holding,
-                                                             narrow=True)
+            _offers, passed, _holding, _own = plan_narrow.offer_for(snap, ctx, cap=None, holding=holding,
+                                                                    narrow=True)
             for p in passed:
                 for other in p.waits:
                     row = (p.rec.id, p.rec.get('priority'), other.id, other.get('priority'),
@@ -289,9 +290,9 @@ def live_names():
 
 
 def told_states():
-    """The kitlib.hubsite.push Sent states that count as told: written and uncertain (push is
+    """The kitlib.hubclient.push Sent states that count as told: written and uncertain (push is
     imported here, at run time, as usage_crossover.make does)."""
-    from kitlib.hubsite import push
+    from kitlib.hubclient import push
     return (push.WRITTEN, push.UNCERTAIN)
 
 
@@ -312,12 +313,13 @@ def read_limits(top, cfg=None):
     return backlog['fill_queued_max'], backlog['fill_idle_max']
 
 
-def read_survey(top, cfg):
-    """(queued, idle) of the repository whose main checkout is `top` (module docstring), `cfg` its
-    Config (gate_state's gate_once). Read-only. StandDownUnread when main as fetched, the git
-    common dir, the verdict queue or the worktrees cannot be read."""
+def read_survey(top):
+    """(queued, idle) of the repository whose main checkout is `top` (module docstring). Read-only.
+    StandDownUnread when main as fetched, the git common dir, the verdict queue or the worktrees
+    cannot be read."""
     from kitlib.coordstate import render
-    from kitlib.gate import verdicts
+    from kitlib.landing import verdicts
+    from kitlib.records import verdict_entry
     from kitlib.git import refs
     from kitlib.git import repo
     from kitlib.worktree import classify
@@ -329,8 +331,8 @@ def read_survey(top, cfg):
         raise StandDownUnread('the git common dir cannot be read (%s)' % why)
     try:
         queued = {e['branch'] for e in verdicts.entries(common)
-                  if not verdicts.expired(common, e, main)}
-    except verdicts.VerdictError as e:
+                  if not verdict_entry.expired(common, e, main)}
+    except verdict_entry.VerdictError as e:
         raise StandDownUnread('the verdict queue cannot be read (%s)' % e)
     got = classify.classify(top, dead_after_s=IDLE_AFTER_S)
     if 'error' in got.data:
@@ -351,7 +353,7 @@ def read_survey(top, cfg):
             idle += 1                   # not in main, or git cannot tell: idle
         if t['class'] in ('A', 'E', 'O') or not t.get('branch') or t['branch'] in queued:
             continue
-        gate = t.get('gate') or classify.gate_state(top, t['head'], cfg)
+        gate = t.get('gate') or classify.gate_state(top, t['head'])
         if gate != 'green':
             continue
         landed, _why = refs.is_ancestor(t['head'], main, top)
@@ -374,13 +376,13 @@ def _dead(t):
 
 def standdown(top, survey=None):
     """The reason auto-pull stands down for the repository whose main checkout is `top`, or None
-    (module docstring): `off`, `queued N>=MAX` or `idle N>=MAX`. `survey(top, cfg)` -> (queued,
+    (module docstring): `off`, `queued N>=MAX` or `idle N>=MAX`. `survey(top)` -> (queued,
     idle) is a test seam (default read_survey). StandDownUnread when anything cannot be read."""
     cfg = _config(top)
     queued_max, idle_max = read_limits(top, cfg)
     if queued_max == 0:
         return OFF
-    queued, idle = (survey or read_survey)(top, cfg)
+    queued, idle = (survey or read_survey)(top)
     if queued >= queued_max:
         return 'queued %d>=%d' % (queued, queued_max)
     if idle >= idle_max:
@@ -745,7 +747,7 @@ class FillWatch(object):
         """The waits notices of `key` (module docstring): a pair first seen is one push, told
         once written or uncertain; one still there WAITS_PM_AFTER_S after first sight is one
         `fill` event to the PM. A read that raises BacklogUnread keeps the pairs as they were."""
-        from kitlib.hubsite import push
+        from kitlib.hubclient import push
         try:
             rows = self.waits(key, entry)
         except coord_restart.BacklogUnread as e:
@@ -784,7 +786,7 @@ class FillWatch(object):
         """Stages 3 and 5 for a key already nudged this episode (module docstring): PULL_AFTER_S
         into it, a stand-down tells the PM once; with none the hub pulls once, the mark written
         before the pull, and slots it left free tell the PM once."""
-        from kitlib.hubsite import push
+        from kitlib.hubclient import push
         e = told[key]
         since = e['since']
         if now - since < PULL_AFTER_S or ctx.stop.is_set():
@@ -852,7 +854,7 @@ class FillWatch(object):
         A session started after it is a new one (a `launch.py start` or a coord-restart wake writes
         no check-in), so None; a start or an `at` that cannot be read keeps it pending. `handoff
         unread` when the records cannot be read (read once per run), else None."""
-        from kitlib.hubsite import push
+        from kitlib.hubclient import push
         if self._hands is _UNSET:
             try:
                 self._hands = self.handoffs()
@@ -918,7 +920,8 @@ def pull_record(root, rid, branch, sessions, liveness=None):
         ctx.offer_session = rec.get('session')
         return pull_branch.plan_pull(snap, ctx, rid)
     try:
-        ctx = opener.open_store(root, fetch=True, session=PULL_SESSION, branch=branch)
+        ctx = opener.open_store(root, fetch=True, session=PULL_SESSION, branch=branch,
+                                probes=opener.NO_PROBES)
         if getattr(ctx.store.backend, 'implicit', False):
             return 'store'
         ctx.session_live = liveness
@@ -951,18 +954,18 @@ def remove_fresh(main, branch):
     """Remove the worktree on `branch` that auto_pull just made, and the branch while its tip is
     still the tree's head: `git worktree remove` (never forced: anything written in it keeps it)
     and `git update-ref -d` against that head. True when both went."""
-    from kitlib.worktree import remove
+    from kitlib.worktree import remove_checks
     try:
-        trees = remove.worktree_entries(remove.worktree_listing(main))
-    except remove.GitReadError:
+        trees = remove_checks.worktree_entries(remove_checks.worktree_listing(main))
+    except remove_checks.GitReadError:
         return False
     tree = next((t for t in trees if t['branch'] == branch), None)
     if tree is None or not tree['head']:
         return False
-    rc, _out, _err = remove.git(main, 'worktree', 'remove', tree['path'])
+    rc, _out, _err = remove_checks.git(main, 'worktree', 'remove', tree['path'])
     if rc != 0:
         return False
-    rc, _out, _err = remove.git(main, 'update-ref', '-d', 'refs/heads/' + branch, tree['head'])
+    rc, _out, _err = remove_checks.git(main, 'update-ref', '-d', 'refs/heads/' + branch, tree['head'])
     return rc == 0
 
 

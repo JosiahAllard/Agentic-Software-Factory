@@ -5,7 +5,7 @@ processors in every processor group (past 64), physical cores with SMT and effic
 domains (a CPU may have several), CPU sets (scheduling class), memory, and display adapters of any vendor
 through DXGI (CIM as the fallback). nvidia-smi is never needed to size the pools; it only adds
 live use (kitlib.lock.api). On Linux, detect is detect_linux: the same dict, read from /sys and
-/proc (kitlib.platform.linux.hardware, docs/linux-support-plan.md section 2.4).
+/proc.
 
 The division is the owner's (machine.json); any key missing takes its default:
 
@@ -39,7 +39,8 @@ from ctypes import wintypes
 import kitlib.platform
 from kitlib.lock import kinds
 from kitlib.platform.linux import hardware as linux_hw
-from kitlib.proc import cpu, process
+from kitlib.proc import process
+from kitlib.platform.windows import cpu
 
 POOLS = ("cpu", "gpu")
 DEFAULT_GPU_SHARE = 2           # two trainers share one card
@@ -197,7 +198,7 @@ def detect():
     if listed is None:
         problems.append("Windows did not list the processor groups; group 0 alone stands in")
         failed.append("groups")
-    grps = listed or [(0, process.system_mask())]  # cpu.groups()'s stand-in, without asking again
+    grps = listed or [(0, cpu.system_mask())]  # cpu.groups()'s stand-in, without asking again
     ids = [cpu.gid(g, i) for g, m in grps for i in range(cpu.GROUP_BITS) if m >> i & 1]
     cores = cpu.cores()
     if cores is None:

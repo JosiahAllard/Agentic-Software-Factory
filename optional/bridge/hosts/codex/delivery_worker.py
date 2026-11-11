@@ -11,9 +11,9 @@ if __name__ == '__main__':
     sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
 from optional.bridge.hosts.codex.delivery_transport import MAX_FRAME, NativeEndpoint, strict_json
-from kitlib.proc.pipe import (K, bind, close, connect, open_process,
+from kitlib.platform.windows.pipe import (K, bind, close, connect, open_process,
     process_image, process_sids, read, write)
-from kitlib.proc.process import handle_ctime
+from kitlib.platform.windows.process import handle_ctime
 
 wait = bind(K, 'WaitForSingleObject', [w.HANDLE, w.DWORD], w.DWORD)
 get_pid = bind(K, 'GetProcessId', [w.HANDLE], w.DWORD)

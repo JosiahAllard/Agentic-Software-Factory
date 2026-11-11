@@ -5,6 +5,7 @@ from unittest import mock
 
 from kitlib.backlog import narrowed as nmod
 from kitlib.backlog import record as rmod
+from kitlib.backlog import store_live
 from tests.backlog.helpers import messages, record_text
 
 RULES = rmod.Rules()
@@ -120,9 +121,9 @@ class Hits(unittest.TestCase):
 
     def test_paths_compare_as_the_landing_scope_check_compares_them(self):
         # One copy: the landing check's comparisons are scope's own.
-        from kitlib.gate import land
-        self.assertIs(land._covers, nmod.scmod.covers)
-        self.assertIs(land._in_repo, nmod.scmod.in_repo)
+        from kitlib.landing import checks
+        self.assertIs(checks._covers, nmod.scmod.covers)
+        self.assertIs(checks._in_repo, nmod.scmod.in_repo)
         # A path the grammar cannot decide is covered by no member: not refused here (the
         # landing check lists it as undecidable).
         self.assertEqual(self.hits(['kit/a/../b/x.py']), ([], []))
@@ -165,15 +166,15 @@ class TheAreaPrefix(unittest.TestCase):
 
 
 class TheStoreLookup(unittest.TestCase):
-    """read takes the store backlog.py opens (store.resolve_store); a PM data worktree it cannot
-    find or read is a WARNING, never a silent fall back to the worktree's own store."""
+    """read takes the store backlog.py opens (store_open.resolve_store); a PM data worktree it
+    cannot find or read is a WARNING, never a silent fall back to the worktree's own store."""
 
     def test_a_pm_data_worktree_that_cannot_be_read_warns(self):
         why = 'no worktree has the PM data branch pmdata checked out'
         with mock.patch.object(nmod.gitrepo, 'toplevel', return_value=('/repo', None)), \
-                mock.patch.object(nmod.smod, 'resolve_store',
+                mock.patch.object(nmod.store_open, 'resolve_store',
                                   return_value=('/repo', None, RULES, None, why)), \
-                mock.patch.object(nmod.smod, 'open_backend',
+                mock.patch.object(nmod.store_open, 'open_backend',
                                   side_effect=AssertionError('read the fallback')):
             refusal, warnings = nmod.check('/repo', ['kit/b/x.py'])
         self.assertEqual(refusal, [])
@@ -183,23 +184,23 @@ class TheStoreLookup(unittest.TestCase):
     def test_worktree_store_says_why_it_kept_the_own_store(self):
         cfg = mock.Mock()
         cfg.written.return_value = None
-        smod = nmod.smod
-        with mock.patch.object(smod, 'worktree_branch', return_value='kit/x'):
-            with mock.patch.object(smod, 'pm_data_live_store',
-                                   return_value=(None, None, 'cannot find it')):
-                self.assertEqual(smod.worktree_store('/wt', cfg), (None, 'cannot find it'))
-                self.assertIsNone(smod.worktree_live_store('/wt', cfg))
-            with mock.patch.object(smod, 'pm_data_live_store',
-                                   return_value=('/pm', None, 'bad json')):
-                live, why = smod.worktree_store('/wt', cfg)
+        slive = store_live
+        with mock.patch.object(slive, 'worktree_branch', return_value='kit/x'):
+            with mock.patch.object(slive, 'pm_data_live_store',
+                                    return_value=(None, None, 'cannot find it')):
+                self.assertEqual(slive.worktree_store('/wt', cfg), (None, 'cannot find it'))
+                self.assertIsNone(slive.worktree_live_store('/wt', cfg))
+            with mock.patch.object(slive, 'pm_data_live_store',
+                                    return_value=('/pm', None, 'bad json')):
+                live, why = slive.worktree_store('/wt', cfg)
                 self.assertIsNone(live)
                 self.assertIn('bad json', why)
                 self.assertIn('/pm', why)
-            with mock.patch.object(smod, 'pm_data_live_store',
-                                   return_value=('/pm', 'branch', None)):
-                self.assertEqual(smod.worktree_store('/wt', cfg), (('/pm', 'kit/x'), None))
-            with mock.patch.object(smod, 'pm_data_live_store', return_value=(None, None, None)):
-                self.assertEqual(smod.worktree_store('/wt', cfg), (None, None))
+            with mock.patch.object(slive, 'pm_data_live_store',
+                                    return_value=('/pm', 'branch', None)):
+                self.assertEqual(slive.worktree_store('/wt', cfg), (('/pm', 'kit/x'), None))
+            with mock.patch.object(slive, 'pm_data_live_store', return_value=(None, None, None)):
+                self.assertEqual(slive.worktree_store('/wt', cfg), (None, None))
 
     def test_the_live_store_is_read_as_shared(self):
         records = TheAreaPrefix().records()
@@ -207,9 +208,9 @@ class TheStoreLookup(unittest.TestCase):
         backend = mock.Mock()
         backend.load.return_value = snap
         with mock.patch.object(nmod.gitrepo, 'toplevel', return_value=('/repo', None)), \
-                mock.patch.object(nmod.smod, 'resolve_store',
+                mock.patch.object(nmod.store_open, 'resolve_store',
                                   return_value=('/pm', mock.Mock(), RULES, BRANCH, None)), \
-                mock.patch.object(nmod.smod, 'open_backend', return_value=backend), \
+                mock.patch.object(nmod.store_open, 'open_backend', return_value=backend), \
                 mock.patch.object(nmod, 'top_entries', return_value={'src'}):
             refusal, warnings = nmod.check('/repo', ['src/b/x.py'])
         self.assertEqual(warnings, [])

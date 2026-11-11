@@ -1,6 +1,6 @@
 # Git design
 
-Low-level design of `kitlib/git`. The high-level design is ARCHITECTURE.md ("Layers", facts) and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-004, W-010).
+Low-level design of `kitlib/git`. The high-level design is ARCHITECTURE.md ("Layers", facts) and wins on a conflict.
 
 ## Contract
 

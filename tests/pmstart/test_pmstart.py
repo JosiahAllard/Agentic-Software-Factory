@@ -9,7 +9,9 @@ import unittest
 from unittest import mock
 
 from kitlib import pmstart
+from kitlib.config import pm as pmconfig
 from kitlib.pmstart import fglock
+from kitlib.proc import listing
 from tests.home import temp_home
 from tests.pmstart import HANDOFF_FAKE, HUB_KEPT_OFF, keep_off_hub_site, keep_off_launcher_repos
 
@@ -295,11 +297,6 @@ class LivenessTest(unittest.TestCase):
     SESS = json.dumps({"_note": "x", "alpha": {"name": "al-a2-n5"},
                        "Beta": {"name": "be-a2"}, "paused": {"name": "p", "autostart": False}})
 
-    def test_rc_name_forms(self):
-        self.assertEqual(pmstart.rc_name('claude --remote-control "a b"'), "a b")
-        self.assertEqual(pmstart.rc_name("claude --remote-control=x1"), "x1")
-        self.assertIsNone(pmstart.rc_name("claude"))
-
     def test_dead_listed_exact_match_store_app_ignored(self):
         procs = [proc("claude.exe", "claude --remote-control al-a2-n5", "C:/bin/claude.exe"),
                  proc("claude.exe", "claude --remote-control be-a2", "C:/X" + chr(92) + "WindowsApps" + chr(92) + "claude.exe")]
@@ -403,15 +400,15 @@ class ChecklistTest(unittest.TestCase):
         self.assertIn("pm_watch.py is not running", txt)  # no pm_watch_cmd: the kit's own command
 
     def test_process_listing_failure_isolated(self):
-        orig = pmstart.list_processes
+        orig = listing.list_processes
         def bad():
             raise subprocess.TimeoutExpired("powershell", 4)
-        pmstart.list_processes = bad
+        listing.list_processes = bad
         try:
             txt = pmstart.checklist(CFG, NOW, reminders={"read": lambda p: "[]"},
                                     handoff=HANDOFF_FAKE)
         finally:
-            pmstart.list_processes = orig
+            listing.list_processes = orig
         self.assertIn("could not check watcher", txt)
         self.assertIn("could not check liveness", txt)
         self.assertIn(HUB_KEPT_OFF, txt)
@@ -421,10 +418,10 @@ class ConfigAndHookTest(unittest.TestCase):
     def test_load_config(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "c.json")
-            self.assertIsNone(pmstart.load_config(p))
+            self.assertIsNone(pmconfig.load_config(p))
             with open(p, "w") as f:
                 json.dump({"pm_start": {"memory_dir": "u"}}, f)
-            self.assertEqual(pmstart.load_config(p), {"memory_dir": "u"})
+            self.assertEqual(pmconfig.load_config(p), {"memory_dir": "u"})
 
     def test_hook_without_config_prints_json_exit_0(self):
         with tempfile.TemporaryDirectory() as d:
@@ -447,7 +444,7 @@ class KnownReposTest(unittest.TestCase):
                        "c": {"repo": "alpha"}, "d": {"name": "no repo"}})
 
     def run_it(self, cfg=CFG, top=lambda d: None):
-        return pmstart.known_repos(cfg, read=lambda p: self.SESS, toplevel=top, kit_dir="K")
+        return pmconfig.known_repos(cfg, read=lambda p: self.SESS, toplevel=top, kit_dir="K")
 
     def test_sessions_deduped_and_sorted(self):
         self.assertEqual(self.run_it(), ["alpha", "Beta"])
@@ -467,7 +464,7 @@ class KnownReposTest(unittest.TestCase):
 
     def test_no_sessions_file(self):
         with self.assertRaises(KeyError):
-            pmstart.known_repos({})
+            pmconfig.known_repos({})
 
 
 class BomFileTest(unittest.TestCase):
@@ -490,7 +487,7 @@ class BomFileTest(unittest.TestCase):
     def test_known_repos_reads_bom_sessions(self):
         with tempfile.TemporaryDirectory() as d:
             p = self.write(d, "sessions.json", {"a": {"repo": "alpha"}})
-            got = pmstart.known_repos(dict(CFG, sessions_file=p), toplevel=lambda x: None, kit_dir="K")
+            got = pmconfig.known_repos(dict(CFG, sessions_file=p), toplevel=lambda x: None, kit_dir="K")
         self.assertEqual(got, ["alpha"])
 
     def test_reminders_reads_bom_file(self):
@@ -502,7 +499,7 @@ class BomFileTest(unittest.TestCase):
     def test_load_config_reads_bom_file(self):
         with tempfile.TemporaryDirectory() as d:
             p = self.write(d, "config.json", {"pm_start": {"memory_dir": "u"}})
-            self.assertEqual(pmstart.load_config(p), {"memory_dir": "u"})
+            self.assertEqual(pmconfig.load_config(p), {"memory_dir": "u"})
 
 
 class EngReviewTest(unittest.TestCase):
@@ -535,7 +532,7 @@ class EngReviewTest(unittest.TestCase):
 
 class MemoryTest(unittest.TestCase):
     """pmstart.memory: each launcher repo's and the PM repo's autoMemoryDirectory
-    (kitlib.stubs.memory.problem_line), and pm_start.memory_dir against the PM repo's value. Every
+    (kitlib.machinesetup.memory.problem_line), and pm_start.memory_dir against the PM repo's value. Every
     reader is faked; the folders are throwaway ones."""
 
     def setUp(self):
@@ -581,7 +578,7 @@ class MemoryTest(unittest.TestCase):
     def test_memory_dir_is_compared_with_the_folder_the_pm_repos_settings_name(self):
         # The owner chose another folder (the OTHER state): memory_dir naming it is no problem.
         from unittest import mock
-        from kitlib.stubs import memory as kmemory
+        from kitlib.machinesetup import memory as kmemory
         chosen = kmemory.Memory(kmemory.OTHER, "p", "Q:/mine", "X:/Agent-memory/pm", None, None, None, None)
         with mock.patch.object(kmemory, "survey", lambda top, *a, **k: chosen), \
                 mock.patch.object(kmemory, "wanted", lambda top, *a, **k: "X:/Agent-memory/pm"):
@@ -599,7 +596,7 @@ class MemoryTest(unittest.TestCase):
                 raise OSError("disk gone")
             return "memory (%s): add it" % label
         from unittest import mock
-        from kitlib.stubs import memory as kmemory
+        from kitlib.machinesetup import memory as kmemory
         ok = kmemory.Memory(kmemory.OK, "p", "X:/m", "X:/m", None, None, None, None)
         with mock.patch.object(kmemory, "survey", lambda top, *a, **k: ok), \
                 mock.patch.object(kmemory, "wanted", lambda top, *a, **k: "X:/m"):
@@ -616,7 +613,7 @@ class MemoryTest(unittest.TestCase):
         self.assertEqual(top, "T:\pm")
 
     def test_a_pm_repo_that_is_a_linked_worktree_of_another_repo_is_itself(self):
-        from kitlib.stubs import memory as kmemory
+        from kitlib.machinesetup import memory as kmemory
         from tests import gitfixture
         kit = gitfixture.TempRepo()
         self.addCleanup(kit.cleanup)

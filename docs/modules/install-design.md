@@ -1,6 +1,6 @@
 # Install design
 
-Low-level design of `kitlib/pluginsource`, `kitlib/allowrules`, `kitlib/machinesetup`, `kitlib/stackskill`, `kitlib/kitcmd`, `kitlib/pmdata`, and the `installer/` and `templates/` folders. The high-level design is ARCHITECTURE.md ("Packaging") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-005, W-019, W-020, W-036, W-041, W-042, W-043).
+Low-level design of `kitlib/pluginsource`, `kitlib/allowrules`, `kitlib/machinesetup`, `kitlib/stackskill`, `kitlib/kitcmd`, `kitlib/pmdata`, and the `installer/` and `templates/` folders. The high-level design is ARCHITECTURE.md ("Packaging") and wins on a conflict.
 
 ## Contract
 
@@ -24,11 +24,11 @@ Low-level design of `kitlib/pluginsource`, `kitlib/allowrules`, `kitlib/machines
 | `allowrules/` | The rule text and the scan |
 | `machinesetup/__init__.py`, `common.py` | The survey, the plan, the apply |
 | `machinesetup/settings.py`, `plugin.py`, `managed.py`, `pointer.py`, `owner.py`, `machineconfig.py` | Per-account settings; the plugin per account; managed settings; the pointer; the owner's email; machine config keys |
-| `machinesetup/extras.py`, `agenttemp.py`, `worktreesweep.py`, `procwatch.py`, `kitcommand.py`, `links.py`, `inventory.py`, `memory.py` | The extras, one each; the account inventory; a repository's memory folder |
+| `machinesetup/extras.py`, `agenttemp.py`, `worktreesweep.py`, `procwatch.py`, `kitcommand.py`, `links.py`, `inventory.py`, `memory.py`, `outcome.py` | The extras, one each; the account inventory; a repository's memory folder, the kit it names and its outcome type |
 | `machinesetup/repo.py`, `linuxbox.py`, `linuxjobs.py`, `delegation.py` | The committed repo setup; the Linux box checks, jobs and containment delegation |
 | `stackskill/`, `kitcmd/`, `pmdata/init.py` | One job each |
 | `installer/` | `machine-setup.ps1`, `machine-setup.sh`, `new-repo.ps1`: front ends that check arguments and run the tool |
-| `templates/common/`, `templates/stacks/<stack>/` | What the committed setup copies |
+| `templates/common/`, `templates/stacks/<stack>/` | What the committed setup copies, or what a role (`content/roles/`) or `docs/install.md`'s hand steps draft or copy from |
 
 ## State
 
@@ -40,7 +40,7 @@ The export folders under the live root; each account folder's settings and plugi
 
 ## Adding to it
 
-A new machine step: a survey function returning plan items, in `machinesetup`. A new stack: a folder under `templates/stacks/` with its `stack.json`. A file under `templates/` that no setup step copies does not belong there.
+A new machine step: a survey function returning plan items, in `machinesetup`. A new stack: a folder under `templates/stacks/` with its `stack.json`. A file under `templates/` belongs there only if a setup step copies it, or a role (`content/roles/*.md`) or `docs/install.md`'s hand steps draft or copy from it; `tests/templates/test_all_copied.py` checks it.
 
 ## Tests
 

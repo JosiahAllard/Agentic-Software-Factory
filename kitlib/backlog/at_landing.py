@@ -1,8 +1,8 @@
 """The backlog store at a landing (docs/backlog-store.md "Lifecycle changes", "Merge safety";
-called by kitlib.gate.land). The configured store takes part when it is a `ref` or `branch`
-store; a main store's records travel with the branch, so a landing leaves them alone. The PM
-data branch's store (kitlib.pmdata: a folder store in the worktree that has the recorded data
-branch checked out) takes part too: the PM's records of this repository live there.
+called by the landing, tools/land.py). The configured store takes part when it is a `ref` or
+`branch` store; a main store's records travel with the branch, so a landing leaves them alone.
+The PM data branch's store (kitlib.config.pmdata: a folder store in the worktree that has the
+recorded data branch checked out) takes part too: the PM's records of this repository live there.
 
   ancestry_refusal  before any merge: why the branch may not land when its history holds the
                     store's root commit (a store never merges into main), or the PM data
@@ -24,8 +24,9 @@ branch checked out) takes part too: the PM's records of this repository live the
                     WARNING line naming the command, and the landing stands; trailer ids no store
                     holds, and Part-of ids the branch holds nowhere, are NOTE lines. The implicit
                     default store (refs/backlog/main while .kit.json names no "backlog".store;
-                    store.default_store_refusal) is only read, the local ref too when the remote
-                    has none: a record that only it holds is a WARNING that it is stranded there
+                    store_live.default_store_refusal) is only read, the local ref too when the
+                    remote has none: a record that only it holds is a WARNING that it is
+                    stranded there
   landable_commands the `backlog.py landable` command of each store that takes part
 
 Neither creates a store or adds the store's fetch refspec when the remote has no store, and
@@ -34,14 +35,17 @@ ancestry_refusal moves no ref: it fetches the store's objects with an empty --re
 import os
 
 import kitlib.config as kconfig
-from kitlib import pluginsource, pmdata
+from kitlib.pluginsource import layout as plugin_layout
+from kitlib.config import pmdata
 from kitlib.git import cmd, refs
 from kitlib.git import repo as gitrepo
 
 from . import offer
 from . import plan as pmod
+from . import plan_claim, plan_end
 from . import record as rmod
 from . import store as smod
+from . import store_folder, store_open, store_read
 from .errors import Dirty, IndexStale, Overtaken, Refusal, Uncommitted
 
 SESSION = 'gate-land'
@@ -58,9 +62,9 @@ def _one_line(text):
 
 def backlog_py():
     """The kit's tools/backlog.py, in the live kit checkout: KIT_LIVE_ROOT when this code runs
-    from a pinned export of pushed main (kitlib.pluginsource.live_root), which a later prune may
+    from a pinned export of pushed main (kitlib.pluginsource.layout.live_root), which a later prune may
     remove, so a printed command never names it."""
-    return os.path.join(pluginsource.live_root(KIT_ROOT), 'tools', 'backlog.py')
+    return os.path.join(plugin_layout.live_root(KIT_ROOT), 'tools', 'backlog.py')
 
 
 def backlog_command(root, *args):
@@ -81,8 +85,8 @@ def close_command(root, *args):
 
 def ref_store(root, cfg, fetch=False):
     """The configured store's backend when it is a `ref` or `branch` store, else None."""
-    backend = smod.open_backend(root, cfg, fetch=fetch)
-    return None if isinstance(backend, smod.MainBackend) else backend
+    backend = store_open.open_backend(root, cfg, fetch=fetch)
+    return None if isinstance(backend, store_folder.MainBackend) else backend
 
 
 def _has_commit(root, sha):
@@ -97,7 +101,7 @@ def _local_tip(ref, root):
 
 def pmdata_refusal(root, tip):
     """None when the repository has no PM data record (kit-pm-data.json in its git common dir,
-    kitlib.pmdata) or `tip`'s history does not hold the recorded root; else why `tip` may not
+    kitlib.config.pmdata) or `tip`'s history does not hold the recorded root; else why `tip` may not
     land. A record that cannot be read, a root this clone lacks, or an ancestry git cannot tell
     refuses (fail closed)."""
     common, why = gitrepo.common_dir(root)
@@ -179,13 +183,13 @@ def ancestry_refusal(root, cfg, tip, env=None):
 
 def closes_ids(values):
     """The record ids in `Closes:` trailer values: each value split on commas, the first word of
-    each part, kept when it is a plain id (store.PLAIN_ID), so `A, B (both done)` is A and B and
-    `#12` is nothing. Pure."""
+    each part, kept when it is a plain id (store_read.PLAIN_ID), so `A, B (both done)` is A and B
+    and `#12` is nothing. Pure."""
     out = []
     for value in values:
         for part in value.split(','):
             words = part.split()
-            if words and smod.PLAIN_ID.match(words[0]) and words[0] not in out:
+            if words and store_read.PLAIN_ID.match(words[0]) and words[0] not in out:
                 out.append(words[0])
     return out
 
@@ -260,13 +264,13 @@ def is_live_proof(rec):
 
 
 def live_passes(values):
-    """The ids `Live-pass:` values cite a passing live run for: a value whose first word is a
-    plain id (store.PLAIN_ID) and that has at least one more word, the evidence (a run, a hub id,
-    a log). `FOO` alone cites nothing. Pure."""
+    """The ids `Live-pass:` values cite a passing live run for: a value whose first word is a plain
+    id (store_read.PLAIN_ID) and that has at least one more word, the evidence (a run, a hub id, a
+    log). `FOO` alone cites nothing. Pure."""
     out = []
     for value in values:
         words = value.split()
-        if len(words) > 1 and smod.PLAIN_ID.match(words[0]) and words[0] not in out:
+        if len(words) > 1 and store_read.PLAIN_ID.match(words[0]) and words[0] not in out:
             out.append(words[0])
     return out
 
@@ -302,7 +306,7 @@ def _close_plan(ctx, rid, branch, reason, named=False):
                 not named and rec.get('pulled_by') != branch):
             return smod.Change({}, '', ['%s is no longer pulled%s; left as it is'
                                         % (rid, '' if named else ' by %s' % branch)])
-        return pmod.plan_close(snap, ctx, rid, reason)
+        return plan_end.plan_close(snap, ctx, rid, reason)
     return plan
 
 
@@ -322,7 +326,7 @@ def _release_plan(ctx, rid, branch, reason):
         if rec is None or rec.get('state') != 'pulled' or rec.get('pulled_by') != branch:
             return smod.Change({}, '', ['%s is no longer pulled by %s; left as it is'
                                         % (rid, branch)])
-        change = pmod.plan_release(snap, ctx, rid, reason, kept=False)
+        change = plan_claim.plan_release(snap, ctx, rid, reason, kept=False)
         change.subject = 'releases %s: %s' % (rid, ' '.join(reason.split()))
         return change
     return plan
@@ -339,7 +343,7 @@ def _same_path(a, b):
 
 def pm_data_root(root, *, worktrees=None):
     """`(path, None)` of the worktree of `root`'s repository that has the PM data branch checked
-    out (the branch kit-pm-data.json records; kitlib.pmdata), `(None, None)` when the repository
+    out (the branch kit-pm-data.json records; kitlib.config.pmdata), `(None, None)` when the repository
     has no PM data record, or `(None, why)` when there is one and that worktree cannot be found.
     `worktrees` is a gitrepo.Worktrees, when the caller has one: it holds the list and the common
     dir (`common`) of the repository, each asked of git once."""
@@ -366,7 +370,8 @@ def pm_data_root(root, *, worktrees=None):
 def pm_data_store(root, configured):
     """`(store root, Config, backend, None)` of the PM data branch's store, `(None,) * 4` when
     there is none or it is the configured store (`configured`: its describe(), or None), or
-    `(None, None, None, why)` when it cannot be opened. Public: kitlib/gate/land.py calls it."""
+    `(None, None, None, why)` when it cannot be opened. Public: kitlib/landing/checks.py calls
+    it."""
     pm_root, why = pm_data_root(root)
     if pm_root is None:
         return None, None, None, why
@@ -374,7 +379,7 @@ def pm_data_store(root, configured):
         return None, None, None, None
     try:
         pm_cfg = kconfig.load(pm_root)
-        backend = smod.open_backend(pm_root, pm_cfg, fetch=True, clean=True)
+        backend = store_open.open_backend(pm_root, pm_cfg, fetch=True, clean=True)
     except (kconfig.ConfigError, Refusal, OSError) as exc:
         return None, None, None, 'cannot open the backlog store in %s: %s' % (pm_root, exc)
     if configured is not None and backend.describe() == configured:
@@ -678,7 +683,7 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
             return []                       # no store: create none, add no refspec
         if not remote_tip:                  # the default store: read the local ref, no fetch
             try:
-                backend = smod.open_backend(root, cfg, fetch=False)
+                backend = store_open.open_backend(root, cfg, fetch=False)
             except (kconfig.ConfigError, Refusal, OSError) as exc:
                 seen.unread = True
                 return [_store_unread(branch, 'the local %s: %s' % (smod.STORE_REF, exc),
@@ -689,7 +694,7 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
                        session=session)
     try:
         snap = store.load()
-        smod.require_readable(snap)
+        store_read.require_readable(snap)
     except Refusal as exc:
         seen.unread = True
         return [_store_unread(branch, '%s: %s' % (exc.label, exc), unread)]
@@ -738,7 +743,7 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
     held -= unproven
     release |= unproven - set(left)
     ctx = pmod.Context(store, root, remote=cfg.remote, main_branch=cfg.main_branch, branch=branch)
-    folder = isinstance(backend, smod.MainBackend)
+    folder = isinstance(backend, store_folder.MainBackend)
     live = []                               # offer.live_branches' answer, once it is needed
     gone = set()                            # ids the fresh snapshot no longer had as planned
     for rid in sorted(held | set(by_trailer) | release):
@@ -772,7 +777,7 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
                          'committed (%s); commit it with: %s'
                          % (branch, rid, act.past, backend.describe(), _one_line(str(exc)),
                             command('catch-up', '--apply',
-                                    smod.quoted(exc.paths or [backend.path_of(rid)]))))
+                                    store_folder.quoted(exc.paths or [backend.path_of(rid)]))))
             if rid in by_trailer:           # closed all the same: its holder must be told
                 lines.extend(_live_holder_warning(branch, rid, by_trailer[rid], cfg, live, root,
                                                   quiet))

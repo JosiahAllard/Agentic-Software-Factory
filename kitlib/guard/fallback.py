@@ -45,7 +45,7 @@ unreadable line is never a way around a rule, and a plain line is never denied b
     a git subcommand or option by a variable. Such a line in a repository with a PM data record
     is denied too (`git-push-pmdata`), wherever in it, in every session but the owner's own: the
     hidden program may be git push --no-verify. PowerShell's `& (<subexpression>)` leaves a line
-    clean (commands.call_subexpr); rules.call_subexpr_pmdata judges it, on a clean line or one
+    clean (commands_nested.call_subexpr); rules.call_subexpr_pmdata judges it, on a clean line or one
     unclean for another reason: that PM data check, and in any repository an agent session is
     denied, as here (`unreadable` for a subagent, `write-jail` for another jailed session).
 
@@ -68,6 +68,8 @@ from kitlib import config as kconfig
 from kitlib.git import repo
 
 from . import commands as cm
+from . import commands_git as cg
+from . import commands_nested as cn
 from . import modes
 from . import rules
 from . import shell as sh
@@ -282,7 +284,7 @@ def runs_hidden(inv):
     name = inv.name.lower()
     if name in RUNNERS:
         return 'a command that runs text (%s)' % inv.name
-    if name == 'git' and cm.git_dyn_word(inv):
+    if name == 'git' and cg.git_dyn_word(inv):
         return 'a git subcommand or option the text does not name'
     return None
 
@@ -295,7 +297,7 @@ def named_reread(event, ctx, text, shell, parsed, pos, cwd, role, rule):
     when the part runs none of them."""
     start = segment_start(text, pos)
     where = cwd_at(parsed, pos, cwd) or cwd
-    p = cm.read(segment(text, start), shell, where, home=getattr(ctx, 'home', None))
+    p = cn.read(segment(text, start), shell, where, home=getattr(ctx, 'home', None))
     if rule == 'hub-owner-verb':
         verb = rules.hub_owner_run(p)
         if not verb:
@@ -429,7 +431,7 @@ def named_runs(event, ctx, text, parsed, cwd, role, level=0):
             if held is not None:
                 continue
             where = cwd_at(parsed, m.start(), cwd) or cwd
-            p = cm.read(segment(text, segment_start(text, m.start())), parsed.shell, where,
+            p = cn.read(segment(text, segment_start(text, m.start())), parsed.shell, where,
                         home=getattr(ctx, 'home', None))
             unread = list(p.unclean)
             for c in p.commands:
@@ -453,7 +455,7 @@ def check(event, ctx, text, cwd, role, parsed):
     shell = parsed.shell
 
     def reread(start, where):
-        p = cm.read(segment(text, start), shell, where, home=getattr(ctx, 'home', None))
+        p = cn.read(segment(text, start), shell, where, home=getattr(ctx, 'home', None))
         for cmd in p.commands:
             inv = cm.invocation(cmd)
             for name in PARSED_RULES:
@@ -560,7 +562,7 @@ def check(event, ctx, text, cwd, role, parsed):
         hidden = runs_hidden(inv)
         if not hidden:
             continue
-        if cm.call_subexpr(inv):
+        if cn.call_subexpr(inv):
             # `& (...)`: judged by rules.call_subexpr_pmdata (PM data, then agent sessions), never unreadable
             d = rules.call_subexpr_pmdata(event, ctx, c, inv, cwd, role)
             if d:

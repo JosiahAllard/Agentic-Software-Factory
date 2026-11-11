@@ -3110,7 +3110,7 @@ ul.hist .sch-line{display:block}
       ? [el("div", {class:"refs", text: "runs " + String(d.op || "?")}),
          d.what ? el("p", {class:"ctx", text: "The agent's note, not signed: " + String(d.what)}) : null,
          el("div", {class:"cmd"}, el("pre", {class:"diff", text: words.length ? [words.slice(0, 2).join(" "), ...words.slice(2)].join("\n") : "(no line stored)"}))]
-      : [el("div", {class:"refs", text: "on " + String(d.head || "?")}),
+      : [el("div", {class:"refs", text: "on " + String(d.head || "?") + (d.branch ? ", committed on branch " + String(d.branch) : "")}),
          el("div", {class:"cmd"}, el("pre", {class:"diff", text: diff || "(no diff stored)"}))];
     const decide = decision => async () => {
       for (const b of btns) b.disabled = true;

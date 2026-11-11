@@ -20,10 +20,12 @@ from kitlib.gate import budget, runner
 from kitlib.gate import steps as S
 from kitlib.lock import run as lockrun
 from kitlib.lock import store as lockstore
-from tests.gate import fixtures, test_land
+from kitlib.records import place
+from tests.gate import fixtures
+from tests.landing import test_land
 
 BRANCH = 'kit/feature'
-SLUG = runner.slug_of(BRANCH)
+SLUG = place.slug_of(BRANCH)
 OTHER = 'kit-feature'                   # another branch, of the same slug
 AGENT = {'role': 'agent', 'host': [912345, 77], 'ancestors': [[912345, 77]], 'session': 'S1',
          'name': 't'}
@@ -42,7 +44,7 @@ class BudgetCase(fixtures.GateRepoCase):
     def setUp(self):
         fixtures.GateRepoCase.setUp(self)
         self.wt, _ = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.name = runner.repo_name(kconfig.load(self.wt), self.wt)
+        self.name = place.repo_name(kconfig.load(self.wt), self.wt)
         self.n = 0
         self.as_caller(AGENT)
         self.made(60)
@@ -143,7 +145,7 @@ class ByBranch(BudgetCase):
     """The budget is the branch's, not its slug's: two branches that share a slug each get one,
     and a gate booked under another slug (gate.py --slug) still counts."""
     def test_two_branches_with_one_slug_have_a_budget_each(self):
-        self.assertEqual(runner.slug_of(OTHER), SLUG)
+        self.assertEqual(place.slug_of(OTHER), SLUG)
         self.lines(budget.RUNS, branch=OTHER)
         out, said = self.gate()
         self.assertEqual(out.code, G.OK, out.lines)
@@ -374,7 +376,7 @@ class LandingNeverAsks(test_land.LandCase):
     the branch's next branch gate, and the landing of the same tip still lands."""
     def test_a_landing_is_not_refused_at_the_budget(self):
         wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
-        name = runner.repo_name(kconfig.load(wt), wt)
+        name = place.repo_name(kconfig.load(wt), wt)
         path = os.path.join(self.repo.common_dir(), 'logs', 'refs', 'heads', 'kit', 'feature')
         os.makedirs(os.path.dirname(path), exist_ok=True)
         t = int(lockstore.utc_now().timestamp()) - 60

@@ -18,27 +18,11 @@ from kitlib.machinesetup import extras
 from kitlib.config import user as kuser
 from tests.home import PM_REPO_FENCE_ENV
 from tests.machinesetup import test_machinesetup as T
-from tests.platforms import windows_only
 
 
 def at():
     from kitlib.machinesetup import agenttemp
     return agenttemp
-
-
-class ShortcutPythonw(unittest.TestCase):
-    def test_the_shortcut_target_is_the_base_install_pythonw_even_from_a_venv(self):
-        from kitlib.launcher import pythonw as P
-        with mock.patch.object(sys, 'executable', 'C:\\venv\\Scripts\\python.exe'), \
-                mock.patch.object(P.os.path, 'isfile', return_value=True):
-            self.assertEqual(extras.pythonw(), P.base_pythonw())
-
-    def test_a_store_alias_base_install_falls_back_to_this_interpreter(self):
-        from kitlib.launcher import pythonw as P
-        alias = 'C:\\Store\\WindowsApps\\pythonw.exe'
-        with mock.patch.object(P, 'base_pythonw', return_value=alias), \
-                mock.patch.object(P.os.path, 'isfile', return_value=True):
-            self.assertEqual(extras.pythonw(), sys.executable)
 
 
 class DefaultFolder(unittest.TestCase):
@@ -113,49 +97,6 @@ class SweepDryRun(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             at().sweep_dry_run(self.KIT, 'py.exe', timeout=5, run=run)
         self.assertIn('took over 5 s', str(cm.exception))
-
-
-@mock.patch('kitlib.platform.NAME', 'windows')
-class TaskRegistered(unittest.TestCase):
-    """agenttemp.task_registered against a fake subprocess.run: schtasks is never run."""
-
-    def query(self, rc=0, out='', err='', raises=None):
-        seen = {}
-
-        def run(cmd, **kw):
-            seen.update(kw, cmd=cmd)
-            if raises:
-                raise raises
-            return subprocess.CompletedProcess(cmd, rc, out, err)
-        return seen, run
-
-    def test_exit_0_is_registered_and_a_timeout_is_passed(self):
-        seen, run = self.query(0)
-        self.assertTrue(at().task_registered('agent-temp-sweep', run=run))
-        self.assertEqual(seen['cmd'], ['schtasks', '/Query', '/TN', 'agent-temp-sweep'])
-        self.assertEqual(seen['timeout'], at().TASK_TIMEOUT)
-
-    @windows_only('the not-found text is Windows\' own')
-    def test_not_found_is_not_registered(self):
-        import ctypes
-        _, run = self.query(1, err='ERROR: %s\n' % ctypes.FormatError(2))
-        self.assertFalse(at().task_registered('agent-temp-sweep', run=run))
-
-    def test_access_denied_is_a_named_failure_not_unregistered(self):
-        _, run = self.query(1, err='ERROR: Access is denied.\n')
-        with self.assertRaises(RuntimeError) as c:
-            at().task_registered('agent-temp-sweep', run=run)
-        self.assertIn('Access is denied', str(c.exception))
-
-    def test_a_timeout_is_a_named_failure(self):
-        _, run = self.query(raises=subprocess.TimeoutExpired('schtasks', 30))
-        with self.assertRaises(RuntimeError) as c:
-            at().task_registered('agent-temp-sweep', timeout=30, run=run)
-        self.assertIn('timed out after 30 s', str(c.exception))
-
-    def test_the_hosts_task_exists_uses_it(self):
-        with mock.patch.object(at(), 'task_registered', lambda name: ('asked', name)):
-            self.assertEqual(extras.Host().task_exists('agent-temp-sweep'), ('asked', 'agent-temp-sweep'))
 
 
 class Init(T.Base):
@@ -498,7 +439,7 @@ class Init(T.Base):
 
     def test_task_line_defaults_to_the_base_install_pythonw_not_a_path_lookup(self):
         """The Store alias first on PATH is never asked: the literal is the base install's."""
-        from kitlib.launcher import pythonw as P
+        from kitlib.schedtask import pythonw as P
         line = at().task_line('C:\\kit')
         self.assertIn("$py = '%s'" % P.base_pythonw().replace("'", "''"), line)
         self.assertNotIn('Get-Command', line)

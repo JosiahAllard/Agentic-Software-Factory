@@ -9,7 +9,7 @@
   `hub.store`, else `hub/` in the PM data worktree (docs/pm-data-branch.md). `--store PATH` serves a
   scratch copy with git sync off and no push notifications. The server needs no `hub` key: without one
   every default holds, so a trial run with `--store` never writes the key; the owner writes it only for
-  the live store (docs/go-live.md "Switches"). The PM session-start checklist (docs/pm-start.md) runs its
+  the live store. The PM session-start checklist (docs/pm-start.md) runs its
   site checks with the key's settings or the defaults; writing the key does not switch it.
 - `hub.py serve` raises itself to normal priority at start (`kitlib.proc.process.raise_to_normal`), never lowering it or going above normal: the autostart task runs at Task Scheduler's default priority 7, below normal, and the git calls it starts would inherit that and starve while runs keep every core busy. A raise that fails is one NOTE line.
 - `hub.py status` prints the running server's health, one line each: `revision N`, `store ...`,
@@ -17,15 +17,15 @@
   off on this server`), `backlog <repo>: fetched X ago`, `code: current` or `code: stale: ` and the
   restart ("Stale code" below), `jobs: ` with each timed job's `<name> runs R, failures F`, `, running`
   while it runs, and its error while it is failing or else its last note (cut to 60 characters,
-  `serve.JOB_NOTE_MAX`), or `jobs: none` (docs/hub-push.md "Timed jobs" under push notifications), the tunnel line, and
+  `servehealth.JOB_NOTE_MAX`), or `jobs: none` (docs/hub-push.md "Timed jobs" under push notifications), the tunnel line, and
   `unavailable: ...` for a view the server could not read. A server older than the `code` or `jobs`
   field prints no such line. The tunnel line is `tunnel: on` (the Access keys were fetched),
   `tunnel: bound, keys not fetched` (until the first request with a token; a failed fetch adds ` (reason)`,
   such as `keys-fetch`) or `tunnel: off: <why>`. `on` does not say that a tunnel program reaches the
   listener.
 - **Stale code.** A running `hub serve` compares the `.py` files of `kitlib/hubsite`, of the timed
-  jobs' `kitlib/hubjobs` and of the two packages it reads its machine settings through,
-  `kitlib/pmdata` and `kitlib/config` (name, modified time, size; `serve.code_stamp`,
+  jobs it was handed (`kitlib/hubjobs`: each maker's folder) and of the package it reads its machine settings through,
+  `kitlib/config` (name, modified time, size; `serve.code_stamp`,
   `serve.code_folders`), with what they were at its start, at most every 30 seconds (`CODE_LOOK_S`).
   When they differ, a server run by its autostart task restarts itself
   (`kitlib.hubsite.selfrestart`):
@@ -60,7 +60,7 @@
 
   The warning: one error line in the hub log and a `code` object, `{"stale", "restart"}`, in GET
   health (the local listener; the tunnel's fixed health carries none) and GET snapshot
-  (`kitlib.hubsite.codestale`). `restart` is the owner's to-do: `python <kit>/tools/hub.py restart`,
+  (`kitlib.hubclient.codestale`). `restart` is the owner's to-do: `python <kit>/tools/hub.py restart`,
   or, with no autostart task, `hub.py stop` then `hub.py serve`. Three places show it: the page's
   banner (`#codeerr`), a `hub: WARN` line in the PM session-start checklist (docs/pm-start.md), and a
   `HUB` event of pm_watch (docs/pm-watch.md), said once per stale episode. `hub.py status` prints it as
@@ -69,9 +69,9 @@
   start the task, or whose new server never answers, leaves no hub (`self-restart.log` says why; start
   it with `hub.py restart`, or as that log says). The self-check proves the new code builds and answers
   on a scratch store, not that the machine's store and settings serve. The restarter runs with no
-  console window, so its output is only in that log. `tools/hub.py` itself is not in the stamp (a
-  change there alone neither warns nor restarts), nor are other packages the hub imports beyond those
-  four folders.
+  console window, so its output is only in that log. `tools/hub.py`, `tools/_hub_args.py` and
+  `kitlib/hubsite/cli/` are not in the stamp (a change there alone neither warns nor restarts), nor
+  are other packages the hub imports beyond those four folders.
 - Remote access is only through the tunnel listener: with `hub.access` set (an Access `team`, the
   application's audience tag `aud` and the allowed `emails`; all three), the server also listens on
   `hub.tunnel_port` (default 8791, loopback too) for a Cloudflare tunnel, and every request there needs a

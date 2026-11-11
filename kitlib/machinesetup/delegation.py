@@ -1,5 +1,5 @@
-"""The --delegation mode (docs/linux-support-plan.md sections 2.3 and 6, slice 14;
-docs/machine-setup.md "Linux"): the one root step that gives strong containment (S1) on a systemd
+"""The --delegation mode (docs/machine-setup.md "Linux"): the one root step that gives strong
+containment (S1) on a systemd
 box, or a boot hook on a box with no systemd, offered by the default mode below S1 and run by the
 owner with sudo. Declining it is allowed: the box is then at the lower tier, shown as such. After
 it the kit never asks for root again.
@@ -16,7 +16,7 @@ and s6 are refused), the boot hook:
   on, gives the two folders and their delegatable files to the kit user, moves itself into the
   anchor and, dropped to the kit user, starts the kit's tmux server (`tmux -L pm-kit`) there, its
   pm-kit-anchor session holding HOLD (no shell to `exit`) and the server outliving its last
-  session. Work started from that server is contained (kitlib.platform.linux.contain.
+  session. Work started from that server is contained (kitlib.platform.linux.contain_cgroup.
   delegated_group); ATTACH is the way in.
 - LOCALD (OpenRC, 0755; `rc-update add local default` when local is in no runlevel) or CROND
   (0644), which runs SCRIPT at boot; root's own crontab is never touched.

@@ -13,7 +13,8 @@ import unittest
 from unittest import mock
 
 from kitlib.fs import replace as fsreplace
-from kitlib.hubsite import approvals, store
+from kitlib.hubsite import store
+from kitlib.ownerfiles import approvals
 from kitlib.hubsite.store import HubError, Store, StoreBusy
 from kitlib.proc import spawn
 

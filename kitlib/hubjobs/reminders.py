@@ -42,9 +42,8 @@ NOTE_MAX = 120
 
 
 def make(sources):
-    from kitlib import pmstart
-    from kitlib.config import user
-    cfg = pmstart.load_config(user.readable_file(getattr(sources, 'home', None)))
+    from kitlib.config import pm as pmconfig, user
+    cfg = pmconfig.load_config(user.readable_file(getattr(sources, 'home', None)))
     path = (cfg or {}).get('reminders_file')
     if not path:
         return None

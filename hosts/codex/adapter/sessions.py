@@ -11,7 +11,7 @@ session_host.py and executable.py).
   ReadOnlyAppServer(argv, timeout, popen)
         a context manager over `codex app-server proxy`: it attaches to the running app-server,
         never starts a daemon, creates a thread or sends a turn. request() takes only READ_METHODS.
-        The proxy's environment is the launching one scrubbed (kitlib.sessionmark.child_environment).
+        The proxy's environment is the launching one scrubbed (kitlib.host.sessionmark.child_environment).
   SessionHost(request)   the SessionHost over any read-only request callable:
         sessions(cwd, max_pages)  [record, ...] from thread/list, each {id, sessionId, name, cwd,
                                   status, updatedAt, source, agentRole, parentThreadId, liveness:
@@ -29,7 +29,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from kitlib import platform, sessionmark
+from kitlib import platform
+from kitlib.host import sessionmark
 
 HOST = 'codex'
 EXE_ENV = 'PM_KIT_CODEX_EXE'

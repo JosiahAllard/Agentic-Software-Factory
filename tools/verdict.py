@@ -1,4 +1,4 @@
-"""verdict.py: the verdict queue, reviewed branches waiting to land (kitlib/gate/verdicts.py).
+"""verdict.py: the verdict queue, reviewed branches waiting to land (kitlib/landing/verdicts.py).
 
   verdict.py add --branch B --tip SHA --verdict V --risk R --reviewer TYPE --reviewer-model M
                  --reviewer-id ID --author A --range BASE..TIP --session S [--record ID ...]
@@ -63,7 +63,7 @@
 
 -C: a path in the repository (default: here); every work tree of it shares one queue.
 
-A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate.verdicts, prints and
+A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.landing.verdicts, prints and
 exits. Exit codes: 0 done; 1 not done (git gave no answer, a queue file cannot be read or written,
 the kit configuration cannot be read by add or carry,
 nothing queued to drop or carry, a carry refused, or list found a file that is not an entry); 2 usage (the arguments, or an
@@ -81,7 +81,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _host                                                        # noqa: E402
 from kitlib import config as kconfig                              # noqa: E402
 from kitlib.coordstate.render import main_as_fetched                # noqa: E402,F401
-from kitlib.gate import verdicts                                    # noqa: E402
+from kitlib.landing import verdicts                                 # noqa: E402
+from kitlib.records import verdict_entry
 from kitlib.git import refs, repo                                  # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
 
@@ -106,8 +107,8 @@ def parser():
     ad = sub.add_parser('add', help='queue a reviewed branch')
     ad.add_argument('--branch', required=True)
     ad.add_argument('--tip', required=True, metavar='SHA', help='the full hash reviewed')
-    ad.add_argument('--verdict', required=True, choices=verdicts.VERDICTS)
-    ad.add_argument('--risk', required=True, choices=verdicts.RISKS)
+    ad.add_argument('--verdict', required=True, choices=verdict_entry.VERDICTS)
+    ad.add_argument('--risk', required=True, choices=verdict_entry.RISKS)
     ad.add_argument('--reviewer', required=True, metavar='TYPE', help="the reviewer's agent type")
     ad.add_argument('--reviewer-model', required=True, metavar='MODEL')
     ad.add_argument('--reviewer-id', required=True, metavar='ID', help="the reviewer's agent id")
@@ -182,7 +183,7 @@ def follow_up_states(root, ids):
     from kitlib.backlog import opener
     got, why = opener.follow_up_states(root, [i.strip() for i in ids])
     if why:
-        raise verdicts.VerdictError('the backlog store cannot be read for --follow-up: %s; nothing '
+        raise verdict_entry.VerdictError('the backlog store cannot be read for --follow-up: %s; nothing '
                                     'was queued' % why)
     return got
 
@@ -248,7 +249,7 @@ def run(a, common_dir):
             return fail('NOT DONE', 'the kit configuration cannot be read: %s; nothing was queued'
                         % e, NOT_DONE)
         main, main_why = main_as_fetched(a.root) if cap is not None else (None, None)
-        well = not verdicts.check(entry, stored=False)
+        well = not verdict_entry.check(entry, stored=False)
         seen = verdicts.seen_models(entry, transcript_reader()) if well else {}
         reader = verdict_reader()
         said = verdicts.seen_verdicts(entry, reader) if well else {}
@@ -295,7 +296,7 @@ def run(a, common_dir):
             print('NOTHING QUEUED')
         return NOT_DONE if bad else DONE
     if a.tip is not None and not refs.is_sha(a.tip):
-        raise verdicts.BadEntry('--tip is a full commit hash, not %r' % a.tip)
+        raise verdict_entry.BadEntry('--tip is a full commit hash, not %r' % a.tip)
     if not verdicts.drop(common_dir, a.branch, tip=a.tip):
         return fail('NOT QUEUED', '%s%s' % (a.branch, ' at %s' % a.tip if a.tip else ''), NOT_DONE)
     print('DROPPED %s' % a.branch, flush=True)
@@ -314,13 +315,13 @@ def main(argv=None):
     except (verdicts.SelfReview, verdicts.ModelMismatch, verdicts.ReviewerSaid,
             verdicts.LightReview) as e:
         return fail('REFUSED', str(e), USAGE)
-    except verdicts.BadEntry as e:
+    except verdict_entry.BadEntry as e:
         p.print_usage(sys.stderr)
         sys.stderr.write('USAGE: %s\n' % e)
         return USAGE
     except verdicts.TipMismatch as e:
         return fail('TIP MISMATCH', str(e), TIP_MISMATCH)
-    except verdicts.VerdictError as e:
+    except verdict_entry.VerdictError as e:
         return fail('NOT DONE', str(e), NOT_DONE)
 
 

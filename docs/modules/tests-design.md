@@ -1,6 +1,6 @@
 # Test tools design
 
-Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/testlist`, `kitlib/ci` and `kitlib/redfirst`. The high-level design is ARCHITECTURE.md ("Testing") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-018, W-022).
+Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/testlist`, `kitlib/ci` and `kitlib/redfirst`. The high-level design is ARCHITECTURE.md ("Testing") and wins on a conflict.
 
 ## Contract
 
@@ -44,4 +44,4 @@ A test for package `x` goes in `tests/x/`. A test that must always run, or a pat
 
 ## Reference
 
-docs/test-tools.md, docs/redfirst.md, docs/flaky-tests.md, docs/daily-full.md.
+docs/test-tools.md, docs/redfirst.md, docs/daily-full.md.

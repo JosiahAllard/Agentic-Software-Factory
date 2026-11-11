@@ -1,4 +1,4 @@
-"""kitlib.worktree.remove: a `worktree_remove.build_output` entry {"piece", "path"} is the literal
+"""kitlib.worktree.remove_checks: a `worktree_remove.build_output` entry {"piece", "path"} is the literal
 folder the pieces table (kitlib.pieces) puts at that piece's dir, and one that cannot be resolved
 holds nothing (docs/worktree-remove.md). Throwaway repositories only (tests/gitfixture.py).
 """

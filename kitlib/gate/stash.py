@@ -4,7 +4,7 @@ stash stack holds an entry.
 A repository has one stash stack: the ref refs/stash and its log live in the git common dir, so
 the main checkout and every linked worktree push to and pop from the same stack. A tree that was
 stashed is not the tree its commit names, and an entry one checkout made is one command away from
-being applied in another. So the branch gate (kitlib.gate.runner) and a landing (kitlib.gate.land)
+being applied in another. So the branch gate (kitlib.gate.runner) and a landing (landing.lander)
 ask here before they start and again when their steps have run.
 
 The stack is read as the ref: kitlib.git.refs.ref_commit('refs/stash'). git deletes that ref when

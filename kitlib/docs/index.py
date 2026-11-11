@@ -21,7 +21,7 @@ after the keywords is allowed.
 Index checks (`.kit.json` "doc_budget".shard_indexes {"<dir>": "<index file>"}):
   0. the index exists, and every tracked .md (but a "doc_budget" retired path) is named in
      backticks on an ENTRY line of it (listing_misses; moved here from doc_budget). The index
-     file alone opts a repository in, `.kit.json` or not (docs/multi-host-plan.md decision 26):
+     file alone opts a repository in, `.kit.json` or not:
      absent at `head` (and at `config_ref`), the check is skipped with one line saying so;
      "doc_index".enabled false skips it silently, index or not. With `config_ref` (doc_index.py
      --config-ref) every setting is read at that revision;
@@ -621,7 +621,7 @@ def run(root, out, section=None, find=None, tools=False, stale=False, role=None,
         out('DOC INDEX FAILED: the git reader died, so the docs were not read: %s' % why)
         return 1
     bad = index_checks(files, cfg, text, index)
-    # The doc index is opt-in (docs/multi-host-plan.md decision 26): the index file is the opt-in,
+    # The doc index is opt-in: the index file is the opt-in,
     # with or without a .kit.json; "doc_index".enabled false is the explicit opt-out.
     if di['enabled'] and not has_index(root, index, files, config_ref):
         out(NO_INDEX_CHECK % index)

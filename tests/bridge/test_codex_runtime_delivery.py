@@ -17,8 +17,8 @@ from optional.bridge.hosts.codex.runtime import CodexSources
 from optional.bridge.core.contracts import Capability
 from optional.bridge.core.messages import BeforeWriteError,DeliveryError,OutboundMessage,reply_operation_id
 from optional.bridge.core.owner import OwnerControls
-from kitlib.proc.pipe import (INVALID,SecurityAttributes,connect_pipe,create_file,create_pipe,
-    disconnect_pipe,from_sddl,local_free,peek,process_sids,read,write,close)
+from kitlib.platform.windows.pipe import (INVALID,SecurityAttributes,connect_pipe,create_file,
+    create_pipe,disconnect_pipe,from_sddl,local_free,peek,process_sids,read,write,close)
 from optional.bridge.win.channel import NativeChannel
 from optional.bridge.win.frontend import NativeFrontend
 from optional.bridge.win.transport import PipeTarget

@@ -806,8 +806,8 @@ class KitTree(unittest.TestCase):
                      'tools/kit_tests.py'):
             self.assertIs(self.select(path), ALL, path)
         # once shared core or test helpers: now their readers
-        for path in ('kitlib/config/load.py', 'kitlib/proc/shield.py', 'kitlib/lock/api.py',
-                     'tests/testutil.py', 'tests/gitfixture.py'):
+        for path in ('kitlib/config/load.py', 'kitlib/platform/windows/shield.py',
+                     'kitlib/lock/api.py', 'tests/testutil.py', 'tests/gitfixture.py'):
             self.assertIsNot(self.select(path), ALL, path)
 
     def test_paths_once_unmapped_select_their_readers(self):
@@ -826,14 +826,14 @@ class KitTree(unittest.TestCase):
         self.assertEqual(set(self.select(path)), set(self.cfg['always']))
 
     def test_a_leaf_is_selected_without_the_full_suite(self):
-        picked = self.select('kitlib/stubs/__init__.py')
+        picked = self.select('kitlib/machinesetup/outcome.py')
         self.assertIsNot(picked, ALL)
-        self.assertIn('stubs', picked)
+        self.assertIn('machinesetup', picked)
 
     def test_skills_test_sees_every_path_a_skill_can_name(self):
         # tests/skills checks every tools/*.py, kitlib/** and optional/** path a SKILL.md names
         # exists, so a rename or delete of one must run it.
-        for path in ('tools/backlog.py', 'tools/no_such_tool.py', 'kitlib/stubs/__init__.py',
+        for path in ('tools/backlog.py', 'tools/no_such_tool.py', 'kitlib/machinesetup/outcome.py',
                      'optional/comfy/comfy_gen.py'):
             picked = self.select(path)
             self.assertTrue(picked is ALL or 'skills' in picked, path)
@@ -844,11 +844,11 @@ class KitTree(unittest.TestCase):
             picked = self.select(path)
             self.assertIsNot(picked, ALL, path)
             self.assertIn('skills', picked, path)
-        # a module there selects its readers: tests/agentname whole, and a test importing it
-        picked = self.select('kitlib/agentname.py')
+        # a module there selects its readers: tests/kitroot whole, and a test importing it
+        picked = self.select('kitlib/kitroot.py')
         self.assertIsNot(picked, ALL)
-        self.assertIn('agentname', picked)
-        self.assertIn('tests.guard.test_backlog_role', picked)
+        self.assertIn('kitroot', picked)
+        self.assertIn('tests.guard.test_refusal_log', picked)
 
     def test_a_literal_import_module_reaches_its_importers_readers(self):
         # kitlib/lock/detach.py loads kitlib.platform.linux.detach by import_module

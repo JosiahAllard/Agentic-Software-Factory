@@ -13,7 +13,7 @@ from .store import HubError
 # edited; an agent's to-do (todos_add) and a file approval (approvals_add) only when added. The
 # owner's act ends each: an answer (filed into the record), a to-do marked done or an approval
 # decided (either way: denied counts), which the hub's unblock-conditions job reads
-# (kitlib.hubjobs.unblock_conditions); an approval that expires undecided keeps its line, and that
+# (hubjobs.unblock_conditions); an approval that expires undecided keeps its line, and that
 # job pushes the PM `approval-expired`.
 ASKS = {
     'questions': ('question', 'question:%s answered', 'answered'),
@@ -72,7 +72,7 @@ def _asking(api, coll, d):
     """Whether item d still asks the owner: an open question or to-do, an approval pending and
     not expired (an expired one is never parked afresh; the line it parked stays)."""
     if coll == 'approvals':
-        from . import approvals as ap
+        from kitlib.ownerfiles import approvals as ap
         return ap.status_at(d, _when(api.clock(), '')) == ap.PENDING
     return d.get('status') == 'open'
 

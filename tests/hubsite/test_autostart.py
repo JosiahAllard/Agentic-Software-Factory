@@ -10,8 +10,9 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from kitlib import pluginsource
-from kitlib.hubsite import autostart, serve
+from kitlib.pluginsource import layout as plugin_layout
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubsite import autostart
 from kitlib.proc import spawn
 from tests.hubsite.test_hub_cli import HUB, CliCase
 
@@ -90,7 +91,7 @@ class Install(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, True)
         export = os.path.join(tmp, '0123456789ab')
         os.makedirs(os.path.join(export, 'tools'))
-        with open(os.path.join(export, pluginsource.MARKER), 'w') as f:
+        with open(os.path.join(export, plugin_layout.MARKER), 'w') as f:
             f.write('{}')
         export_hub = os.path.join(export, 'tools', 'hub.py')
         isfile = present
@@ -124,6 +125,12 @@ class Install(unittest.TestCase):
             self.assertIn('nothing registered', str(cm.exception))
             self.assertEqual(run.calls, [], path)
 
+    def test_a_worktree_path_is_known(self):
+        for path in WORKTREE_HUB:
+            self.assertTrue(autostart.in_worktree(path), path)
+        self.assertFalse(autostart.in_worktree('/kit/tools/hub.py'))
+        self.assertFalse(autostart.in_worktree('/kit/worktrees/.claude/hub.py'))
+
     def test_install_without_pythonw_is_refused_and_runs_nothing(self):
         run = Recorder()
         with self.assertRaises(autostart.AutostartError) as cm:
@@ -153,7 +160,7 @@ class Install(unittest.TestCase):
         self.assertIn('Access is denied.', str(cm.exception))
 
     def test_the_error_is_a_serve_error_so_hub_py_prints_it_as_refused(self):
-        self.assertTrue(issubclass(autostart.AutostartError, serve.ServeError))
+        self.assertTrue(issubclass(autostart.AutostartError, huberrors.ServeError))
 
 
 @mock.patch('kitlib.platform.NAME', 'windows')   # the Windows form, on any machine
@@ -229,7 +236,7 @@ class SetupAutostartCli(CliCase):
             calls.append((hub_py, whatif))
             return ['Would run in PowerShell:', '  script'] if whatif else ['Installed it']
         for name, value in (('install', install), ('refusals', lambda hub_py: list(refusals))):
-            p = mock.patch.object(HUB.hub_autostart, name, value)
+            p = mock.patch.object(autostart, name, value)
             p.start()
             self.addCleanup(p.stop)
         return calls
@@ -293,7 +300,7 @@ class SetupAutostartCli(CliCase):
 
 
 class Linux(unittest.TestCase):
-    """The hub job on Linux (docs/linux-support-plan.md slice 10), with kitlib.platform.NAME
+    """The hub job on Linux, with kitlib.platform.NAME
     patched to 'linux', a temporary home and a fake systemctl: a systemd user service
     pm-kit-hub.service, else an XDG autostart entry, else refused; never a shell startup file."""
     DESKTOP = {'DESKTOP_SESSION': 'gnome'}
@@ -374,7 +381,7 @@ class Linux(unittest.TestCase):
         for wt in WORKTREE_HUB:
             self.assertIn('not a worktree', autostart.refusals(wt, self.py, present, run, {})[0])
         os.makedirs(self.kit)
-        with open(os.path.join(self.kit, pluginsource.MARKER), 'w') as f:
+        with open(os.path.join(self.kit, plugin_layout.MARKER), 'w') as f:
             f.write('{}')
         with self.assertRaises(autostart.AutostartError):
             self.install(run)

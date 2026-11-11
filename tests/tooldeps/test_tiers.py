@@ -95,7 +95,7 @@ class RunTiersTest(unittest.TestCase):
         self.assertIn('kit_tests: --both-tiers: tier real git (KIT_FAKE_GIT=0)\n', text)
 
 
-MODULES = ['tests.gate.test_land_x', 'tests.gate.test_other', 'tests.git.test_g',
+MODULES = ['tests.landing.test_land_x', 'tests.gate.test_other', 'tests.git.test_g',
            'tests.test_top']
 
 
@@ -110,16 +110,16 @@ class ChangedTestModules(unittest.TestCase):
     def test_what_is_not_a_test_module_of_the_tree_is_left_out(self):
         changed = ['tests/gate/test_gone.py',        # deleted: the tree holds no such module
                    'tests/gate/fixtures.py',         # a helper
-                   'tests/selection.json', 'kitlib/gate/land.py', 'docs/gate.md',
+                   'tests/selection.json', 'kitlib/landing/lander.py', 'docs/gate.md',
                    'tests/gate/test_other.txt', 'tools/test_like.py']
         self.assertEqual(tiers.changed_test_modules(changed, MODULES), [])
         self.assertEqual(tiers.changed_test_modules([], MODULES), [])
 
     def test_the_real_git_modules_take_the_changed_ones_too(self):
-        self.assertEqual(tiers.real_git_modules(MODULES), ['tests.gate.test_land_x',
+        self.assertEqual(tiers.real_git_modules(MODULES), ['tests.landing.test_land_x',
                                                            'tests.git.test_g'])
         self.assertEqual(tiers.real_git_modules(MODULES, also=['tests.test_top', 'tests.git.test_g']),
-                         ['tests.gate.test_land_x', 'tests.git.test_g', 'tests.test_top'])
+                         ['tests.landing.test_land_x', 'tests.git.test_g', 'tests.test_top'])
         # a changed module the list does not hold still runs
         self.assertEqual(tiers.real_git_modules(['tests.a.test_a'], also=['tests.b.test_b']),
                          ['tests.b.test_b'])

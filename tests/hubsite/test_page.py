@@ -14,7 +14,8 @@ import re
 import shutil
 import unittest
 
-from kitlib.hubsite import httpd, lockdoor, pagecheck, serve
+from kitlib.hubsite import httpd, lockdoor, servesources
+from kitlib.hubvalidate import pagecheck
 from kitlib.hubsite.api import BASE
 from kitlib.lock import api as lock_api
 from kitlib.proc import spawn
@@ -85,8 +86,8 @@ def snapshot(**kw):
 
 class ServedTest(httpfix.ListenerCase):
     def test_the_listener_serves_the_page_at_the_root(self):
-        self.assertEqual(os.path.normcase(os.path.realpath(serve.STATIC_DIR)), os.path.normcase(os.path.realpath(WEB)))
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        self.assertEqual(os.path.normcase(os.path.realpath(servesources.STATIC_DIR)), os.path.normcase(os.path.realpath(WEB)))
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         r = get(lis.port, "/")
         self.assertEqual(r.status, 200)
         self.assertEqual(r.header("Content-Type"), ["text/html; charset=utf-8"])
@@ -98,7 +99,7 @@ class ServedTest(httpfix.ListenerCase):
         self.assertEqual(self.errors(), [])
 
     def test_the_old_lock_page_is_gone_and_answers_not_found_without_a_redirect(self):
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         r = get(lis.port, "/lock.html")
         self.assertEqual(r.status, 404)
         self.assertEqual(r.header("Location"), [])
@@ -107,7 +108,7 @@ class ServedTest(httpfix.ListenerCase):
 
     def test_the_shared_stylesheet_is_served_as_css_and_loads_nothing(self):
         """The page links hub.css (the tokens and shell rules); it is a static file of the page's folder."""
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         r = get(lis.port, "/hub.css")
         self.assertEqual(r.status, 200)
         self.assertEqual(r.header("Content-Type"), ["text/css; charset=utf-8"])
@@ -120,7 +121,7 @@ class ServedTest(httpfix.ListenerCase):
 
     @unittest.skipUnless(NODE, "node is needed to run the page's logic")
     def test_the_page_reads_the_snapshot_the_server_gives(self):
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         title = "<img src=x onerror=1>"
         made = post(lis.port, BASE + "/todos", {"title": title}, token=self.owner)
         self.assertEqual(made.status, 200, made.body)
@@ -137,7 +138,7 @@ class ServedTest(httpfix.ListenerCase):
 
     @unittest.skipUnless(NODE, "node is needed to run the page's logic")
     def test_a_published_page_is_listed_and_its_body_is_read_on_its_own(self):
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         made = post(lis.port, BASE + "/pages", {"id": "plan-1", "title": "The plan", "html": "<p>body-mark</p>"}, token=self.agent)
         self.assertEqual(made.status, 200, made.body)
         snap = get(lis.port, BASE + "/snapshot", token=self.owner)
@@ -154,7 +155,7 @@ class ServedTest(httpfix.ListenerCase):
         self.assertIsNone(pagecheck.check(html))
         sent = json.dumps({"id": "plan-1", "title": "T", "html": html}).encode("utf-8")
         self.assertGreater(len(sent), httpd.MAX_BODY)
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         head = httpfix.write_headers(lis.port, self.agent) + [("Content-Length", str(len(sent)))]
         r = httpfix.send(lis.port, "POST", BASE + "/pages", head)     # the length alone refuses it
         self.assertEqual((r.status, r.code()), (413, "invalid"))
@@ -167,7 +168,7 @@ class PlaceTest(httpfix.ListenerCase):
 
     def setUp(self):
         httpfix.ListenerCase.setUp(self)
-        self.lis = self.listener(static_dir=serve.STATIC_DIR)
+        self.lis = self.listener(static_dir=servesources.STATIC_DIR)
 
     def publish(self, **kw):
         body = dict({"id": "plan-1", "title": "The plan", "html": "<p>body-mark</p>"}, **kw)
@@ -2087,10 +2088,10 @@ class DomTest(unittest.TestCase):
         self.assertIn("Read on this machine", got["note"])                       # the rest of the view is drawn
         self.assertEqual((got["err"], got["sleeps"]), ("", []))
 
-    # A pending approval as kitlib.hubsite.api's add route stores it, diff lines and all (kitlib.hubsite.approvals.diff).
+    # A pending approval as kitlib.hubsite.api's add route stores it, diff lines and all (kitlib.ownerfiles.approvals.diff).
     APPROVALS = {
         "A-1": {"status": "pending", "repo": "github.com/team/alpha", "title": "Raise the cap", "head": "a" * 40,
-                "reason": "the cap is too low", "version": 2, "created_at": NOW,
+                "branch": "kit/cap", "reason": "the cap is too low", "version": 2, "created_at": NOW,
                 "files": [{"path": "conf.txt", "base_blob": "b" * 40, "blob": "c" * 40, "content": "cap = 9\n"}],
                 "diff": ["--- a/conf.txt\n", "+++ b/conf.txt\n", "@@ -1 +1 @@\n", "-cap = 3\n", "+cap = 9 <img src=x>\n"]},
         "A-2": {"status": "approved", "repo": "github.com/team/alpha", "title": "Already decided", "head": "a" * 40,
@@ -2112,7 +2113,8 @@ class DomTest(unittest.TestCase):
             return { before, sent: calls.filter(r => r.method === "POST").map(r => [r.path, r.body]), after: !!$("#approval-A-1"), tags: [...new Set(created)] };
         """, snapshot(strong=True, collections=dict(LISTS, approvals=self.APPROVALS)), hash="#approvals")
         b = got["before"]
-        for part in ("A-1", "github.com/team/alpha", "Raise the cap", "a" * 40, "the cap is too low"):
+        for part in ("A-1", "github.com/team/alpha", "Raise the cap", "a" * 40, "the cap is too low",
+                     "committed on branch kit/cap"):     # the branch the signature covers
             self.assertIn(part, b["card"], part)
         self.assertEqual(b["diff"], "--- a/conf.txt\n+++ b/conf.txt\n@@ -1 +1 @@\n-cap = 3\n+cap = 9 <img src=x>")
         self.assertEqual((b["approve"], b["deny"], b["decided"], b["q"], b["n"]), (False, False, False, False, "1"))     # Questions no longer hold approvals
@@ -2145,7 +2147,7 @@ class DomTest(unittest.TestCase):
         self.assertEqual(got["sent"], [{"decision": "deny", "if_version": 2}])
         self.assertEqual(got["err"], "")
 
-    # A pending op approval as the add route stores it (kitlib.hubsite.approvals.new_op_doc): no head, files or diff.
+    # A pending op approval as the add route stores it (kitlib.ownerfiles.approvals.new_op_doc): no head, files or diff.
     OP_APPROVALS = {
         "A-5": {"status": "pending", "kind": "op", "op": "D-004", "repo": "*", "title": "Copy the inputs",
                 "line": "run D-004 dest=dd/out src=dd/in", "args_sha256": "d" * 64,

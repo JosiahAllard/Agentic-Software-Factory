@@ -18,7 +18,7 @@ from kitlib.ident import identifier
 from optional.bridge.core.contracts import SessionIdentity,WorkspaceIdentity
 from optional.bridge.core.messages import SenderAuthority
 from optional.bridge.core.pairing import ChatBinding
-from kitlib.proc.pipe import process_sids
+from kitlib.platform.windows.pipe import process_sids
 from optional.bridge.win.evidence import document,regular,stable_bytes
 from kitlib.proc.process import ancestors_of,proc_ctime
 

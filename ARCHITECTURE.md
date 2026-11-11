@@ -1,6 +1,6 @@
 # PM kit architecture
 
-The kit's one high-level design, and the top authority on its shape: every module, what it owns, what it may depend on, and the contracts between them. It describes the end goal, not today's tree. Where the code differs, the code changes; `docs/redesign-work.md` lists those changes. Each module's low-level design is in `docs/modules/` and loses to this file on a conflict; the reference docs (`docs/INDEX.md`) say how to run a tool and lose to both. An item that waits on the owner is marked **OPEN** where it applies and listed under "Open items". This file changes by an ordinary reviewed commit; the owner's approval is needed only for the owner-only paths (`owner.paths`; docs/kit-json.md).
+The kit's one high-level design, and the top authority on its shape: every module, what it owns, what it may depend on, and the contracts between them. It describes the end goal, not today's tree. Where the code differs, the code changes. Each module's low-level design is in `docs/modules/` and loses to this file on a conflict; the reference docs (`docs/INDEX.md`) say how to run a tool and lose to both. An item that waits on the owner is marked **OPEN** where it applies and listed under "Open items". This file changes by an ordinary reviewed commit; the owner's approval is needed only for the owner-only paths (`owner.paths`; docs/kit-json.md).
 
 ## System
 
@@ -17,7 +17,7 @@ The kit is Python on the standard library, for Windows and Linux. It runs from i
 
 ## Layers
 
-`kitlib/` holds all logic, one package per module, in six layers. A package imports only packages in the layers below it, and in its own layer only the ones its row names. Entry points sit on top and hold no logic. The module map (`docs/module-map.json`) is these tables as data; the "Design" column names the low-level design, `docs/modules/<name>-design.md`.
+`kitlib/` holds all logic, one package per module, in six layers; the entry points are a seventh on top and hold no logic. A package imports only packages in the layers below it, and in its own layer only the ones its row names. The module map (`docs/module-map.json`) is these tables as data, each module's layer and Same layer names included (`tests/modulemap/test_kit_map.py` holds the two in step); the "Design" column names the low-level design, `docs/modules/<name>-design.md`.
 
 **1. Base** knows the operating system and nothing of repositories, hosts or kit features.
 
@@ -29,7 +29,7 @@ The kit is Python on the standard library, for Windows and Linux. It runs from i
 | `schedtask` | The kit's scheduled tasks on either OS: the interpreter a task runs, its command line, register, read, remove. | `platform`, `proc` | base |
 | `mcpwire`, `hostrpc` | The stdio JSON-RPC wires the MCP servers and the host adapters share. | - | base |
 | `verdict` | One judgement rule for a tool that runs a tool and prints its verdict. | - | base |
-| root files | `clock` (time fences), `ident` (bounded ids), `kitroot` (where this kit is); `__init__` installs the console guard and nothing else. | `platform`, `proc` | base |
+| `kitlib-root` | The loose files at the top of `kitlib/`: `clock` (time fences), `ident` (bounded ids), `kitroot` (where this kit is); `__init__` installs the console guard and nothing else. | `platform`, `proc` | base |
 
 **2. Facts** say which repository, which host and what is configured. They read; they change nothing but their own files.
 
@@ -92,15 +92,26 @@ The kit is Python on the standard library, for Windows and Linux. It runs from i
 
 | Package | Owns | Same layer | Design |
 |---|---|---|---|
-| `machinesetup`, `stackskill`, `kitcmd`, `pmdata` | Install: set up a machine, a repository's committed setup, a stack's skills, the `kit` command, the PM-data branch. | `machinesetup` uses `stackskill` | install |
-| `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `agentstart` | The PM watcher and the session starts: the checks and context each kind of session is given. | each uses the ones before it, and `machinesetup`, `autotasks` | sessions |
+| `machinesetup`, `stackskill`, `kitcmd`, `pmdata` | Install: set up a machine, a repository's committed setup, a stack's skills, the `kit` command, making the PM-data branch (`pmdata` holds only its `init`; the record is in `config`). | `machinesetup` uses `stackskill`, `autotasks` | install |
+| `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `agentstart` | The PM watcher and the session starts: the checks and context each kind of session is given. | `pmwatch` uses `machinesetup`, `autotasks`; `pmstart` uses `pmwatch`, `machinesetup`, `autotasks`; `coordinatorstart` uses `pmwatch`, `pmstart`, `machinesetup`, `autotasks`; `hoststart` uses `pmwatch`, `pmstart`, `coordinatorstart`, `machinesetup`, `autotasks`; `agentstart` uses `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `machinesetup`, `autotasks` | sessions |
 | `autotasks` | The automatic tasks the hub schedules. | - | hub |
 | `maintlint` | The maintenance lint. | - | checks |
 | `redfirst` | Red-first evidence runs. | - | tests |
 | `hubbacklog`, `hubsite`, `hubjobs` | The Action Hub server: store, API, listeners, push, backlog views, timed jobs. | `hubsite` uses `hubbacklog`, `autotasks`, `maintlint`, `pmwatch`; `hubjobs` uses `hubsite`, `pmwatch` | hub |
 | `hubmcp`, `lockmcp`, `blendermcp` | The MCP servers: the hub's API, the lock's read tools, a booked headless Blender. | - | hub, lock, extras |
 
-**Entry points** (`tools/`, `boot/`, `mcp/`, `githooks/`, `reserve_ui.pyw`): parse arguments, call the library, print, exit. Paths and exit codes stay stable. **Hosts** (`hosts/<name>/`): one adapter and one shell per AI host. **Optional** (`optional/`): installed on demand; the core never imports it. The complete lists: `python <kit>/tools/codemap.py` and `python <kit>/tools/doc_index.py --tools`.
+**7. Entry points** parse arguments, call the library, print, exit. Paths and exit codes stay stable. Nothing in `kitlib` imports one.
+
+| Package | Owns | Same layer | Design |
+|---|---|---|---|
+| `tools` | The `tools/` command lines; `tools/_host.py` is the one place a tool imports a host adapter. | `hosts` | - |
+| `boot` | `boot/hook.py`, the one hook entry of every host, and `boot/kitboot.py`, the check every host entry runs first. | - | host |
+| `mcp` | The MCP server entry scripts: hub, lock, Blender. | - | hub, lock, extras |
+| `githooks-dir` | The top-level `githooks/` folder: the pre-push and pre-commit hooks. | - | content |
+| `hosts` | `hosts/<name>/`: one adapter and one shell per AI host. | - | host |
+| `opt-agenttemp`, `opt-bridge`, `opt-comfy`, `opt-loadnode`, `opt-procwatch`, `opt-usage` | The `optional/<name>` programs, installed on demand; the core never imports one. | - | extras |
+
+`reserve_ui.pyw` is an entry point too; the map holds it in `(root)`. The complete lists: `python <kit>/tools/codemap.py` and `python <kit>/tools/doc_index.py --tools`.
 
 ## Dependency rules
 
@@ -122,7 +133,7 @@ The kit is Python on the standard library, for Windows and Linux. It runs from i
 - **Landing.** `land.py <branch>... --expect-tip <sha>... [--reviewed-by <id>... --submit]`. It books one machine-lock entry, takes the repo's landing lock, merges onto `<remote>/<main>` as it is at its turn, gates the merged tree in that slot, pushes, and verifies. A red merge is undone; a conflict goes back to the branch's author. Landings into one repo take turns; branch gates and different repos run in parallel. A branch lands only with a queued verdict from a reviewer who is not its author. The one exception: a coordinator may review its own small, low-risk diff, up to the line limit `landing.self_review_max_lines` sets (docs/gate-landing.md).
 - **What a landing runs.** The merged-tree gate runs only what the landing's work touches: each step picked by what the merge changes and run in its selected form, reusing a step whose inputs match the branch's record. No landing runs the full suite, and no branch needs a full run to land. A strict-path landing runs the same selection, always fresh (nothing reused), after a strong-tier review. The one exception: a landing whose diff changes a gate config file runs every step in its full form once, on the merged tree, at that landing. The scheduled daily full run (`daily_full.py`) is the only other full-repo run; it bisects a red and files the record.
 - **Backlog claims.** A record's scope is its claim; two live pulls never overlap. `pull` narrows the pulled record, and the in-flight one when it lists planned files, in one write; `commit.py` refuses a commit that touches the other side's narrowed part, and a landing refuses a scope breach of a narrowed record. `add` never refuses an overlap: it files the record, warns, and writes the overlap into its Found section; the pull-time guard holds such a record until the branch lands. Work that waits on the owner is parked: its claim is released and its record blocked on a hub item, with an end condition the hub checks and lifts itself (docs/backlog.md).
-- **Owner files.** A path in `owner.paths` changes only by a commit the owner authored or approved. Today an agent makes the approved commit; the proposed change is that the hub makes it itself when the owner approves, so no agent writes, stages or commits an owner-only path (**OPEN**: Open items). An approval holds until that change is on main, with a 30-day backstop: a rebuild, rebase, merge or re-land carrying the same change needs no second approval; only a change beyond what was approved does. A sync merge may carry an owner-only path when the path equals the merge-tree result and neither side's own commits breach the rule; a rename, a mode change, a non-default merge attribute or an octopus merge fails closed. `ownerfiles` holds these rules once; `commit`, `landing`, the pre-push check and the hub read them there.
+- **Owner files.** A path in `owner.paths` changes only by a commit the owner authored or approved. When the owner approves, the hub server makes the approved commit itself, carrying the owner's approval trailer, so no agent writes, stages or commits an owner-only path. An approval holds until that change is on main, with a 30-day backstop: a rebuild, rebase, merge or re-land carrying the same change needs no second approval; only a change beyond what was approved does. A sync merge may carry an owner-only path when the path equals the merge-tree result and neither side's own commits breach the rule; a rename, a mode change, a non-default merge attribute or an octopus merge fails closed. `ownerfiles` holds these rules once; `commit`, `landing`, the pre-push check and the hub read them there.
 - **Roles.** `PM_KIT_ROLE` is the one role marker on every host, and `PM_KIT_HOST` names the host. The host adapter tells subagents apart and passes the identity as `Action.agent`; a host whose hooks carry no subagent identity says so in `hosts.json` and gets the role-only policy. A role's mode is the `mode:` of its role file, which `.kit.json` `roles.<role>.mode` overrides; `guard.role_policy` turns the role policy on per repository. The policy itself is `kitlib/guard/rolepolicy.py`, the same on every host. Who may run which backlog verb is `kitlib/backlog/roles.py`, the owner's map.
 - **Guard rules.** Read-only checks of real state, judged once over a neutral `Action`. A refusal names the command to use instead. The guard never answers allow: it denies, asks, warns or stays silent. A rule's mode (deny, warn, off) comes from the kit's defaults and the machine config's `guard_rules`, never from a file a branch carries. Denied by default: an agent's edit in a main checkout, a write outside the session's jail, damaging git in a main checkout (`checkout`, `switch`, `reset --hard`, `clean`, `stash`, a push to main without a record), an edit of an owner-only path, the ledger, the lock's state or a generated file, a search from a drive root, and a script or unreadable line that names `backlog.py` (no hook rewrites a subagent's command to carry its role). A raw heavy program outside the lock is a warning by default. Bash, PowerShell and cmd lines are read as commands; a line the parser cannot read goes through `kitlib/guard/fallback.py`'s patterns (docs/guard.md).
 - **Trailers.** `commit.py` writes the agent's trailers. A commit without a Co-Authored-By line is never refused: the gate's trailers step and the landing only warn.
@@ -144,7 +155,8 @@ One package writes each kind of data; others read it through that package.
 | The hub store (questions, to-dos, approvals, pages, landings) | `hubsite` | the PM-data worktree |
 | Approval rules (what an approval covers, when it is spent) | `ownerfiles` | read from the hub store through `hubclient` |
 | Sessions and launcher state | `launcher` | the launcher's state folder |
-| The kit export, its marker and headers | `pluginsource` | the live root |
+| The kit export and its marker | `pluginsource` | the live root |
+| The header records (which export each session's kit header named) | `hookrun` | `<export root>/headers/` |
 | Rendered agents and manifests | `content` | `hosts/<name>/shell/`; never edited by hand |
 | The refusal log | `guard` | the PM-data worktree |
 | A coordinator's event log and state note | `coordstate` | the agent temp folder, outside every repository |
@@ -212,8 +224,7 @@ autoMode, git identity, preferences, memory, the knowledge contents and synced s
 
 An item that waits on the owner is listed here and marked **OPEN** where it applies; until it is answered, the code stays as it is on that point.
 
-- **How a move is checked** (docs/redesign-work.md W-047): what the repo profile's "Moves and renames" asks of a move in place of the stub at the old path, a gate on base and tip, and `tests/oldpaths`. The work list proposes the selected tests plus an equal test-name list.
-- **The hub applies an approved owner-file change** (Contracts, "Owner files"; W-016): the owner has not yet decided that agents lose `--owner-approval` and the hub server makes the approved commit. Until then an agent makes it as today.
+None open.
 
 ## Designs
 
@@ -238,5 +249,5 @@ An item that waits on the owner is listed here and marked **OPEN** where it appl
 | `docs/modules/gate-design.md` | `gate`, `loadnode`, `dailyfull` |
 | `docs/modules/landing-design.md` | `landing` |
 | `docs/modules/guard-design.md` | `guard`, `hookrun`, `agentview` |
-| `docs/modules/install-design.md` | `pluginsource`, `allowrules`, `machinesetup`, `stackskill`, `kitcmd`, `pmdata`, `installer/`, `templates/` |
+| `docs/modules/install-design.md` | `pluginsource`, `allowrules`, `machinesetup`, `stackskill`, `kitcmd`, `pmdata/init.py`, `installer/`, `templates/` |
 | `docs/modules/extras-design.md` | `blendermcp`, `optional/` |

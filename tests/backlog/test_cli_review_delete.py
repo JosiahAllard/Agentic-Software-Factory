@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from kitlib.backlog import opener
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_edit
 from kitlib.backlog import store as smod
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
@@ -23,10 +23,10 @@ class Cli(unittest.TestCase):
     def add_marked(self, rid):
         """`add` with the review mark, through the library against the configured store."""
         with mock.patch.dict(os.environ, self.env, clear=True):
-            ctx = opener.open_store(self.repo.root, session='owner-hub')
-            ctx.store.write(lambda s: pmod.plan_add(s, ctx, rid, 'a thing the owner added',
-                                                    ['tools/x.py'], session=None, review=MARK,
-                                                    **ADD_NONE))
+            ctx = opener.open_store(self.repo.root, session='owner-hub', probes=opener.NO_PROBES)
+            ctx.store.write(lambda s: plan_edit.plan_add(s, ctx, rid, 'a thing the owner added',
+                                                         ['tools/x.py'], session=None, review=MARK,
+                                                         **ADD_NONE))
 
     def test_the_cli_has_no_review_flag_on_add(self):
         rc, out = self.run_tool('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py',

@@ -1,7 +1,7 @@
 """`backlog.py find TEXT`: the records, open and ended, whose id, summary or body holds TEXT.
 
 An open record is read from the snapshot; an ended one (closed, retired or deleted) from the text
-it had in the commit before its deleting commit (store.removed_records, one git log and one
+it had in the commit before its deleting commit (store_read.removed_records, one git log and one
 cat-file for all of them). No fetch happens here: the caller opened the store as every read verb
 does."""
 import re

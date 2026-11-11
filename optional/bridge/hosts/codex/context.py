@@ -20,8 +20,8 @@ import stat
 from optional.bridge.core.contracts import SessionIdentity, WorkspaceIdentity
 from optional.bridge.core.jsonwire import JsonLineDecoder
 from optional.bridge.core.pairing import ChatBinding
-from kitlib.proc.pipe import K, bind, close, open_process, process_image, process_sids
-from kitlib.proc.process import handle_ctime
+from kitlib.platform.windows.pipe import K, bind, close, open_process, process_image, process_sids
+from kitlib.platform.windows.process import handle_ctime
 
 MAX_ENTRIES, MAX_DIRECTORIES = 100000, 4096
 MAX_ROLLOUT_BYTES = 256*1024*1024

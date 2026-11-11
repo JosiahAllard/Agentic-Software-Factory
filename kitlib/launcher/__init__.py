@@ -2,15 +2,15 @@
 minimized window with Remote Control (docs/launcher.md). tools/launch.py is its command line.
 
   settings   the `launcher` machine-config object (state folder, repos, account folders)
-  accounts   which config folder an account launches with, its usage headroom, pick-account
+  accounts   which config folder an account launches with, its usage headroom, pick-account;
+             every account folder, where it loads the kit plugin from, the `claude` runner
   usage      every account's usage as lines (kitlib.pmwatch reads them)
-  lookup     finding a running session by its Remote Control name
+  lookup     finding a running session by its Remote Control name; every host's live sessions
   window     the window's PowerShell, the PM_KIT_ROLE mark, opening the window
   start      a coordinator (or any agent) session, a deep-worker, a consultant
   stop       stopping one session and its window
   handoff    a successor on another account, or a recycle on the same one
   reboot     after a restart: every session in sessions.json, then the PM resumed
-  autostart  the scheduled task that runs reboot at sign-in
   pythonw    the pythonw.exe a scheduled task runs: the base install's, never a WindowsApps alias
   host       the outside world, faked by tests
 

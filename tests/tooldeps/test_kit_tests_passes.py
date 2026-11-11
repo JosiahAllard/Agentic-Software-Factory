@@ -15,7 +15,7 @@ _spec = importlib.util.spec_from_file_location('kit_tests_entry_for_passes_tests
 cli = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cli)
 
-MODULES = ['tests.a.test_m', 'tests.git.test_g', 'tests.gate.test_land_x', 'tests.gate.test_other']
+MODULES = ['tests.a.test_m', 'tests.git.test_g', 'tests.landing.test_land_x', 'tests.gate.test_other']
 SELECTED = ['tests.a.test_m', 'tests.gate.test_other']
 NO_OFFER = ('kit_tests: give back: no offer (only a run of this kit\'s lock wrapper offers one); '
             'the run keeps its cpu slots to its end')
@@ -153,7 +153,7 @@ class GiveBackBetweenPasses(unittest.TestCase):
         rc, text = h.main(['--full', '--both-tiers', '--jobs', '8'])
         self.assertEqual(rc, 0, text)
         self.assertEqual(h.counts, [(MODULES, h.counts[0][1])], text)   # the real ones among them
-        self.assertEqual(h.runs[1]['modules'], ['tests.git.test_g', 'tests.gate.test_land_x'])
+        self.assertEqual(h.runs[1]['modules'], ['tests.git.test_g', 'tests.landing.test_land_x'])
         self.assertEqual(h.given, [2, 1], text)
 
     def test_one_count_holds_a_real_git_module_the_fake_pass_does_not_run(self):

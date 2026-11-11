@@ -16,7 +16,7 @@ import os
 import re
 import unittest
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.guard import context, rules
 
 from . import world as W

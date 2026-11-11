@@ -882,7 +882,7 @@ class ImportGateRecord(unittest.TestCase):
         self.addCleanup(p.stop)
 
     def test_it_checks_against_main_gate_config_at_the_commit(self):
-        self.patch(self.runner, 'gate_config_at', lambda top, rev: {'top': top, 'rev': rev})
+        self.patch(self.gate_ok, 'gate_config_at', lambda top, rev: {'top': top, 'rev': rev})
         got = gaterecord.import_gate_record('T', REC, SHA, {'node': 'n'}, 'my-repo')
         self.assertEqual(got, ('P', []))
         self.assertEqual((self.seen['root'], self.seen['commit'], self.seen['repo']),
@@ -892,7 +892,7 @@ class ImportGateRecord(unittest.TestCase):
     def test_a_config_that_cannot_be_read_at_the_commit_is_a_record_error(self):
         def bad(top, rev):
             raise self.runner.ConfigError('no .kit.json')
-        self.patch(self.runner, 'gate_config_at', bad)
+        self.patch(self.gate_ok, 'gate_config_at', bad)
         gaterecord.import_gate_record('T', REC, SHA, {}, 'my-repo')
         with self.assertRaises(self.gate_ok.RecordError) as cm:
             self.seen['config_at'](SHA)

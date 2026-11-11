@@ -2,7 +2,7 @@
 and the hand-off records ("Hand-offs"). kitlib.hubsite.api re-exports every name here.
 
 Landings (docs/hub-approvals.md "landings/L-NNN"). POST landings (AGENT) adds one event of the
-landing feed, which tools/land.py posts for each branch it landed (kitlib.hubsite.landings): the
+landing feed, which tools/land.py posts for each branch it landed (kitlib.landing.feed): the
 fields of schema.FIELDS['landings'] (repo, branch, tip and main required; records a list of
 record ids; approvals, when given, {A-<n>: commit sha} of the hub approvals the landing put on
 main, approvals.landed), and the hub sets posted_at. Each consumed file approval an event names
@@ -27,6 +27,8 @@ deletes one, and GET snapshot leaves them out.
 import ntpath
 import os
 import re
+
+from kitlib import hubvalidate
 
 from . import schema
 from .apibase import (
@@ -83,7 +85,7 @@ def landings_add(api, req):
     records = _typed(b, 'records', (list,), 'a list')
     if records is not None and not all(isinstance(r, str) and r.strip() for r in records):
         raise _invalid('records is a list of record ids', 'records')
-    from . import approvals as ap
+    from kitlib.ownerfiles import approvals as ap
     landed = _typed(b, 'approvals', (dict,), 'an object')
     if landed is not None and not all(isinstance(k, str) and ap.APPROVAL_ID.match(k)
                                       and isinstance(v, str) and ap.SHA.match(v)
@@ -127,7 +129,6 @@ def _repo_name_of(api, repo_id):
 
 
 # hand-offs ("Hand-offs"): the record a session writes beside its ready reply to the PM
-HANDOFF_KINDS = schema.KINDS['handoffs']
 _CONTROL = re.compile('[\x00-\x1f\x7f]')
 
 
@@ -162,7 +163,7 @@ def handoffs_add(api, req):
     (HANDOFF_KINDS) and `state_path` (an absolute path, on one line), all required; the hub
     sets `at`."""
     b = _fields(req, ('from', 'kind', 'state_path'), required=('from', 'kind', 'state_path'))
-    _one_of(b, 'kind', HANDOFF_KINDS)
+    _one_of(b, 'kind', hubvalidate.HANDOFF_KINDS)
     path = _text(b, 'state_path').strip()
     if _CONTROL.search(path) or _SURROGATE.search(path) or not os.path.isabs(path):
         raise _invalid('state_path is the absolute path of your state note, on one line, not %s'

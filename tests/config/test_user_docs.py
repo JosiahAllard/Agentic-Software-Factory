@@ -100,7 +100,7 @@ class UserConfigTest(unittest.TestCase):
         self.assertEqual(user.expand_home(self.home, 'elsewhere'), self.home)
 
     def test_the_reserved_marks_are_the_session_marks_reserved_values(self):
-        from kitlib import sessionmark
+        from kitlib.host import sessionmark
         self.assertEqual(user.RESERVED_MARKS, sessionmark.RESERVED)
 
     def test_guard_mark_roots_refuses_a_reserved_mark_a_relative_path_or_an_unknown_mode(self):

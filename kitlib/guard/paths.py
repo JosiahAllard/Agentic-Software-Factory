@@ -1,5 +1,4 @@
-"""The guard's one path normaliser and placer (multi-host plan section 6, rule 2;
-docs/linux-support-plan.md section 3, "Guard path semantics").
+"""The guard's one path normaliser and placer.
 
 Every place the guard folds a filesystem path to compare it, key a cache on it or build a canonical
 form calls norm(). On Windows the rules are unchanged: os.path.normpath folds `.`, `..`, doubled

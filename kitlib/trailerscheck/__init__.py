@@ -1,7 +1,7 @@
 """kitlib.trailerscheck: the gate step that warns on each branch commit with no agent
 Co-Authored-By trailer; docs/repo-checks.md "trailers".
 
-The rule is kitlib.reviewpack.trailers (the one review_pack judges by); this module only reads the
+The rule is kitlib.trailerscheck.trailers (the one review_pack judges by); this module only reads the
 branch's commits (`HEAD --not <base>`, merges included) and prints the verdicts. A commit with no
 `Co-Authored-By: <name> <noreply@anthropic.com>` is a WARNING naming it, never a failure; so is one
 the owner authored and claims (`Owner-Approved:` / `Owner-Authored: yes`). The owner's identity is
@@ -11,7 +11,7 @@ refused `merged`.
 
 `merged` (a landing's merged-tree gate): the first-parent merges in `<base>..HEAD` are the
 lander's own and are not branch commits. It holds with HEAD on the main branch, or detached at a
-landing's merge: the landing tree of kitlib.gate.land, where HEAD's first-parent chain from the
+landing's merge: the landing tree of kitlib.landing.merge, where HEAD's first-parent chain from the
 base is merges only, the oldest made onto the base itself (landing_head). On any other branch, or
 at any other detached HEAD, those merges are the branch's sync merges, so `merged` there is
 refused, never read as an exemption.
@@ -22,7 +22,7 @@ from kitlib.config import ConfigError, load as load_config, load_at
 from kitlib.config import owner as ownermod
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
-from kitlib.reviewpack import trailers
+from . import trailers
 
 OK, REFUSED = 0, 2
 

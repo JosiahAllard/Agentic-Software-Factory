@@ -15,10 +15,10 @@ work, an owner answer or an approval, adding a `--prompt` that names the reply's
 A PM that still runs but has lost its Remote Control link (an outage; the web app no longer lists it) is relaunched with `launch.py pm-relaunch --name <new>`: a fork of its conversation under the new name, the old session told to stand down, its window closed by the owner (docs/launcher.md "PM relaunch"). After a relaunch the PM runs under that new name, which coordinators.json's `pm_name` holds: every session the launcher starts afterwards is told that name first in its first message (`start.pm_ref`), and the roles message the PM session their start context names, else `Project Manager` or `pm-session`. A session started before the relaunch keeps the old names: the owner tells a long-running coordinator the new name, or recycles it. The hub's PM delivery finds the fork by its session id.
 
 Hub (`kitlib.pmstart` `hub_site`; docs/action-hub.md): the
-lines read the machine config's `hub` key (`kitlib.hubsite.settings`), or every default (port 8790)
+lines read the machine config's `hub` key (`kitlib.hubclient.settings`), or every default (port 8790)
 when there is no `hub` key. The check only asks the loopback server on `hub.port`, through
-`kitlib.hubsite.client`; it starts no process and never starts the server, and it imports
-`kitlib.hubsite.serve` only once the settings are read. Each ask (`GET /api/v1/health`,
+`kitlib.hubclient.client`; it starts no process and never starts the server, and it imports
+no server module (`kitlib/hubsite/`). Each ask (`GET /api/v1/health`,
 then `GET /api/v1/pending?for=pm`, then the filed answers' two, "Filed answers") waits at most `HUB_SITE_TIMEOUT_S` (1.5 seconds). The pending
 ask is the PM's items only, the list `hub.py pending --for pm` prints: an item routed to a creator
 that can still be reached is that session's to ack, and a PM ack would hide it from the creator's
@@ -122,13 +122,13 @@ Right after `kit_sync`, the `plugin_current` check prints one line when the pm-k
 
 ## Plugin enabled (`plugin_enabled`)
 
-Right after `plugin_current`, the `plugin_enabled` check prints one line naming every account folder (`kitlib.pluginsource.claude.account_folders`) whose `settings.json` has no `enabledPlugins["pm-kit@pm-kit"]`: `pm-kit plugin: not enabled in <folders>: python "<kit>/tools/machine_setup.py" --apply (docs/machine-setup.md "Default mode")`. `false` is the owner's choice and prints nothing; a `settings.json` that is not a JSON object is its own `could not check the pm-kit plugin in <folder>` line; a machine config whose plugin settings cannot be read is the checklist's `could not check plugin_enabled` line. Code: `kitlib/pmstart` `plugin_enabled`.
+Right after `plugin_current`, the `plugin_enabled` check prints one line naming every account folder (`kitlib.launcher.accounts.account_folders`) whose `settings.json` has no `enabledPlugins["pm-kit@pm-kit"]`: `pm-kit plugin: not enabled in <folders>: python "<kit>/tools/machine_setup.py" --apply (docs/machine-setup.md "Default mode")`. `false` is the owner's choice and prints nothing; a `settings.json` that is not a JSON object is its own `could not check the pm-kit plugin in <folder>` line; a machine config whose plugin settings cannot be read is the checklist's `could not check plugin_enabled` line. Code: `kitlib/pmstart` `plugin_enabled`.
 
 ## Memory folder (`memory`)
 
 After `plugin_enabled`, the `memory` check reads `.claude/settings.local.json`, then `.claude/settings.json`, of each repository in
 `launcher.repos`, and of the PM repository (the work tree holding `sessions_file`: its own toplevel, a linked worktree included, `pm_memory_repo`), through
-`kitlib.stubs.memory.problem_line`. Files without `autoMemoryDirectory` give
+`kitlib.machinesetup.memory.problem_line`. Files without `autoMemoryDirectory` give
 `memory (<repo>): <file> has no autoMemoryDirectory; its memory folder is <folder>. Ask the owner
 (via the hub) to run, in their own PowerShell window: python <kit>/tools/kit_stubs.py memory -C
 <folder> --apply (it writes .claude/settings.local.json, which git ignores; nothing to commit)`: an owner step, since the command
@@ -166,7 +166,7 @@ Code: `kitlib/pmstart` `allow_rules`.
 
 ## Repo prep (`repo_prep`)
 
-After `allow_rules`, the `repo_prep` check runs the first-use repo prep (`kitlib.git.prep.run`; docs/new-worktree.md "First-use prep") on each repository in `launcher.repos`. The prep adds each host's worktree folder to the repository's `info/exclude` and sets the local `core.hooksPath` to the kit's `githooks/` when none is set and `.git/hooks` holds no hook. It prints a `repo prep: <folder>: ...` line only for what it did or could not do, so a repository already prepared prints nothing. A folder that is not there gives a `could not prep <repo>: ...` line. Code: `kitlib/pmstart` `repo_prep`.
+After `allow_rules`, the `repo_prep` check runs the first-use repo prep (`kitlib.worktree.prep.run`; docs/new-worktree.md "First-use prep") on each repository in `launcher.repos`. The prep adds each host's worktree folder to the repository's `info/exclude` and sets the local `core.hooksPath` to the kit's `githooks/` when none is set and `.git/hooks` holds no hook. It prints a `repo prep: <folder>: ...` line only for what it did or could not do, so a repository already prepared prints nothing. A folder that is not there gives a `could not prep <repo>: ...` line. Code: `kitlib/pmstart` `repo_prep`.
 
 ## Agent temp (`agent_temp`)
 
@@ -178,7 +178,7 @@ is not registered (machine_setup.py --apply registers it, the owner's act)" when
 `schtasks /Query` (4 second limit) says the task does not exist. A query that fails any other way
 (access denied, the time limit, no `schtasks`) is "could not check the agent temp sweep task
 agent-temp-sweep: ...", after the other two lines, never "not registered"
-(`kitlib.machinesetup.agenttemp.task_registered`). It changes nothing. A failing environment or
+(`kitlib.schedtask.read.task_registered`). It changes nothing. A failing environment or
 config reader is one `could not check agent_temp: ...` line. Code: `kitlib/pmstart` `agent_temp_lines`.
 
 ## C: drive (`cdrive`)
@@ -280,11 +280,11 @@ Only in settings the PM session loads; the hook does not check which session run
 in the plugin, which every session loads. Exec form, with `<pythonw>` the interpreter that
 `boot/hook.py claude --settings-entry` prints (docs/guard-hooks.md "Go-live"), starts no shell. `pythonw` has no
 console, so each program the checklist starts is started with a console that has no window: git
-(`kitlib.git.cmd`) and the PowerShell that lists processes (`kitlib/pmstart` `list_processes`) through `kitlib.proc.spawn`, `schtasks` with `CREATE_NO_WINDOW`
-in `kitlib.machinesetup.agenttemp.task_registered` (docs/daily-full.md "The schedule"). Put it in the PM
+(`kitlib.git.cmd`) and the PowerShell that lists processes (`kitlib/proc/listing.py` `list_processes`) through `kitlib.proc.spawn`, `schtasks` with `CREATE_NO_WINDOW`
+in `kitlib.schedtask.read.task_registered` (docs/daily-full.md "The schedule"). Put it in the PM
 repo's `.claude/settings.local.json`, which only that checkout loads. `tools/machine_setup.py`
 otherwise reads the account config folders (`~/.claude`, `~/.claude-*`, `default_config_dirs` in
-`kitlib/machinesetup`), never a repository's settings, so this file is edited by hand, except that
+`kitlib/launcher/accounts.py`), never a repository's settings, so this file is edited by hand, except that
 `machine-setup.ps1 -PmSettings <file>` (its default mode) writes the hook to the one file it names and
 refuses an account's `settings.json` (docs/machine-setup.md "Default mode").
 

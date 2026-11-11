@@ -16,7 +16,7 @@ import unittest
 from unittest import mock
 
 from kitlib.git import cmd
-from kitlib.worktree import holders, remove
+from kitlib.worktree import holders, remove, remove_abandon, remove_checks
 from tests import gitfixture
 from tests.realgit import real_git
 from tests.platforms import windows_only
@@ -24,6 +24,8 @@ from tests.platforms import windows_only
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(KIT, 'tools', 'worktree_remove.py')
 WINDOWS = os.name == 'nt'
+# The verbs not in kitlib.worktree.remove: the module each is in (run_verb).
+VERBS = {'check': remove_checks, 'abandon': remove_abandon, 'abandon_branch': remove_abandon}
 
 
 class RemoveCase(unittest.TestCase):
@@ -70,7 +72,7 @@ class RemoveCase(unittest.TestCase):
         self.git('push', '-q', 'origin', 'main')
 
     def run_verb(self, verb, *args, **kw):
-        got = getattr(remove, verb)(self.repo, *args, **kw)
+        got = getattr(VERBS.get(verb, remove), verb)(self.repo, *args, **kw)
         return got.code, '\n'.join(got.lines)
 
     def branches(self):
@@ -569,7 +571,7 @@ class AbandonLandedDirty(RemoveCase):
 
     def saved(self, path, tip):
         """A commit of the uncommitted work at `path` on `tip`, as a previous run saved it."""
-        tree, why = remove.snapshot_tree(path)
+        tree, why = remove_abandon.snapshot_tree(path)
         self.assertIsNotNone(tree, why)
         return self.git('commit-tree', tree, '-p', tip, '-m', 'saved')
 
@@ -736,7 +738,7 @@ class PruneOrphan(RemoveCase):
     keeps its branch; refuses whatever could lose a commit or is not stale."""
 
     def prune(self, path):
-        ctx, refused = remove.open_ctx(self.repo)
+        ctx, refused = remove_checks.open_ctx(self.repo)
         self.assertIsNone(refused)
         code = remove.prune_orphan(ctx, path)
         return code, '\n'.join(ctx.out)
@@ -777,7 +779,7 @@ class PruneOrphan(RemoveCase):
         path = os.path.join(os.path.realpath(self.fx.base), 'elsewhere', 'gone')
         self.git('worktree', 'add', '-q', '-b', 'kit/elsewhere', path, 'main')
         shutil.rmtree(path)
-        ctx, refused = remove.open_ctx(self.repo)
+        ctx, refused = remove_checks.open_ctx(self.repo)
         self.assertIsNone(refused)
         rc = remove.prune_orphan(ctx, path, environ={})
         out = '\n'.join(ctx.out)
@@ -914,12 +916,12 @@ class MergedWorktreesNoCandidate(RemoveCase):
         return seen, mock.patch.object(cmd, '_run', side_effect=run)
 
     def merged(self):
-        ctx, refused = remove.open_ctx(self.repo, None)
+        ctx, refused = remove_checks.open_ctx(self.repo, None)
         self.assertFalse(refused, refused)
-        listing = remove.worktree_listing(ctx.main)
+        listing = remove_checks.worktree_listing(ctx.main)
         seen, patch = self.spawned()
         with patch:
-            got = remove.merged_worktrees(ctx, listing)
+            got = remove_checks.merged_worktrees(ctx, listing)
         return got, seen
 
     def test_no_workstream_spawns_no_rev_list(self):
@@ -990,7 +992,7 @@ class KilledTagAndBranchReads(RemoveCase):
         said = []
         ctx = types.SimpleNamespace(main=self.repo, say=lambda *lines: said.extend(lines))
         with kill_reads_of('refs/heads/kit/kept'):
-            remove.left_after(ctx, None, 'kit/kept', 'archive/kept')
+            remove_abandon.left_after(ctx, None, 'kit/kept', 'archive/kept')
         out = '\n'.join(said)
         self.assertNotIn('kept at (none)', out, 'a killed git was read as "no branch"')
         self.assertIn('branch kit/kept kept at (unknown: git could not tell', out)
@@ -1024,9 +1026,9 @@ class KilledTagAndBranchReads(RemoveCase):
         said = []
         ctx = types.SimpleNamespace(main=self.repo, say=lambda *lines: said.extend(lines))
         with kill_reads_of('refs/tags/archive/kb'):
-            code = remove.drop_branch(ctx, None, 'kit/kb', tip, 'archive/kb', False)
+            code = remove_abandon.drop_branch(ctx, None, 'kit/kb', tip, 'archive/kb', False)
         out = '\n'.join(said)
-        self.assertEqual(code, remove.REFUSED, out)
+        self.assertEqual(code, remove_checks.REFUSED, out)
         self.assertIn('failed    tag archive/kb could not be read (', out)
         self.assertIn('so branch kit/kb was not deleted', out)
         self.assertIn('tag archive/kb holds (unknown: git could not tell', out)
@@ -1291,8 +1293,8 @@ class RemoveBranch(RemoveCase):
     def test_an_unreadable_worktree_list_refuses(self):
         self.orphan('done')
         self.land('kit/done')
-        with mock.patch.object(remove, 'worktree_listing',
-                               side_effect=remove.GitReadError('boom')):
+        with mock.patch.object(remove_checks, 'worktree_listing',
+                               side_effect=remove_checks.GitReadError('boom')):
             rc, out = self.run_verb('remove_branch', 'kit/done')
         self.assertEqual(rc, 1, out)
         self.assertIn('refused   kit/done: the worktree list could not be read (boom), so whether a'
@@ -1451,7 +1453,7 @@ class KeepersInBuildOutput(unittest.TestCase):
                 os.makedirs(os.path.dirname(full), exist_ok=True)
                 with open(full, 'w', encoding='utf-8') as f:
                     f.write('x\n')
-            return holders.keepers_in(root, 'bin/', list(remove.KEEPERS))
+            return holders.keepers_in(root, 'bin/', list(remove_checks.KEEPERS))
 
     def test_a_framework_dll_with_a_capital_Local_is_not_a_keeper(self):
         self.assertEqual(self.keepers('Debug/net10.0/refs/System.Transactions.Local.dll'), [])
@@ -1465,19 +1467,19 @@ class KeepersInBuildOutput(unittest.TestCase):
 
 
 class AbandonExpect(RemoveCase):
-    """remove._abandon's `expect` (the sweep's stale mark): held to the checked commit, and never
+    """remove_abandon._abandon's `expect` (the sweep's stale mark): held to the checked commit, and never
     for work already in the base."""
 
     def abandon(self, path, expect):
-        ctx, refused = remove.open_ctx(self.repo)
+        ctx, refused = remove_checks.open_ctx(self.repo)
         self.assertIsNone(refused)
-        code = remove._abandon(ctx, path, 'stale', False, None, expect=expect)
+        code = remove_abandon._abandon(ctx, path, 'stale', False, None, expect=expect)
         return code, '\n'.join(ctx.out)
 
     def test_a_tree_at_another_commit_is_refused(self):
         path = self.workstream('moved')
         rc, out = self.abandon(path, '0' * 40)
-        self.assertEqual(rc, remove.REFUSED, out)
+        self.assertEqual(rc, remove_checks.REFUSED, out)
         self.assertIn('not the 0000000000 it was checked at; nothing was tagged or removed', out)
         self.assertTrue(os.path.isdir(path))
         self.assertIn('kit/moved', self.branches())
@@ -1488,7 +1490,7 @@ class AbandonExpect(RemoveCase):
         self.land('kit/landed')
         self.fx.write('wip.txt', 'x\n', root=path)       # landed-dirty: --abandon alone would take it
         rc, out = self.abandon(path, self.git('rev-parse', 'kit/landed'))
-        self.assertEqual(rc, remove.REFUSED, out)
+        self.assertEqual(rc, remove_checks.REFUSED, out)
         self.assertIn('so it is no longer stale work; nothing was tagged or removed', out)
         self.assertTrue(os.path.isfile(os.path.join(path, 'wip.txt')))
         self.assertEqual(self.git('tag', '-l'), '')
@@ -1497,7 +1499,7 @@ class AbandonExpect(RemoveCase):
         path = self.workstream('held')
         tip = self.git('rev-parse', 'kit/held')
         rc, out = self.abandon(path, tip)
-        self.assertEqual(rc, remove.OK, out)
+        self.assertEqual(rc, remove_checks.OK, out)
         self.assertFalse(os.path.exists(path))
         self.assertEqual(self.git('rev-parse', 'archive/held^{commit}'), tip)
 

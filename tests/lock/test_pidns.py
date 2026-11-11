@@ -1,5 +1,4 @@
-"""The lock across pid namespaces (Linux; contain's W1 runs each command in a pid namespace of its
-own, docs/linux-support-plan.md section 2.3). A pid is a number in one namespace:
+"""The lock across pid namespaces (Linux). A pid is a number in one namespace:
 
 - a run record names its wrapper's namespace (`pidns`), and a checker in another one never judges
   the wrapper by its pid (store.record_state): the run lock decides (run_live, run_dead), as it
@@ -22,7 +21,7 @@ import unittest
 from unittest import mock
 
 import kitlib.platform
-from kitlib.lock import release, run, store as store_mod
+from kitlib.lock import release, run, run_held, store as store_mod
 from kitlib.lock.store import Store
 from kitlib.platform.linux import process as procfs
 from kitlib.proc import process
@@ -211,7 +210,7 @@ class NoteJobns(unittest.TestCase):
 
     def test_each_job_namespace_is_recorded_once_before_the_command_runs(self):
         r, seen = self.Run(), []
-        before = run.note_jobns(r, seen.append)
+        before = run_held.note_jobns(r, seen.append)
         a, b = self.P(11), self.P(12)
         for p in (a, a, b, self.P()):
             before(p)
@@ -222,16 +221,16 @@ class NoteJobns(unittest.TestCase):
     def test_a_record_that_cannot_be_written_does_not_stop_the_start(self):
         r = self.Run()
         r.save = mock.Mock(side_effect=OSError('full'))
-        run.note_jobns(r)(self.P(11))
+        run_held.note_jobns(r)(self.P(11))
         self.assertEqual(r.rec['jobns'], [11])
 
 
 NESTED = '''
 import json, os, sys
-from kitlib.lock import run
+from kitlib.lock import run, run_held
 from kitlib.lock.store import Store, record_state
 s = Store(root=sys.argv[1])
-value = sys.argv[2] if len(sys.argv) > 2 else os.environ[run.NEST_ENV]
+value = sys.argv[2] if len(sys.argv) > 2 else os.environ[run_held.NEST_ENV]
 parent, why = run.nest_check(s, value)
 d = s.read('active/%s.json' % value.split(':')[0])
 print(json.dumps({'parent': parent and parent['id'], 'why': why, 'state': record_state(d),
@@ -284,7 +283,7 @@ class Live(Scratch):
         p = job.start([sys.executable, '-c', NESTED, self.root,
                        '%s:%d:%d' % (RID, os.getpid(), process.own_ctime())],
                       cwd=ROOT, stdout=subprocess.PIPE,
-                      before_resume=run.note_jobns(r) if note else None)
+                      before_resume=run_held.note_jobns(r) if note else None)
         out = p.communicate(timeout=60)[0]
         self.assertEqual(p.returncode, 0, out)
         return job, json.loads(out)

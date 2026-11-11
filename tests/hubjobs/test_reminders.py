@@ -165,7 +165,7 @@ class ThroughJobsTest(unittest.TestCase):
 class MakeTest(unittest.TestCase):
     def make(self, cfg):
         with mock.patch('kitlib.config.user.readable_file', return_value='cfg'), \
-                mock.patch('kitlib.pmstart.load_config', return_value=cfg):
+                mock.patch('kitlib.config.pm.load_config', return_value=cfg):
             return reminders.make(mock.Mock(home=None))
 
     def test_none_without_reminders_file(self):

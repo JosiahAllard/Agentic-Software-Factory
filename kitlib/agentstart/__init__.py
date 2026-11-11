@@ -17,7 +17,7 @@ says how old that is (the mtime of FETCH_HEAD). As in preflight, a reading that 
 The hook waits for it at most `budget` seconds: the reading runs on a daemon thread, each git call
 is given what is left of the budget as its timeout, and whatever is not done by then is one
 `NOT CHECKED` line. No `budget` is `kitlib.clock.budget(BUDGET)`: BUDGET in a real run, the time
-fence's ceiling under the kit's tests (docs/flaky-tests.md); a budget passed in is used as is.
+fence's ceiling under the kit's tests (docs/test-tools.md "Time fence"); a budget passed in is used as is.
 At a subagent's start the folder is its parent's (the agent has not made its own worktree yet), so
 the block describes where the agent starts, not where it will work.
 """
@@ -37,7 +37,8 @@ def is_dispatched(role, kit):
     if not role or not isinstance(role, str):
         return False
     try:
-        from kitlib import agentname, content
+        from kitlib import content
+        from kitlib.host import agentname
         name = agentname.bare(role)
         name = content.ALIASES.get(name, name)
         for entry in content.roster(kit):

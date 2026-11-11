@@ -1,5 +1,5 @@
-"""kitlib.hubsite.store: the hub server's store, the one record of hub data (the hub site design,
-section 1 "Hub store format").
+"""kitlib.hubsite.store: the hub server's store, the one record of hub data
+(docs/modules/hub-design.md "State").
 
 Layout under the store folder `root` (the caller resolves it; nothing here reads config):
 
@@ -501,7 +501,7 @@ def approval_decided(doc, now):
     decided_at, APPROVED_TTL_S for an op one); a denial, which never expires there, for
     approvals.DENIAL_PENDING_S after decided_at (the PM's ruling). A consumed,
     pending or expired one, a bad time and a naive `now` give None."""
-    from . import approvals as ap   # approvals imports api, which imports this module
+    from kitlib.ownerfiles import approvals as ap   # local: no cycle needs it now; kept
     status = ap.status_at(doc, now)
     if status == ap.APPROVED:
         return status

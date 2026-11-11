@@ -110,8 +110,8 @@ class Create(unittest.TestCase):
         self.assertEqual(given, {"MACHINE_LOCK_DETACHED": "1", "MACHINE_LOCK_ORIGIN": "7:70"})
 
     def test_the_names_are_the_ones_the_lock_reads(self):
-        from kitlib.lock import run as lockrun, store
-        self.assertEqual((store.DETACHED_ENV, lockrun.ORIGIN_ENV),
+        from kitlib.lock import run_held, store
+        self.assertEqual((store.DETACHED_ENV, run_held.ORIGIN_ENV),
                          ("MACHINE_LOCK_DETACHED", "MACHINE_LOCK_ORIGIN"))
         self.assertEqual(store.tree_role([]), "agent")
 

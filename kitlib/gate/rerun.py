@@ -1,15 +1,17 @@
-"""The targeted rerun of a red `gate.py --full` (docs/gate-rerun-checkout.md "Targeted rerun").
+"""The targeted rerun of a red whole gate (docs/gate-rerun-checkout.md "Targeted rerun").
 
-A red `gate.py --full` of a clean tree writes a red run (record_red, called by
-kitlib.gate.runner): the commit, its tree and author, the gate config's hash, each step's
+A red whole `gate.py` of a clean tree, --full or default-mode (not --only, a partial --base or
+the docs-only route), writes a red run (record_red, called by kitlib.gate.runner): the commit,
+its tree and author, the gate config's hash, whether it was --full (`full`), each step's
 status and, for each FAIL step, the failing test ids parsed from its log (parse_log) with the
 mode each failed in, or why the step is uncovered. `gate.py --rerun` (rerun_gate) then runs,
 under one machine-lock slot booked as a gate run of the branch (so it counts toward the branch
 gate budget, kitlib.gate.budget), each failing test class with `python -m unittest -v <class>`
 at the tip (run_classes; a class still running after class_timeout seconds is ended and does
 not pass), each paired with the same class at the merge base in a throwaway tree (the
-control), and every step the red run did not reach (NOT RUN) whole. It writes a rerun record
-and says FLAKE or REAL.
+control), and every step the red run did not reach (NOT RUN) whole, in the form the red run
+ran it (its full_cmd only after a --full red run). Nothing is reused: every class and step
+runs again. It writes a rerun record and says FLAKE or REAL.
 
 FLAKE: every failing id passed at the tip, every NOT RUN step passed, warned or skipped, no step
 was uncovered, and no id that failed on the tip has failed twice on the branch (branch_twice).
@@ -19,14 +21,14 @@ recorded as `also red at base`; a control past the time limit is recorded `timed
 red nor green. A FLAKE prints the `backlog.py add` line the builder reports;
 the coordinator decides on filing it.
 
-A landing (kitlib.gate.land) takes a tip with no full gate-OK record when verify_flake finds
-its latest red run and a FLAKE rerun of exactly that run, and refuses any tip that has a red
-run of its own and an id that failed on it and failed twice on the branch (twice_refusal),
-whatever other record it has. A tip with no red run of its own is not counted: a green
-`gate.py --full` of a fix lands. Every missing, unreadable or mismatched record refuses (fail
+A landing (landing.checks) takes a tip with no gate-OK record that lands it when
+verify_flake finds its latest red run and a FLAKE rerun of exactly that run, and refuses any tip
+that has a red run of its own and an id that failed on it and failed twice on the branch
+(twice_refusal), whatever other record it has. A tip with no red run of its own is not counted:
+a green gate of a fix lands. Every missing, unreadable or mismatched record refuses (fail
 closed).
 
-Uncovered (the rerun refuses; only a passing `gate.py --full` lands the tip): a FAIL step whose
+Uncovered (the rerun refuses; only a passing gate lands the tip): a FAIL step whose
 reasons are more than its exit code and a missing pass pattern; one whose log is neither
 kit_tests' report nor unittest's (a gradle or dotnet log, say); a kit_tests unit that is not
 FAILED (TIMEOUT, a runner
@@ -63,7 +65,6 @@ from kitlib.gate import budget
 from kitlib.gate import detect
 from kitlib.gate import gatecap
 from kitlib.gate import gitstatus
-from kitlib.gate import result
 from kitlib.gate import runner
 from kitlib.gate import stash
 from kitlib.gate import steps as S
@@ -71,7 +72,8 @@ from kitlib.git import cmd, refs, repo
 from kitlib.lock import run as lockrun
 from kitlib.lock.store import LockError, Store
 from kitlib.proc.job import JobError
-from kitlib.records import gate_ok
+from kitlib.records import gate_ok, place
+from kitlib.worktree import remove_checks, scratch
 
 DIR_NAME = 'kit-gate-rerun'
 SCHEMA = 1
@@ -119,10 +121,10 @@ def record_dir(root):
     if not common:
         raise RerunError('no git common dir for %s: %s' % (root, why))
     try:
-        base = result.kit_folder(DIR_NAME, 'gate rerun folder')
-    except result.ResultError as e:
+        base = place.kit_folder(DIR_NAME, 'gate rerun folder')
+    except place.NoKitFolder as e:
         raise RerunError(str(e))
-    return os.path.join(base, result.repo_key(common))
+    return os.path.join(base, place.repo_key(common))
 
 
 def commit_dir(root, commit):
@@ -416,17 +418,18 @@ def cwd_rel(top, cwd):
     return rel.replace(os.sep, '/')
 
 
-def record_red(top, cfg, head, base, started, results, chosen, log_dir):
-    """Write the red run of a failed `gate.py --full` of `head` (the runner has checked the tree
-    was clean, HEAD unmoved and the stash empty): its path. RerunError when it cannot."""
+def record_red(top, cfg, head, base, started, results, chosen, log_dir, full):
+    """Write the red run of a failed whole gate of `head`, --full when `full` else default-mode
+    (the runner has checked the tree was clean, HEAD unmoved and the stash empty): its path.
+    RerunError when it cannot."""
     try:
         commit, tree, author = gate_ok._facts(top, head)
     except gate_ok.RecordError as e:
         raise RerunError(str(e))
     cwds = {s.name: cwd_rel(top, s.cwd) for s in chosen}
     rec = {'kind': RED, 'commit': commit, 'tree': tree, 'author': author, 'base': base,
-           'config_rev': commit, 'full': True,
-           'gate_config': gate_ok.config_hash(runner.gate_config(cfg)),
+           'config_rev': commit, 'full': bool(full),
+           'gate_config': gate_ok.config_hash(gate_ok.gate_config(cfg)),
            'started': started, 'ended': gate_ok.utc(), 'log_dir': log_dir,
            'steps': [cover_step(r, cwds.get(r['name'])) for r in results]}
     return _write(top, rec)[0]
@@ -453,16 +456,16 @@ def mark_path(root, tree, mode):
     if not common:
         raise RerunError('no git common dir for %s: %s' % (root, why))
     try:
-        base = result.kit_folder(MARK_DIR, 'red-tree folder')
-    except result.ResultError as e:
+        base = place.kit_folder(MARK_DIR, 'red-tree folder')
+    except place.NoKitFolder as e:
         raise NoMarkFolder(str(e))
-    return os.path.join(base, result.repo_key(common), '%s.%s.json' % (tree, mode))
+    return os.path.join(base, place.repo_key(common), '%s.%s.json' % (tree, mode))
 
 
 def mark_key(cfg, mode, only, base):
     """What a mark must match beyond its tree: the gate config's hash, the kit (runner.
     kit_identity), the mode, the --only steps and the --base given (None: the default)."""
-    return {'gate_config': gate_ok.config_hash(runner.gate_config(cfg)),
+    return {'gate_config': gate_ok.config_hash(gate_ok.gate_config(cfg)),
             'kit': runner.kit_identity(), 'mode': mode,
             'only': sorted(only) if only else None, 'base': base}
 
@@ -581,7 +584,7 @@ def twice_refusal(root, tip, main):
     """Why `tip` never lands: a test failed on it and failed twice on its branch (branch_twice,
     the branch being its commits since its merge base with `main`), or its rerun records, or
     the branch's, cannot be read. None when neither, when the tip has no rerun record of its own
-    (a green `gate.py --full` of a fix lands), and when the machine has no rerun folder.
+    (a green gate of a fix lands), and when the machine has no rerun folder.
     """
     if _folder(root, tip) is None:
         return None
@@ -607,14 +610,15 @@ def has_records(root, tip):
 
 
 def verify_flake(root, tip):
-    """None when the latest red `gate.py --full` run of `tip` was rerun once and found a FLAKE,
-    and that still holds against the records and git; else why not."""
+    """None when the latest red whole gate of `tip` (--full or default-mode, record_red) was
+    rerun once and found a FLAKE, and that still holds against the records and git; else why
+    not."""
     try:
         reds, reruns = load(root, tip)
     except RerunError as e:
         return 'its rerun records cannot be read: %s' % e
     if not reds:
-        return 'no red gate.py --full run of it is recorded, so no targeted rerun can land it'
+        return 'no red gate.py run of it is recorded, so no targeted rerun can land it'
     why = _facts_check(root, tip, reds + reruns)
     if why:
         return why
@@ -622,11 +626,11 @@ def verify_flake(root, tip):
     if ids:
         return _twice_text(ids)
     red = reds[-1]
-    if red.get('config_rev') != tip or red.get('full') is not True:
-        return 'its latest red run is not a gate.py --full run of the tip'
+    if red.get('config_rev') != tip or not isinstance(red.get('full'), bool):
+        return 'its latest red run is not a whole gate.py run of the tip'
     unc = uncovered_of(red)
     if unc:
-        return 'its latest red run is uncovered (%s): only a passing gate.py --full lands it' % (
+        return 'its latest red run is uncovered (%s): only a passing gate lands it' % (
             '; '.join(unc[:3]))
     mine = [r for r in reruns if r.get('red') == red['hash']]
     if not mine:
@@ -810,21 +814,18 @@ def classes_of(red):
 
 def _control_tree(top, cfg, base, say):
     """`(path, None)` of a throwaway detached tree at `base`, or `(None, why)`."""
-    from kitlib.redfirst import run as rf      # it imports the runner, as this module does
-    from kitlib.worktree import remove
     try:
-        main = remove.main_checkout(top)
+        main = remove_checks.main_checkout(top)
     except Exception as e:          # noqa: BLE001 - no control, said; never the verdict
         return None, None, 'the main checkout cannot be found: %s' % e
-    path, why = rf.make_tree(main, cfg.repo['worktrees_dir'], base)
+    path, why = scratch.make_tree(main, cfg.repo['worktrees_dir'], base)
     return main, path, why
 
 
 def _drop_tree(main, path, base, cfg, say):
-    from kitlib.redfirst import run as rf
     wait_s = cfg.section('redfirst').get('hold_wait', 60)
-    if not rf.cleanup_here(main, path, base, [], [], wait_s, say):
-        say(rf.leftover_line(path, False, main))
+    if not scratch.cleanup_here(main, path, base, [], [], wait_s, say):
+        say(scratch.leftover_line(path, False, main))
 
 
 def scope_of(top, cls):
@@ -839,7 +840,7 @@ def scope_of(top, cls):
 
 def add_line(top, branch, head, classes):
     """The `backlog.py add` line a FLAKE prints: the builder reports it; the coordinator decides
-    on filing it (skill builder, step 10). The summary is a short title, within plan.SUMMARY_MAX
+    on filing it (skill builder, step 10). The summary is a short title, within plan_edit.SUMMARY_MAX
     (the class, cut to 60 characters, and the tip); the failing test ids go into the
     not-folded reason, which the record keeps in its body's `## Found` section."""
     ids = [t for c in classes for t in c['ids']]
@@ -847,9 +848,9 @@ def add_line(top, branch, head, classes):
     name = re.sub(r'[^A-Za-z0-9]+', '-', cls).strip('-').upper()
     scopes = sorted({scope_of(top, c['cls']) for c in classes})
     more = ' and %d more' % (len(classes) - 1) if len(classes) > 1 else ''
-    return ('%s add FLAKE-%s --summary "flaky: %s%s in gate.py --full at %s" --scope %s '
+    return ('%s add FLAKE-%s --summary "flaky: %s%s in gate.py at %s" --scope %s '
             '--found-on %s --why-not-folded "a flake outside this branch\'s story; it failed in '
-            'gate.py --full and passed its targeted rerun: %s"'
+            'gate.py and passed its targeted rerun: %s"'
             % (kitroot.command('backlog', top), name[:40] or 'TEST', cls[:60], more, head[:10],
                ','.join(scopes), branch or 'none', ', '.join(ids)))
 
@@ -883,8 +884,9 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     except RerunError as e:
         return G.Outcome(G.REFUSED, ['REFUSED: the rerun records of %s: %s' % (head[:10], e)])
     if not reds:
-        return G.Outcome(G.REFUSED, ['REFUSED: no red gate.py --full run of HEAD %s is recorded '
-                                     '(only a --full run of a clean tree writes one)' % head[:10]])
+        return G.Outcome(G.REFUSED, ['REFUSED: no red gate.py run of HEAD %s is recorded '
+                                     '(only a whole --full or default-mode gate of a clean tree '
+                                     'writes one)' % head[:10]])
     why = _facts_check(top, head, reds + reruns)
     if why:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
@@ -892,26 +894,27 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     if any(r.get('red') == red['hash'] for r in reruns):
         return G.Outcome(G.REFUSED, ['REFUSED: the latest red run of %s was rerun already; one '
                                      'rerun per red run: the next step is a fix, or a new '
-                                     'gate.py --full' % head[:10]])
+                                     'gate.py' % head[:10]])
     ids, why = branch_twice(top, head, red['base'], reds, reruns)
     if ids is None:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
     if ids:
         return G.Outcome(G.FAILED, ['RERUN REAL: %s; nothing was rerun' % _twice_text(ids)],
                          verdict=REAL)
-    if red.get('gate_config') != gate_ok.config_hash(runner.gate_config(cfg)):
+    if red.get('gate_config') != gate_ok.config_hash(gate_ok.gate_config(cfg)):
         return G.Outcome(G.REFUSED, ['REFUSED: the gate config is not the one the red run used'])
     unc = uncovered_of(red)
     if unc:
         return G.Outcome(G.REFUSED, ['REFUSED: the red run is uncovered, so only a passing '
-                                     'gate.py --full lands this tip:'] + ['  %s' % u for u in unc])
+                                     'gate lands this tip:'] + ['  %s' % u for u in unc])
     classes = classes_of(red)
     not_run = [s['name'] for s in red['steps'] if s['status'] == 'NOT RUN']
     base = red['base']
     try:
         eff = detect.effective(cfg, top, base=base)
         gate = eff.gate
-        built = {s.name: s for s in S.build(gate, top, base, cfg.tools_dir, full=True)}
+        built = {s.name: s for s in S.build(gate, top, base, cfg.tools_dir,
+                                            full=red.get('full') is True)}
     except (detect.DetectError, S.GateConfigError) as e:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
     missing = [n for n in not_run if n not in built]
@@ -922,7 +925,7 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     if checks is None:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
     changed, _ = runner.changed_since(top, base)
-    name = runner.repo_name(cfg, top)
+    name = place.repo_name(cfg, top)
     logs = runner.new_log_dir(cfg, top, name, 'rerun-' + (branch or head[:10]), log_dir)
     started = gate_ok.utc()
     say('targeted rerun of %s at %s (red run of %s): %d class(es)%s' % (
@@ -978,7 +981,7 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
            'options': options}
     mine = {'branch': branch} if branch else {}
     out, refused = run_classes(
-        gate['kind'], name, slug or runner.slug_of(branch or head[:10]),
+        gate['kind'], name, slug or place.slug_of(branch or head[:10]),
         dict(book_kw or {}, gate_mode='rerun', **mine), red['tree'], top, classes, gate, ctx,
         logs, base, say,
         after=steps, checks=checks, timeout=timeout, scope=control_tree, each=each,

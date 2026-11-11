@@ -36,7 +36,7 @@ Roles are named bare; your host's instructions say how a role name becomes its d
 - Where the repo has a brief template (`--find brief`), follow it.
 - A review (analyst) brief names `python <kit>/tools/review_pack.py -C <repo> <branch>` as its first call, and gives the approved design.
 - A docs-writer brief gives facts as keyword lines, `ID | status | area | keywords | ref`, at most 300 characters each (evidence and deletion rules: `specialty-docs` `doc-writing.md`, "Findings and doc edits").
-- An owner-approved change: the author commits with `commit.py -m "<subject>" --model "<model name>" --owner-approval hub:A-n <path> ...`, the work tree left at the approval's base; never copying the approved content in first.
+- An owner-approved change: the author asks from its worktree (skill hub-ops, step 5), the files left at the approval's base; the hub commits it on that branch once approved, and the author never commits it.
 - A task matching a specialty skill (`specialty-*` in `<kit>/content/skills/`): the brief says "Load skill `<name>` first" and names a role at least the skill's `Dispatch:` line's minimum. Creative work: `creative.md` beside this file, first.
 
 ## Which role, which tier

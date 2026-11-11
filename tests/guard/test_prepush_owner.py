@@ -1,4 +1,4 @@
-"""The owner-only-path rule of githooks/pre-push (kitlib.guard.prepush with kitlib.guard.ownercommits), through git running the real hook."""
+"""The owner-only-path rule of githooks/pre-push (kitlib.guard.prepush with kitlib.ownerfiles.rules), through git running the real hook."""
 import json
 
 from tests import gitfixture

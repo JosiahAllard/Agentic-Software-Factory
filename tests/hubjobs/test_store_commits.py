@@ -6,9 +6,9 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import errors
-from kitlib.backlog import store as bstore
+from kitlib.backlog import store_folder
 from kitlib.hubjobs import store_commits as sc
 from kitlib.hubsite import jobs
 
@@ -102,7 +102,7 @@ class Run(StoreCommitsCase):
         lock = os.path.normpath(index) + '.lock'
         open(lock, 'w').close()
         self.addCleanup(lambda: os.path.exists(lock) and os.remove(lock))
-        with mock.patch.object(bstore, 'INDEX_WAIT', 0.1):
+        with mock.patch.object(store_folder, 'INDEX_WAIT', 0.1):
             out = self.run_job()
         self.assertIsInstance(out, jobs.Skip)
         self.assertIn('index lock', out.note)
@@ -151,7 +151,7 @@ class Run(StoreCommitsCase):
 
     def test_head_already_holding_them_is_a_skip(self):
         self.edit('BAR')
-        with mock.patch.object(bstore.MainBackend, 'commit_paths', return_value=None):
+        with mock.patch.object(store_folder.MainBackend, 'commit_paths', return_value=None):
             out = self.run_job()
         self.assertIsInstance(out, jobs.Skip)
         self.assertEqual(out.note, 'HEAD already holds them')
@@ -178,11 +178,11 @@ class Stops(StoreCommitsCase):
     def test_a_failed_commit_stops_the_job_until_the_paths_clear(self):
         self.edit('BAR')
         fail = errors.Uncommitted('git update-ref HEAD: boom', paths=['%s/BAR.md' % DIR])
-        with mock.patch.object(bstore.MainBackend, 'commit_paths', side_effect=fail):
+        with mock.patch.object(store_folder.MainBackend, 'commit_paths', side_effect=fail):
             with self.assertRaises(errors.Uncommitted):
                 self.run_job()
         self.edit('BAZ')                            # a second path: still nothing is committed
-        with mock.patch.object(bstore.MainBackend, 'commit_paths') as commit:
+        with mock.patch.object(store_folder.MainBackend, 'commit_paths') as commit:
             with self.assertRaises(sc.StoreStuck) as cm:
                 self.run_job()
             commit.assert_not_called()
@@ -194,7 +194,7 @@ class Stops(StoreCommitsCase):
 
     def test_a_bare_failure_fails_the_run_and_the_next_run_retries(self):
         self.edit('BAR')
-        with mock.patch.object(bstore.MainBackend, 'commit_paths',
+        with mock.patch.object(store_folder.MainBackend, 'commit_paths',
                                side_effect=errors.Failure('git hash-object timed out')):
             with self.assertRaises(errors.Failure) as cm:
                 self.run_job()
@@ -206,10 +206,10 @@ class Stops(StoreCommitsCase):
         self.edit('BAR')
         fail = errors.Overtaken('HEAD changed it', paths=['%s/BAR.md' % DIR],
                                 changed=['%s/BAR.md' % DIR])
-        with mock.patch.object(bstore.MainBackend, 'commit_paths', side_effect=fail):
+        with mock.patch.object(store_folder.MainBackend, 'commit_paths', side_effect=fail):
             with self.assertRaises(errors.Overtaken):
                 self.run_job()
-        with mock.patch.object(bstore.MainBackend, 'commit_paths') as commit:
+        with mock.patch.object(store_folder.MainBackend, 'commit_paths') as commit:
             with self.assertRaises(sc.StoreStuck) as cm:
                 self.run_job()
             commit.assert_not_called()
@@ -217,7 +217,7 @@ class Stops(StoreCommitsCase):
 
     def test_a_status_that_cannot_be_read_fails_the_run(self):
         self.edit('BAR')
-        with mock.patch.object(bstore.MainBackend, 'pending',
+        with mock.patch.object(store_folder.MainBackend, 'pending',
                                side_effect=errors.Failure('cannot read the status')):
             with self.assertRaises(errors.Failure):
                 self.run_job()
@@ -228,7 +228,7 @@ class Stops(StoreCommitsCase):
         self.edit('BAR')
         fail = errors.IndexStale('index not updated', paths=['%s/BAR.md' % DIR])
         runner = jobs.Jobs([jobs.Job(sc.NAME, sc.EVERY_S, self.job)])
-        with mock.patch.object(bstore.MainBackend, 'commit_paths', side_effect=fail):
+        with mock.patch.object(store_folder.MainBackend, 'commit_paths', side_effect=fail):
             runner.run_now(sc.NAME)
         runner.run_now(sc.NAME)
         block = runner.status()[sc.NAME]

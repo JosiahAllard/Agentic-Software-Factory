@@ -1,10 +1,11 @@
 """The architecture page generated from the module map (docs/module-map.md "The architecture
 page").
 
-The page lists the modules, the messaging modules, the allowed edges and the ratchets, each with
-the owner's reason, so planning starts from the map. It holds nothing but the map (no counts, no
-ceilings), so it changes only when the map does. `.kit.json` "modules".page names the file;
-`--page --write` writes it and `--check` fails when it does not match the map.
+The page lists the modules (with their layers when the map names them), the messaging modules,
+the allowed edges and the ratchets, each with the owner's reason, so planning starts from the
+map. It holds nothing but the map (no counts, no ceilings), so it changes only when the map
+does. `.kit.json` "modules".page names the file; `--page --write` writes it and `--check` fails
+when it does not match the map.
 """
 from .load import ROOT
 
@@ -36,9 +37,19 @@ def render(mm, map_rel):
              'A crossing the map does not allow (an edge of its kind, a messaging module or a '
              'ratchet) is refused. A path no module holds is in `%s`.' % ROOT, '',
              '## Modules', '']
-    lines += _table(['Module', 'Folders', 'What it is'],
-                    [(n, _code(mm.paths_as_written[n]), mm.why.get(n))
-                     for n in sorted(mm.modules)])
+    if mm.layers:
+        lines.append('Layers, lowest first: %s. An edge goes down a layer, or to a module of '
+                     'its own layer the Same layer column names.' % ', '.join(mm.layers))
+        lines.append('')
+        rank = {name: i for i, name in enumerate(mm.layers)}
+        lines += _table(['Module', 'Layer', 'Same layer', 'Folders', 'What it is'],
+                        [(n, mm.layer[n], _code(mm.same_layer[n]),
+                          _code(mm.paths_as_written[n]), mm.why.get(n))
+                         for n in sorted(mm.modules, key=lambda n: (rank[mm.layer[n]], n))])
+    else:
+        lines += _table(['Module', 'Folders', 'What it is'],
+                        [(n, _code(mm.paths_as_written[n]), mm.why.get(n))
+                         for n in sorted(mm.modules)])
     lines += ['', '## Messaging', '']
     if mm.messaging:
         lines.append('Every module may use %s.' % ', '.join(mm.messaging))

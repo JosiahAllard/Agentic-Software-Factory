@@ -1,5 +1,5 @@
 """The owner's answer filed into a record (docs/backlog.md "Records"): the protected `answer:
-<Q-nnn> <at>` key, one line per question, that only kitlib/backlog/plan.py plan_answer writes,
+<Q-nnn> <at>` key, one line per question, that only kitlib/backlog/plan_hold.py plan_answer writes,
 with its body section; the wait ends on the last answer (unpark, the owner blocker cleared); a
 free-text Other answer leaves the review mark; a repeat changes nothing."""
 import unittest

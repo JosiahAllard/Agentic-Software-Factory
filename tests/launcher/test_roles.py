@@ -1,11 +1,11 @@
-"""Every session kind the launcher opens carries a PM_KIT_ROLE mark (kitlib.sessionmark): each test
+"""Every session kind the launcher opens carries a PM_KIT_ROLE mark (kitlib.host.sessionmark): each test
 opens the window through a fake host and reads the mark out of the window's script."""
 import os
 import unittest
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.launcher import reboot, start, window
-from kitlib.lockmcp import PLUGIN_NAME
+from kitlib.host.registry import PLUGIN_NAME
 from tests.launcher.fakes import FakeHost, Home, role_of, windows_text
 
 P = PLUGIN_NAME + ':'

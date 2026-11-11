@@ -243,7 +243,7 @@ _ISO = re.compile(r"^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}[:][0-9]{2}[:][0-9]{2})
 
 
 def started_at(s):
-    """A process's Created (ISO 8601, as kitlib.pmstart.list_processes gives it: up to 7 fraction
+    """A process's Created (ISO 8601, as kitlib.proc.listing.list_processes gives it: up to 7 fraction
     digits, a local offset or Z) as epoch seconds; None when it does not parse."""
     m = _ISO.match(str(s).strip()) if isinstance(s, str) else None
     if not m:
@@ -503,9 +503,9 @@ UNREADABLE = "the process list could not be read"
 
 
 def default_lister():
-    """The running processes as dicts with a CommandLine (kitlib.pmstart.list_processes, given
+    """The running processes as dicts with a CommandLine (kitlib.proc.listing.list_processes, given
     LIST_TIMEOUT seconds)."""
-    from kitlib.pmstart import list_processes
+    from kitlib.proc.listing import list_processes
     return list_processes(timeout=LIST_TIMEOUT)
 
 

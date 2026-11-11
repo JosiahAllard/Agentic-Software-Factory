@@ -18,7 +18,9 @@ from kitlib.config import user as kuser
 from kitlib.gate import budget, gatecap, runner
 from kitlib.gate import steps as S
 from kitlib.lock import run as lockrun
+from kitlib.lock import run_end
 from kitlib.proc import process
+from kitlib.records import place
 from tests.gate import fixtures
 from tests.home import machine_config
 from tests.lock.helpers import own_affinity
@@ -97,7 +99,7 @@ class CapCase(fixtures.GateRepoCase):
         gatecap._TURN.mine = None
         self.addCleanup(gatecap._leave)
         self.wt, _ = self.branch('feature', {'a.py': 'x = 1\n'})
-        self.name = runner.repo_name(kconfig.load(self.wt), self.wt)
+        self.name = place.repo_name(kconfig.load(self.wt), self.wt)
         self.n = 0
 
     def run_rec(self, host=HOST, **fields):
@@ -357,7 +359,7 @@ class CountedTogether(CapCase):
         """A give-back settles the run and drops its stop request: the stop would be lost."""
         self.run_rec()
         slot = self.book()
-        self.assertTrue(lockrun.request_stop(self.store, slot.id, 'test'))
+        self.assertTrue(run_end.request_stop(self.store, slot.id, 'test'))
         self.assertFalse(gatecap.gave_way(self.store, self.name, slot, lambda t: None, cap=1,
                                           who=AGENT, sleep=lambda s: None))
         self.assertFalse(slot.released)
@@ -374,12 +376,12 @@ class CountedTogether(CapCase):
             slot = booked(*a, **k)
             slots.append(slot)
             if not stop_on_give_back:
-                lockrun.request_stop(self.store, slot.id, 'test')
+                run_end.request_stop(self.store, slot.id, 'test')
             return slot
 
         def say(text):
             if stop_on_give_back and 'gives back run' in text:
-                lockrun.request_stop(self.store, slots[-1].id, 'test')
+                run_end.request_stop(self.store, slots[-1].id, 'test')
 
         def sleep(s):
             naps.append(s)

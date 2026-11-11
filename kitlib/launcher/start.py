@@ -15,7 +15,7 @@ import os
 import re
 import sys
 
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib import content as kcontent
 from kitlib.config import user as kuser
 from kitlib.launcher import accounts as A
@@ -70,7 +70,7 @@ DEFAULT_AUTOCOMPACT = 200000   # a coordinator, another agent or a plain session
 DEEP_AUTOCOMPACT = 500000
 CONSULTANT_AUTOCOMPACT = (100000, 500000)
 CONSULTANT_DEFAULT_AUTOCOMPACT = 350000
-# a sessions.json entry of that agent, bare or with the kit plugin's prefix (kitlib.agentname)
+# a sessions.json entry of that agent, bare or with the kit plugin's prefix (kitlib.host.agentname)
 ROLE_AUTOCOMPACT = {'consultant': CONSULTANT_DEFAULT_AUTOCOMPACT, 'deep-worker': DEEP_AUTOCOMPACT}
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # the kit plugin's agents, read from the role files (content/roles/*.md, kitlib.content.roster; rendered as
@@ -186,7 +186,7 @@ def account_folder(settings, account=None, org=None):
 
 def run_as(agent):
     """The --agent value for `agent`: a bare kit agent qualified with the plugin's prefix
-    (kitlib.agentname), an old name (AGENT_ALIASES) as its new one; a prefixed name, a repo's own
+    (kitlib.host.agentname), an old name (AGENT_ALIASES) as its new one; a prefixed name, a repo's own
     agent or None unchanged."""
     agent = AGENT_ALIASES.get(agent, agent)
     return agentname.qualified(agent) if agent in KIT_AGENTS else agent

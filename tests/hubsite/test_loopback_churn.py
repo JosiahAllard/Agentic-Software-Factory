@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 
 from kitlib.hubsite import httpd
-from kitlib.proc import tcp
+from kitlib.platform.linux import tcp as linuxtcp
 from tests.hubsite import httpfix
 from tests.platforms import windows_only
 from tests.proc.test_tcp import LO4, LO6, v4_row, v6_row
@@ -81,7 +81,8 @@ class TablesTest(unittest.TestCase):
             '   2: 0A000001:2687 0A000002:9C42 06 00000000\n',    # TIME_WAIT, not loopback
             '   0: 00000000000000000000000001000000:2688 00000000000000000000000001000000:9C43 06 0\n'
             '   1: 0000000000000000FFFF00000100007F:2689 0000000000000000FFFF00000100007F:9C44 06 0\n')
-        with mock.patch('kitlib.platform.NAME', 'linux'), mock.patch.object(tcp, 'PROC_NET', paths):
+        with mock.patch('kitlib.platform.NAME', 'linux'), \
+                mock.patch.object(linuxtcp, 'PROC_NET', paths):
             self.assertEqual(httpfix.time_wait_ends(), {
                 ((4, LO4, 0x2685), (4, LO4, 0x9C40)),
                 ((6, LO6, 0x2688), (6, LO6, 0x9C43)),
@@ -89,14 +90,14 @@ class TablesTest(unittest.TestCase):
 
     @windows_only('the Windows TCP table is read through iphlpapi')
     def test_windows_reads_the_loopback_time_wait_rows_of_both_tables(self):
-        from kitlib.proc import win32
+        from kitlib.platform.windows import win32
         other = b'\x0a\0\0\x01'
         tables = {
             win32.AF_INET: struct.pack('<I', 3) + v4_row(11, LO4, 5000, LO4, 6000, 0)
             + v4_row(5, LO4, 5001, LO4, 6001, 10) + v4_row(11, other, 5002, other, 6002, 0),
             win32.AF_INET6: struct.pack('<I', 1) + v6_row(11, LO6, 5003, LO6, 6003, 0)}
         with mock.patch('kitlib.platform.NAME', 'windows'), \
-                mock.patch.object(tcp, '_table', lambda family: tables[family]):
+                mock.patch('kitlib.platform.windows.tcp.table', lambda family: tables[family]):
             self.assertEqual(httpfix.time_wait_ends(), {
                 ((4, LO4, 5000), (4, LO4, 6000)), ((6, LO6, 5003), (6, LO6, 6003))})
 

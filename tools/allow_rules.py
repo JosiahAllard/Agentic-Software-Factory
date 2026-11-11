@@ -17,7 +17,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib import allowrules, kitroot                              # noqa: E402
-from kitlib.stubs import memory as kmemory                          # noqa: E402
+from kitlib.machinesetup import memory as kmemory                 # noqa: E402
 
 USAGE = 2
 

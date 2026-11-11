@@ -1,7 +1,7 @@
 """The review mark (`review: <source> <YYYY-MM-DD>`, docs/backlog.md "Records"): only the
 library's `add(review=)` writes it (the Action Hub's add; the CLI has no flag), `pull` refuses a
 marked record, `next` never offers it and the banner counts it as `to review`, and a
-coordinator's `clear-review ID --reason T` drops it (kitlib/backlog/plan.py plan_add,
+coordinator's `clear-review ID --reason T` drops it (kitlib/backlog/plan_edit.py plan_add,
 plan_pull, plan_clear_review; offer.py classify, not_offered_why)."""
 import unittest
 

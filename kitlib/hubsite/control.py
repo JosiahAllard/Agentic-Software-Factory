@@ -24,17 +24,19 @@ covers every phase. A task that cannot be read or started once a server was stop
 StartFailed, which carries what was stopped.
 
 The deadline is approximate: it is looked at between polls, and one poll may run past it by up
-to serve.ASK_TIMEOUT_S (a request to the server) or autostart.TASK_TIMEOUT_S (a read of the
+to localask.ASK_TIMEOUT_S (a request to the server) or autostart.TASK_TIMEOUT_S (a read of the
 task's state).
 
-ask, alive, task_state and start_task are looked up when called (serve.ask, process.alive and
+ask, alive, task_state and start_task are looked up when called (localask.ask, process.alive and
 autostart's own), so a test's patch of the module attribute reaches them.
 """
 import collections
 import time
 
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
 from kitlib.hubsite import api as _api
-from kitlib.hubsite import autostart, gitsync, httpd, serve
+from kitlib.hubsite import autostart, gitsync, httpd
 from kitlib.proc import process
 
 POLL_S = 0.25
@@ -68,21 +70,21 @@ Stopped = collections.namedtuple('Stopped', 'ran pid already')
 Restarted = collections.namedtuple('Restarted', 'stopped outcome port')
 
 
-class Refused(serve.ServeError):
+class Refused(huberrors.ServeError):
     """The server answered the stop request with something other than "stopping": `status` and
     `answer` are what it said (a 403 for a token that is not the owner's)."""
 
     def __init__(self, port, status, answer):
-        serve.ServeError.__init__(self, 'the hub server on port %d answered %d to the stop request'
-                                  % (port, status))
+        huberrors.ServeError.__init__(
+            self, 'the hub server on port %d answered %d to the stop request' % (port, status))
         self.port, self.status, self.answer = port, status, answer
 
 
-class TimedOut(serve.ServeError):
+class TimedOut(huberrors.ServeError):
     """A wait ran past the deadline. `phase` is one of the phases above; nothing was ended."""
 
     def __init__(self, phase, message):
-        serve.ServeError.__init__(self, message)
+        huberrors.ServeError.__init__(self, message)
         self.phase = phase
 
 
@@ -109,7 +111,7 @@ def _whole(value):
 def _wait(done, deadline, clock, pause):
     """Ask `done()` every POLL_S until it is true (True) or the deadline has passed (False).
     The deadline is looked at between calls, never during one, so a wait can run past it by one
-    call of `done()`: up to serve.ASK_TIMEOUT_S for a request to the server, or
+    call of `done()`: up to localask.ASK_TIMEOUT_S for a request to the server, or
     autostart.TASK_TIMEOUT_S for a read of the task's state."""
     while True:
         if done():
@@ -123,9 +125,9 @@ def _port_closed(port, token, ask):
     def done():
         try:
             ask(port, 'GET', HEALTH, token=token)
-        except serve.NotRunning:
+        except huberrors.NotRunning:
             return True
-        except serve.ServeError:
+        except huberrors.ServeError:
             return False        # a connection cut while it closes: still closing
         return False
     return done
@@ -140,13 +142,13 @@ def stop(port, token, timeout, ask=None, alive=None, clock=time.monotonic, pause
     answers
     anything but "stopping", ServeError when what answers is not the hub, TimedOut when it
     does not close in time (nothing is ended)."""
-    ask = ask or serve.ask
+    ask = ask or localask.ask
     alive = alive or process.alive
     if deadline is None:
         deadline = clock() + timeout
     try:
         status, obj = ask(port, 'POST', httpd.STOP_ROUTE, token=token)
-    except serve.NotRunning:
+    except huberrors.NotRunning:
         return Stopped(False, None, False)
     already = _closing(status, obj)
     if not already and not (status == 200 and obj.get('ok') is True
@@ -173,7 +175,7 @@ def _answers(port, token, ask):
     def done():
         try:
             status, obj = ask(port, 'GET', HEALTH, token=token)
-        except serve.ServeError:
+        except huberrors.ServeError:
             return False        # not up yet (NotRunning), or cut while it starts
         return status == 200 and obj.get('ok') is True
     return done
@@ -189,7 +191,7 @@ def restart(port, token, timeout, new_port=None, ask=None, alive=None, task_stat
     when the task is Running but nothing answers on `port` (its server is on another port, or
     is still closing after its port is free: nothing is stopped or started); stop's errors;
     TimedOut (nothing is ended)."""
-    ask = ask or serve.ask
+    ask = ask or localask.ask
     task_state = task_state or autostart.task_state
     start_task = start_task or autostart.start_task
     new_port = port if new_port is None else new_port
@@ -204,7 +206,7 @@ def restart(port, token, timeout, new_port=None, ask=None, alive=None, task_stat
     if state not in ACTIVE and stopped.ran:
         return Restarted(stopped, HAND_STARTED, new_port)
     if state == RUNNING and not stopped.ran:
-        raise serve.ServeError(
+        raise huberrors.ServeError(
             "nothing answers on port %d, yet the task '%s' is running: its server may be on "
             "another port (name it with --port), or %s. Nothing was stopped or started"
             % (port, autostart.TASK_NAME, STILL_CLOSING))

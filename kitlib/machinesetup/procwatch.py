@@ -2,7 +2,7 @@
 `optional/procwatch/procwatch.py --log <agent temp>\\procwatch.log`, registered by `--procwatch` as
 the registering user. Opt-in, and report only: `--procwatch-kill` adds `--kill --only SAFE`, so
 killing is a second, separate choice and reaches only the rules in SAFE. The task's program is the
-base `pythonw.exe` (kitlib.launcher.pythonw.base_pythonw, a literal path, never a PATH lookup) with
+base `pythonw.exe` (kitlib.schedtask.pythonw.base_pythonw, a literal path, never a PATH lookup) with
 the carrier `tools/no_window.py` first, as the agent temp sweep task does; the script is the kit's
 own file, not a link in the home folder, and the log goes in the agents' temp folder
 (kitlib.machinesetup.agenttemp.choose), not the home folder. A task already registered is
@@ -13,8 +13,9 @@ Nothing here prints or exits.
 import os
 
 from kitlib import platform
-from kitlib.launcher.pythonw import base_pythonw
-from kitlib.worktree.task import CARRIER, NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
+from kitlib.proc.spawn import CARRIER
+from kitlib.schedtask.line import NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
+from kitlib.schedtask.pythonw import base_pythonw
 
 from . import agenttemp
 from .settings import host_name

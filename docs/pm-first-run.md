@@ -18,8 +18,7 @@ home folder, all absolute. A hand step changes the owner's own settings: give it
    `python tools/kit_tests.py --full`.
    Success: the last line starts `kit_tests: OK in`.
 
-3. **Turn on the plugin** (hand step; docs/go-live.md "Skills, templates, optional tools,
-   knowledge").
+3. **Turn on the plugin** (hand step; docs/install.md "Per Claude account").
    Success: `ListSkills` shows each skill named in docs/shipping.md once.
 
 4. **Write the user config.** Create `<config-dir>/config.json`, in the PM repository's `.pm-kit` (docs/kit-json.md "Machine config keys"), holding a JSON object,
@@ -67,7 +66,7 @@ home folder, all absolute. A hand step changes the owner's own settings: give it
    `launcher.state_dir` (docs/launcher.md "State files"): start it from
    `docs/launcher.sessions.example.json`, or from `{}` until step 11. Put that folder inside the PM
    repository (the hub server's backlog view finds the repository from the sessions file's folder,
-   `kitlib.hubsite.serve` `_repo_pairs`, and fails outside a git repo). Fill `pm_start` in the user config with their paths, and
+   `kitlib.hubsite.servesources` `_repo_pairs`, and fails outside a git repo). Fill `pm_start` in the user config with their paths, and
    `pm_watch_cmd` (docs/pm-start.md "Config"); set `pm_watch.sessions_file` to the same file
    (docs/pm-watch.md "Config"); `pm_watch.py` exits 2 without the machine config's `launcher` key.
    Then, as a hand step, the owner adds the SessionStart hook from docs/pm-start.md to the
@@ -77,7 +76,7 @@ home folder, all absolute. A hand step changes the owner's own settings: give it
    Then give the PM repository, and each repository in `launcher.repos`, its agent memory folder:
    `python <kit>/tools/kit_stubs.py memory -C <repo>` prints the `autoMemoryDirectory` it would add
    to `.claude/settings.local.json` (`<the main checkout's drive>/Agent-memory/<repo folder name>`;
-   `kitlib/stubs/memory.py`), and the owner runs the same command with `--apply`, which adds it only
+   `kitlib/machinesetup/memory.py`), and the owner runs the same command with `--apply`, which adds it only
    when neither that file nor `.claude/settings.json` has the key. The key is a machine path, so it
    goes in the git-ignored local file: there is nothing to commit. Set
    `pm_start.memory_dir` to the PM repository's folder (docs/pm-start.md "Config"). A machine

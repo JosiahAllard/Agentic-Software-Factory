@@ -1,6 +1,6 @@
 # Machine lock design
 
-Low-level design of `kitlib/lock`, `kitlib/lockui` and `kitlib/lockmcp`. The high-level design is ARCHITECTURE.md ("Contracts": Booking, Kinds; "Scheduler UI") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-017, W-037, W-040).
+Low-level design of `kitlib/lock`, `kitlib/lockui` and `kitlib/lockmcp`. The high-level design is ARCHITECTURE.md ("Contracts": Booking, Kinds; "Scheduler UI") and wins on a conflict.
 
 ## Contract
 
@@ -21,7 +21,7 @@ Low-level design of `kitlib/lock`, `kitlib/lockui` and `kitlib/lockmcp`. The hig
 | `lock/store.py` | The store: a folder of JSON records under named mutexes (flocks on Linux), each run's liveness mutex |
 | `lock/layout.py`, `kinds.py`, `site.py` | The machine and its slots; the kinds table; the machine's lock settings |
 | `lock/queue.py`, `holds.py` | The queue; holds (owner, agent, game) |
-| `lock/run*.py` | A run under the lock, split by responsibility: booking, the wait, the held run, ending and cleanup |
+| `lock/run.py`, `run_wait.py`, `run_held.py`, `run_end.py`, `run_cmdline.py` | A run under the lock, split by responsibility: booking (`run`), the wait in the queue (`run_wait`), the held run and its launcher (`run_held`), ending and cleanup (`run_end`), the command line a run starts (`run_cmdline`) |
 | `lock/giveback.py`, `background.py`, `bg_client.py`, `game.py`, `stale.py`, `notice.py`, `jobset.py`, `detach.py`, `release.py` | One concern each |
 | `lock/api.py`, `status.py` | The API; the status text |
 | `lockui/` | The schedule window's model, actions and tkinter view |

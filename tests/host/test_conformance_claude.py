@@ -58,7 +58,7 @@ class ClaudeConformance(conformance.HostConformance, bridge_conformance.mixin('c
         self.assertEqual(host.PARTS, ('coordinator', 'pm'))
         code, out = self.run_hook('SessionStart', {'cwd': self.KIT_ROOT}, None, part='coordinator')
         self.assertEqual((code, out), (0, ''), 'an unmarked session gets no coordinator rules')
-        with mock.patch('kitlib.pmstart.load_config', return_value={}), \
+        with mock.patch('kitlib.config.pm.load_config', return_value={}), \
                 mock.patch('kitlib.pmstart.checklist', return_value='the PM checklist'):
             code, out = self.run_hook('SessionStart', {}, None, part='pm')
         self.assertEqual(self.read_context(out), 'the PM checklist')

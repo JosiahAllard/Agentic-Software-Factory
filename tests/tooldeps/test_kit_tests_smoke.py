@@ -17,8 +17,8 @@ _spec = importlib.util.spec_from_file_location('kit_tests_entry_for_smoke_tests'
 cli = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cli)
 
-SMOKE = ['tests.guard.test_rules', 'tests.gate.test_land']
-SELECTED = ['tests.scrub.test_scrub', 'tests.gate.test_land']
+SMOKE = ['tests.guard.test_rules', 'tests.landing.test_land']
+SELECTED = ['tests.scrub.test_scrub', 'tests.landing.test_land']
 MODULES = sorted(set(SMOKE + SELECTED + ['tests.docs.test_budget']))
 
 
@@ -32,12 +32,12 @@ class SmokeSelection(unittest.TestCase):
     """selftree.smoke: which smoke modules a change adds."""
 
     def test_a_code_change_adds_the_smoke_modules_not_selected_yet(self):
-        add, why = selftree.smoke(['kitlib/stubs/x.py', 'docs/a.md'], table(), SELECTED, MODULES)
+        add, why = selftree.smoke(['kitlib/machinesetup/x.py', 'docs/a.md'], table(), SELECTED, MODULES)
         self.assertEqual(add, ['tests.guard.test_rules'])
         self.assertEqual(why, '1 smoke module(s) added')
 
     def test_nothing_selected_takes_every_smoke_module(self):
-        add, _why = selftree.smoke(['kitlib/stubs/x.py'], table(), None, MODULES)
+        add, _why = selftree.smoke(['kitlib/machinesetup/x.py'], table(), None, MODULES)
         self.assertEqual(add, SMOKE)
 
     def test_a_prose_only_change_adds_none(self):
@@ -78,15 +78,15 @@ class KitTable(unittest.TestCase):
     def select(self, path):
         return selftree.selection([path], self.tree, self.cfg)[0]
 
-    def test_the_smoke_set_is_guard_land_lock_and_commit_approval(self):
+    def test_the_smoke_set_is_guard_land_lock_commit_and_the_hubs_apply(self):
         smoke = self.cfg['smoke']
         mods = set(selftree.all_test_modules(KIT))
         for module in smoke:
             self.assertIn(module, mods)
         for pkg in ('guard', 'gate', 'lock', 'commit'):
             self.assertTrue([m for m in smoke if m.startswith('tests.%s.' % pkg)], pkg)
-        self.assertIn('tests.gate.test_land', smoke)
-        self.assertIn('tests.commit.test_commit_approval', smoke)
+        self.assertIn('tests.landing.test_land', smoke)
+        self.assertIn('tests.ownerfiles.test_apply', smoke)
         self.assertNotIn('tests.commit.test_commit', smoke)     # 107 s, not split by class
 
     def test_a_docs_heading_change_runs_the_content_citation_tests(self):
@@ -150,7 +150,7 @@ class Cli(unittest.TestCase):
         return rc, calls, out.getvalue()
 
     def test_select_smoke_on_code_runs_the_selection_and_the_smoke_modules(self):
-        rc, calls, text = self.run_main(['--select', '--smoke', '--changed', 'kitlib/stubs/x.py'])
+        rc, calls, text = self.run_main(['--select', '--smoke', '--changed', 'kitlib/machinesetup/x.py'])
         self.assertEqual(rc, 0, text)
         self.assertEqual(calls, [('1', SELECTED + ['tests.guard.test_rules'])], text)
         self.assertIn('kit_tests: --smoke: 1 smoke module(s) added: tests.guard.test_rules\n',
@@ -163,7 +163,7 @@ class Cli(unittest.TestCase):
         self.assertIn('kit_tests: --smoke: every changed path is prose\n', text)
 
     def test_select_without_smoke_adds_nothing(self):
-        rc, calls, text = self.run_main(['--select', '--changed', 'kitlib/stubs/x.py'])
+        rc, calls, text = self.run_main(['--select', '--changed', 'kitlib/machinesetup/x.py'])
         self.assertEqual(calls, [('1', SELECTED)], text)
         self.assertNotIn('--smoke', text)
 

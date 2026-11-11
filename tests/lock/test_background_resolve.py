@@ -1,8 +1,9 @@
 """`machine_lock.py background -- ./gradlew` on Windows: run_background starts its command as a
-foreground run does (kitlib.lock.run script_command), so a name with no extension resolves to its
-.bat or .cmd, and a .bat or .cmd, resolved or named, starts through the cmd.exe line the kit quotes
-itself: an `&` in an argument stays literal. An argument cmd.exe would expand or split (`%`, `"`, a
-line break) is refused before the run's id is claimed: 1, nothing written. Scratch store only."""
+foreground run does (kitlib.lock.run_cmdline script_command), so a name with no extension resolves
+to its .bat or .cmd, and a .bat or .cmd, resolved or named, starts through the cmd.exe line the kit
+quotes itself: an `&` in an argument stays literal. An argument cmd.exe would expand or split (`%`,
+`"`, a line break) is refused before the run's id is claimed: 1, nothing written. Scratch store
+only."""
 import os
 import shutil
 import unittest

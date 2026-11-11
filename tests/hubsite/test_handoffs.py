@@ -59,10 +59,10 @@ class WriteTest(Case):
         self.assertEqual(schema.check('handoffs', doc), [])
 
     def test_the_pm_key_is_known_and_each_kind_is_taken(self):
-        for kind in api.HANDOFF_KINDS:
+        for kind in hubvalidate.HANDOFF_KINDS:
             with self.subTest(kind=kind):
                 self.assertEqual(self.post(who='pm', kind=kind)[0], 200)
-        self.assertEqual(api.HANDOFF_KINDS, ('handoff', 'restart', 'stop', 'checkin'))
+        self.assertEqual(hubvalidate.HANDOFF_KINDS, ('handoff', 'restart', 'stop', 'checkin'))
 
     def test_the_id_prefix_is_its_own(self):
         self.assertEqual(hubvalidate.REF_COLLECTIONS['C'], 'handoffs')

@@ -8,7 +8,8 @@ from unittest import mock
 
 import kitlib.config as kconfig
 from kitlib import gate as G
-from kitlib.gate import land, result, runner
+from kitlib.gate import result, runner
+from kitlib.landing import lander as land
 from kitlib.records import gate_ok
 from tests import gitfixture
 from tests.gate import fixtures
@@ -45,7 +46,7 @@ class AutoBranchGate(AutoCase):
         rec = self.recorded(wt, tip)
         self.assertEqual((rec['source'], [s['name'] for s in rec['steps']]),
                          ('auto', ['python-tests']))
-        self.assertIsNone(runner.verify_record(wt, tip)[1])
+        self.assertIsNone(gate_ok.verify_record(wt, tip)[1])
         final, _ = result.read(wt, 'kit/feature')
         self.assertEqual((final['verdict'], final['source']), ('pass', 'auto'))
 
@@ -130,7 +131,7 @@ class NoLock(unittest.TestCase):
         self.assertEqual(self.ran, [['python-tests']], out.lines)
         self.assertNotEqual(out.verdict, runner.NO_CHECKS)
         self.assertIn('kept from the base', out.lines[-1])
-        rec, why = runner.verify_record(wt, out.head)
+        rec, why = gate_ok.verify_record(wt, out.head)
         self.assertIsNone(why, out.lines)
         self.assertEqual((rec['source'], [s['name'] for s in rec['steps']]),
                          ('auto', ['python-tests']))

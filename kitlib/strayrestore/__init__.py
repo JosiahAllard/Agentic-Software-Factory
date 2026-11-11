@@ -398,7 +398,7 @@ def _put_back(held, full):
 
 
 def _mark(environ):
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     return sessionmark.mark(environ)
 
 

@@ -7,7 +7,7 @@ kit's own (`kit`: the folder holding tools/auto_tasks.py), with the python.exe b
 interpreter, each detached with its output in logs/<schedule>.log of the state folder.
 
 The state folder is `auto-tasks` in the PM repository's machine config folder (<PM repo>/.pm-kit,
-kitlib.config.user.locate's folder), which git ignores (kitlib.config.move GITIGNORE): the tick
+kitlib.config.user.locate's folder), which git ignores (kitlib.machinesetup.machineconfig GITIGNORE): the tick
 starts nothing when the PM-repo pointer is not good, when that folder is not ignored (unignored), or
 while a state is still in the retired home place, ~/.pm-kit/auto-tasks (home_problem names the
 command that moves or removes it; it is never read). state.json holds, per schedule, the last thing
@@ -104,8 +104,8 @@ HOME_BOTH = ("the auto-tasks state is in the PM repository (%s) and an old copy 
              "(Remove-Item -LiteralPath '%s' -Recurse)")
 HOME_NO_FOLDER = ("the auto-tasks state moved to the PM repository's machine config folder (%s), "
                   "which is not there yet; the state is still in the home folder (%s) and the tick "
-                  "starts nothing until it is moved: make that folder first (tools/config_move.py, "
-                  "%s), then the tick names the move")
+                  "starts nothing until it is moved: make that folder first (move the machine config "
+                  "into it, %s), then the tick names the move")
 UNIGNORED = ("git does not ignore the auto-tasks state folder in %s: add the line auto-tasks/ to %s "
              "and commit it")
 
@@ -157,9 +157,9 @@ def unignored(pm):
     raise (OSError, a subprocess error) is a problem line; a BaseException is not caught, so
     KeyboardInterrupt and SystemExit pass, and so does the fake git's Unsupported (a test trap,
     loud on purpose)."""
-    from kitlib.config import move
     try:
-        left, why = move.ignored(pm, [DIR_NAME + '/' + STATE_NAME])
+        from kitlib.config import pointer
+        left, why = pointer.ignored(pm, [DIR_NAME + '/' + STATE_NAME])
     except Exception as e:
         left, why = None, '%s: %s' % (type(e).__name__, e)
     if left is None:
@@ -218,14 +218,21 @@ def key(schedule):
 
 def launcher_repos(home=None):
     """[(label, main checkout, repo name)] of the machine config's launcher.repos, the name as
-    kitlib.machinesetup.worktreesweep.repo_task gives it; a folder that cannot be read is left out."""
+    kitlib.machinesetup.worktreesweep.repo_task gives it; a folder that is gone or cannot be read is
+    left out. The main checkout is the parent of git's common dir, as repo_task and the worktree
+    sweep tool name it."""
     from kitlib.config import load as load_kit_config
     from kitlib.launcher import settings as launcher
-    from kitlib.worktree.remove import main_checkout
+    from kitlib.git import repo as gitrepo
     out = []
     for label, folder in sorted(launcher.load(home).repos.items()):
+        if not os.path.isdir(folder):       # git would answer for the repo holding its parent
+            continue
         try:
-            main = main_checkout(folder)
+            common, _why = gitrepo.common_dir(folder)
+            if common is None:
+                continue
+            main = os.path.realpath(os.path.abspath(os.path.dirname(common)))
             name = load_kit_config(main).repo.get('name') or os.path.basename(os.path.normpath(main))
         except (RuntimeError, ConfigError, OSError):
             continue
@@ -248,9 +255,10 @@ def find_repo(repo, repos):
 
 
 def hub_schedules(home=None):
-    """The hub's schedule documents (GET /schedules). serve.ServeError (NotRunning among them)
-    when the hub cannot be reached; ConfigError for a hub setting that cannot be read."""
-    from kitlib.hubsite import client, settings as hub_settings
+    """The hub's schedule documents (GET /schedules). kitlib.hubclient.errors.ServeError
+    (NotRunning among them) when the hub cannot be reached; ConfigError for a hub setting that
+    cannot be read."""
+    from kitlib.hubclient import client, settings as hub_settings
     return client.Client(hub_settings.load(home=home).port).listing('schedules')
 
 
@@ -300,14 +308,14 @@ def tick(home=None, kit=None, now=None, fetch=None, start=None, repos=None, pyth
     The hub not reachable: EXIT_OK, one line, nothing started. A hub setting, an answer, the
     state folder (state_dir, home_problem, unignored) or the lock that cannot be used: EXIT_FAILED,
     nothing started."""
-    from kitlib.hubsite import client, serve
+    from kitlib.hubclient import client, errors
     kit = os.path.normpath(kit or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     now = now or datetime.datetime.now()
     try:
         schedules = (fetch or (lambda: hub_schedules(home)))()
     except client.Refused as e:
         return EXIT_FAILED, ['hub refused the schedules (%s): nothing started' % e]
-    except serve.ServeError as e:
+    except errors.ServeError as e:
         return EXIT_OK, ['hub not reachable (%s): nothing started' % e]
     except ConfigError as e:
         return EXIT_FAILED, ['hub settings could not be read (%s): nothing started' % e]

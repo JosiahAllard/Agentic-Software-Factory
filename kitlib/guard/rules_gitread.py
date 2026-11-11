@@ -253,8 +253,8 @@ def archive_words(gc):
 def archive_filter_set(gc):
     """True when the line may give git archive `gc` a program to run that the checkout's own config
     does not, or the guard cannot tell: a git the text cannot place (gc.blind: --git-dir,
-    --work-tree, --config-env, a GIT_DIR-like variable), a commands.GIT_ENV_NAMES variable the
-    line sets (commands.mark_git_env), a user config moved (HOME and the like, Command.home_env), PATH changed (Command.path_env), and
+    --work-tree, --config-env, a GIT_DIR-like variable), a commands_env.GIT_ENV_NAMES variable the
+    line sets (commands_env.mark_git_env), a user config moved (HOME and the like, Command.home_env), PATH changed (Command.path_env), and
     before the subcommand --exec-path (it and PATH say where git finds a filter's bare program
     name, as Git for Windows' filter.lfs.process = git-lfs), a word the guard cannot read
     (computed, or one PowerShell or cmd may split: native_unsure) or a -c whose key, read as the

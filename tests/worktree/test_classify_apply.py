@@ -13,7 +13,7 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib.worktree import classify, remove, scratch, sweep
+from kitlib.worktree import classify, remove, remove_checks, scratch, sweep
 from tests import gitfixture
 from tests.realgit import real_git
 from tests.worktree.test_classify import LATER, ClassifyCase, free, no_procs
@@ -356,7 +356,7 @@ class Outcomes(ApplyCase):
 
         def refused(ctx, branch, keep, removed=True):
             ctx.say('failed    git branch -d %s exited 1: faked' % branch)
-            return remove.REFUSED
+            return remove_checks.REFUSED
         with mock.patch.object(remove, 'delete_branch', refused):
             rc, out, data = self.run_apply()
         self.assertEqual(rc, 1, out)

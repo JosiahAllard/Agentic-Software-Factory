@@ -21,7 +21,7 @@ The classes, decided first-match in this order:
   pseudo-refs); one that does, or cannot be read, is left for the owner. So is one outside every
   worktree folder and scratch root (remove.orphan_outside: an unmounted or remapped drive looks
   the same): reported only.
-- A landed: the tip is in the base AND off its first-parent chain (remove.merged_worktrees's
+- A landed: the tip is in the base AND off its first-parent chain (remove_checks.merged_worktrees's
   rule), the tree is clean, and a branch's reflog shows a commit made on it (own_commit; a
   reflog that cannot be read, C). Also A, empty: clean, tip in the base, nothing of its own, and
   no commit to lose (unsaved_reflog), when the live backlog stores can be read and none claims
@@ -60,9 +60,9 @@ from kitlib.records import gate_ok
 from kitlib.git import refs
 from kitlib.platform.linux import paths as linux_paths
 
-from . import holders, marks, remove, scratch, sweep
+from . import holders, marks, remove, remove_abandon, remove_checks, scratch, sweep
 from .holders import WALK_MAX, canon, extended, plain, prune
-from .remove import OK, REFUSED, failure, git
+from .remove_checks import OK, REFUSED, failure, git
 
 Result = collections.namedtuple('Result', 'code lines data')
 # live_claims: {lower-cased branch: sorted ids pulled by it}, {id: the checkout whose backlog.py
@@ -74,12 +74,12 @@ Claims = collections.namedtuple('Claims', 'index stores pm_root')
 
 def claimed(got, branch):
     """The ids `got` (Claims) holds pulled by `branch`, matched without regard to case as
-    backlog.py matches `pulled_by` (plan.py)."""
+    backlog.py matches `pulled_by` (plan_edit.py, plan_narrow.py)."""
     return got.index.get(branch.lower(), []) if branch else []
 
 DEAD_AFTER_S = 24 * 3600                       # owner answer Q3: 24 h, the sweep's idle bar
 EVIDENCE_GLOBS = ('agent-*', '*-red', 'redcheck', 'mutant*')
-LANDING_TREE = '_landing'                      # kitlib/gate/land.py TREE_NAME
+LANDING_TREE = '_landing'                      # kitlib/landing/merge.py TREE_NAME
 CLASSES = ('A', 'B', 'C', 'E', 'L', 'O')
 ACTED = ('A', 'E', 'O')                        # the classes --apply acts on
 ORPHAN = 'its folder is missing (an orphan: `--check` reports it)'
@@ -226,11 +226,11 @@ def evidence_name(path):
     return any(fnmatch.fnmatchcase(name, glob) for glob in EVIDENCE_GLOBS)
 
 
-def gate_state(main, head, cfg=None):
-    """'green' (a gate-OK record from a --full gate that git agrees with: gate_ok.verify_full;
-    or a default-mode one when `cfg`, the main checkout's Config, has "landing".gate_once on:
-    docs/gate-run.md "Gate once at landing"), 'none', 'not full: <why>' (a record git agrees with,
-    from a gate run without --full), or 'unknown: <why>'."""
+def gate_state(main, head):
+    """'green' (a gate-OK record git agrees with from a --full or a default-mode gate, either of
+    which a landing takes: gate_ok.verify_full, gate_ok.mode_of; docs/gate-landing.md
+    "Landing"), 'none', 'not full: <why>' (a record git agrees with from a docs-only gate, which
+    lands only a docs-only change, or of an unknown mode), or 'unknown: <why>'."""
     rec, why = gate_ok.verify_full(main, head)
     if rec is not None:
         return 'green'
@@ -238,8 +238,7 @@ def gate_state(main, head, cfg=None):
         return 'none'
     scoped = gate_ok.verify(main, head)[0]
     if scoped is not None:
-        if (cfg is not None and cfg.section('landing').get('gate_once') is True
-                and gate_ok.mode_of(scoped) == 'select'):
+        if gate_ok.mode_of(scoped) == 'select':
             return 'green'
         return 'not full: %s' % why
     return 'unknown: %s' % why
@@ -268,12 +267,12 @@ def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s)
     path, branch = entry['path'], entry['branch']
     if run_wide:
         return 'unreadable: %s' % run_wide, None
-    ruling = remove.exemption(ctx.s, path)
+    ruling = remove_checks.exemption(ctx.s, path)
     if ruling:
         return 'exempt (%s)' % ruling, None
-    if remove.is_workstream(ctx, path) and \
+    if remove_checks.is_workstream(ctx, path) and \
             os.path.normcase(os.path.basename(os.path.normpath(path))) == LANDING_TREE:
-        return 'the landing tree (kitlib/gate/land.py)', None
+        return 'the landing tree (kitlib/landing/merge.py)', None
     if entry['locked'] is not None:
         return 'locked with `git worktree lock`%s' % (
             ': ' + entry['locked'] if entry['locked'] else ''), None
@@ -318,11 +317,11 @@ def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s)
 def live_claims(ctx, base):
     """`(Claims, None)`, or `(None, why)` when "no claim" would prove nothing: the pulls of every
     live backlog store of this repository, the store its `.kit.json` names (read as
-    remove.pulled_index reads it) and the PM data worktree's (store.pm_data_live_store) when that
-    names one, its records read as backlog.py there reads them. `why` when neither names a store
-    (the implicit default ref is read-only: no pull is written there) or a named one cannot be
+    remove.pulled_index reads it) and the PM data worktree's (store_live.pm_data_live_store) when
+    that names one, its records read as backlog.py there reads them. `why` when neither names a
+    store (the implicit default ref is read-only: no pull is written there) or a named one cannot be
     read."""
-    from kitlib.backlog import opener
+    from kitlib.backlog import opener, store_live, store_open
     from kitlib.backlog import store as smod
     from kitlib.backlog.errors import Refusal
     from kitlib.config import ConfigError
@@ -338,14 +337,14 @@ def live_claims(ctx, base):
             index.setdefault(branch.lower(), set()).update(ids)
             stores.update((i, None if main_kind else ctx.main) for i in ids)
         read += 1
-    pm_root, named, why = smod.pm_data_live_store(ctx.main)
+    pm_root, named, why = store_live.pm_data_live_store(ctx.main)
     if why:
         return None, ('the PM data worktree\'s backlog store cannot be read (%s)'
-                      % (smod.unreadable_kit_json(pm_root, why) if pm_root else why))
+                      % (store_live.unreadable_kit_json(pm_root, why) if pm_root else why))
     if pm_root and named is not None:
         try:
             top, cfg, rules = opener.open_repo(pm_root)
-            snap = smod.Store(smod.open_backend(top, cfg, fetch=False), rules).load()
+            snap = smod.Store(store_open.open_backend(top, cfg, fetch=False), rules).load()
         except (Refusal, ConfigError, OSError, KeyError) as e:
             return None, 'the backlog store in %s cannot be read (%s)' % (pm_root, e)
         if snap.unreadable:
@@ -414,7 +413,7 @@ def judge(ctx, entry, base, chain, ancestors, claims=(None, 'not read')):
     (live_claims): an empty tree is A, and an evidence-named one on a branch E, only when it is
     readable and names no claim (evidence_keep)."""
     path, branch, head = entry['path'], entry['branch'], entry['head']
-    work, disposable, ignored, why = remove.dirty(ctx, path)
+    work, disposable, ignored, why = remove_checks.dirty(ctx, path)
     if work is None:
         return 'L', {'reason': 'unreadable: its status (%s)' % why}
     dirt = len(work) + len(disposable) + len(ignored)
@@ -430,7 +429,7 @@ def judge(ctx, entry, base, chain, ancestors, claims=(None, 'not read')):
             return 'C', fields
         if own:
             return 'A', fields
-    outside = not remove.is_workstream(ctx, path)
+    outside = not remove_checks.is_workstream(ctx, path)
     if branch is None and outside:
         return 'E', fields
     kept = None
@@ -475,7 +474,7 @@ def work_class(ctx, entry, base, ancestors, own, claims, dirt, landed, fields):
         return ('C' if keep else 'A'), fields
     rc, count, err = git(ctx.main, 'rev-list', '--count', '%s..%s' % (base, head))
     fields['ahead'] = int(count) if rc == 0 and count.isdigit() else None
-    fields['gate'] = gate_state(ctx.main, head, ctx.cfg)
+    fields['gate'] = gate_state(ctx.main, head)
     if not dirt and fields['gate'] == 'green':
         return 'B', fields
     return 'C', fields
@@ -488,7 +487,7 @@ def classify(top, now=None, machine=sweep.machine_lock_entries, procs=process_cw
     seams. Read-only unless `apply`: then `top` must be the main checkout, a held landing lock
     refuses the run before anything is read, and each A, E and O tree goes through `apply_tree`
     (`environ`: the scratch roots' environment, scratch.roots; `today`: the abandon tag's date)."""
-    ctx, refused = remove.open_ctx(top, cwd)
+    ctx, refused = remove_checks.open_ctx(top, cwd)
     if refused:
         return Result(refused.code, refused.lines, {'error': ' '.join(refused.lines)})
     now = time.time() if now is None else now
@@ -510,7 +509,7 @@ def trees_besides_main(main, listing):
     """worktree_entries but the main checkout, each with its canon path (one canon per tree)."""
     home = canon(main)
     out = []
-    for entry in remove.worktree_entries(listing):
+    for entry in remove_checks.worktree_entries(listing):
         entry['canon'] = canon(entry['path'])
         if entry['canon'] != home:
             out.append(entry)
@@ -539,15 +538,15 @@ def branch_liveness(top, branch, now=None, machine=sweep.machine_lock_entries,
                     procs=process_cwds, dead_after_s=DEAD_AFTER_S, cwd=None):
     """`(why it is live, None)` or `(None, tip)`: whether the worktree on `branch` is dead by
     `--classify`'s L rule (live_reason), for the backlog's block and release of a stopped pull
-    (kitlib/backlog/opener.py hands it to plan.Context as `liveness`). Anything that cannot be
-    read, and a branch no worktree here is on, is live: only a dead tree's pull may be stopped by
-    anyone but its holder. Read-only."""
-    ctx, refused = remove.open_ctx(top, cwd)
+    (quiet.PROBES, which tools/backlog.py hands to the backlog opener as plan.Context's
+    `liveness`). Anything that cannot be read, and a branch no worktree here is on, is live: only
+    a dead tree's pull may be stopped by anyone but its holder. Read-only."""
+    ctx, refused = remove_checks.open_ctx(top, cwd)
     if refused:
         return 'the worktrees cannot be read (%s)' % ' '.join(refused.lines), None
     try:
-        listing = remove.worktree_listing(ctx.main)
-    except remove.GitReadError as e:
+        listing = remove_checks.worktree_listing(ctx.main)
+    except remove_checks.GitReadError as e:
         return 'the worktrees cannot be read (%s)' % e, None
     on = [e for e in trees_besides_main(ctx.main, listing) if e['branch'] == branch]
     if not on:
@@ -569,13 +568,13 @@ def _fail(ctx, why):
 def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None):
     s, main = ctx.s, ctx.main
     try:
-        listing = remove.worktree_listing(main)
-    except remove.GitReadError as e:
+        listing = remove_checks.worktree_listing(main)
+    except remove_checks.GitReadError as e:
         return _fail(ctx, str(e))
-    base, why = remove.base_commit(ctx)
+    base, why = remove_checks.base_commit(ctx)
     if base is None:
         return _fail(ctx, 'cannot read %s (%s)' % (s['upstream'], why))
-    got, why = remove.ancestry(ctx, base)
+    got, why = remove_checks.ancestry(ctx, base)
     if got is None:
         return _fail(ctx, 'git rev-list --parents %s: %s' % (base, why))
     chain, ancestors = got
@@ -673,8 +672,8 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None):
                         ' --reason "<why>"` to keep the branch)' % (
                             kitroot.command('backlog', writer), rid, t['class'], rid))
             ctx.say('next      %s %s --abandon "<why>"   (%s, after it is taken up or'
-                    ' recorded)' % (s['tool'], remove.handle(ctx, t['path']), t['class']))
-            if not t['branch'] or marks_error or not remove.is_workstream(ctx, t['path']):
+                    ' recorded)' % (s['tool'], remove_checks.handle(ctx, t['path']), t['class']))
+            if not t['branch'] or marks_error or not remove_checks.is_workstream(ctx, t['path']):
                 continue
             if t.get('mark') and not t['mark']['void']:
                 ctx.say('next      %s %s --unmark-stale   (%s, marked stale: the nightly sweep'
@@ -829,7 +828,7 @@ def apply_tree(ctx, entry, row, base, environ=None, today=None):
     elif verb == 'scratch':
         code = scratch._remove_scratch(sub, path, environ)
     else:
-        code = remove._abandon(sub, path, 'evidence', False, today)
+        code = remove_abandon._abandon(sub, path, 'evidence', False, today)
     lines = list(sub.out)
     tags = [line.split()[1] for line in lines if line.startswith('tagged    ')] + \
         [line.split()[2] for line in lines if line.startswith('reused    tag ')]

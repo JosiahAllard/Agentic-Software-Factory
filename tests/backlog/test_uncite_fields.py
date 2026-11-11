@@ -5,7 +5,7 @@ that is a deliberate or owner hold's only citation is kept and listed. A second 
 nothing."""
 import unittest
 
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_citations
 
 from tests.backlog.helpers import StoreCase, rec
 
@@ -16,21 +16,21 @@ class BlockLine(unittest.TestCase):
     def test_the_reason_is_worded_and_the_prefix_kept(self):
         line = 'Blocked on owner (2026-01-01): per R-9033'
         after = 'Blocked on owner (2026-01-01): per an owner ruling'
-        self.assertEqual(pmod.uncite_line(line), (after, False))
-        self.assertEqual(pmod.uncite_line(after), (after, False))
+        self.assertEqual(plan_citations.uncite_line(line), (after, False))
+        self.assertEqual(plan_citations.uncite_line(after), (after, False))
 
     def test_a_reason_no_rule_words_is_left(self):
         line = 'Blocked on owner (2026-01-01): R-9035 says wait'
-        self.assertEqual(pmod.uncite_line(line), (line, True))
+        self.assertEqual(plan_citations.uncite_line(line), (line, True))
 
     def test_a_reason_of_only_cites_is_left(self):
         # the line would say `Blocked on M (date): ` and nothing: why is the hand edit's to word
         line = 'Blocked on deliberate (2026-01-01): (R-9035)'
-        self.assertEqual(pmod.uncite_line(line), (line, True))
+        self.assertEqual(plan_citations.uncite_line(line), (line, True))
 
     def test_a_line_with_no_cite_is_untouched(self):
         line = 'Blocked on live-client (2026-01-01): T-1234 first'
-        self.assertEqual(pmod.uncite_line(line), (line, False))
+        self.assertEqual(plan_citations.uncite_line(line), (line, False))
 
 
 class Store(StoreCase):

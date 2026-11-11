@@ -2,9 +2,9 @@
 
 One store document per repository: backlog/<repo> holds its open records and completed/<repo> what
 closed in the last DAYS days. Read from git, never the working tree, at the store `.kit.json` names
-(kitlib.backlog.store.open_backend; absent: the hidden ref's local copy, no fetch) or, for a folder
-store, its folder on the main branch, so only published records show. A record closes either by a
-`closed: <date>` line (it stays in the store) or by its file being deleted from the store (the
+(kitlib.backlog.store_open.open_backend; absent: the hidden ref's local copy, no fetch) or, for a
+folder store, its folder on the main branch, so only published records show. A record closes either
+by a `closed: <date>` line (it stays in the store) or by its file being deleted from the store (the
 commit's date; its summary from the parent commit).
 """
 import datetime
@@ -13,7 +13,7 @@ import json
 import os
 
 from kitlib import config as kconfig
-from kitlib.backlog import store as bstore
+from kitlib.backlog import store_open
 from kitlib.backlog.errors import Refusal
 from kitlib.git import cmd as gitcmd
 from kitlib.git import defaults as gitdefaults
@@ -157,7 +157,7 @@ def store_at(root, main):
     """(rev, folder) the store's published records are read from, the store `.kit.json` names
     resolved by the store itself; rev None when the store does not exist yet."""
     try:
-        backend = bstore.open_backend(root, kconfig.load(root), fetch=False)
+        backend = store_open.open_backend(root, kconfig.load(root), fetch=False)
     except (kconfig.ConfigError, Refusal) as exc:
         raise RuntimeError("backlog store: %s" % exc)
     rev, folder = backend.landed(main)

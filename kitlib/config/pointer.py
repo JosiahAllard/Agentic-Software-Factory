@@ -6,7 +6,7 @@ It is `HKLM\\SOFTWARE\\pm-kit`, value `pm_repo`, a REG_SZ, read in the 64-bit re
 administrator can write it (tools/machine_setup.py --pm-repo, docs/machine-setup.md "PM repo
 pointer"), so an agent cannot point the kit at another PM repository.
 
-On Linux (docs/linux-support-plan.md slice 9) there is no registry: the value is one line of UTF-8
+On Linux there is no registry: the value is one line of UTF-8
 text in the file /etc/pm-kit/pointer, which only an administrator can write, else in the user's
 <profile>/.config/pm-kit/pointer, the profile folder from the password database and never from
 $HOME or $XDG_CONFIG_HOME (kitlib.platform.linux.paths.read_pointer). A machine file that is there
@@ -15,7 +15,7 @@ no drive.
 
 The value is the absolute path of the PM repository's main or data work tree, never a pm/<slug>
 worktree: an existing folder that is the top of a git work tree; when its repository's common dir
-holds kit-pm-data.json (kitlib.pmdata), the work tree must be on the recorded data branch, and with
+holds kit-pm-data.json (kitlib.config.pmdata), the work tree must be on the recorded data branch, and with
 no record it must be the main checkout.
 
 Under the kit's tests (kitlib.config.user.fenced) the registry is never read: the value is the
@@ -29,8 +29,9 @@ import os
 import shlex
 
 import kitlib.platform
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.config import user
+from kitlib.git import cmd as gitcmd
 from kitlib.git import refs, repo
 from kitlib.platform.linux import paths as linux_paths
 
@@ -42,7 +43,7 @@ FENCE_ENV = 'KIT_PM_REPO_FENCE'
 OK, NONE, BAD = 'OK', 'NONE', 'BAD'
 
 # `state` OK, NONE or BAD; `path` the value as stored (None when there is none or it cannot be
-# read); `error` why it is BAD, else None; `record` the kitlib.pmdata Record in its repository's
+# read); `error` why it is BAD, else None; `record` the kitlib.config.pmdata Record in its repository's
 # common dir for OK, None when it has none.
 Pointer = collections.namedtuple('Pointer', 'state path error record', defaults=(None,))
 
@@ -102,7 +103,7 @@ def check(path, classify=None, branch=None):
 
 
 def _check(path, classify=None, branch=None):
-    """(check's answer, the kitlib.pmdata Record of path's repository or None)."""
+    """(check's answer, the kitlib.config.pmdata Record of path's repository or None)."""
     if not _absolute(path):
         return '%s is not an absolute path' % path, None
     if not os.path.isdir(path):
@@ -142,6 +143,17 @@ def read(raw=None, classify=None, branch=None):
     if bad:
         return Pointer(BAD, value, bad)
     return Pointer(OK, value, None, record)
+
+
+def ignored(pm, rels):
+    """The paths of `rels` (relative to the machine config folder) that git does not ignore in
+    the PM repository `pm`; None and why when git could not tell."""
+    paths = [user.DIR_NAME + '/' + r for r in rels]
+    r = gitcmd.call(['check-ignore', '--'] + paths, pm)
+    if r.rc not in (0, 1):
+        return None, r.err or 'git check-ignore exited %s' % r.rc
+    got = {line.strip() for line in gitcmd.text(r.out).splitlines() if line.strip()}
+    return [p for p, full in zip(rels, paths) if full not in got], None
 
 
 def quoted(path):

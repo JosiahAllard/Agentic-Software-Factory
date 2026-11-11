@@ -40,8 +40,9 @@ from kitlib.lock import holds as hl                                # noqa: E402
 from kitlib.lock import layout as lay                              # noqa: E402
 from kitlib.lock import status as st                               # noqa: E402
 from kitlib.lock.background import run_background                  # noqa: E402
-from kitlib.lock.run import (ORIGIN_ENV, ScriptArgError, check_resource,  # noqa: E402
-                             path_alias_line, run_command, script_command)
+from kitlib.lock.run import check_resource, run_command            # noqa: E402
+from kitlib.lock.run_cmdline import ScriptArgError, path_alias_line, script_command  # noqa: E402
+from kitlib.lock.run_held import ORIGIN_ENV                        # noqa: E402
 from kitlib.lock.store import (EXIT_REQUIRE, EXIT_USAGE, LockError, Settings,  # noqa: E402
                                Store, caller, iso, new_id, utc_now)
 from kitlib.loadnode import box, dispatch                          # noqa: E402
@@ -346,7 +347,7 @@ def cmd_run(a, cmd, store, argv):
     resource = getattr(a, "resource", None)     # run only; before a detach books anything
     check_resource(resource)                    # "" is usage here, not in a detached log
     if resource and resource.startswith("landing:"):
-        say("usage: --resource %s: landing resources belong to land.py (kitlib.gate.land); "
+        say("usage: --resource %s: landing resources belong to land.py (kitlib.landing.lander); "
             "name another resource" % resource)
         return EXIT_USAGE
     try:                            # before a detach, whose log is the only place it would show

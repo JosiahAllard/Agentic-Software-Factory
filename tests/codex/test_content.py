@@ -138,8 +138,8 @@ class DefaultRole(unittest.TestCase):
 
 class Banner(unittest.TestCase):
     def test_every_committed_agent_file_opens_with_the_generated_line(self):
-        """Its first line names the role file and the render command (decision 19 in
-        docs/multi-host-plan.md section 7; docs/content.md "Generated files")."""
+        """Its first line names the role file and the render command (docs/content.md "Generated
+        files")."""
         folder = os.path.join(ROOT, *cc.AGENTS_REL.split('/'))
         names = kcontent.load(ROOT).role_names()
         self.assertEqual(sorted(n for n in os.listdir(folder) if n.endswith('.toml')),
@@ -300,7 +300,7 @@ class Hook(unittest.TestCase):
 
     def test_the_entrys_budget_counts_the_boot(self):
         """DEADLINE is the whole call's: the time the boot took (a pinned verify hashes every file)
-        comes off what hookmain gets, which names the whole budget when it runs out."""
+        comes off what hookrun gets, which names the whole budget when it runs out."""
         import io
         import sys
         import types
@@ -319,7 +319,7 @@ class Hook(unittest.TestCase):
             return 0
         with unittest.mock.patch.dict(sys.modules, {'kitboot': boot}), \
                 unittest.mock.patch('time.monotonic', lambda: clock[0]), \
-                unittest.mock.patch('kitlib.host.hookmain.run', fake_run):
+                unittest.mock.patch('kitlib.hookrun.main.run', fake_run):
             rc = hook.main(['codex', 'PreToolUse'], io.StringIO('{"tool_name": "Write"}'), io.StringIO(), {})
         self.assertEqual(rc, 0)
         from hosts.codex.adapter.host import ADAPTER
@@ -331,7 +331,7 @@ class Hook(unittest.TestCase):
         import io
         import sys
         import types
-        from kitlib import sessionmark
+        from kitlib.host import sessionmark
         hook = self.load_hook()
         boot = types.ModuleType('kitboot')
 

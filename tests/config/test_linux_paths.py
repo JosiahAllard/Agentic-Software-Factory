@@ -1,4 +1,4 @@
-"""The configuration lookups on Linux (docs/linux-support-plan.md section 8, slice 9): the profile
+"""The configuration lookups on Linux: the profile
 folder from the password database, the PM-repo pointer files, the system temp folder, and the
 machine config resolved from a pointer file (kitlib.platform.linux.paths, kitlib.config.user and
 kitlib.config.pointer on the seam).

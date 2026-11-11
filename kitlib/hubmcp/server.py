@@ -2,15 +2,15 @@
 JSON-RPC 2.0 over stdio, one message per line, on the standard library (CLAUDE.md), in the shape of
 kitlib.lockmcp.server.
 
-Every tool is one call to the hub server on this machine, through kitlib.hubsite.client: the
+Every tool is one call to the hub server on this machine, through kitlib.hubclient.client: the
 loopback listener only, so the server's checks (roles, fields, versions) are the ones that hold,
 and this process never opens the hub store. The port is read from the machine's hub settings
-(kitlib.hubsite.settings) at each call, so a server started later, or on another port, is found.
+(kitlib.hubclient.settings) at each call, so a server started later, or on another port, is found.
 
 Every tool carries the agent's token and nothing else (AgentClient: a route open to ANY is called
 with it too, and with no usable agent token a tool answers `no_agent_token` instead of falling
-back to the owner's); write tools name their source serve.VIA_MCP. The owner's writes are pinned in
-kitlib.hubmcp.OWNER_ONLY and do not ship yet: tools/list leaves them out and tools/call refuses
+back to the owner's); write tools name their source localask.VIA_MCP. The owner's writes are
+pinned in kitlib.hubmcp.OWNER_ONLY and do not ship yet: tools/list leaves them out and tools/call refuses
 them (`not_available`; `forbidden` in a session the launcher marked), never reading the owner's
 token. The guard already denies them to agents by name (its hub-mcp rule, kitlib/guard/hub.py
 OWNER_MCP_TOOLS); shipping the tools themselves is still to come (GUARD_WAIT says so).
@@ -25,21 +25,20 @@ import json
 import os
 import traceback
 
-from kitlib import hubapprove, mcpwire
+from kitlib import hubvalidate, mcpwire
+from kitlib.ownerfiles import request as ownerrequest
 from kitlib.config.types import ConfigError
 from kitlib.hubmcp import OWNER_ONLY, SERVER_NAME
-from kitlib.hubsite import api as hubapi
-from kitlib.hubsite import approvals as hubapprovals
-from kitlib.hubsite import auth as hubauth
-from kitlib.hubsite import client as hubclient
-from kitlib.hubsite import pagecheck
-from kitlib.hubsite import serve as hubserve
-from kitlib.hubsite import settings as hubsettings
-from kitlib.hubsite import todosteps
+from kitlib.hubclient import client as hubclient
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
+from kitlib.hubclient import settings as hubsettings
+from kitlib.hubclient import token as hubtoken
+from kitlib.hubvalidate import pagecheck, todosteps
 
 SERVER_VERSION = "0.1.0"
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")    # newest first
-WAIT_MAX_S = hubapi.WAIT_MAX_S                              # one tools/call waits at most this long
+WAIT_MAX_S = hubvalidate.WAIT_MAX_S                         # one tools/call waits at most this long
 WAIT_DEFAULT_S = 30
 LISTS = ("questions", "todos", "stories", "to_pm", "pages")
 VIEWS = ("notices", "repos", "usage", "agents")
@@ -118,8 +117,9 @@ def _one_of(values, what):
     return {"type": "string", "enum": list(values), "description": what}
 
 
-# name -> (description, input schema, HTTP method, path below hubapi.BASE, the role the tool
-# calls as: ANY for a read, AGENT for a write, the route's role in hubapi.ROUTES being AGENT or
+# name -> (description, input schema, HTTP method, path below hubvalidate.BASE, the role the
+# tool calls as: ANY for a read, AGENT for a write, the route's role in the server's ROUTES
+# (kitlib/hubsite/api.py) being AGENT or
 # ANY). AgentClient carries the agent's token whatever the role says.
 # A `{name}` in the path is filled from the argument of that name; every other argument is the
 # query of a GET or the body of a POST.
@@ -170,7 +170,7 @@ TOOLS = {
                                                                 "recommend."},
               "repo": _REPO, "from": _ASK_FROM, "refs": _REFS, "urgent": _URGENT,
               "story": {"type": "string", "description": "The story this question is about."},
-              "record": _RECORD, "class": _one_of(hubapi.QUESTION_CLASSES, _CLASS_SAYS)},
+              "record": _RECORD, "class": _one_of(hubvalidate.QUESTION_CLASSES, _CLASS_SAYS)},
              ["title"]), "POST", "/questions", AGENT),
     "hub_question_log": (
         "Marks an answered or filed question logged once its answer is in the ledger "
@@ -220,7 +220,7 @@ TOOLS = {
               "recommended": {"type": "integer", "description": "The index of the option you "
                                                                 "recommend."},
               "refs": _REFS, "urgent": _URGENT, "record": _RECORD_EDIT,
-              "class": _one_of(hubapi.QUESTION_CLASSES, _CLASS_SAYS)},
+              "class": _one_of(hubvalidate.QUESTION_CLASSES, _CLASS_SAYS)},
              ["id", "from", "if_version"]),
         "POST", "/questions/{id}/edit", AGENT),
     "hub_question_withdraw": (
@@ -246,7 +246,7 @@ TOOLS = {
     "hub_story_set": (
         "Moves an owner's story on (POST /stories/<id>): status review, questions, added or "
         "declined, with the reviewer, a note, the backlog id or a closing note.",
-        _obj({"id": _ID, "status": _one_of(hubapi.AGENT_STORY_STATUSES, "The new status."),
+        _obj({"id": _ID, "status": _one_of(hubvalidate.AGENT_STORY_STATUSES, "The new status."),
               "reviewer": {"type": "string"}, "review_note": {"type": "string"},
               "backlog_id": {"type": "string"}, "closed_note": {"type": "string"},
               "if_version": _PIN}, ["id", "status", "if_version"]),
@@ -269,7 +269,7 @@ TOOLS = {
         "GET", "/pages/{id}", ANY),
     "hub_page_publish": (
         "Publishes an HTML page to the Action Hub (POST /pages), read from html_file. The page is "
-        "checked here first as the hub checks it (kitlib.hubsite.pagecheck): at most %d bytes of "
+        "checked here first as the hub checks it (kitlib.hubvalidate.pagecheck): at most %d bytes of "
         "UTF-8; a whole document is fine; no script, iframe, object, embed, form, link or base, "
         "a meta only charset utf-8 or name (%s) with content, a title only plain text; no on* "
         "handler, no URL that leaves the page (links are #fragments, images data: URIs, CSS "
@@ -299,11 +299,13 @@ TOOLS = {
              ["id", "if_version"]), "POST", "/pages/{id}/place", AGENT),
     "hub_approval_request": (
         "Asks the owner to approve a change to files (POST /approvals), built here from a git "
-        "checkout (kitlib.hubapprove): each file's base is its blob at head (none for a new "
-        "file), its new text the exact UTF-8 bytes of its content_file. Once approved, "
-        "tools/commit.py --owner-approval hub:A-<n> writes and commits it. It only asks: it never "
-        "approves, and it cannot ask for a delete. At most %d files, %d bytes each."
-        % (hubapprovals.MAX_FILES, hubapprovals.MAX_CONTENT_BYTES),
+        "checkout (kitlib.ownerfiles.request): each file's base is its blob at head (none for a new "
+        "file), its new text the exact UTF-8 bytes of its content_file. The request names the "
+        "branch the checkout is on (your worktree's): when the owner approves it, the hub commits "
+        "the change on that branch in that worktree, with the files as they were at head and none "
+        "of them staged there; one it cannot apply stays approved with the reason. It only asks: "
+        "it never approves, and it cannot ask for a delete. At most %d files, %d bytes each."
+        % (hubvalidate.MAX_FILES, hubvalidate.MAX_CONTENT_BYTES),
         _obj({"checkout": {"type": "string", "description": "The absolute path of the git "
                                                             "checkout the change is for."},
               "title": {"type": "string"},
@@ -315,6 +317,9 @@ TOOLS = {
                                                         "(default: the checkout's origin)."},
               "head": {"type": "string", "description": "The base commit, 40 hex digits "
                                                         "(default: the checkout's HEAD)."},
+              "branch": {"type": "string", "description": "The branch the hub applies it on, in "
+                                                          "its linked worktree (default: the "
+                                                          "checkout's current branch)."},
               "reason": {"type": "string"}, "record": _APPROVAL_RECORD},
              ["checkout", "title", "files"]), "POST", "/approvals", AGENT),
     "hub_handoff_ready": (
@@ -322,7 +327,7 @@ TOOLS = {
         "ready reply to the PM (skill session-handoff): the same kind and state note path. A "
         "successor told to in its first message records kind checkin once it has checked in. The "
         "hub stamps the time; GET /handoffs gives each session's newest record.",
-        _obj({"kind": _one_of(hubapi.HANDOFF_KINDS, "The ready reply's word: handoff (ready to "
+        _obj({"kind": _one_of(hubvalidate.HANDOFF_KINDS, "The ready reply's word: handoff (ready to "
                                                     "hand off), restart or stop; or checkin, a "
                                                     "successor that has checked in."),
               "state_path": {"type": "string", "description": "The absolute path of the state "
@@ -337,16 +342,16 @@ assert not set(TOOLS) & set(OWNER_ONLY)
 REPLACES = frozenset({"hub_page_publish"})
 
 
-class NoAgentToken(hubserve.ServeError):
+class NoAgentToken(huberrors.ServeError):
     """There is no usable agent token: the hub MCP server never falls back to the owner's."""
 
 
 class AgentClient(hubclient.Client):
-    """kitlib.hubsite.client.Client that carries the agent's token on every call, a route open to
+    """kitlib.hubclient.client.Client that carries the agent's token on every call, a route open to
     ANY included. The owner's token file is never opened."""
 
     def token(self, role):
-        token = hubauth.read_token(self.tokens, AGENT)
+        token = hubtoken.read_token(self.tokens, AGENT)
         if not token:
             raise NoAgentToken("no usable agent token in %s: the hub MCP server carries the "
                                "agent's token only (tools/hub.py setup writes it)" % self.tokens)
@@ -414,10 +419,10 @@ def _error(code, message, field=None, **more):
 class Server:
     """The tools over the hub server on this machine.
 
-    port: the hub's port (None: kitlib.hubsite.settings at each call). tokens: the folder of the
-    token files (None: kitlib.hubsite.auth.folder()). ask: serve.ask or a stand-in. marked: the
-    session's mark (kitlib.sessionmark.mark), read once at start by mcp/hub_server.py.
-    load_settings: kitlib.hubsite.settings.load or a stand-in."""
+    port: the hub's port (None: kitlib.hubclient.settings at each call). tokens: the folder of the
+    token files (None: kitlib.hubclient.token.folder()). ask: localask.ask or a stand-in. marked:
+    the session's mark (kitlib.host.sessionmark.mark), read once at start by mcp/hub_server.py.
+    load_settings: kitlib.hubclient.settings.load or a stand-in."""
 
     def __init__(self, port=None, tokens=None, ask=None, marked=None, load_settings=None):
         self.port = port
@@ -428,7 +433,7 @@ class Server:
 
     def client(self):
         port = self.port if self.port is not None else self.load_settings().port
-        return AgentClient(port, tokens=self.tokens, ask=self.ask, via=hubserve.VIA_MCP)
+        return AgentClient(port, tokens=self.tokens, ask=self.ask, via=localask.VIA_MCP)
 
     # ---------------------------------------------------------------- tools
     def tool_list(self):
@@ -447,13 +452,13 @@ class Server:
             return (special(a) if special else self._route(name, a)), False
         except ToolError as e:
             return {"ok": False, "error": e.error}, True
-        except hubclient.Refused as e:
+        except huberrors.Refused as e:
             return _error(e.code, e.message, e.field, status=e.status)
         except NoAgentToken as e:
             return _error("no_agent_token", str(e))
-        except hubserve.NotRunning as e:
+        except huberrors.NotRunning as e:
             return _error("not_running", "%s (tools/hub.py serve starts it)" % e)
-        except hubserve.ServeError as e:
+        except huberrors.ServeError as e:
             return _error("client", str(e))
         except ConfigError as e:
             return _error("config", "the machine's hub settings cannot be read: %s" % e)
@@ -493,24 +498,24 @@ class Server:
         return {"ok": True, "items": self.client().inbox()}
 
     def _t_hub_todo_add(self, a):
-        """The hub makes the steps into commands and detail (kitlib.hubsite.api.todo_steps), so
-        they go to it as given. The same check runs here first, so a to-do it refuses (a bad
-        step, a lone surrogate in a command, text the owner's to-do rules forbid) is refused
-        with the hub's own words and never reaches the hub."""
+        """The hub makes the steps into commands and detail (todosteps.todo_fields), so they go
+        to it as given. The same check runs here first, so a to-do it refuses (a bad step, a lone
+        surrogate in a command, text the owner's to-do rules forbid) is refused with the hub's
+        own words and never reaches the hub."""
         try:
-            hubapi.todo_steps(a)
-        except hubapi.HubError as e:
-            raise ToolError(e.code, e.message, e.field)
+            todosteps.todo_fields(a)
+        except (todosteps.StepError, todosteps.Refused) as e:
+            raise ToolError("invalid", str(e), e.field)
         return self._route("hub_todo_add", a)
 
     def _t_hub_todo_edit(self, a):
         """The changed text is judged here first as the hub judges it (api.todos_edit), so an
         edit it refuses never reaches the hub."""
         try:
-            hubapi.todo_steps({k: v for k, v in a.items()
-                               if k not in ("id", "from", "if_version")}, judge=True)
-        except hubapi.HubError as e:
-            raise ToolError(e.code, e.message, e.field)
+            todosteps.todo_fields({k: v for k, v in a.items()
+                                   if k not in ("id", "from", "if_version")}, judge=True)
+        except (todosteps.StepError, todosteps.Refused) as e:
+            raise ToolError("invalid", str(e), e.field)
         return self._route("hub_todo_edit", a)
 
     def _page_file(self, path):
@@ -540,7 +545,7 @@ class Server:
         if why:
             refuse(why)
         try:
-            closed = [("the hub's token folder", self.tokens or hubauth.folder()),
+            closed = [("the hub's token folder", self.tokens or hubtoken.folder()),
                       ("the hub store", getattr(self.load_settings(), "store", None))]
         except (ConfigError, OSError, ValueError) as e:
             refuse("cannot tell where the hub keeps its tokens and store (%s), so it is not read"
@@ -572,7 +577,7 @@ class Server:
         return self.client().post("/pages", AGENT, body)
 
     def _t_hub_approval_request(self, a):
-        """The request is built here from the checkout (kitlib.hubapprove.build: its defaults,
+        """The request is built here from the checkout (kitlib.ownerfiles.request.build: its defaults,
         its refusals and the approvals module's limits), so one it refuses never reaches the
         hub. This process reads each content_file outside the guard, so the checkout and every
         content_file are absolute and judged as html_file is (_readable): never inside the hub's
@@ -586,12 +591,12 @@ class Server:
                                 "files")
             files.append((f["path"], self._readable(f["content_file"], "files", "an approval")))
         try:
-            body = hubapprove.build(checkout, a["title"], files, repo=a.get("repo"),
+            body = ownerrequest.build(checkout, a["title"], files, repo=a.get("repo"),
                                     head=a.get("head"), reason=a.get("reason"),
-                                    record=a.get("record"))
-        except hubapprove.RequestError as e:
+                                    record=a.get("record"), branch=a.get("branch"))
+        except ownerrequest.RequestError as e:
             raise ToolError("invalid", e.message, e.field)
-        return hubapprove.request(self.client(), body)
+        return ownerrequest.request(self.client(), body)
 
     # ---------------------------------------------------------------- JSON-RPC
     def handle(self, msg):

@@ -208,7 +208,7 @@ WORKTREES_AND_CONFLICTS = [
     # A lease that expects the remote main absent is stale: rejected, the remote left alone.
     ('git', ['push', '-q', '--force-with-lease=refs/heads/main:%s' % ('0' * 40), 'origin',
              'HEAD:refs/heads/main']),
-    # kitlib/gate/cleanup.py's branch delete: a lease on the tip it saw.
+    # kitlib/landing/cleanup.py's branch delete: a lease on the tip it saw.
     ('git', ['push', '--quiet', '--force-with-lease=refs/heads/kit/wt:kit/wt', 'origin',
              ':refs/heads/kit/wt']),
     ('git', ['ls-remote', '--heads', 'origin']),
@@ -543,7 +543,7 @@ CHECKOUT_PATHSPECS = [
     ('git', ['status', '--porcelain=v1']),
 ]
 
-# --raw with --numstat, as kitlib.guard.ownercommits.deletes_only reads a commit's change and the
+# --raw with --numstat, as kitlib.ownerfiles.rules.deletes_only reads a commit's change and the
 # work tree's: a shrink, an add and a delete; then a work-tree shrink against HEAD.
 _RAW = ['diff', '--raw', '--numstat', '-z', '--no-renames', '--no-textconv', '--no-ext-diff']
 DIFF_RAW = [

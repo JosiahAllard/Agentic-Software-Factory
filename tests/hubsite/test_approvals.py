@@ -5,7 +5,8 @@ by a commit on main, so it leaves pending and cannot be used (docs/hub-approvals
 import datetime
 import unittest
 
-from kitlib.hubsite import api, approvals
+from kitlib.hubsite import api
+from kitlib.ownerfiles import approvals
 from kitlib.hubsite.api import AGENT
 from tests.gitfixture import TempRepo
 from tests.hubsite import test_api, test_hub_cli

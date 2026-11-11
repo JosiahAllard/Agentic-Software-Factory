@@ -18,8 +18,22 @@ import unittest
 import webbrowser
 from unittest import mock
 
-from kitlib.hubsite import approvals, auth, httpd, schema, serve, todosteps, tunnel
-from kitlib.hubsite import settings as hub_settings
+from kitlib.hubclient import settings as hub_settings
+from kitlib.hubclient import token as hubtoken
+from kitlib.hubclient import errors as huberrors
+from kitlib.hubclient import localask
+from kitlib.config.types import ConfigError
+from kitlib.hubsite import access, control
+from kitlib.hubsite import api as hub_api
+from kitlib.hubsite import autostart as hub_autostart
+from kitlib.hubsite.cli import common as cli_common
+from kitlib.hubsite.cli import server as cli_server
+from kitlib.hubsite.cli import setup as cli_setup
+from kitlib.hubsite.cli import task as cli_task
+from kitlib.hubsite.cli import usage as cli_usage
+from kitlib.hubsite import auth, httpd, schema, serve, servesources, serveviews, tunnel
+from kitlib.ownerfiles import approvals
+from kitlib.hubvalidate import todosteps
 from kitlib.hubsite.store import Store, StoreBusy
 from tests.home import machine_config, pm_repo
 from tests.hubsite import httpfix
@@ -75,8 +89,8 @@ class CliCase(unittest.TestCase):
 
     @property
     def tokens(self):
-        """The hub's credential folder for the machine config as it stands now (auth.folder)."""
-        return auth.folder(self.home)
+        """The hub's credential folder for the machine config as it stands now (hubtoken.folder)."""
+        return hubtoken.folder(self.home)
 
     def run_cli(self, *argv, **kw):
         """(exit code, stdout, stderr) of hub.py with these arguments."""
@@ -104,7 +118,7 @@ class CliCase(unittest.TestCase):
         """A started hub on a free port (or `port`), with the temp home's token files unless
         given others. Only a hub given its port keeps a sessions file (serve.build)."""
         cfg = hub_settings.settings(None)._replace(port=port, store=self.store_dir)
-        hub = serve.build(cfg, serve.Sources(tokens=tokens or self.tokens,
+        hub = serve.build(cfg, servesources.Sources(tokens=tokens or self.tokens,
                                              static_dir=os.path.join(self.home, 'web')))
         self.addCleanup(hub.close)
         self.assertTrue(hub.start())
@@ -125,7 +139,7 @@ class UsageCase(CliCase):
         self.assertIn('USAGE: give a verb: serve, status, setup, open, unpair, stop, restart, '
                       'questions, answer, todos, stories, to-pm, inbox, pages, approvals, '
                       'handoffs, skill-edit, pending, wait or validate\n', err)
-        self.assertEqual(sorted(HUB.VERBS), sorted(HUB.VERB_NAMES))     # every verb it has
+        self.assertEqual(sorted(HUB.VERBS), sorted(cli_usage.VERB_NAMES))     # every verb it has
         self.assertEqual(self.run_cli('launch')[0], 2)
         self.assertEqual(self.run_cli('serve', '--bind', '0.0.0.0')[0], 2)
         self.assertEqual(self.run_cli('serve', '--host', '0.0.0.0')[0], 2)
@@ -161,13 +175,13 @@ class ServeCase(CliCase):
         lines = out.splitlines()
         # the start line, and one closing line: the owner sees that the server ended on purpose
         self.assertEqual(len(lines), 2, out)
-        self.assertEqual(lines[1], HUB.CLOSED)
-        self.assertEqual(HUB.CLOSED, 'hub closed: the server ended cleanly and the store lock '
+        self.assertEqual(lines[1], cli_server.CLOSED)
+        self.assertEqual(cli_server.CLOSED, 'hub closed: the server ended cleanly and the store lock '
                                      'is released')
         start = 'hub serving %s on http://127.0.0.1:' % os.path.abspath(self.store_dir)
         self.assertTrue(lines[0].startswith(start), lines[0])
-        self.assertTrue(lines[0].endswith('to pair a browser run: ' + HUB.OPEN), lines[0])
-        self.assertIn(' open', HUB.OPEN)
+        self.assertTrue(lines[0].endswith('to pair a browser run: ' + cli_common.OPEN), lines[0])
+        self.assertIn(' open', cli_common.OPEN)
         port = int(lines[0][len(start):].split()[0])
         self.assertNotEqual(port, 0)
         self.assertFalse(self.locked(), 'the store lock outlived the server')
@@ -214,7 +228,7 @@ class ServeCase(CliCase):
         built = []
         stop = threading.Event()
         stop.set()
-        with mock.patch.object(HUB.serve, 'build', lambda *a, **kw: built.append((a, kw))):
+        with mock.patch.object(serve, 'build', lambda *a, **kw: built.append((a, kw))):
             for argv in (('--store', ''), ('--store', '   '), ('--store', '\t'), ('--store=',)):
                 code, out, err = self.run_cli('serve', '--port', '0', *argv, stop=stop)
                 self.assertEqual((code, out), (2, ''), argv)
@@ -226,7 +240,7 @@ class ServeCase(CliCase):
     def test_a_store_run_has_git_sync_off_whatever_the_machine_config_says(self):
         live = os.path.join(self.home, 'live-store')
         self.config({'hub': {'store': live, 'push': True, 'commit_every_s': 1}})
-        real, seen, syncs = HUB.serve.build, [], []
+        real, seen, syncs = serve.build, [], []
 
         def build(settings, sources, log=None):
             hub = real(settings, sources, log=log)
@@ -240,8 +254,8 @@ class ServeCase(CliCase):
 
         stop = threading.Event()
         stop.set()
-        with mock.patch.object(HUB.serve, 'build', build), \
-                mock.patch.object(HUB.serve.gitsync, 'GitSync', Sync):
+        with mock.patch.object(serve, 'build', build), \
+                mock.patch.object(serve.gitsync, 'GitSync', Sync):
             code, out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0',
                                           stop=stop)
         self.assertEqual((code, err), (0, ''))
@@ -253,12 +267,12 @@ class ServeCase(CliCase):
         self.assertIsNone(sources.sync)
         self.assertIsNone(hub.sync)
         self.assertEqual(syncs, [])
-        self.assertEqual(hub.views.health()['git'], {'running': False, 'off': serve.SYNC_OFF})
+        self.assertEqual(hub.views.health()['git'], {'running': False, 'off': serveviews.SYNC_OFF})
         self.assertFalse(os.path.exists(live), 'the configured store was opened')
         self.assertFalse(os.path.exists(os.path.join(self.store_dir, '.git')))
 
     def test_an_unclean_close_is_exit_1_with_the_step_named_on_the_line_above(self):
-        real = HUB.serve.build
+        real = serve.build
 
         def build(settings, sources, log=None):
             hub = real(settings, sources, log=log)
@@ -269,7 +283,7 @@ class ServeCase(CliCase):
 
         stop = threading.Event()
         stop.set()
-        with mock.patch.object(HUB.serve, 'build', build):
+        with mock.patch.object(serve, 'build', build):
             code, out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0',
                                           stop=stop)
         self.assertEqual(code, 1)
@@ -287,10 +301,10 @@ class ServeCase(CliCase):
         notifications are off without a word (PushCase covers them)."""
         self.store_dir = os.path.join(self.home, 'live-store')
         self.config({'hub': {'store': self.store_dir}})
-        quiet = mock.patch.object(HUB, '_push_delivery', lambda: (None, None))
+        quiet = mock.patch.object(cli_server, 'push_delivery', lambda *a: (None, None))
         quiet.start()
         self.addCleanup(quiet.stop)
-        return mock.patch.object(HUB.serve.gitsync, 'GitSync', lambda *args, **kw: sync)
+        return mock.patch.object(serve.gitsync, 'GitSync', lambda *args, **kw: sync)
 
     def test_a_clean_close_of_a_synced_server_says_the_wait_for_git_then_that_it_closed(self):
         seen = []
@@ -317,7 +331,7 @@ class ServeCase(CliCase):
         lines = out.splitlines()
         self.assertEqual(len(lines), 2, out)
         self.assertTrue(lines[0].startswith('hub serving %s on ' % self.store_dir), lines[0])
-        self.assertEqual(lines[1], HUB.CLOSED)
+        self.assertEqual(lines[1], cli_server.CLOSED)
         self.assertEqual(err.splitlines(), ['NOTE: ' + serve.LAST_PASS])
         # the wait for git was on the console before it began, and the closing line after it
         self.assertEqual(seen, [(lines[0] + '\n', 'NOTE: %s\n' % serve.LAST_PASS)])
@@ -385,7 +399,7 @@ class ServeCase(CliCase):
 
     def test_the_first_ctrl_c_is_a_clean_close_and_exit_0(self):
         self.ctrl_c()
-        real, looks, stop = HUB.serve.build, [], threading.Event()
+        real, looks, stop = serve.build, [], threading.Event()
 
         def build(settings, sources, log=None):
             hub = real(settings, sources, log=log)
@@ -400,7 +414,7 @@ class ServeCase(CliCase):
             hub.watch = watch
             return hub
 
-        with mock.patch.object(HUB.serve, 'build', build), \
+        with mock.patch.object(serve, 'build', build), \
                 mock.patch.object(serve, 'POLL_S', 0.01):
             try:
                 code, out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0',
@@ -411,14 +425,14 @@ class ServeCase(CliCase):
         self.assertEqual(looks, [True], 'the server went on serving after the Ctrl+C')
         lines = out.splitlines()
         self.assertEqual(len(lines), 2, out)
-        self.assertEqual(lines[1], HUB.CLOSED)
+        self.assertEqual(lines[1], cli_server.CLOSED)
         self.assertFalse(self.locked(), 'the store lock outlived the server')
 
     def cut_in(self, step):
         """A patch to serve under: the built server's close is left by a Ctrl+C in `step` of its
         listener ('drain': the requests in flight; 'join': the handler threads, after the store
         closed)."""
-        real = HUB.serve.build
+        real = serve.build
 
         def build(settings, sources, log=None):
             hub = real(settings, sources, log=log)
@@ -432,7 +446,7 @@ class ServeCase(CliCase):
             setattr(lis, step, cut)
             return hub
 
-        return mock.patch.object(HUB.serve, 'build', build)
+        return mock.patch.object(serve, 'build', build)
 
     def test_a_ctrl_c_that_leaves_the_close_itself_says_so_and_is_exit_1(self):
         stop = threading.Event()
@@ -442,10 +456,10 @@ class ServeCase(CliCase):
             code, out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0',
                                           stop=stop)
         self.assertEqual(code, 1)
-        self.assertEqual(err.splitlines(), [HUB.CLOSE_CUT])
-        self.assertTrue(HUB.CLOSE_CUT.startswith('interrupted during the close: the hub server '
+        self.assertEqual(err.splitlines(), [cli_server.CLOSE_CUT])
+        self.assertTrue(cli_server.CLOSE_CUT.startswith('interrupted during the close: the hub server '
                                                  'did not close cleanly'))
-        self.assertIn('The store lock is released', HUB.CLOSE_CUT)
+        self.assertIn('The store lock is released', cli_server.CLOSE_CUT)
         self.assertNotIn('before the server closed', err)
         self.assertEqual(len(out.splitlines()), 1, out)
         self.assertNotIn('hub closed', out)
@@ -455,7 +469,7 @@ class ServeCase(CliCase):
         def pressed(*args, **kw):
             raise KeyboardInterrupt()
 
-        with mock.patch.object(HUB.settings, 'load', pressed):
+        with mock.patch.object(hub_settings, 'load', pressed):
             try:
                 code, out, err = self.run_cli('status')
             except KeyboardInterrupt:
@@ -470,7 +484,7 @@ class ServeCase(CliCase):
             with self.subTest(gone=type(gone).__name__):
                 class Shut(io.StringIO):        # the console closed while the server served
                     def write(self, text):
-                        if HUB.CLOSED in text:
+                        if cli_server.CLOSED in text:
                             raise gone
                         return io.StringIO.write(self, text)
 
@@ -494,29 +508,40 @@ class ServeCase(CliCase):
             return raise_it
 
         for at, name, exc, code, line in (
-                (HUB.serve, 'build', serve.ServeError('the remote %s cannot be used' % remote),
+                (serve, 'build', huberrors.ServeError('the remote %s cannot be used' % remote),
                  1, 'REFUSED: the remote %s cannot be used' % bare),
-                (HUB.serve, 'build', auth.TokenFileError("a token file beside '%s'" % remote),
+                (serve, 'build', auth.TokenFileError("a token file beside '%s'" % remote),
                  1, "REFUSED: a token file beside '%s'" % bare),
-                (HUB.settings, 'load', HUB.ConfigError('hub.remote: %s is no name' % remote),
+                (hub_settings, 'load', ConfigError('hub.remote: %s is no name' % remote),
                  2, 'machine config: hub.remote: %s is no name' % bare)):
             with self.subTest(line=line), mock.patch.object(at, name, raising(exc)):
                 got, out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0')
                 self.assertEqual((got, out, err), (code, '', line + '\n'))
         # the answer of a server that is not as expected: its message is another process's text
         answer = (500, {'error': {'code': 'internal', 'message': "cannot reach '%s'" % remote}})
-        with mock.patch.object(HUB.serve, 'ask', lambda *args, **kw: answer):
+        with mock.patch.object(localask, 'ask', lambda *args, **kw: answer):
             got, out, err = self.run_cli('status', '--port', '8790')
         self.assertEqual((got, out, err), (
             1, '', "REFUSED: the server on port 8790 answered 500 internal: cannot reach '%s'\n"
             % bare))
 
+    def test_a_verb_other_than_serve_raises_on_a_closed_console(self):
+        """Only serve loses a line to a closed console (Out.say); status prints plainly, so its
+        line to a closed stdout raises, as it always has."""
+        answer = (200, {'ok': True})
+        closed = io.StringIO()
+        closed.close()
+        with mock.patch.object(localask, 'ask', lambda *args, **kw: answer):
+            with contextlib.redirect_stdout(closed), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(ValueError):
+                    HUB.main(['status', '--port', '8790'])
+
     def test_the_log_prints_errors_and_notes_and_no_request_line(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            HUB._log('access', 'GET /api/v1/health 200')
-            HUB._log('note', 'closing: the last pass')
-            HUB._log('error', 'closing: it failed')
+            cli_server.log(HUB.OUT, 'access', 'GET /api/v1/health 200')
+            cli_server.log(HUB.OUT, 'note', 'closing: the last pass')
+            cli_server.log(HUB.OUT, 'error', 'closing: it failed')
         self.assertEqual(err.getvalue(), 'NOTE: closing: the last pass\n'
                                          'ERROR: closing: it failed\n')
 
@@ -526,8 +551,8 @@ class ServeCase(CliCase):
                  '  File "x.py", line 1, in route\nRuntimeError: cannot reach \'%s\'' % remote)
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            HUB._log('error', trace)            # a listener's line: httpd does not scrub its own
-            HUB._log('note', 'the remote is %s' % remote)
+            cli_server.log(HUB.OUT, 'error', trace)            # a listener's line: httpd does not scrub its own
+            cli_server.log(HUB.OUT, 'note', 'the remote is %s' % remote)
         text = err.getvalue()
         self.assertEqual(text, 'ERROR: %s\nNOTE: the remote is %s\n' % (
             trace.replace('someone:s3cret@', ''), 'https://git.example.test/team/data.git'))
@@ -535,7 +560,7 @@ class ServeCase(CliCase):
             self.assertNotIn(word, text)
 
     def test_a_start_note_is_printed_without_the_user_or_password_of_a_url(self):
-        real = HUB.serve.build
+        real = serve.build
 
         def build(settings, sources, log=None):
             hub = real(settings, sources, log=log)
@@ -544,7 +569,7 @@ class ServeCase(CliCase):
 
         stop = threading.Event()
         stop.set()
-        with mock.patch.object(HUB.serve, 'build', build):
+        with mock.patch.object(serve, 'build', build):
             code, out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0',
                                           stop=stop)
         self.assertEqual(code, 0)
@@ -561,7 +586,7 @@ class ServeCase(CliCase):
         self.assertIn('git sync is off for the run', text)
         self.assertIn('nothing in it is committed or pushed', text)
         self.assertIn('the machine config is not written', helped('--help'))
-        doc = ' '.join(HUB.__doc__.split())
+        doc = ' '.join((cli_server.__doc__ + cli_setup.__doc__).split())
         self.assertIn('git sync is off for that run', doc)
         self.assertIn('An empty PATH is a usage error', doc)
         self.assertIn('It writes nothing else: never the machine config', doc)
@@ -594,8 +619,8 @@ class ServePriorityCase(CliCase):
         code, out, err = self.run_cli('serve', '--store', self.store_dir, '--port', '0',
                                       stop=stop)
         self.assertEqual(code, 0)
-        self.assertEqual(err, 'NOTE: %s\n' % HUB.PRIORITY_FAILED)
-        self.assertEqual(out.splitlines()[-1], HUB.CLOSED)
+        self.assertEqual(err, 'NOTE: %s\n' % cli_server.PRIORITY_FAILED)
+        self.assertEqual(out.splitlines()[-1], cli_server.CLOSED)
 
 
 class PushCase(CliCase):
@@ -609,7 +634,7 @@ class PushCase(CliCase):
 
     def test_without_a_launcher_state_folder_push_is_off_with_one_note(self):
         with contextlib.redirect_stderr(io.StringIO()) as err:
-            self.assertEqual(HUB._push_delivery(), (None, None))
+            self.assertEqual(cli_server.push_delivery(HUB.OUT, HUB._adapter_module), (None, None))
         self.assertTrue(err.getvalue().startswith('NOTE: push notifications off: LaunchError: '),
                         err.getvalue())
         self.assertIn('launcher.state_dir is not set', err.getvalue())
@@ -619,7 +644,7 @@ class PushCase(CliCase):
         os.makedirs(state)
         self.config({'launcher': {'state_dir': state}})
         with self.host(object()), contextlib.redirect_stderr(io.StringIO()) as err:
-            self.assertEqual(HUB._push_delivery(), (None, None))
+            self.assertEqual(cli_server.push_delivery(HUB.OUT, HUB._adapter_module), (None, None))
         self.assertEqual(err.getvalue(), 'NOTE: push notifications off: this host has no delivery\n')
 
     def test_serve_passes_the_delivery_and_the_state_folder_and_a_scratch_store_none(self):
@@ -634,7 +659,7 @@ class PushCase(CliCase):
                 made.append(launch.state_dir())
                 return delivery
 
-        real, seen = HUB.serve.build, []
+        real, seen = serve.build, []
 
         def build(settings, sources, log=None):     # what serve gave, then served without either
             seen.append((sources.push, sources.push_dir))
@@ -643,7 +668,7 @@ class PushCase(CliCase):
 
         stop = threading.Event()
         stop.set()
-        with self.host(Adapter()), mock.patch.object(HUB.serve, 'build', build):
+        with self.host(Adapter()), mock.patch.object(serve, 'build', build):
             code, out, err = self.run_cli('serve', '--port', '0', stop=stop)
             self.assertEqual(code, 0, err)
             code, out, err = self.run_cli('serve', '--store', os.path.join(self.home, 'scratch'),
@@ -692,10 +717,10 @@ class SetupCase(CliCase):
         if not getattr(self, 'configured', False):
             self.config({'hub': {'store': self.store_dir}})
             self.configured = True
-        with mock.patch.object(HUB, '_linux', lambda: name == 'linux'), \
-                mock.patch.object(HUB.hub_autostart, 'refusals', lambda *a, **k: []), \
-                mock.patch.object(HUB.hub_autostart, 'install', lambda *a, **k: ['INSTALLED']), \
-                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: xdg):
+        with mock.patch.object(cli_task, 'linux', lambda: name == 'linux'), \
+                mock.patch.object(hub_autostart, 'refusals', lambda *a, **k: []), \
+                mock.patch.object(hub_autostart, 'install', lambda *a, **k: ['INSTALLED']), \
+                mock.patch.object(hub_autostart, 'linux_is_autostart', lambda: xdg):
             code, out, err = self.run_cli('setup', '--autostart')
         self.assertEqual((code, err), (0, ''))
         return out.splitlines()
@@ -794,12 +819,12 @@ class SetupCheckCase(CliCase):
         def probe(team):
             calls.append(team)
             return True, 'access keys: 2 fetched from example-team.cloudflareaccess.com'
-        with mock.patch.object(HUB.access, 'probe', probe):
+        with mock.patch.object(access, 'probe', probe):
             code, out, err = self.check(hub)
         self.assertEqual((code, err, calls), (0, '', ['example-team']))
         self.assertIn('access: set', out)
         self.assertIn('access keys: 2 fetched from example-team.cloudflareaccess.com', out)
-        with mock.patch.object(HUB.access, 'probe',
+        with mock.patch.object(access, 'probe',
                                lambda team: (False, 'access keys: not fetched from x: keys-fetch')):
             code, out, err = self.check(hub)
         self.assertEqual(code, 1)
@@ -809,16 +834,16 @@ class SetupCheckCase(CliCase):
     def test_access_settings_that_cannot_serve_are_named_and_never_probed(self):
         self.export('aaaaaaaaaaaa', self.NEW, current=True)
         hub = {'access': {'team': 'example-team', 'aud': 'aud-tag', 'emails': []}}
-        with mock.patch.object(HUB.access, 'probe', side_effect=AssertionError('probed')):
+        with mock.patch.object(access, 'probe', side_effect=AssertionError('probed')):
             code, out, err = self.check(hub)
         self.assertEqual(code, 1)
         self.assertIn('access: cannot serve: %s' % tunnel.NO_EMAILS, out)
         self.assertNotIn('access keys:', out)
 
     def test_kit_copies_that_cannot_be_looked_at_are_not_ready(self):
-        from kitlib import pluginsource
-        with mock.patch.object(pluginsource, 'load',
-                               side_effect=pluginsource.RefreshError('no export root set')):
+        from kitlib.pluginsource import layout as plugin_layout
+        with mock.patch.object(plugin_layout, 'load',
+                               side_effect=plugin_layout.RefreshError('no export root set')):
             code, out, err = self.check()
         self.assertEqual((code, err), (1, ''))
         self.assertIn('kit copies: cannot look: no export root set', out)
@@ -826,11 +851,11 @@ class SetupCheckCase(CliCase):
         self.assertIn('NOT READY: the kit copies could not be looked at', out)
 
     def test_an_account_install_whose_folder_is_gone_says_to_refresh_that_account(self):
-        from kitlib import pluginsource
         self.export('aaaaaaaaaaaa', self.NEW, current=True)
         gone = os.path.join(self.home, 'acct', 'plugins', 'cache', 'pm-kit', 'pm-kit', '0.1')
         acct = os.path.join(self.home, 'acct')
-        with mock.patch.object(pluginsource, 'installs', lambda: [(gone, acct)]):
+        from kitlib.pluginsource import state as plugin_state
+        with mock.patch.object(plugin_state, 'installs', lambda: [(gone, acct)]):
             code, out, err = self.check()
         self.assertEqual((code, err), (1, ''))
         self.assertIn('%s (installed in %s): cannot tell: the folder is missing: refresh that '
@@ -854,8 +879,8 @@ class ClientCase(CliCase):
             code, out, err = self.run_cli(*argv)
             self.assertEqual((code, out), (3, ''), argv)
             self.assertIn('no hub server is listening on port %d' % port, err)
-            self.assertIn(HUB.START, err)
-        self.assertTrue(HUB.START.endswith(' serve'))
+            self.assertIn(cli_common.START, err)
+        self.assertTrue(cli_common.START.endswith(' serve'))
 
     def test_status_prints_the_servers_health(self):
         hub = self.server()
@@ -865,7 +890,7 @@ class ClientCase(CliCase):
         self.assertEqual(lines[0], 'hub server on http://127.0.0.1:%d' % hub.port)
         self.assertEqual(lines[1], 'revision %d' % hub.store.revision)
         self.assertIn('store %s' % os.path.abspath(self.store_dir), lines)
-        self.assertIn('git: ' + serve.SYNC_OFF, lines)
+        self.assertIn('git: ' + serveviews.SYNC_OFF, lines)
 
     def test_status_says_in_one_line_why_the_tunnel_listener_is_off(self):
         hub = self.server()             # no hub.access in the settings: the tunnel is off
@@ -926,12 +951,12 @@ class ClientCase(CliCase):
             set_cookie = httpfix.get(hub.port, link[len(base):]).header('Set-Cookie')[0]
             cookies.append(('Cookie', set_cookie.split(';')[0]))
         for cookie in cookies:
-            self.assertEqual(httpfix.get(hub.port, HUB.HEALTH, headers=[cookie]).status, 200)
+            self.assertEqual(httpfix.get(hub.port, cli_server.HEALTH, headers=[cookie]).status, 200)
         code, out, err = self.run_cli('unpair', '--port', str(hub.port))
         self.assertEqual((code, err), (0, ''))
         self.assertEqual(out, 'unpaired every browser of the hub server on port %d\n' % hub.port)
         for cookie in cookies:
-            self.assertEqual(httpfix.get(hub.port, HUB.HEALTH, headers=[cookie]).status, 403)
+            self.assertEqual(httpfix.get(hub.port, cli_server.HEALTH, headers=[cookie]).status, 403)
         with open(os.path.join(self.tokens, auth.sessions_file(hub.port)), encoding='ascii') as f:
             self.assertEqual(json.load(f)['sessions'], [])
 
@@ -960,12 +985,12 @@ class ClientCase(CliCase):
         def ask(p, method, path, token=None, **kw):
             asked.append((p, method, path))
             if len(asked) == 1:
-                raise serve.NotRunning(p)
+                raise huberrors.NotRunning(p)
             if isinstance(second, Exception):
                 raise second
             return second
 
-        with mock.patch.object(HUB.serve, 'ask', ask):
+        with mock.patch.object(localask, 'ask', ask):
             got = self.run_cli('unpair', '--port', str(port))
         self.assertEqual(asked, [(port, 'POST', httpd.UNPAIR_ROUTE)] * 2)
         return port, got
@@ -982,7 +1007,7 @@ class ClientCase(CliCase):
         self.assertIn('REFUSED: the server on port %d answered 403' % port, err)
 
     def test_unpair_with_still_no_server_at_the_second_ask_is_the_file_alone(self):
-        port, (code, out, err) = self.unpair_racing_a_start(serve.NotRunning(self.dead_port()))
+        port, (code, out, err) = self.unpair_racing_a_start(huberrors.NotRunning(self.dead_port()))
         self.assertEqual((code, err), (0, ''))
         self.assertIn(auth.sessions_file(port), out)
         self.assertNotIn('of the hub server', out)
@@ -1017,7 +1042,7 @@ class StopRestartCase(CliCase):
         """A hub that serve.run serves on a thread, as `hub.py serve` does: the hub and the
         thread. Its port is a free one."""
         cfg = hub_settings.settings(None)._replace(port=0, store=self.store_dir)
-        hub = serve.build(cfg, serve.Sources(tokens=self.tokens,
+        hub = serve.build(cfg, servesources.Sources(tokens=self.tokens,
                                              static_dir=os.path.join(self.home, 'web')))
         up, stop = threading.Event(), threading.Event()
         runner = threading.Thread(target=serve.run, args=(hub, lambda h: up.set(), stop),
@@ -1034,8 +1059,8 @@ class StopRestartCase(CliCase):
         never ask the machine's own."""
         self.config({'hub': {'port': self.dead_port()}})
         started = []
-        states = mock.patch.object(HUB.control.autostart, 'task_state', lambda: state)
-        starts = mock.patch.object(HUB.control.autostart, 'start_task',
+        states = mock.patch.object(control.autostart, 'task_state', lambda: state)
+        starts = mock.patch.object(control.autostart, 'start_task',
                                    lambda: started.append(True))
         states.start()
         starts.start()
@@ -1052,7 +1077,7 @@ class StopRestartCase(CliCase):
             asked.append((pid, ctime))
             return runner.is_alive()
 
-        with mock.patch.object(HUB.control.process, 'alive', alive):
+        with mock.patch.object(control.process, 'alive', alive):
             code, out, err = self.run_cli('stop', '--port', str(hub.port))
         self.assertEqual((code, err), (0, ''))
         self.assertEqual(out, 'STOPPED: the hub server on port %d (pid %d) has closed and its '
@@ -1097,15 +1122,15 @@ class StopRestartCase(CliCase):
 
         def stop(port, token, timeout, **kw):
             calls.append((port, token, timeout))
-            return HUB.control.Stopped(False, None, False)
+            return control.Stopped(False, None, False)
 
-        with mock.patch.object(HUB.control, 'stop', stop):
+        with mock.patch.object(control, 'stop', stop):
             self.assertEqual(self.run_cli('stop')[0], 0)
             self.assertEqual(self.run_cli('stop', '--port', '8801', '--timeout', '7.5')[0], 0)
         owner = auth.read_token(self.tokens, auth.OWNER)
-        self.assertEqual(calls, [(8799, owner, HUB.control.DEFAULT_TIMEOUT_S),
+        self.assertEqual(calls, [(8799, owner, control.DEFAULT_TIMEOUT_S),
                                  (8801, owner, 7.5)])
-        self.assertEqual(HUB.control.DEFAULT_TIMEOUT_S, 300)
+        self.assertEqual(control.DEFAULT_TIMEOUT_S, 300)
 
     def test_restart_with_no_task_starts_nothing_and_prints_the_start_command(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
@@ -1114,26 +1139,26 @@ class StopRestartCase(CliCase):
         code, out, err = self.run_cli('restart', '--port', str(port))
         self.assertEqual((code, err), (3, ''))
         self.assertIn('nothing to stop: nothing answers on port %d' % port, out)
-        self.assertIn(HUB.hub_autostart.TASK_NAME, out)
-        self.assertTrue(out.endswith(HUB.task_advice(HUB.control.NO_TASK) + '\n'), out)
+        self.assertIn(hub_autostart.TASK_NAME, out)
+        self.assertTrue(out.endswith(cli_task.task_advice(control.NO_TASK) + '\n'), out)
         self.assertIn('setup --autostart', out)
         self.assertIn('Start-ScheduledTask', out)
-        self.assertNotIn(HUB.START, out)
+        self.assertNotIn(cli_common.START, out)
         self.assertEqual(started, [])
 
     def test_restart_of_a_server_started_by_hand_stops_it_and_starts_nothing(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
         hub, runner = self.running()
         started = self.fake_task('Ready')
-        with mock.patch.object(HUB.control.process, 'alive',
+        with mock.patch.object(control.process, 'alive',
                                lambda pid, ctime: runner.is_alive()):
             code, out, err = self.run_cli('restart', '--port', str(hub.port))
         self.assertEqual((code, err), (3, ''))
         self.assertIn('STOPPED: the hub server on port %d' % hub.port, out)
         self.assertIn('started by hand', out)
-        self.assertTrue(out.endswith(HUB.task_advice(HUB.control.HAND_STARTED) + '\n'), out)
+        self.assertTrue(out.endswith(cli_task.task_advice(control.HAND_STARTED) + '\n'), out)
         self.assertIn('Start-ScheduledTask', out)
-        self.assertNotIn(HUB.START, out)
+        self.assertNotIn(cli_common.START, out)
         self.assertEqual(started, [])
         runner.join(30)
         self.assertFalse(runner.is_alive())
@@ -1144,18 +1169,18 @@ class StopRestartCase(CliCase):
         code, out, err = self.run_cli('restart', '--port', str(self.dead_port()))
         self.assertEqual((code, err), (3, ''))
         self.assertIn('disabled', out)
-        self.assertTrue(out.endswith(HUB.task_advice(HUB.control.DISABLED) + '\n'), out)
+        self.assertTrue(out.endswith(cli_task.task_advice(control.DISABLED) + '\n'), out)
         self.assertIn('Enable-ScheduledTask', out)
-        self.assertNotIn(HUB.START, out)
+        self.assertNotIn(cli_common.START, out)
         self.assertEqual(started, [])
 
     def test_restart_advice_on_linux_names_systemctl_and_never_the_scheduled_task(self):
         unit = 'pm-kit-hub.service'
         with mock.patch('kitlib.platform.NAME', 'linux'), \
-                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: False):
-            for outcome in (HUB.control.NO_TASK, HUB.control.DISABLED, HUB.control.HAND_STARTED):
-                said = HUB.not_started(outcome)
-                advice = HUB.task_advice(outcome)
+                mock.patch.object(hub_autostart, 'linux_is_autostart', lambda: False):
+            for outcome in (control.NO_TASK, control.DISABLED, control.HAND_STARTED):
+                said = cli_task.not_started(outcome)
+                advice = cli_task.task_advice(outcome)
                 self.assertIn(unit, said)
                 self.assertIn('systemctl', said)
                 self.assertNotIn('scheduled task', said)
@@ -1163,69 +1188,69 @@ class StopRestartCase(CliCase):
                 for text in (said, advice):
                     self.assertNotIn('ScheduledTask', text)
             self.assertIn('systemctl --user enable ' + unit,
-                          HUB.task_advice(HUB.control.DISABLED))
-            self.assertIn('systemctl --user start ' + unit, HUB.task_advice(None))
+                          cli_task.task_advice(control.DISABLED))
+            self.assertIn('systemctl --user start ' + unit, cli_task.task_advice(None))
         with mock.patch('kitlib.platform.NAME', 'windows'):
-            self.assertEqual(HUB.not_started(HUB.control.NO_TASK),
-                             HUB.NOT_STARTED[HUB.control.NO_TASK])
-            self.assertIn('Start-ScheduledTask', HUB.task_advice(None))
+            self.assertEqual(cli_task.not_started(control.NO_TASK),
+                             cli_task.NOT_STARTED[control.NO_TASK])
+            self.assertIn('Start-ScheduledTask', cli_task.task_advice(None))
 
     def test_restart_advice_for_an_xdg_autostart_entry_offers_no_systemctl_start(self):
         with mock.patch('kitlib.platform.NAME', 'linux'), \
                 mock.patch.dict(os.environ, {'XDG_CONFIG_HOME': os.path.join(self.home, 'x')}), \
-                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: True):
-            for outcome in (HUB.control.DISABLED, HUB.control.HAND_STARTED):
-                said = HUB.not_started(outcome)
-                advice = HUB.task_advice(outcome)
+                mock.patch.object(hub_autostart, 'linux_is_autostart', lambda: True):
+            for outcome in (control.DISABLED, control.HAND_STARTED):
+                said = cli_task.not_started(outcome)
+                advice = cli_task.task_advice(outcome)
                 self.assertIn('XDG autostart entry', said)
                 self.assertIn('XDG autostart entry', advice)
-                self.assertIn(HUB.START, advice)
+                self.assertIn(cli_common.START, advice)
                 for text in (said, advice):
                     self.assertNotIn('systemctl --user start', text)
                     self.assertNotIn('ScheduledTask', text)
             # a hidden entry (DISABLED) does not start at sign-in; a plain one (HAND_STARTED) does
-            disabled = (HUB.not_started(HUB.control.DISABLED),
-                        HUB.task_advice(HUB.control.DISABLED))
-            plain = (HUB.not_started(HUB.control.HAND_STARTED),
-                     HUB.task_advice(HUB.control.HAND_STARTED))
+            disabled = (cli_task.not_started(control.DISABLED),
+                        cli_task.task_advice(control.DISABLED))
+            plain = (cli_task.not_started(control.HAND_STARTED),
+                     cli_task.task_advice(control.HAND_STARTED))
             self.assertIn('Hidden=true', disabled[0])
             self.assertIn('Hidden=true', disabled[1])
             self.assertNotIn('Hidden', plain[0] + plain[1])
             self.assertIn('your next sign-in', plain[1])
-            self.assertEqual(HUB._job(), "the XDG autostart entry 'pm-kit-hub.desktop'")
+            self.assertEqual(cli_task.job(), "the XDG autostart entry 'pm-kit-hub.desktop'")
 
     def test_xdg_advice_names_the_entry_under_xdg_config_home(self):
         conf = os.path.join(self.home, 'xdgconf')
         entry = os.path.join(conf, 'autostart', 'pm-kit-hub.desktop')
         with mock.patch('kitlib.platform.NAME', 'linux'), \
                 mock.patch.dict(os.environ, {'XDG_CONFIG_HOME': conf}), \
-                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: True):
-            self.assertEqual(HUB.hub_autostart.linux_desktop_path(), entry)
-            self.assertIn(entry, HUB.task_advice(HUB.control.DISABLED))
-            self.assertNotIn('~/.config', HUB.task_advice(HUB.control.DISABLED))
-            for outcome in (HUB.control.DISABLED, HUB.control.HAND_STARTED):
-                self.assertIn("'pm-kit-hub.desktop'", HUB.not_started(outcome))
-                self.assertNotIn('.service', HUB.not_started(outcome))
-            self.assertIn('hub.py restart', HUB.not_started(HUB.control.HAND_STARTED))
+                mock.patch.object(hub_autostart, 'linux_is_autostart', lambda: True):
+            self.assertEqual(hub_autostart.linux_desktop_path(), entry)
+            self.assertIn(entry, cli_task.task_advice(control.DISABLED))
+            self.assertNotIn('~/.config', cli_task.task_advice(control.DISABLED))
+            for outcome in (control.DISABLED, control.HAND_STARTED):
+                self.assertIn("'pm-kit-hub.desktop'", cli_task.not_started(outcome))
+                self.assertNotIn('.service', cli_task.not_started(outcome))
+            self.assertIn('hub.py restart', cli_task.not_started(control.HAND_STARTED))
 
     def test_restart_prints_the_job_on_linux_and_the_task_on_windows(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
-        done = HUB.control.Restarted(HUB.control.Stopped(True, 77, False),
-                                     HUB.control.RESTARTED, 8799)
-        failed = HUB.control.StartFailed(HUB.control.Stopped(False, None, False), 'no systemd')
+        done = control.Restarted(control.Stopped(True, 77, False),
+                                     control.RESTARTED, 8799)
+        failed = control.StartFailed(control.Stopped(False, None, False), 'no systemd')
         for linux, xdg, want in (
                 (True, False, "the job 'pm-kit-hub.service'"),
                 (True, True, "the XDG autostart entry 'pm-kit-hub.desktop'"),
                 (False, False, "the scheduled task 'PM kit hub server'")):
-            with mock.patch.object(HUB, '_linux', lambda: linux), \
+            with mock.patch.object(cli_task, 'linux', lambda: linux), \
                     mock.patch.dict(os.environ, {'XDG_CONFIG_HOME': os.path.join(self.home, 'x')}), \
-                    mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: xdg):
-                with mock.patch.object(HUB.control, 'restart', lambda *a, **k: done):
+                    mock.patch.object(hub_autostart, 'linux_is_autostart', lambda: xdg):
+                with mock.patch.object(control, 'restart', lambda *a, **k: done):
                     code, out, err = self.run_cli('restart', '--port', '8799')
                 self.assertEqual((code, err), (0, ''))
                 self.assertIn('RESTARTED: the hub server answers on port 8799 (%s started it)'
                               % want, out)
-                with mock.patch.object(HUB.control, 'restart',
+                with mock.patch.object(control, 'restart',
                                        mock.Mock(side_effect=failed)):
                     code, out, err = self.run_cli('restart', '--port', '8799')
                 self.assertEqual(code, 1)
@@ -1236,13 +1261,13 @@ class StopRestartCase(CliCase):
 
     def test_restart_names_the_task_on_windows_and_the_job_on_linux(self):
         with mock.patch('kitlib.platform.NAME', 'linux'), \
-                mock.patch.object(HUB.hub_autostart, 'linux_is_autostart', lambda: False):
-            self.assertIn('register the job', HUB.task_advice(HUB.control.NO_TASK))
-            self.assertNotIn('the task', HUB.task_advice(HUB.control.NO_TASK))
-            self.assertNotIn('scheduled task', HUB.NO_CONSOLE_LINUX)
+                mock.patch.object(hub_autostart, 'linux_is_autostart', lambda: False):
+            self.assertIn('register the job', cli_task.task_advice(control.NO_TASK))
+            self.assertNotIn('the task', cli_task.task_advice(control.NO_TASK))
+            self.assertNotIn('scheduled task', cli_task.NO_CONSOLE_LINUX)
         with mock.patch('kitlib.platform.NAME', 'windows'):
-            self.assertIn('register the task', HUB.task_advice(HUB.control.NO_TASK))
-            self.assertEqual(HUB._job(), "the scheduled task 'PM kit hub server'")
+            self.assertIn('register the task', cli_task.task_advice(control.NO_TASK))
+            self.assertEqual(cli_task.job(), "the scheduled task 'PM kit hub server'")
 
     def test_restart_says_where_the_task_s_server_answers(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
@@ -1251,10 +1276,10 @@ class StopRestartCase(CliCase):
 
         def restart(port, token, timeout, new_port=None, **kw):
             calls.append((port, timeout, new_port))
-            return HUB.control.Restarted(HUB.control.Stopped(True, 77, False),
-                                         HUB.control.RESTARTED, new_port)
+            return control.Restarted(control.Stopped(True, 77, False),
+                                         control.RESTARTED, new_port)
 
-        with mock.patch.object(HUB.control, 'restart', restart):
+        with mock.patch.object(control, 'restart', restart):
             code, out, err = self.run_cli('restart', '--port', '8801', '--timeout', '9')
         self.assertEqual((code, err), (0, ''))
         self.assertEqual(calls, [(8801, 9.0, 8799)])
@@ -1264,14 +1289,14 @@ class StopRestartCase(CliCase):
     def test_a_timeout_is_exit_4_and_says_nothing_was_killed(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
         port = self.dead_port()
-        for verb, phase in (('stop', HUB.control.CLOSING_PHASE),
-                            ('restart', HUB.control.ANSWER_PHASE)):
+        for verb, phase in (('stop', control.CLOSING_PHASE),
+                            ('restart', control.ANSWER_PHASE)):
             with self.subTest(verb=verb):
                 def fail(*args, **kw):
-                    raise HUB.control.TimedOut(phase, 'port %d did not close within 1 s; '
+                    raise control.TimedOut(phase, 'port %d did not close within 1 s; '
                                                       'nothing was killed' % port)
 
-                with mock.patch.object(HUB.control, verb, fail):
+                with mock.patch.object(control, verb, fail):
                     code, out, err = self.run_cli(verb, '--port', str(port))
                 self.assertEqual((code, out), (4, ''))
                 self.assertIn('TIMED OUT: port %d did not close within 1 s; nothing was killed'
@@ -1285,17 +1310,17 @@ class StopRestartCase(CliCase):
         # console it does not have; a stop or a task that has not ended says nothing there
         self.assertEqual(self.run_cli('setup')[0], 0)
         port = self.dead_port()
-        for phase in (HUB.control.CLOSING_PHASE, HUB.control.PROCESS_PHASE,
-                      HUB.control.TASK_PHASE, HUB.control.ANSWER_PHASE):
+        for phase in (control.CLOSING_PHASE, control.PROCESS_PHASE,
+                      control.TASK_PHASE, control.ANSWER_PHASE):
             with self.subTest(phase=phase):
                 def fail(*args, **kw):
-                    raise HUB.control.TimedOut(phase, 'ran out; nothing was killed')
+                    raise control.TimedOut(phase, 'ran out; nothing was killed')
 
-                with mock.patch.object(HUB.control, 'restart', fail):
+                with mock.patch.object(control, 'restart', fail):
                     code, out, err = self.run_cli('restart', '--port', str(port))
                 self.assertEqual((code, out), (4, ''))
                 self.assertIn('TIMED OUT: ran out; nothing was killed', err)
-                self.assertEqual(HUB.NO_CONSOLE in err, phase == HUB.control.ANSWER_PHASE, err)
+                self.assertEqual(cli_task.NO_CONSOLE in err, phase == control.ANSWER_PHASE, err)
 
     def test_a_task_that_cannot_be_started_after_the_stop_says_the_server_stopped(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
@@ -1304,19 +1329,19 @@ class StopRestartCase(CliCase):
                        "reading the state of the task 'x': powershell timed out after 60 s"):
             with self.subTest(reason=reason):
                 def fail(*args, **kw):
-                    raise HUB.control.StartFailed(HUB.control.Stopped(True, 77, False),
-                                                  HUB.hub_autostart.AutostartError(reason))
+                    raise control.StartFailed(control.Stopped(True, 77, False),
+                                                  hub_autostart.AutostartError(reason))
 
-                with mock.patch.object(HUB.control, 'restart', fail):
+                with mock.patch.object(control, 'restart', fail):
                     code, out, err = self.run_cli('restart', '--port', str(port))
                 self.assertEqual(code, 1)
                 self.assertEqual(out, 'STOPPED: the hub server on port %d (pid 77) has closed and '
                                       'its process has ended\n' % port)
                 self.assertNotIn('REFUSED', err)
                 self.assertIn('the scheduled task could not be started: %s' % reason, err)
-                self.assertTrue(err.endswith(HUB.task_advice(None) + '\n'), err)
+                self.assertTrue(err.endswith(cli_task.task_advice(None) + '\n'), err)
                 self.assertIn('Start-ScheduledTask', err)
-                self.assertNotIn(HUB.START, err)
+                self.assertNotIn(cli_common.START, err)
 
 
 class ClosedConsoleCase(CliCase):
@@ -1347,7 +1372,7 @@ class ClosedConsoleCase(CliCase):
 
     def test_a_start_line_that_cannot_be_written_does_not_stop_the_server(self):
         served = []
-        real = HUB.serve.run
+        real = serve.run
 
         def run(hub, started, stop):
             def said(h):
@@ -1357,13 +1382,13 @@ class ClosedConsoleCase(CliCase):
 
         def get_health(h):
             token = auth.read_token(self.tokens, auth.AGENT)
-            return httpfix.get(h.port, HUB.HEALTH, token).status
+            return httpfix.get(h.port, cli_server.HEALTH, token).status
 
         for gone in self.GONE:
             with self.subTest(gone=type(gone).__name__):
                 del served[:]
-                code, out, err = self.serve(gone, ['hub serving ', HUB.CLOSED],
-                                            mock.patch.object(HUB.serve, 'run', run))
+                code, out, err = self.serve(gone, ['hub serving ', cli_server.CLOSED],
+                                            mock.patch.object(serve, 'run', run))
                 self.assertEqual((code, out, err), (0, '', ''))
                 self.assertEqual(served, [200], 'the server did not serve after its start line')
 
@@ -1392,7 +1417,7 @@ class VerbCase(CliCase):
         return err
 
     def direct(self, path):
-        r = httpfix.get(self.hub.port, HUB.api.BASE + path,
+        r = httpfix.get(self.hub.port, hub_api.BASE + path,
                         auth.read_token(self.tokens, auth.AGENT))
         self.assertEqual(r.status, 200, r.body)
         return r.json()
@@ -1418,7 +1443,7 @@ class ApprovalsCase(VerbCase):
         files = [{'path': 'AGENTS.md', 'base_blob': 'b' * 40, 'content': 'new\n'},
                  {'path': 'gone.md', 'base_blob': 'c' * 40, 'content': None}]
         live = approvals.new_doc('https://github.com/o/r', 'live one', 'a' * 40, files, now,
-                                 reason='why not')
+                                 reason='why not', branch='kit/w')
         stale = dict(approvals.new_doc('https://github.com/o/other', 'stale one', 'a' * 40,
                                        files, old),
                      status='approved', decision='approve', decided_at=old.isoformat())
@@ -1440,9 +1465,22 @@ class ApprovalsCase(VerbCase):
 
     def test_show_prints_the_request_and_its_files(self):
         self.assertEqual(self.ok('approvals', 'show', 'A-001'), [
-            'A-001 pending [github.com/o/r] live one', 'head ' + 'a' * 40, 'reason why not',
+            'A-001 pending [github.com/o/r] live one', 'head ' + 'a' * 40, 'branch kit/w',
+            'reason why not',
             'AGENTS.md %s -> %s' % ('b' * 40, self.blob), 'gone.md %s -> deleted' % ('c' * 40)])
         self.assertIn('no approval A-009', self.refused('approvals', 'show', 'A-009'))
+
+    def test_apply_asks_the_hub_and_says_why_it_could_not(self):
+        now = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=1)
+        files = [{'path': 'AGENTS.md', 'base_blob': 'b' * 40, 'content': 'new\n'}]
+        fresh = dict(approvals.new_doc('https://github.com/o/r', 'fresh one', 'a' * 40, files,
+                                       now, branch='kit/w'),
+                     status='approved', decision='approve', decided_at=now.isoformat())
+        self.assertEqual(self.hub.store.add('approvals', fresh).id, 'A-003')
+        err = self.refused('approvals', 'apply', 'A-003')
+        self.assertIn('UNAPPLIED A-003: this machine has no checkout of ', err)
+        self.assertIn('error', self.hub.store.get('approvals', 'A-003')['apply'])
+        self.assertIn('REFUSED conflict', self.refused('approvals', 'apply', 'A-001'))
 
     def test_a_document_that_is_not_an_object_is_malformed(self):
         real = self.hub.store.snapshot
@@ -2110,7 +2148,7 @@ class RecordArgumentCase(CliCase):
         return 200, {'ok': True, 'id': 'Q-1000', 'version': 2, 'revision': 3, 'warnings': []}
 
     def run_asking(self, *argv):
-        with mock.patch.object(serve, 'ask', self.ask):
+        with mock.patch.object(localask, 'ask', self.ask):
             return self.run_cli(*(argv + ('--port', '8791')))
 
     def test_record_is_sent_as_repo_and_id(self):
@@ -2224,18 +2262,18 @@ class ArgumentCase(CliCase):
     def test_every_verb_that_asks_is_exit_3_with_the_start_command_when_no_server_runs(self):
         self.assertEqual(self.run_cli('setup')[0], 0)
         def down(port, *args, **kw):            # a real refused connect is slow here (test_client.DownCase)
-            raise serve.NotRunning(port)
+            raise huberrors.NotRunning(port)
 
-        with mock.patch.object(serve, 'ask', down):
+        with mock.patch.object(localask, 'ask', down):
             for argv in self.VERBS:
                 for more in ((), ('--json',)):
                     code, out, err = self.run_cli(*(argv + more + ('--port', '8791')))
                     self.assertEqual((code, out), (3, ''), argv)
                     self.assertIn('port 8791', err)
-                    self.assertIn(HUB.START, err)
+                    self.assertIn(cli_common.START, err)
         # each verb of the tool is in that list, but for those that ask no running server
         self.assertEqual(sorted({v[0] for v in self.VERBS}),
-                         sorted(set(HUB.VERB_NAMES)
+                         sorted(set(cli_usage.VERB_NAMES)
                                 - {'serve', 'status', 'setup', 'open', 'validate',
                                    'unpair',    # unpair with no server: ClientCase
                                    'stop', 'restart'}))     # with no server: StopRestartCase
@@ -2247,9 +2285,9 @@ class ArgumentCase(CliCase):
 
         def down(port, *args, **kw):
             asked.append(port)
-            raise serve.NotRunning(port)
+            raise huberrors.NotRunning(port)
 
-        with mock.patch.object(serve, 'ask', down):
+        with mock.patch.object(localask, 'ask', down):
             self.assertEqual(self.run_cli('pending')[0], 3)
             self.assertEqual(self.run_cli('questions', '--port', '8794')[0], 3)
             self.assertEqual(self.run_cli('questions', '--port', '8794', 'log', 'Q-001',
@@ -2262,10 +2300,10 @@ class ArgumentCase(CliCase):
         seen = []
 
         def ask(port, method, path, token=None, body=None, timeout=None):
-            seen.append((method, path[len(HUB.api.BASE):], body))
+            seen.append((method, path[len(hub_api.BASE):], body))
             return 200, {'ok': True, 'id': 'X-1'}
 
-        with mock.patch.object(serve, 'ask', ask):
+        with mock.patch.object(localask, 'ask', ask):
             got = self.run_cli(*(argv + ('--port', '8791')))
         return got, seen
 
@@ -2358,7 +2396,7 @@ class ArgumentCase(CliCase):
 
     def test_a_verb_with_no_token_file_is_refused_before_it_asks(self):
         asked = []
-        with mock.patch.object(serve, 'ask', lambda *a, **kw: asked.append(a)):
+        with mock.patch.object(localask, 'ask', lambda *a, **kw: asked.append(a)):
             code, out, err = self.run_cli('pending', '--port', '8791')
             self.assertEqual((code, out), (1, ''))
             self.assertIn('REFUSED: no agent or owner token in %s: run hub.py setup'
@@ -2384,8 +2422,8 @@ class ArgumentCase(CliCase):
             return 200, {'ok': True, 'id': 'X-1', 'items': [{'id': 'Q-001', 'version': 3},
                                                              {'id': 'S-001', 'version': 4}]}
 
-        base = HUB.api.BASE
-        with mock.patch.object(serve, 'ask', ask):
+        base = hub_api.BASE
+        with mock.patch.object(localask, 'ask', ask):
             for argv, want in (
                     (('answer', 'Q-001', '--choice', '0'), ('POST', '/questions/Q-001/answer', 'owner')),
                     (('todos', 'done', 'T-001'), ('POST', '/todos/T-001/done', 'owner')),
@@ -2429,10 +2467,10 @@ class ArgumentCase(CliCase):
             seen.append(path)
             return 200, {'ok': True}
 
-        with mock.patch.object(serve, 'ask', ask):
+        with mock.patch.object(localask, 'ask', ask):
             self.assertEqual(self.run_cli('todos', 'ack', '../stories/S-001?x=1#y', '--port',
                                           '8791')[0], 0)
-        self.assertEqual(seen, [HUB.api.BASE + '/todos/..%2Fstories%2FS-001%3Fx%3D1%23y/ack'])
+        self.assertEqual(seen, [hub_api.BASE + '/todos/..%2Fstories%2FS-001%3Fx%3D1%23y/ack'])
 
 
 class ValidateCase(CliCase):

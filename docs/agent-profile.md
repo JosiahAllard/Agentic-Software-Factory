@@ -4,7 +4,7 @@ Read by the kit's agents section by section; they find their sections by these h
 headings stay. Owner-only. Nothing here names a machine, a drive, a person or another repository:
 machine values come from the machine config (docs/kit-json.md "Machine config keys") and the tools that read it.
 
-No profile: a repository's profile is optional (docs/multi-host-plan.md decision 26). A role whose
+No profile: a repository's profile is optional. A role whose
 repository has none reads the kit's `content/default-profile.md`, which has every heading below,
 plus the repository's README and instructions file where they exist. The same holds for the
 coordinator profile: with none, the coordinator works from the repository's own files.
@@ -17,13 +17,13 @@ A session started with `launch.py --home-worktree` runs in a detached, locked `h
 worktree (docs/launcher.md "The home worktree"): never edit or check out in it; it is not a task worktree.
 
 ## Build and test
-The gate is `python tools/gate.py` (docs/gate.md); `--full` runs the whole suite and takes the
-machine lock itself. Selected tests: `python tools/kit_tests.py --select` (what the change reaches;
+The gate is `python tools/gate.py` (docs/gate.md); it selects by the diff and takes the machine lock
+itself. `--full` runs the whole suite, only when the gate prints `FULL NEEDED`. Selected tests: `python tools/kit_tests.py --select` (what the change reaches;
 `--changed <path> ...` names the paths, `--plan` prints the pick; docs/test-tools.md).
 Red-first through `tools/redfirst.py` (docs/redfirst.md), never an in-place mutant.
 
 ### Known flakes
-None recorded. A red `gate.py --full` gets one targeted rerun of its failing tests, `python tools/gate.py --rerun` (docs/gate-rerun-checkout.md "Targeted rerun"): FLAKE lands the tip, and you report the flake record line it prints; REAL, or a second failure of the same test, is real and never lands. Report both runs.
+None recorded. A red `gate.py --full` (run when the gate asked for it) gets one targeted rerun of its failing tests, `python tools/gate.py --rerun` (docs/gate-rerun-checkout.md "Targeted rerun"): FLAKE lands the tip, and you report the flake record line it prints; REAL, or a second failure of the same test, is real and never lands. Report both runs.
 
 ## Test runner
 Pass line `kit_tests: OK`; anything else is a failure. Report the summary line and the failing
@@ -60,30 +60,29 @@ Never pre-empt a holder. Temp folders: the tools' own (machine config `temp_dir`
 hardcode a temp path.
 
 ## Risk map
-High: `boot/`, `kitlib/host/hookmain.py`, `kitlib/guard/`, `kitlib/gate/`, `kitlib/lock/`, `kitlib/lockmcp/`,
+High: `boot/`, `kitlib/guard/`, `kitlib/gate/`, `kitlib/lock/`, `kitlib/lockmcp/`,
 `kitlib/hubmcp/`, `kitlib/mcpwire/`, `kitlib/commit/`, `kitlib/records/`, `kitlib/proc/`, `kitlib/git/`,
-`kitlib/backlog/`, `tools/land.py`, `tools/gate.py`, `hosts/*/adapter/`, `hosts/*/shell/hooks/`, `hosts/*/shell/hooks-plugin/`,
+`kitlib/backlog/`, `kitlib/hookrun/`, `kitlib/landing/`, `kitlib/ownerfiles/`, `kitlib/hubclient/`, `tools/land.py`, `tools/gate.py`, `hosts/*/adapter/`, `hosts/*/shell/hooks/`, `hosts/*/shell/hooks-plugin/`,
 `hosts/*/shell/agents/`, `content/roles/`, `content/skills/`. A High change gets a fresh reviewer before landing. Low: docs.
 
 ## Moves and renames
-Behaviour-preserving only; old paths keep a stub until go-live (docs/go-live.md).
+Behaviour-preserving only; no stub is left at an old path.
 
 Equivalence check, in full, for every move or rename:
 1. Whitelist: the brief lists every old -> new name. Every changed line in
    `git diff <base>..<tip>` is one of those substitutions, a moved block unchanged
-   (`git diff -M --color-moved`), or a stub at an old path. Report any other changed line; each
-   one is a finding, not part of the move.
-2. Full gate on both: run `python tools/gate.py -C <worktree> --full` on the merge base and on
-   the tip, and keep both suite logs. The `Ran N tests` count and the skip count must match, and no
-   test name may be gone (a test that moved with its module keeps its name under the new path; list
-   each pair in the report).
+   (`git diff -M --color-moved`). Report any other changed line; each one is a finding, not part
+   of the move.
+2. Test lists: `python tools/kit_tests.py -C <worktree> --list` on the merge base and on the tip
+   must name the same tests (a test that moved with its module keeps its name under the new path;
+   list each pair in the report), and none may be gone. Then run `--select` on the tip only
+   (`--select` picks by the diff, so it is not comparable on the base): it passes.
 3. Guard parity: when the move touches kitlib/guard, boot/hook.py, or any path or name the guard
    matches, run the guard's `decide()` over every row in tests/guard on the base and on the tip.
    Every decision must be identical (rows whose expected text names the old path change only by the
    whitelisted substitution).
-4. Grep the old name across the tree: zero hits, or each remaining hit explained (the stub itself,
-   tests/oldpaths, history in docs/go-live.md). The stub left at the old path still runs and names
-   the new one (tests/oldpaths).
+4. Grep the old name across the tree: zero hits, or each remaining hit explained (history, a
+   quoted refusal text).
 
 Any difference in steps 2 or 3 is a hard stop, not a re-baseline: report both sides and stop. No
 known tie in this repo allows a rerun.

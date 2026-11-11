@@ -239,7 +239,7 @@ class WriteLockTest(Base):
         kuser.locate(self.home)       # the pointer's git check, remembered before classify is patched
         err = io.StringIO()
         with mock.patch.dict(os.environ, {'USERPROFILE': self.home, 'HOME': self.home}), \
-                mock.patch('kitlib.fs.writelock.gitrepo.classify', return_value=unknown), \
+                mock.patch('kitlib.git.lockplace.gitrepo.classify', return_value=unknown), \
                 contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
             code = tool.main(['add', '--text', 'x'])
         self.assertEqual(code, 1)

@@ -11,8 +11,8 @@ Each pid is opened once, and its creation time, running state and recorded paren
 all read from that one handle. Reopening a pid to ask a second question could reach a
 newer process that reused it, whose parent is not in this lineage; one handle cannot.
 """
-from kitlib.proc import process
-from kitlib.proc.win32 import K32
+from kitlib.platform.windows import process
+from kitlib.platform.windows.win32 import K32
 
 
 def _read(pid):

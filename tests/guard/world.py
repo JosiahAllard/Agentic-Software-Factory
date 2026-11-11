@@ -124,7 +124,7 @@ class World(object):
         OK): kitlib.config.user LOCAL_KEYS in local.json (written only when it holds one), every
         other key but pm_data in config.json. pm_data is the Location's derived one, taken from
         `data` as given (none when it has none), so a test still pins how the guard takes a value
-        that fails kitlib.pmdata.check_settings. Every ctx() after it reads this Location."""
+        that fails kitlib.config.pmdata.check_settings. Every ctx() after it reads this Location."""
         data = dict(data)
         pm_data = data.pop('pm_data', None)
         local = {k: v for k, v in data.items() if k in user.LOCAL_KEYS}

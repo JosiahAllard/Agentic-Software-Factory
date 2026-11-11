@@ -54,6 +54,7 @@ from kitlib.git import batch, cmd
 
 from . import audit, policy, roles
 from . import store as smod
+from . import store_folder, store_open, store_read
 from .errors import Failure, Refusal
 
 OK, FINDINGS, NOT_CHECKED = 0, 1, 2
@@ -65,8 +66,8 @@ OK, FINDINGS, NOT_CHECKED = 0, 1, 2
 # as the owner's proxy; tests/backlog/test_audit.py holds them equal).
 BY_DESIGN = ('gate-land', 'owner-hub', 'daily-full', 'hub-condition', 'hub-park')
 
-# The one writer of an `answer:` line (kitlib.hubsite.recordwrite.SESSION), the commit subject
-# that may carry one it left uncommitted (store.catch_up), and the hub question statuses that hold
+# The one writer of an `answer:` line (kitlib.hubsite.recordwrite.SESSION), the commit subject that
+# may carry one it left uncommitted (store_folder.catch_up), and the hub question statuses that hold
 # the owner's answer (kitlib.hubvalidate STATUSES: answered, filed, then logged or done once its
 # asker reads it; a re-answer is told apart by its `at`).
 ANSWER = 'UNVERIFIED'
@@ -74,9 +75,9 @@ ANSWER_WRITER = 'owner-hub'
 CATCH_UP = 'backlog: catch up '
 ANSWERED = ('answered', 'filed', 'logged', 'done')
 
-# (subject prefix, verb): kitlib.backlog.plan's (`uncite` among them), retarget's and
-# store.catch_up's subjects, and `migrate: `, the subject of a store's first commit in old store
-# history (the store migration's; kept so that history stays audited).
+# (subject prefix, verb): the plan_* modules' (`uncite` among them), retarget's and
+# store_folder.catch_up's subjects, and `migrate: `, the subject of a store's first commit in old
+# store history (the store migration's; kept so that history stays audited).
 SUBJECTS = (
     ('closes ', 'close'), ('retires ', 'retire'), ('deletes ', 'delete'),
     ('migrate: ', 'migrate'),
@@ -91,7 +92,7 @@ SUBJECTS = (
     ('backlog: retarget ', 'retarget'), ('backlog: uncite ', 'uncite'),
     ('backlog: catch up ', 'catch-up'),
 )
-# Keys only a verb writes (kitlib.backlog.plan.WRITTEN_BY): a `set` that changed them did so
+# Keys only a verb writes (kitlib.backlog.plan_edit.WRITTEN_BY): a `set` that changed them did so
 # itself, so they say nothing about what it was given.
 _SET_WRITES = ('priority_ruling', 'hold_ruling')
 
@@ -178,7 +179,7 @@ def store_place(backend, rules):
     """`(root, rev or None, rel)`: where the store's history is. A ref or branch store's snapshot
     tip (None: the store is empty); a folder store's HEAD in the PM data worktree. NotChecked for
     a folder store anywhere else."""
-    if isinstance(backend, smod.MainBackend):
+    if isinstance(backend, store_folder.MainBackend):
         if not backend.commit_branch():
             raise NotChecked('%s is a folder store outside the PM data worktree: its writes commit '
                              'nothing, so there is no store commit for a line to name'
@@ -235,7 +236,7 @@ def records_of(root, changes):
         if not hit or hit[0] != 'blob':
             return None
         stem = path.rsplit('/', 1)[-1][:-3]
-        return smod.parse_blob(stem, hit[1], path)
+        return store_read.parse_blob(stem, hit[1], path)
     return dict((change.sha, dict((path, (parsed('%s^:%s' % (change.sha, path), path),
                                           parsed('%s:%s' % (change.sha, path), path)))
                                   for _status, path in change.paths))
@@ -282,7 +283,7 @@ def hub_questions():
     """Every question document on this machine's hub, read with the agent token through the hub's
     client (as kitlib.maintlint.backlog hub_questions and tools/hub.py read them): read only.
     Raises what the client raises, and ConfigError for a hub config that cannot be read."""
-    from kitlib.hubsite import client, settings
+    from kitlib.hubclient import client, settings
     return client.Client(settings.load().port).listing('questions', status='all',
                                                          role=client.AGENT)
 
@@ -324,10 +325,10 @@ def held(answers, qid, rid, at):
 def _hub_read(questions):
     """(the hub's answers, None) or (None, why the hub store could not be read)."""
     from kitlib.config.types import ConfigError
-    from kitlib.hubsite import serve
+    from kitlib.hubclient import errors
     try:
         return hub_answers((questions or hub_questions)()), None
-    except (serve.ServeError, ConfigError, OSError, ValueError) as exc:
+    except (errors.ServeError, ConfigError, OSError, ValueError) as exc:
         return None, '%s: %s' % (type(exc).__name__, ' '.join(str(exc).split()))
 
 
@@ -350,7 +351,7 @@ def check(backend, rules, entries, since, questions=None):
     every = records_of(root, changes) if changes else {}
     for change in changes:
         report.changes += 1
-        session = smod.session_of(change.body) or audit.MISSING
+        session = store_read.session_of(change.body) or audit.MISSING
         what = '%s %s %s session=%s' % (change.sha[:10], utc_of(change.epoch), _ids(change),
                                         session)
         records = every[change.sha]
@@ -436,8 +437,8 @@ def run(root, days=1, fetch=True, home=None, now=None, show_all=False, questions
     try:
         # The store a run from `root` opens, as every other reader does (opener.open_store): a
         # linked worktree naming no store reads the PM data worktree's live one.
-        top, cfg, rules, _own, why = smod.resolve_store(root)
-        backend = smod.open_backend(top, cfg, fetch=fetch)
+        top, cfg, rules, _own, why = store_open.resolve_store(root)
+        backend = store_open.open_backend(top, cfg, fetch=fetch)
         if getattr(backend, 'implicit', False) and backend.load(rules).tip is None:
             # The default ref, named by no .kit.json and absent: nothing was audited, so not OK.
             raise NotChecked('%s is the default backlog store and holds nothing here: this '

@@ -1,11 +1,11 @@
-"""`pull` of a pulled record (plan._plan_takeover): the record's own session takes over a dead
+"""`pull` of a pulled record (plan_claim._plan_takeover): the record's own session takes over a dead
 pull (no branch by its `pulled_by`) without `release --reason`; another session, a live
 `pulled_by` branch, or no session refuses `already in flight` as before."""
 import os
 from unittest import mock
 
 from kitlib.backlog import offer as omod
-from kitlib.backlog import plan
+from kitlib.backlog import plan_claim
 from kitlib.backlog import policy
 from kitlib.backlog.errors import Failure, Refusal, Usage
 
@@ -197,7 +197,7 @@ class PullTakeover(StoreCase):
         self.repo.git('branch', GONE)
         self.repo.git('checkout', '-q', 'main')
         self.seed(self.pulled('DEAD', GONE))
-        why = plan._restore_why_not(self.store.load(), self.ctx, self.get('DEAD'), GONE, tip)
+        why = plan_claim._restore_why_not(self.store.load(), self.ctx, self.get('DEAD'), GONE, tip)
         self.assertEqual(why, 'its stopped tip %s has landed on code-main' % tip)
 
     def test_a_live_branch_is_refused(self):
@@ -239,5 +239,5 @@ class CodeMainOriginFirst(StoreCase):
         self.repo.git('push', '-q', 'origin', '%s:refs/heads/main' % GONE)
         self.repo.git('checkout', '-q', 'main')
         self.seed(self.pulled('DEAD', GONE))
-        why = plan._restore_why_not(self.store.load(), self.ctx, self.get('DEAD'), GONE, tip)
+        why = plan_claim._restore_why_not(self.store.load(), self.ctx, self.get('DEAD'), GONE, tip)
         self.assertEqual(why, 'its stopped tip %s has landed on main' % tip)

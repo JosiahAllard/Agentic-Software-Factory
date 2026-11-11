@@ -1,7 +1,7 @@
-"""A cache of `store.removed_records` (read by `find` through `store.removed`), so `find` does not
-walk the whole store history on every call (that one `git log --full-history` was about 0.6 s of
-a 1.4 s `find` on a 13k-commit store). A show of an
-unknown id does not use it: `last_removal` stays a per-id log.
+"""A cache of `store_read.removed_records` (read by `find` through `store.removed`), so `find` does
+not walk the whole store history on every call (that one `git log --full-history` was about 0.6 s of
+a 1.4 s `find` on a 13k-commit store). A show of an unknown id does not use it: `last_removal` stays
+a per-id log.
 
 The cache is one JSON file in the repository's git dir, one per store folder, holding the exact
 tip sha it was read at and the records `removed_records` returned there, in their order. Every

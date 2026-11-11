@@ -13,7 +13,8 @@ import unittest
 from unittest import mock
 
 from kitlib import content as kcontent
-from kitlib.host import Decision, header, registry
+from kitlib.hookrun import header
+from kitlib.host import Decision, registry
 from tests.host import conformance
 from tests.host.fakehost import adapter as fake
 
@@ -97,8 +98,7 @@ class FakeHostSlot(unittest.TestCase):
         self.addCleanup(stack.close)
         stack.enter_context(registered())
         stack.enter_context(mock.patch.dict(os.environ))
-        for name in ('PM_KIT_ROOT', 'PM_KIT_RELEASE_ID'):
-            os.environ.pop(name, None)
+        os.environ.pop('PM_KIT_ROOT', None)
         spec = importlib.util.spec_from_file_location(
             'fakehost_hook', os.path.join(ROOT, *fake.ENTRY.split('/')))
         self.entry = importlib.util.module_from_spec(spec)

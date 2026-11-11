@@ -211,8 +211,7 @@ class InPlaceEntry(unittest.TestCase):
             home.mkdir()
             env = fixture_env({'HOME': str(home), 'USERPROFILE': str(home),
                                'GIT_CEILING_DIRECTORIES': str(base), 'PYTHONDONTWRITEBYTECODE': '1'})
-            for name in ('PM_KIT_ROOT', 'PM_KIT_RELEASE_ID'):
-                env.pop(name, None)
+            env.pop('PM_KIT_ROOT', None)
             entry = root / 'hosts' / 'codex' / 'shell' / 'scripts' / 'workflow.py'
             result = spawn.run([sys.executable, str(entry), '--help'], cwd=base, env=env,
                                shell=False, capture_output=True, text=True, timeout=15)
@@ -295,9 +294,9 @@ class LocalAcceptance(fixtures.GateRepoCase):
         self.main = self.repo.commit('acceptance fixture', '.gitignore', 'value.txt')
         self.repo.git('push', '-q', 'origin', 'main')
         self.coordinator = self.repo.worktree('coordinator', 'codex/coordinator')
-        from kitlib.backlog.opener import open_store
+        from kitlib.backlog.opener import NO_PROBES, open_store
         from tests.backlog.helpers import priced
-        ctx = open_store(self.coordinator, session='probe-session')
+        ctx = open_store(self.coordinator, session='probe-session', probes=NO_PROBES)
         ctx.store.backend.publish(ctx.store.load(), priced('PROBE', scope='value.txt',
                                   session='probe-session'), 'synthetic acceptance task')
         self.task = W.plan(self.coordinator, 'codex/probe', 'PROBE', 'probe-session',
@@ -325,7 +324,7 @@ class LocalAcceptance(fixtures.GateRepoCase):
         # The one gate runs after review: none was booked and the tip has no gate record.
         self.assertFalse(any(d.get('kind') == 'test' for d in self.store.history_records(1)))
         from kitlib.config import load
-        from kitlib.gate.runner import gate_config
+        from kitlib.records.gate_ok import gate_config
         from kitlib.records import gate_ok
         record, _ = gate_ok.verify(self.task.worker, result['tip'],
                                    gate_config=gate_config(load(self.task.worker)))

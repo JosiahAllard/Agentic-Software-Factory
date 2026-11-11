@@ -220,9 +220,9 @@ class Baselines(Tree):
         root = self.tree()
         self.assertEqual(ratchet.default_baseline(root, 'linux'),
                          os.path.join(root, 'tests', 'linux-baseline.txt'))
-        self.assertEqual(ratchet.default_baseline(root, 'win32'),
+        self.assertEqual(ratchet.default_baseline(root, 'windows'),
                          os.path.join(root, 'tests', 'windows-baseline.txt'))
-        self.assertIsNone(ratchet.default_baseline(root, 'darwin'))
+        self.assertIsNone(ratchet.default_baseline(root, 'unsupported'))
 
     def test_the_kit_s_linux_baseline_reads(self):
         path = os.path.join(KIT, 'tests', 'linux-baseline.txt')
@@ -344,7 +344,7 @@ class Cli(Tree):
 
 
 class Imports(unittest.TestCase):
-    """The ratchet must run where kitlib.proc cannot import (Linux before slice 2): neither it nor
+    """The ratchet must run where kitlib.proc cannot import (Linux): neither it nor
     its entry point loads kitlib.proc (beyond the console hook `import kitlib` loads on Windows),
     kitlib.config or kitlib.git."""
 

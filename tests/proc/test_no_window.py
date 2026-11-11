@@ -14,7 +14,8 @@ from kitlib.proc import spawn
 from tests.platforms import windows_only
 
 if os.name == "nt":
-    from kitlib.proc import job, win32
+    from kitlib.proc import job
+    from kitlib.platform.windows import win32
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -86,7 +87,7 @@ class NoWindowFlagsTest(unittest.TestCase):
             seen["flags"] = kw.get("creationflags")
             return real(*a, **kw)
         with job.Job() as j, mock.patch.object(job, "has_console", return_value=False), \
-                mock.patch.object(job.subprocess, "Popen", spy):
+                mock.patch.object(subprocess, "Popen", spy):
             p = j.start([python_exe(), "-c", "pass"], stdin=subprocess.DEVNULL,
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             p.wait(60)

@@ -42,20 +42,16 @@ OK, REFUSED, USAGE, ERROR = 0, 1, 2, 3
 # in "/" is a folder.
 LOCK_PATHS = ("tools/machine_lock.py", "kitlib/__init__.py", "kitlib/lock/", "kitlib/proc/",
               "kitlib/config/", "kitlib/git/",
-              # kitlib/config/policy.py reads agent names through kitlib.agentname, whose prefix
-              # is the plugin name in kitlib/lockmcp/__init__.py
-              "kitlib/agentname.py", "kitlib/lockmcp/__init__.py",
               # the agent process images and session variable come from the host registry
               "kitlib/host/", "hosts.json",
-              # the machine config reader checks the PM-repo pointer's kit-pm-data.json record
-              "kitlib/pmdata/__init__.py",
               # kitlib/config/policy.py takes names_of (a role's old and new names) from
-              # kitlib/content/__init__.py, whose render function imports kitlib/roster/__init__.py
+              # kitlib/content/__init__.py, whose render function imports kitlib/content/rosterdoc.py
               # (never run by the lock tool; listed because the import walk counts it)
-              "kitlib/content/__init__.py", "kitlib/roster/__init__.py",
-              # the running platform's name (registry.process_names) and the Windows DLL loader
-              # kitlib/proc binds through
-              "kitlib/platform/__init__.py", "kitlib/platform/dll.py",
+              "kitlib/content/__init__.py", "kitlib/content/rosterdoc.py",
+              # the running platform's name (registry.process_names), the Windows DLL loader, and
+              # the Windows backend and shared job parts that kitlib/proc binds its names from
+              "kitlib/platform/__init__.py", "kitlib/platform/dll.py", "kitlib/platform/windows/",
+              "kitlib/platform/mask.py", "kitlib/platform/jobparts.py",
               # kitlib/lock/layout.py reads Linux hardware through the Linux backend and its seam
               "kitlib/platform/api.py", "kitlib/platform/linux/",
               # machine_lock.py run may send the run to a load node (kitlib.loadnode.dispatch)

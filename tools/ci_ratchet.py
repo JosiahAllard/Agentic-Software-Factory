@@ -7,8 +7,9 @@ The suite is `unittest discover -s tests -t .` under ROOT (default here). The ba
 id per line, sorted, none twice, '#' comments; the default is tests/linux-baseline.txt on Linux,
 tests/windows-baseline.txt on Windows (no file there: an empty baseline). It fails on a failing
 test the baseline does not list (an error, an unexpected success or a module that does not import
-counts) and on a listed test that no longer fails (it passes or is gone: take it out). Until slice 2
-of docs/linux-support-plan.md every Linux run is a broken run: the tests package does not import.
+counts) and on a listed test that no longer fails (it passes or is gone: take it out). Where the
+tests
+package does not import, every run is a broken run.
 On Windows the gate (`gate.py --full`) runs the suite; this tool is for the platforms it does not.
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.ci.ratchet, prints, exits.
@@ -25,6 +26,7 @@ import traceback
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from kitlib import platform                                         # noqa: E402
 from kitlib.ci import ratchet                                       # noqa: E402
 
 USAGE = 2
@@ -88,7 +90,7 @@ def _run(a, say):
         return USAGE
     path = a.baseline or ratchet.default_baseline(root)
     if path is None:
-        say('ci_ratchet: refused: no default baseline on %s: give --baseline' % sys.platform)
+        say('ci_ratchet: refused: no default baseline on %s: give --baseline' % platform.NAME)
         return USAGE
     try:
         baseline = ratchet.read_baseline(path, default=a.baseline is None)

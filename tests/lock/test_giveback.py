@@ -26,8 +26,10 @@ if os.name == "nt":
     from kitlib.lock import holds as hl
     from kitlib.lock import layout as lay
     from kitlib.lock import run as rm
+    from kitlib.lock import run_held
     from kitlib.lock.store import utc_now
-    from kitlib.proc import process, win32
+    from kitlib.proc import process
+    from kitlib.platform.windows import win32
 
 
 def gb():
@@ -264,7 +266,7 @@ class Narrowing(StoreCase):
         self.assertEqual(e["cores"], [usable[0]])
         self.assertEqual(s.job.mask, keep)
         self.assertEqual(affinity(p), keep)         # the running command moved off it
-        self.assertEqual(s.env[rm.CPUMASK_ENV], hex(keep))
+        self.assertEqual(s.env[run_held.CPUMASK_ENV], hex(keep))
         self.assertFalse(os.path.exists(gb().request_path(self.store, s.id)))
 
     def test_refusals_change_nothing(self):

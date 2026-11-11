@@ -91,7 +91,7 @@ def _price_rows(values, rec):
 
 # The price fields beside `priority`: on an owner- or PM-priced record they are the owner's price.
 PRICE_FIELDS = ('priority_by', 'priority_per')
-# Fields a `set` may only clear (kitlib/backlog/plan.py UNWRITTEN) whose clearing is the owner's
+# Fields a `set` may only clear (kitlib/backlog/plan_edit.py UNWRITTEN) whose clearing is the owner's
 # and the PM's: `resume` ranks the record in the offer. Clearing `priority_ruling` or
 # `hold_ruling` changes no rank, so it is set-other.
 OWNER_CLEARS = ('resume',)
@@ -249,9 +249,9 @@ def refusal(role, rows, facts=()):
 
 
 def cli_role(environ=None, tree=None):
-    """The role of the session tools/backlog.py runs in: its mark (kitlib.sessionmark); when
+    """The role of the session tools/backlog.py runs in: its mark (kitlib.host.sessionmark); when
     nothing marks it, the owner, unless it is not the owner's (unowned: unlisted)."""
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     mark = sessionmark.mark(environ)
     if mark is not None:
         return roles.role_of(mark, False)
@@ -278,7 +278,7 @@ def by_design_refusal(session, environ=None, tree=None):
     add no audit line by design (audit_check.BY_DESIGN; docs/backlog.md "Audit log") and the
     session running it is not the owner's own: a marked one, or an unmarked one that is unowned.
     The tree is read only for such a name."""
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     from .audit_check import BY_DESIGN
     if (session or '').strip().lower() not in BY_DESIGN:
         return
@@ -297,7 +297,7 @@ def by_design_refusal(session, environ=None, tree=None):
 
 def given_of_set(changes, unset=(), body=None):
     """sort's `given` for a `set` of `changes` ([(key, [values])]), `unset` (keys) and a body
-    (None: not given): what kitlib/backlog/plan.py plan_set is asked to write."""
+    (None: not given): what kitlib/backlog/plan_edit.py plan_set is asked to write."""
     fields, values = [], {}
     for key, vals in changes:
         fields.append(key)
@@ -359,7 +359,7 @@ def check(args, ctx, snap, environ=None, tree=None):
             facts = (roles.OWN_PULL,)
     text = refusal(role, rows, facts)
     if text:
-        from kitlib import sessionmark
+        from kitlib.host import sessionmark
         why = unowned(tree) if role is None and sessionmark.mark(environ) is None else None
         raise Refusal('%s (kitlib/backlog/roles.py)%s; ask a session whose role may'
                       % (text, '; unmarked but not the owner: %s' % why if why else ''))

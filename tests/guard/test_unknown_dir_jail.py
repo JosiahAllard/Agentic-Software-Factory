@@ -25,7 +25,7 @@ PS_MOVES = ('cd (Join-Path $a b); Set-Content x.txt y', 'cd (Get-Item $a).Parent
 BASH_MOVES = ('cd "$(dirname "$a")" && echo y > x.txt', 'cd $(pwd)/x && touch x.txt', 'pushd $x && touch x.txt',
               'pushd "$x"; echo y > x.txt', 'cd "$X" && rm x.txt')
 # a shell Start-Process starts in a computed -WorkingDirectory: a directory the guard cannot place,
-# as a literal bare drive is (commands._sp_shell_text)
+# as a literal bare drive is (commands_nested._sp_shell_text)
 SP_FORMS = ("Start-Process cmd -WorkingDirectory $x -ArgumentList '/c','echo x > f.txt'",
             "Start-Process cmd -WorkingDirectory \"$x\" -ArgumentList '/c','echo x > f.txt'",
             "Start-Process cmd -WorkingDirectory (Join-Path $a b) -ArgumentList '/c','echo x > f.txt'",

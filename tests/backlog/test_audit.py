@@ -12,14 +12,17 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import pmdata, sessionmark
+from kitlib.config import pmdata
+from kitlib.host import sessionmark
 from kitlib.backlog import audit
 from kitlib.backlog import audit_check
 from kitlib.backlog import opener
-from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_end, plan_hold
 from kitlib.backlog import record as rmod
 from kitlib.backlog import roles
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_folder, store_open
+from kitlib.hubclient import errors as huberrors
 from tests import inproc
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog.helpers import ADD_FLAGS, kit_json_ref, priced
@@ -215,7 +218,7 @@ class Check(unittest.TestCase):
 
     def report(self, entries=None, since=0):
         _top, cfg, rules = opener.open_repo(self.repo.root)
-        backend = smod.open_backend(self.repo.root, cfg, fetch=False)
+        backend = store_open.open_backend(self.repo.root, cfg, fetch=False)
         if entries is None:
             entries, _notes = audit_check.read_log(self.log)
         return audit_check.check(backend, rules, entries, since)
@@ -306,7 +309,7 @@ class Check(unittest.TestCase):
         # a store commit whose subject reads as a verb roles.py has no row for sorts to no rows:
         # a forged commit with that subject must not pass unflagged
         self.add()
-        ctx = opener.open_store(self.repo.root, fetch=False)
+        ctx = opener.open_store(self.repo.root, fetch=False, probes=opener.NO_PROBES)
         ctx.store.write(lambda snap: smod.Change(
             {'FOO': snap.get('FOO').text + '\nforged line\n'},
             'backlog: uncite 1 cite(s) in 1 record(s)'))
@@ -391,13 +394,14 @@ class AnswerCheck(unittest.TestCase):
     def answer(self, session, qid='Q-1001', at=AT):
         """An answer line written straight through the store as `session` (plan_answer, the
         hub's own plan, so only the commit's Session: line tells the writer)."""
-        ctx = opener.open_store(self.repo.root, fetch=False, session=session)
-        ctx.store.write(lambda s: pmod.plan_answer(s, ctx, 'FOO', qid, at, 'which way',
-                                                   'this way', role_checked=True))
+        ctx = opener.open_store(self.repo.root, fetch=False, session=session,
+                                probes=opener.NO_PROBES)
+        ctx.store.write(lambda s: plan_hold.plan_answer(s, ctx, 'FOO', qid, at, 'which way',
+                                                        'this way', role_checked=True))
 
     def report(self, docs=(), calls=None):
         _top, cfg, rules = opener.open_repo(self.repo.root)
-        backend = smod.open_backend(self.repo.root, cfg, fetch=False)
+        backend = store_open.open_backend(self.repo.root, cfg, fetch=False)
 
         def questions():
             if calls is not None:
@@ -473,7 +477,7 @@ class AnswerCheck(unittest.TestCase):
                 reads.append(specs)
             return real(specs, root)
         _top, cfg, rules = opener.open_repo(self.repo.root)
-        backend = smod.open_backend(self.repo.root, cfg, fetch=False)
+        backend = store_open.open_backend(self.repo.root, cfg, fetch=False)
         entries, _notes = audit_check.read_log(self.log)
         with mock.patch.object(audit_check.batch, 'cat_file', counted):
             r = audit_check.check(backend, rules, entries, 0, lambda: [])
@@ -487,11 +491,10 @@ class AnswerCheck(unittest.TestCase):
         self.assertEqual((self.answers(r), len(reads)), ([], 1), reads)
 
     def test_a_hub_that_cannot_be_read_is_not_checked(self):
-        from kitlib.hubsite import serve
         self.add()
         self.answer('owner-hub')
         self.answer('kit', qid='Q-1002')               # no hub needed: never the hub's
-        r = self.report(serve.NotRunning(1))
+        r = self.report(huberrors.NotRunning(1))
         found = self.answers(r)
         self.assertEqual(len(found), 1, r.findings)
         self.assertIn('answer: Q-1002 ', found[0].text)
@@ -500,12 +503,11 @@ class AnswerCheck(unittest.TestCase):
                             for n in r.notes), r.notes)
 
     def test_run_gives_an_unreadable_hub_as_a_note_and_exit_ok(self):
-        from kitlib.hubsite import serve
         self.add()
         self.answer('owner-hub')
 
         def questions():
-            raise serve.NotRunning(1)
+            raise huberrors.NotRunning(1)
         code, lines = audit_check.run(self.repo.root, fetch=False, home=self.home,
                                       questions=questions)
         self.assertEqual(code, audit_check.OK, lines)
@@ -524,10 +526,10 @@ class AnswerCheck(unittest.TestCase):
 
     def test_a_catch_up_commit_needs_the_hub_match(self):
         self.add()
-        ctx = opener.open_store(self.repo.root, fetch=False, session='kit')
+        ctx = opener.open_store(self.repo.root, fetch=False, session='kit', probes=opener.NO_PROBES)
         ctx.store.write(lambda s: smod.Change(
-            pmod.plan_answer(s, ctx, 'FOO', 'Q-1001', AT, 'which way', 'this way',
-                             role_checked=True).writes,
+            plan_hold.plan_answer(s, ctx, 'FOO', 'Q-1001', AT, 'which way', 'this way',
+                                  role_checked=True).writes,
             'backlog: catch up 1 record path'))
         self.assertEqual(self.answers(self.report([question()])), [])
         self.assertEqual(len(self.answers(self.report([]))), 1)
@@ -556,14 +558,14 @@ class CheckFolder(unittest.TestCase):
         pmc.PmDataStore.setUp(self)
 
     def test_the_pm_data_worktree_is_read(self):
-        self.store.write(lambda snap: pmod.plan_close(snap, self.ctx, 'BAR', 'the work is done'))
+        self.store.write(lambda snap: plan_end.plan_close(snap, self.ctx, 'BAR', 'the work is done'))
         r = audit_check.check(self.backend, rmod.Rules(), [], 0)
         self.assertEqual(kinds(r), ['UNAUDITED', 'UNKNOWN'])            # the close, then the seed
         self.assertIn('BAR', r.findings[0].text)
         self.assertIn('seed the store', r.findings[1].text)
 
     def test_a_folder_store_elsewhere_is_not_checked(self):
-        other = smod.MainBackend(self.repo.root, 'kit/backlog')
+        other = store_folder.MainBackend(self.repo.root, 'kit/backlog')
         with self.assertRaises(audit_check.NotChecked):
             audit_check.check(other, rmod.Rules(), [], 0)
 

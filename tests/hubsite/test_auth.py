@@ -16,6 +16,7 @@ from unittest import mock
 from kitlib import platform as kitplatform
 from kitlib.config import user
 from kitlib.config.types import ConfigError
+from kitlib.hubclient import token as hubtoken
 from kitlib.hubsite import auth
 from tests.home import PM_REPO_FENCE_ENV, pm_repo
 
@@ -61,7 +62,7 @@ class Case(unittest.TestCase):
 class TokenFileTest(Case):
     def test_the_folder_is_the_hub_folder_of_the_machine_config_folder(self):
         pm = pm_repo(self)
-        self.assertEqual(os.path.normcase(auth.folder(self.top)),
+        self.assertEqual(os.path.normcase(hubtoken.folder(self.top)),
                          os.path.normcase(os.path.join(pm, user.DIR_NAME, 'hub')))
 
     def test_with_no_pointer_there_is_no_folder(self):
@@ -71,7 +72,7 @@ class TokenFileTest(Case):
             user.forget()
             self.addCleanup(user.forget)
             with self.assertRaises(ConfigError):
-                auth.folder(self.top)
+                hubtoken.folder(self.top)
 
     def test_two_different_tokens_are_made(self):
         self.assertEqual(sorted(os.listdir(self.folder)), ['agent.token', 'owner.token'])

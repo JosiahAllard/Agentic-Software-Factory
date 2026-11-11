@@ -5,7 +5,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 from optional.bridge.core.messages import DeliveryError
-from kitlib.proc.pipe import process_sids
+from kitlib.platform.windows.pipe import process_sids
 from .runtime import Config
 from optional.bridge.paths import SERVICE_REL
 from .evidence import regular

@@ -10,23 +10,17 @@ from hosts.codex.adapter import workflow_canary as canary
 
 class Safety(unittest.TestCase):
     def test_environment_drops_credentials_agent_identity_and_inherited_lock(self):
-        profile = mock.Mock(kit_root=Path.cwd(), release_identity=None)
+        profile = mock.Mock(kit_root=Path.cwd())
         with mock.patch.dict(os.environ, {'OPENAI_API_KEY': 'private', 'CLAUDE_AGENT_MODEL': 'other',
                                          'MACHINE_LOCK_RUN': 'untrusted', 'GIT_AUTHOR_NAME': 'other',
                                          'CODEX_API_KEY': 'private',
-                                         'PM_KIT_RELEASE_ID': 'unrelated', 'HTTP_PROXY': 'elsewhere'}, clear=True):
+                                         'PM_KIT_ROLE': 'unrelated', 'HTTP_PROXY': 'elsewhere'}, clear=True):
             env = canary._environment(Path('private-home'), Path('private-temp'), profile)
         for key in ('OPENAI_API_KEY', 'CLAUDE_AGENT_MODEL', 'MACHINE_LOCK_RUN', 'GIT_AUTHOR_NAME',
-                    'PM_KIT_RELEASE_ID', 'HTTP_PROXY', 'CODEX_API_KEY'):
+                    'PM_KIT_ROLE', 'HTTP_PROXY', 'CODEX_API_KEY'):
             self.assertNotIn(key, env)
         self.assertEqual(env['PM_KIT_ROOT'], str(Path.cwd()))
         self.assertEqual(env['GIT_CONFIG_NOSYSTEM'], '1')
-
-    def test_environment_retains_only_the_controller_verified_release_pin(self):
-        profile = mock.Mock(kit_root=Path.cwd(), release_identity='trusted-pin')
-        with mock.patch.dict(os.environ, {'PM_KIT_RELEASE_ID': 'unrelated'}, clear=True):
-            env = canary._environment(Path('home'), Path('temp'), profile)
-        self.assertEqual(env['PM_KIT_RELEASE_ID'], 'trusted-pin')
 
     def test_expected_refusal_is_mandatory_and_unrelated_failure_does_not_pass(self):
         with self.assertRaisesRegex(RuntimeError, 'did not occur'):

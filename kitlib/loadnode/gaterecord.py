@@ -22,13 +22,13 @@ def read_record(root, commit):
 
 def gate_facts(top):
     """What a gate job of the checkout `top` sends: {repo, kind, remote, main, base, slug}, read
-    as its own gate reads them (its `.kit.json`, runner.repo_name, the gate's lock kind, the
+    as its own gate reads them (its `.kit.json`, place.repo_name, the gate's lock kind, the
     default base: kitlib.git.refs.default_base, as a full hash). JobError(EXIT_USAGE) naming
     what cannot be read or does not resolve."""
     import kitlib.config as kconfig
     from kitlib.config.types import ConfigError
-    from kitlib.gate import runner
     from kitlib.git import refs
+    from kitlib.records import place
     try:
         cfg = kconfig.load(top)
         kind = cfg.section('gate').get('kind')
@@ -40,20 +40,20 @@ def gate_facts(top):
         raise JobError(EXIT_USAGE, 'the default base of %s does not resolve (%s): neither %s/%s '
                        'nor %s' % (top, why, cfg.remote, cfg.main_branch, cfg.main_branch))
     branch, _ = refs.current_branch(top)
-    slug = runner.slug_of(branch or 'detached')
-    return {'repo': runner.repo_name(cfg, top), 'kind': kind, 'remote': cfg.remote or '',
+    slug = place.slug_of(branch or 'detached')
+    return {'repo': place.repo_name(cfg, top), 'kind': kind, 'remote': cfg.remote or '',
             'main': cfg.main_branch, 'base': base,
             'slug': slug if registry.repo_ok(slug) else 'gate'}
 
 
 def repo_of(top):
     """The repository name the gate of the checkout `top` writes in its records
-    (runner.repo_name), or None when its config cannot be read."""
+    (place.repo_name), or None when its config cannot be read."""
     import kitlib.config as kconfig
     from kitlib.config.types import ConfigError
-    from kitlib.gate import runner
+    from kitlib.records import place
     try:
-        return runner.repo_name(kconfig.load(top), top)
+        return place.repo_name(kconfig.load(top), top)
     except ConfigError:
         return None
 
@@ -70,7 +70,7 @@ def import_gate_record(top, rec, commit, ran_on, repo_name):
 
     def config_at(rev):
         try:
-            return runner.gate_config_at(top, rev)
+            return gate_ok.gate_config_at(top, rev)
         except runner.ConfigError as e:
             raise gate_ok.RecordError('the gate config at %s: %s' % (rev[:10], e))
     warnings = []

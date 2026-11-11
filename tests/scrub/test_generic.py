@@ -9,7 +9,7 @@ invented paths on purpose), the two name checks read tests/ too.
   code needs, each with its reason.
 - Install names: the patterns come from this machine at test time, never from a tracked file:
   the machine config's `scrub_patterns` (tests/shipped.py install_patterns), the repositories the
-  PM knows (kitlib/pmstart known_repos, the kit's own left out), the launched session names in
+  PM knows (kitlib/config/pm known_repos, the kit's own left out), the launched session names in
   pm_start.sessions_file, the coordinator_start.cap repository keys and the hub artifact id at the
   end of pm_start.hub_url. A machine with none of these skips the check with a printed note.
 - Kit names: the kit's repository name (`.kit.json` repo.name) and the machine config folder's
@@ -124,11 +124,11 @@ def install_names(home=None, kit_dir=ROOT, toplevel=None, common_dir=_common_dir
     dir (its main checkout, any worktree of it) is the kit itself and adds no name. With no home
     the machine config is the real one, read through the home fence's one exception
     (tests.real_install_config); a machine with no config file skips the calling test by name."""
-    from kitlib import pmstart
+    from kitlib.config import pm as pmconfig
     from tests import install_config, real_install_config
     from tests.shipped import NO_INSTALL_NAMES
     if toplevel is None:
-        toplevel = pmstart._toplevel
+        toplevel = pmconfig._toplevel
     if home is None:
         cfg, why = real_install_config()
         if cfg is None:
@@ -161,7 +161,7 @@ def install_names(home=None, kit_dir=ROOT, toplevel=None, common_dir=_common_dir
                 return None
             return toplevel(d)
         try:
-            for n in pmstart.known_repos(pm, kit_dir=kit_dir, toplevel=other):
+            for n in pmconfig.known_repos(pm, kit_dir=kit_dir, toplevel=other):
                 if n.lower() in kit_names_:
                     continue
                 add(n, 'pm_start known repository')

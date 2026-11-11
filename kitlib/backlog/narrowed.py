@@ -2,14 +2,14 @@
 
 A narrowing writes a `narrowed: <original member> <other id> <other branch>` line on each of two
 colliding records (kitlib/backlog/record.py): `pull` of a record `next` offers by narrowing
-(plan.plan_pull), or a lead's `set --narrowed`. A commit on the branch holding one of them may not record a path inside an original
-member that its record no longer covers while the other record is still pulled: that part was
-given to the other branch. Both sides of a rename are named paths of the commit, so each is
-checked; a refused side names the other only for a rename with its content unchanged (the same
-blob: rename_pairs), and an edited move names only the refused side. One hit refuses the whole
-commit. Paths and members
-compare as the landing scope check compares them (scope.covers), a member of the store shared by
-repositories read without its area prefix (scope.in_repo).
+(plan_claim.plan_pull), or a lead's `set --narrowed`. A commit on the branch holding one of them may
+not record a path inside an original member that its record no longer covers while the other record
+is still pulled: that part was given to the other branch. Both sides of a rename are named paths of
+the commit, so each is checked; a refused side names the other only for a rename with its content
+unchanged (the same blob: rename_pairs), and an edited move names only the refused side. One hit
+refuses the whole commit. Paths and members compare as the landing scope check compares them
+(scope.covers), a member of the store shared by repositories read without its area prefix
+(scope.in_repo).
 
   check(root, paths)          `(refusal lines, warnings)` for the commit in `root` naming `paths`
   hits(records, branch, ...)  the same over records already read (pure)
@@ -25,7 +25,7 @@ from kitlib.git import repo as gitrepo
 
 from . import record as rmod
 from . import scope as scmod
-from . import store as smod
+from . import store_open
 from .errors import Failure
 
 # The fixed refusal (docs/commit.md "A narrowed record"); its only Instead is the block.
@@ -94,14 +94,14 @@ def hits(records, branch, paths, rules, shared=False, tops=(), renames=None):
 
 def read(root):
     """`(top, branch, records, rules, shared)`: the checkout `root` is in, and the store
-    `backlog.py -C <root>` opens (store.resolve_store: the PM data worktree's live store for a
+    `backlog.py -C <root>` opens (store_open.resolve_store: the PM data worktree's live store for a
     linked worktree, `shared` then True; else the configured one), read without a fetch. Raises
     when it cannot be read, and when the PM data worktree cannot be found or read: its own store
     is then not the one backlog.py would read for it."""
     code_top, why = gitrepo.toplevel(root)
     if not code_top:
         raise Failure(why)
-    store_root, cfg, rules, branch, why = smod.resolve_store(code_top)
+    store_root, cfg, rules, branch, why = store_open.resolve_store(code_top)
     if why:
         raise Failure('the PM data worktree\'s store cannot be opened: %s' % why)
     shared = branch is not None
@@ -109,7 +109,7 @@ def read(root):
         branch, why = refs.current_branch(code_top)
         if branch is None:
             raise Failure('git cannot name the checked-out branch: %s' % why)
-    snap = smod.open_backend(store_root, cfg, fetch=False).load(rules)
+    snap = store_open.open_backend(store_root, cfg, fetch=False).load(rules)
     return code_top, branch, snap.records, rules, shared
 
 
@@ -200,7 +200,7 @@ def restore_set(rid, members, values, rules, done=None):
     kept as `--narrowed`, or `--unset narrowed` when none is left. Lines are read with
     record.narrowed_line; a malformed one is kept as written. None when no line is picked. The
     one form of `next`'s RESTORE line (offer._restore) and the landing scope check's restore
-    clause (kitlib/gate/land.py); the `set` of `narrowed` is a lead's (set-other)."""
+    clause (kitlib/landing/checks.py); the `set` of `narrowed` is a lead's (set-other)."""
     originals, others, rest = [], [], []
     for v in values:
         line, _err = rmod.narrowed_line(v, rules)
@@ -223,7 +223,7 @@ def restored_scope(members, originals):
     `narrowed:` lines restored): each original, then each current member of `members` none of
     them holds (equal or strictly inside; one that cannot be compared is kept). `none` is
     dropped. Shared by `next`'s RESTORE line (offer.restore_lines) and the landing scope check's
-    restore clause (kitlib/gate/land.py)."""
+    restore clause (kitlib/landing/checks.py)."""
     def held(m):
         try:
             return any(m == o or scmod.strictly_inside(m, o) for o in originals)

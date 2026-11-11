@@ -16,7 +16,7 @@ Their allowed forms stay pinned."""
 import os
 import unittest
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.git import repo
 from kitlib.guard import context
 

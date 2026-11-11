@@ -18,7 +18,7 @@ TIMEOUT. A tree that cannot be made or a test that cannot start is ERROR. A test
 machine-lock slot the caller holds (slot.start, so a lock call inside it nests) and is ended with
 its tree (slot.end_tree) past its timeout, when the lock asks the run to stop, on Ctrl+C
 or an error, and after every test, pass or fail, before its clone is removed. end_tree spares a
-build daemon another job may use (kitlib.lock.run), so such a daemon can outlive the test.
+build daemon another job may use (kitlib.lock.run_held), so such a daemon can outlive the test.
 
 The clones live in one run folder in the kit's temp folder for the checkout
 (kitlib.config.user.make_temp, `kit-iso-<pid>-<ctime>-*`). Each clone is removed when its run

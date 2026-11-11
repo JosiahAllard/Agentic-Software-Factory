@@ -48,7 +48,7 @@ The routes ("Skill edits" in the `kitlib/hubsite/apiskills.py` docstring):
   `superseded` with `source_blob`, and so does a fail whose `current_blob` (the blob on main the worker
   read) is not base_blob. The owner re-applies it: an edit of a superseded or failed edit is put on the
   source at its `source_blob` when the server can read that blob's text in the kit checkout (`git
-  cat-file`, a read; `kitlib.hubsite.serve._kit_text`) and the page shows that text, else on the source
+  cat-file`, a read; `kitlib.hubsite.serverepos._kit_text`) and the page shows that text, else on the source
   as the server serves it now; base_blob becomes that blob and the edit goes back to draft, or to
   submitted. So a re-apply onto the blob on main is not superseded again while the served copy lags:
   submitting is superseded only when base_blob is neither the served blob nor the blob of the source on
@@ -56,7 +56,7 @@ The routes ("Skill edits" in the `kitlib/hubsite/apiskills.py` docstring):
   the server cannot read main).
 - Done: the blob must be the git blob of the edit's text as UTF-8, else `invalid` (field `blob`). The
   server also reads the blob of the source on `branch` in this machine's kit checkout with `git
-  rev-parse` (a read; `kitlib.hubsite.serve._kit_blob`) and refuses a branch it cannot read or whose
+  rev-parse` (a read; `kitlib.hubsite.serverepos._kit_blob`) and refuses a branch it cannot read or whose
   blob differs (field `branch`), so an agent cannot mark committed a text it never wrote.
 - Pending and push: a submitted edit is a pending item of kind `skill_edit` with no `from`: it is for the
   kit's coordinator (`Api.kit_session_key`: the sessions.json key of the agent session on the kit
@@ -98,7 +98,7 @@ The routes ("Pages" in the `kitlib/hubsite/apipages.py` docstring):
 
 An agent publishes with `hub.py pages publish ID --title T --html-file F` or the hub MCP tool
 `hub_page_publish` (docs/hub-mcp.md "Agent write tools"), and reads one back with `hub.py pages show ID
-[--out F]` or `hub_page`. Both run `kitlib.hubsite.pagecheck.check` on the file before sending, so a body
+[--out F]` or `hub_page`. Both run `kitlib.hubvalidate.pagecheck.check` on the file before sending, so a body
 the server would refuse is never sent. Publishing over an existing page needs the card's version as
 `if_version` (`--if-version`); without it the write is `conflict`. One lock in the hub process
 (`PAGES_LOCK` in `kitlib/hubsite/store.py`, which `apipages.py` takes) is held from a publish's reads to its
@@ -110,7 +110,7 @@ the body; when the body's delete fails the card stays deleted and the body is an
 
 `pagecheck.warnings` also warns, never refuses, of a `video`, `audio` or `source` whose `src` the page policy blocks (`MEDIA_SRC_ALLOWED`, kept equal to `DOC_CSP`'s `media-src`, `data:` today, so `data:` media plays and never warns): the publish succeeds and the reply's `warnings` carry a `media-blocked` finding naming the element and the workaround, an animated GIF or WebP in `<img>`.
 
-What a body may hold (`kitlib/hubsite/pagecheck.py`, whose docstring has the full list): at most 512 KiB
+What a body may hold (`kitlib/hubvalidate/pagecheck.py`, whose docstring has the full list): at most 512 KiB
 of UTF-8 (`MAX_BYTES`); no `script`, `iframe`, `object`, `embed`, `form`, `link`, `base` or other element
 of `TAGS`; a `meta` only as exactly `<meta charset="utf-8">` or `<meta name content>` with a name of
 `META_NAMES` (viewport, color-scheme, description, author, generator), each attribute once; a `<title>`

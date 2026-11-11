@@ -1,6 +1,6 @@
 """CLAUDE-SPECIFIC: the models a subagent ran on, read from its transcript (tools/verdict.py add
 checks a verdict's --reviewer-model with them through ADAPTER.agent_models(), hosts.claude.adapter.
-host: kitlib.gate.verdicts.model_mismatch_why).
+host: kitlib.landing.verdicts.model_mismatch_why).
 
 Claude Code writes each subagent's transcript to
 `<config folder>/projects/<project>/<parent session id>/subagents/agent-<agent id>.jsonl`, one
@@ -17,7 +17,7 @@ read. Nothing here prints or writes.
 
 verdict() reads the same transcripts for the reviewer's final `Verdict:` line and its final
 report's text (tools/verdict.py add, through ADAPTER.agent_verdict():
-kitlib.gate.verdicts.reviewer_verdict_why, checks_why, done_when_why, design_why). A subagent's
+kitlib.landing.verdicts.reviewer_verdict_why, checks_why, done_when_why, design_why). A subagent's
 final report is the `message` of its SubagentHandback call, a tool_use block of an assistant
 record (observed in the kit machine's transcripts on 2026-10-31), or, where it has no such tool,
 the text of its last assistant turn.
@@ -28,7 +28,7 @@ import os
 import re
 
 from hosts.claude.adapter import claude_host
-from kitlib.gate.verdicts import report_head
+from kitlib.landing.verdicts import report_head
 
 AGENT_ID_RE = re.compile(r'^a[0-9a-f]{16}$')
 SKIP = frozenset(['<synthetic>'])     # a turn Claude Code made itself, no model ran
@@ -36,7 +36,7 @@ MAX_MODELS = 2                        # more than one model already says the rev
 HANDBACK = 'SubagentHandback'         # the tool a subagent hands its final report back with
 # A report's verdict line starts `Verdict:` at the line start, markdown decoration allowed
 # (`**Verdict:** LAND`, a list dash, backticks: `Verdict: SEND BACK` in code quotes). VERDICT_HEAD_RE
-# finds such a line (kitlib.gate.verdicts.report_head, the rule every report line shares);
+# finds such a line (kitlib.landing.verdicts.report_head, the rule every report line shares);
 # VERDICT_RE reads its verdict, LAND WITH FOLLOW-UP tried before LAND.
 VERDICT_HEAD_RE = report_head('verdict')
 VERDICT_RE = re.compile(VERDICT_HEAD_RE.pattern + r'[*_`\s]*'
@@ -181,7 +181,7 @@ def verdict(agent_id, environ=None, home=None):
     is True when a transcript of it was found; `verdict` is the final report's last `Verdict:` line
     (report_verdict) or None, or UNREAD when a transcript found cannot be read (its time or its
     text): fail closed, since the one unread may be the newest; `report` is the final report's
-    text (kitlib.gate.verdicts reads its `Checks:`, `Done-when:` and `Design:` lines), None when
+    text (kitlib.landing.verdicts reads its `Checks:`, `Done-when:` and `Design:` lines), None when
     none was read. The final report is the last assistant turn carrying text or a SubagentHandback
     call, in the transcript last written when there is more than one (a resumed subagent appends
     to its own). `(False, None, None)` when no transcript is found; None when `agent_id` is not a

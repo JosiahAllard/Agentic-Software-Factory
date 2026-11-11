@@ -82,7 +82,7 @@ import threading
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-from kitlib import clock
+from kitlib import clock, platform
 from kitlib.config import user as kuser
 from kitlib.fs.rmtree import plain_dir as _plain_dir, rmtree_force
 from kitlib.proc import spawn
@@ -90,9 +90,9 @@ from kitlib.pytests import runner as unit_runner
 from kitlib.tooldeps import pool as worker_pool
 from kitlib.tooldeps import testcost
 
-# The variable kitlib.lock.run (CPUMASK_ENV) sets on the command a lock run starts: a hex mask of
-# the logical processors the run holds. Named here, not imported, so this module does not load the
-# lock; tests/tooldeps checks the two names agree.
+# The variable kitlib.lock.run_held (CPUMASK_ENV) sets on the command a lock run starts: a hex
+# mask of the logical processors the run holds. Named here, not imported, so this module does not
+# load the lock; tests/tooldeps checks the two names agree.
 CPUMASK_ENV = 'MACHINE_LOCK_CPUMASK'
 # The variable kitlib.lock.giveback (GIVE_ENV) offers a give back with; units never inherit it.
 GIVE_ENV = 'MACHINE_LOCK_GIVE_BACK'
@@ -205,7 +205,7 @@ def git_direct_env(base_env):
     `git` is the `<git>\\cmd\\git.exe` launcher, which starts that git.exe as a second process for
     every call; else `base_env` unchanged and note None. Git Bash already puts it first."""
     key = next((k for k in base_env if k.upper() == 'PATH'), None)
-    if key is None or os.name != 'nt':
+    if key is None or platform.NAME != 'windows':
         return base_env, None
     found = shutil.which('git', path=base_env[key])
     if not found:

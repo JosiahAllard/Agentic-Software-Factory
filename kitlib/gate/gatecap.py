@@ -128,7 +128,7 @@ def in_flight(store, who, repo, runs=None):
 
 def started(r):
     """Whether live run record r has started (holds its slots): any state but `waiting`, a run
-    still queued in the machine lock (kitlib.lock.run saves `held` once it takes its slots)."""
+    still queued in the machine lock (kitlib.lock.run_wait saves `held` once it takes its slots)."""
     return r.get('state') != 'waiting'
 
 
@@ -355,9 +355,9 @@ def wait_turn(store, repo, say, cap=None, who=None, home=None, poll_s=None, slee
 
 
 def gave_way(store, repo, slot, say, cap=None, who=None, home=None, poll_s=None, sleep=None):
-    """Called once a branch gate's booking holds its slots (kitlib.lock.run Slot `slot`), before
-    anything runs. It first writes the run's id into this thread's turn file (wait_turn): the run
-    stands for the turn from now on. A backstop for a count that missed a gate (a record read
+    """Called once a branch gate's booking holds its slots (kitlib.lock.run_held Slot `slot`),
+    before anything runs. It first writes the run's id into this thread's turn file (wait_turn): the
+    run stands for the turn from now on. A backstop for a count that missed a gate (a record read
     while it was rewritten, a turn that could not be written, a gate of a kit without turns):
     the session's other gate runs of repo that
     have started (hold their slots: started(); a run still queued in the lock is not counted, so

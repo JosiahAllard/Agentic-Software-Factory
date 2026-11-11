@@ -30,7 +30,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib.config.types import ConfigError                       # noqa: E402
-from kitlib.launcher import accounts, autostart, handoff, pushdelivery, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
+from kitlib.launcher import accounts, handoff, pushdelivery, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
 from kitlib.launcher.host import Host                               # noqa: E402
 
 USAGE = 2
@@ -297,7 +297,7 @@ def run(a, settings, host):
                                   None if a.what_if else push_delivery(settings), a.wait, a.what_if,
                                   permission_mode=a.permission_mode)
     if a.cmd == 'install-autostart':
-        return autostart.install(os.path.abspath(__file__), whatif=a.what_if)     # always refuses
+        raise S.LaunchError(reboot.AUTOSTART_RETIRED)                                    # always refuses
     raise AssertionError(a.cmd)
 
 

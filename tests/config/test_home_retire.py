@@ -9,7 +9,7 @@ temp PM repository."""
 import os
 import unittest
 
-from kitlib.config import ConfigError
+from kitlib.config import ConfigError, pointer
 from kitlib.config import user as kuser
 from kitlib.git.cmd import Result
 from kitlib.preflight import configline
@@ -75,10 +75,10 @@ class LocateTest(Case):
                 self.assertIn(left, str(cm.exception))
 
     def test_the_hub_credential_folder_is_refused_too(self):
-        from kitlib.hubsite import auth
+        from kitlib.hubclient import token as hubtoken
         self.leave()
         with self.assertRaises(ConfigError):
-            auth.folder(self.home)
+            hubtoken.folder(self.home)
 
     def test_an_apostrophe_in_the_leftover_path_is_doubled_in_the_remove_command(self):
         home = os.path.join(self.home, "it's")
@@ -161,8 +161,7 @@ class SessionStartTest(Case):
     def test_an_ignore_file_without_the_line_is_named_through_the_ticks_check(self):
         from unittest import mock
         from kitlib.autotasks import tick
-        from kitlib.config import move
-        with mock.patch.object(configcheck, '_unignored', tpm.REAL_UNIGNORED),                 mock.patch.object(move, 'ignored', lambda pm, rels: (list(rels), None)):
+        with mock.patch.object(configcheck, '_unignored', tpm.REAL_UNIGNORED),                 mock.patch.object(pointer, 'ignored', lambda pm, rels: (list(rels), None)):
             out = self.lines()
         self.assertEqual(out, [configcheck.PREFIX + tick.UNIGNORED
                                % (self.pm, os.path.join(self.folder, '.gitignore'))])

@@ -17,7 +17,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import pluginsource
+from kitlib.pluginsource import (
+    layout as plugin_layout, export as plugin_export, prune as plugin_prune,
+    refresh as plugin_refresh)
 from tests import gitfixture
 from tests.pluginsource import Kit
 
@@ -93,7 +95,7 @@ class Target(unittest.TestCase):
         self.assertIsNone(_pin().target(self.tool, {}))
 
     def marker(self, **fields):
-        with open(os.path.join(self.base, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(self.base, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             json.dump(dict({'sha': 'ab' * 20}, **fields), fh)
 
     def test_an_export_whose_marker_names_no_checkout_runs_live(self):
@@ -136,23 +138,23 @@ class LiveRoot(unittest.TestCase):
         self.live = temp_dir(self, 'kit-pin-live-')
 
     def test_an_export_names_the_live_checkout(self):
-        with open(os.path.join(self.export, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(self.export, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             fh.write('{}\n')
-        env = {pluginsource.LIVE_ROOT_ENV: self.live}
-        self.assertEqual(pluginsource.live_root(self.export, env), self.live)
+        env = {plugin_layout.LIVE_ROOT_ENV: self.live}
+        self.assertEqual(plugin_layout.live_root(self.export, env), self.live)
 
     def test_a_checkout_names_itself_whatever_the_variable_says(self):
-        env = {pluginsource.LIVE_ROOT_ENV: self.live}
-        self.assertEqual(pluginsource.live_root(self.export, env), self.export)
+        env = {plugin_layout.LIVE_ROOT_ENV: self.live}
+        self.assertEqual(plugin_layout.live_root(self.export, env), self.export)
 
     def test_a_variable_naming_no_folder_is_ignored(self):
-        with open(os.path.join(self.export, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(self.export, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             fh.write('{}\n')
-        env = {pluginsource.LIVE_ROOT_ENV: os.path.join(self.live, 'gone')}
-        self.assertEqual(pluginsource.live_root(self.export, env), self.export)
+        env = {plugin_layout.LIVE_ROOT_ENV: os.path.join(self.live, 'gone')}
+        self.assertEqual(plugin_layout.live_root(self.export, env), self.export)
 
     def marker(self, checkout):
-        with open(os.path.join(self.export, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(self.export, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             json.dump({'checkout': checkout}, fh)
 
     def main_checkout(self, kit_json=True, tools=True):
@@ -167,43 +169,43 @@ class LiveRoot(unittest.TestCase):
 
     def test_a_marker_checkout_that_is_no_kit_names_the_export(self):
         """A marker checkout without kit.json or a tools folder is not taken: the export names
-        itself, so kitlib.stubs.live_kit still sees the export and refuses it."""
+        itself, so kitlib.machinesetup.outcome.live_kit still sees the export and refuses it."""
         for kw in ({'kit_json': False}, {'tools': False}):
             self.marker(self.main_checkout(**kw))
-            self.assertEqual(pluginsource.live_root(self.export, {}), self.export, kw)
+            self.assertEqual(plugin_layout.live_root(self.export, {}), self.export, kw)
 
     def test_the_marker_checkout_is_named_in_windows_form(self):
         main = self.main_checkout()
         self.marker(main.replace('\\', '/'))
-        self.assertEqual(pluginsource.live_root(self.export, {}), os.path.normpath(main))
+        self.assertEqual(plugin_layout.live_root(self.export, {}), os.path.normpath(main))
 
     def test_an_export_without_the_variable_names_the_checkout_its_marker_records(self):
         """The plugin's export run with no KIT_LIVE_ROOT (a session start hook, pm_start): a
         printed command names the main checkout, never the export a later prune may remove."""
         main = self.main_checkout()
         self.marker(main)
-        self.assertEqual(pluginsource.live_root(self.export, {}), main)
-        env = {pluginsource.LIVE_ROOT_ENV: os.path.join(self.live, 'gone')}
-        self.assertEqual(pluginsource.live_root(self.export, env), main)
+        self.assertEqual(plugin_layout.live_root(self.export, {}), main)
+        env = {plugin_layout.LIVE_ROOT_ENV: os.path.join(self.live, 'gone')}
+        self.assertEqual(plugin_layout.live_root(self.export, env), main)
 
     def test_the_variable_wins_over_the_marker(self):
         self.marker(self.main_checkout())
-        env = {pluginsource.LIVE_ROOT_ENV: self.live}
-        self.assertEqual(pluginsource.live_root(self.export, env), self.live)
+        env = {plugin_layout.LIVE_ROOT_ENV: self.live}
+        self.assertEqual(plugin_layout.live_root(self.export, env), self.live)
 
     def test_an_export_whose_marker_checkout_is_gone_names_itself(self):
         self.marker(os.path.join(self.live, 'gone'))
-        self.assertEqual(pluginsource.live_root(self.export, {}), self.export)
+        self.assertEqual(plugin_layout.live_root(self.export, {}), self.export)
 
     def test_refresh_cmd_from_an_export_names_the_marker_checkout(self):
         """refresh_cmd (pm_start's and pm_watch's plugin lines) run from the plugin's export with
         no KIT_LIVE_ROOT names the main checkout's plugin_refresh.py."""
         main = self.main_checkout()
         self.marker(main)
-        env = {k: v for k, v in os.environ.items() if k != pluginsource.LIVE_ROOT_ENV}
+        env = {k: v for k, v in os.environ.items() if k != plugin_layout.LIVE_ROOT_ENV}
         with mock.patch.dict(os.environ, env, clear=True), \
-                mock.patch.object(pluginsource, 'kit_root', lambda: self.export):
-            line = pluginsource.refresh_cmd()
+                mock.patch.object(plugin_layout, 'kit_root', lambda: self.export):
+            line = plugin_layout.refresh_cmd()
         self.assertIn(os.path.join(main, 'tools', 'plugin_refresh.py').replace('\\', '/'),
                       line.replace('\\', '/'))
         self.assertNotIn(os.path.basename(self.export), line)
@@ -231,7 +233,7 @@ class Prune(unittest.TestCase):
         d = os.path.join(self.root, name)
         os.makedirs(d)
         if marker:
-            with open(os.path.join(d, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+            with open(os.path.join(d, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
                 json.dump({'sha': name}, fh)
         return d
 
@@ -266,7 +268,7 @@ class Prune(unittest.TestCase):
         now = os.path.getmtime(bad)
         self.assertEqual(pin.prune(self.root, alive=lambda pid, c: True, clock=lambda: now), [])
         self.assertTrue(os.path.isfile(bad))
-        later = now + pluginsource.LOCK_GRACE_S + 1
+        later = now + plugin_refresh.LOCK_GRACE_S + 1
         removed = pin.prune(self.root, alive=lambda pid, c: True, clock=lambda: later)
         self.assertEqual(removed, [os.path.join(self.root, 'aaaaaaaaaaaa')])
         self.assertFalse(os.path.exists(bad))
@@ -274,7 +276,7 @@ class Prune(unittest.TestCase):
     def test_the_plugin_prune_leaves_the_pins_folder(self):
         pins = os.path.join(self.root, 'pins')
         os.makedirs(pins)
-        pluginsource.prune(self.root, keep=None)
+        plugin_prune.prune(self.root, keep=None)
         self.assertTrue(os.path.isdir(pins))
 
 
@@ -290,15 +292,15 @@ class Ensure(unittest.TestCase):
         folder, lease, why = pin.ensure(self.k.kit, self.sha, self.root)
         self.assertIsNone(why)
         self.assertEqual(folder, os.path.join(self.root, self.sha[:12]))
-        self.assertEqual(pluginsource.read_marker(folder)['made_by'], pin.MADE_BY)
+        self.assertEqual(plugin_layout.read_marker(folder)['made_by'], pin.MADE_BY)
         self.assertEqual(pin.read_lease(lease)['pid'], os.getpid())
-        self.assertFalse(os.path.exists(os.path.join(self.root, pluginsource.PIDFILE)))
+        self.assertFalse(os.path.exists(os.path.join(self.root, plugin_refresh.PIDFILE)))
 
     def hold_lock(self):
         """refresh.pid held by a live process (this one, as another holder would be)."""
         from kitlib.proc import process
         os.makedirs(self.root, exist_ok=True)
-        path = os.path.join(self.root, pluginsource.PIDFILE)
+        path = os.path.join(self.root, plugin_refresh.PIDFILE)
         with open(path, 'w', encoding='utf-8') as fh:
             json.dump({'pid': os.getpid(), 'ctime': process.own_ctime()}, fh)
         return path
@@ -323,7 +325,7 @@ class Ensure(unittest.TestCase):
         other = '0123456789ab'
         stale = os.path.join(self.root, other)
         os.makedirs(stale)
-        with open(os.path.join(stale, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(stale, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             json.dump({'sha': other}, fh)
         leases = os.path.join(self.root, 'leases')
         os.makedirs(leases)
@@ -390,7 +392,7 @@ class Run(ProbeKit):
         self.assertEqual(got['argv'], ['--x'])
         self.assertEqual(got['pinned'], self.sha)
         self.assertEqual(got['live'], self.k.kit)
-        self.assertEqual(pluginsource.read_marker(folder)['made_by'], pin.MADE_BY)
+        self.assertEqual(plugin_layout.read_marker(folder)['made_by'], pin.MADE_BY)
         self.assertEqual(os.listdir(os.path.join(pins_root(self.places), 'leases')), [])
         self.assertNotIn(pin.PINNED_ENV, self.env)
 
@@ -464,13 +466,13 @@ def same(a, b):
 
 class RunFromExport(ProbeKit):
     """pin.run for a tool started from an export of the kit (the plugin's, made by
-    pluginsource.export, whose marker names the main checkout): it pins as a start from that
+    pluginsource.export.export, whose marker names the main checkout): it pins as a start from that
     checkout would, and a pin that fails open still names the checkout, not the export."""
 
     def setUp(self):
         super().setUp()
         plugin = os.path.join(self.places['LOCALAPPDATA'], 'pm-kit', 'plugin')
-        self.export, _v = pluginsource.export(self.k.kit, self.sha, plugin)
+        self.export, _v = plugin_export.export(self.k.kit, self.sha, plugin)
         self.tool = os.path.join(self.export, 'tools', 'probe.py')
 
     def assert_names_the_checkout(self, path):
@@ -485,7 +487,7 @@ class RunFromExport(ProbeKit):
         self.assertTrue(same(got['file'], os.path.join(folder, 'tools', 'probe.py')), got['file'])
         self.assertEqual(got['pinned'], self.sha)
         self.assert_names_the_checkout(got['live'])
-        self.assertEqual(pluginsource.read_marker(folder)['made_by'], pin.MADE_BY)
+        self.assertEqual(plugin_layout.read_marker(folder)['made_by'], pin.MADE_BY)
 
     def test_a_pin_that_fails_open_still_names_the_checkout(self):
         del self.env['LOCALAPPDATA']
@@ -495,29 +497,29 @@ class RunFromExport(ProbeKit):
         self.assertIsNone(code)
         self.assertIn("WARNING: pin: running the live checkout's code", said)
         self.assertEqual(self.env[pin.PINNED_ENV], pin.LIVE)
-        self.assert_names_the_checkout(self.env[pluginsource.LIVE_ROOT_ENV])
-        self.assert_names_the_checkout(pluginsource.live_root(self.export, self.env))
+        self.assert_names_the_checkout(self.env[plugin_layout.LIVE_ROOT_ENV])
+        self.assert_names_the_checkout(plugin_layout.live_root(self.export, self.env))
 
     def test_nothing_pushed_runs_live_naming_the_checkout(self):
         self.k.repo.git('update-ref', '-d', 'refs/remotes/origin/main')
         pin = _pin()
         self.assertEqual(pin.run(self.tool, [self.out], environ=self.env), (None, None))
         self.assertEqual(self.env[pin.PINNED_ENV], pin.LIVE)
-        self.assert_names_the_checkout(self.env[pluginsource.LIVE_ROOT_ENV])
+        self.assert_names_the_checkout(self.env[plugin_layout.LIVE_ROOT_ENV])
 
     def test_a_live_root_already_set_is_kept(self):
         other = temp_dir(self, 'kit-pin-other-')
-        self.env[pluginsource.LIVE_ROOT_ENV] = other
+        self.env[plugin_layout.LIVE_ROOT_ENV] = other
         self.k.repo.git('update-ref', '-d', 'refs/remotes/origin/main')
         self.assertEqual(_pin().run(self.tool, [self.out], environ=self.env), (None, None))
-        self.assertEqual(self.env[pluginsource.LIVE_ROOT_ENV], other)
+        self.assertEqual(self.env[plugin_layout.LIVE_ROOT_ENV], other)
 
     def test_a_tool_the_export_lacks_fails_open(self):
         tool = os.path.join(self.export, 'tools', 'unpushed.py')
         code, said = _pin().run(tool, [self.out], environ=self.env)
         self.assertIsNone(code)
         self.assertIn('has no tools/unpushed.py', said)
-        self.assert_names_the_checkout(self.env[pluginsource.LIVE_ROOT_ENV])
+        self.assert_names_the_checkout(self.env[plugin_layout.LIVE_ROOT_ENV])
 
 
 class Identity(unittest.TestCase):
@@ -527,7 +529,7 @@ class Identity(unittest.TestCase):
         from kitlib.gate import steps as S
         export = temp_dir(self, 'kit-pin-ident-')
         sha = 'ab' * 20
-        with open(os.path.join(export, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(export, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             json.dump({'sha': sha}, fh)
         with mock.patch.object(S, 'KIT_ROOT', export):
             got = runner.kit_identity()
@@ -552,7 +554,7 @@ BROKEN = "raise ImportError('live tree loaded')\n"
 
 class Tools(unittest.TestCase):
     """The real tools/land.py and tools/gate.py of this tree, committed to a temp repository whose
-    refs/remotes/origin/main is that commit, then their checkout's kitlib/gate/land.py broken:
+    refs/remotes/origin/main is that commit, then their checkout's kitlib/landing/verdicts.py broken:
     only a tool that runs from the export does not load the broken module."""
 
     @classmethod
@@ -569,8 +571,8 @@ class Tools(unittest.TestCase):
         # The plugin's export of that commit, made before the checkout is broken (it reads git).
         plugin = tempfile.mkdtemp(prefix='kit-pin-plugin-')
         cls.addClassCleanup(gitfixture.rmtree, plugin)
-        cls.export, _v = pluginsource.export(cls.repo.root, cls.sha, plugin)
-        cls.repo.write('kitlib/gate/land.py', BROKEN)
+        cls.export, _v = plugin_export.export(cls.repo.root, cls.sha, plugin)
+        cls.repo.write('kitlib/landing/verdicts.py', BROKEN)
 
     def setUp(self):
         self.places = temp_places(self)
@@ -591,7 +593,7 @@ class Tools(unittest.TestCase):
         self.assertNotIn('live tree loaded', said)
         self.assertNotIn('WARNING: pin', said)
         pins = pins_root(self.places)
-        marker = pluginsource.read_marker(os.path.join(pins, self.sha[:12]))
+        marker = plugin_layout.read_marker(os.path.join(pins, self.sha[:12]))
         self.assertIsNotNone(marker, 'no pinned export: the tool ran live\n' + said)
         self.assertEqual((marker['sha'], marker['made_by']), (self.sha, 'kitlib.gate.pin'))
         self.assertEqual(os.listdir(os.path.join(pins, 'leases')), [])
@@ -625,7 +627,7 @@ class Tools(unittest.TestCase):
     def test_a_linked_worktree_runs_its_own_code(self):
         wt = self.repo.worktree('own')
         self.addCleanup(self.repo.git, 'worktree', 'remove', '--force', wt)
-        self.repo.write('kitlib/gate/land.py', BROKEN, root=wt)
+        self.repo.write('kitlib/landing/verdicts.py', BROKEN, root=wt)
         self.assert_live(self.run_tool(wt, 'land.py'))
 
 

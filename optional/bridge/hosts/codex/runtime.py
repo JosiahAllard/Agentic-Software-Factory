@@ -23,14 +23,14 @@ from kitlib.ident import identifier
 from optional.bridge.core.contracts import AdapterDescription
 from optional.bridge.core.messages import BeforeWriteError,DeliveryError,OutboundMessage
 from optional.bridge.core.pairing import ChatBinding
-from kitlib.proc.pipe import (K,bind,close,open_process,process_image,process_sids)
+from kitlib.platform.windows.pipe import (K,bind,close,open_process,process_image,process_sids)
 from optional.bridge.win import frontend as frontend_types
 from optional.bridge.win.channel import revalidate_channel
 from optional.bridge.win.controller import Controller
 from optional.bridge.win.frontend import NativeFrontend
 from optional.bridge.port import NativeSource
 from optional.bridge.win.transport import PipeTarget
-from kitlib.proc.process import handle_ctime,parent_pid
+from kitlib.platform.windows.process import handle_ctime,parent_pid
 from .account import CodexAccount
 from .calls import CodexCalls
 from .context import CodexObserver,_sha

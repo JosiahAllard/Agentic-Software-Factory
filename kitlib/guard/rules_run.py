@@ -6,7 +6,7 @@ import ntpath
 import os
 import re
 
-from kitlib import config as kconfig
+from kitlib import config as kconfig, platform
 from kitlib.git import repo
 
 from . import commands as cm
@@ -102,8 +102,7 @@ GATE_NOTHING = ('-h', '--help', '--plan', '--measure')
 def gate_runs_nothing(inv):
     """True when gate.py `inv` names no subcommand (its first word is a literal option: gate.py
     reads land and wait-result only there) and has a literal -h, --help, --plan or --measure: it
-    runs no gate step and takes no lock, so a pipe changes nothing (docs/guard-v2.md "Kit tools
-    may be piped")."""
+    runs no gate step and takes no lock, so a pipe changes nothing (docs/guard-fallback.md "Kit tools may be piped")."""
     found = cm.tool_at(inv)
     if not found:
         return False
@@ -289,7 +288,7 @@ def kit_wrapper(ctx, cmd, inv, cwd, event=None):
     else None. Only the kit's tool takes the machine lock itself, so only it may run an
     interpreter a repository lists as heavy: a script that shares its file name (a branch's copy,
     `python <temp>/gate.py`) is judged as any other script. A repository holds no copy of the
-    kit's tools (decision 21 in docs/multi-host-plan.md section 7), so an opt-in stub fails closed
+    kit's tools (docs/install.md "Ported repo tools"), so an opt-in stub fails closed
     here too."""
     kind = cm.wrapper(inv)
     if not kind:
@@ -790,7 +789,7 @@ def kill_by_name(event, ctx, cmd, inv, cwd, role):
     if cmd.shell == sh.PS:
         look = 'tasklist /FI "IMAGENAME eq %s"' % target if inv.name == 'taskkill' else \
             'Get-Process -Name %s | Select-Object Id, StartTime, Path' % target
-    elif os.name == 'nt':
+    elif platform.NAME == 'windows':
         look = 'tasklist //FI "IMAGENAME eq %s"' % target
     else:
         look = 'pgrep -a %s' % target

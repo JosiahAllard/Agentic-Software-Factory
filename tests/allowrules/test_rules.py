@@ -10,7 +10,8 @@ import sys
 import tempfile
 import unittest
 
-from kitlib import allowrules, pluginsource
+from kitlib import allowrules
+from kitlib.pluginsource import layout as plugin_layout, export as plugin_export
 from kitlib.allowrules import rules
 
 TOP = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -258,7 +259,7 @@ class DeniedTest(unittest.TestCase):
         form; the `-- ` deny closes it, and the PowerShell separators (probed 5.1: each splits a
         native argument as a space does) cannot stand in for the spaces around it."""
         tip = 'a' * 40
-        forms = [('--full --expect-tip %s -- kit/a' % tip, ''),
+        forms = [('--fresh --expect-tip %s -- kit/a' % tip, ''),
                  ('--submitted Q:/p.land.submit --expect-tip %s -- kit/a' % tip, '')]
         for middle, tail in forms:
             argv = ['-C', R] + middle.split() + ['--expect-tip', tip, '--submit'] + tail.split()
@@ -272,7 +273,7 @@ class DeniedTest(unittest.TestCase):
                         self.assertEqual(decide(cmd, shell, ALLOW_ONLY), ALLOWED[shell])
                         self.assertEqual(decide(cmd, shell), 'deny')
         for sep in rules.SEPARATORS:
-            cmd = submit(middle='--full --expect-tip %s%s--%skit/a' % (tip, sep, sep))
+            cmd = submit(middle='--fresh --expect-tip %s%s--%skit/a' % (tip, sep, sep))
             with self.subTest(sep='U+%04X' % ord(sep)):
                 self.assertEqual(decide(cmd, lines=ALLOW_ONLY), 'allow')
                 self.assertEqual(decide(cmd), 'deny')
@@ -413,13 +414,13 @@ class NoMatchTest(unittest.TestCase):
 def make_export(root, sha, marker=True):
     os.makedirs(os.path.join(root, sha), exist_ok=True)
     if marker:
-        with open(os.path.join(root, sha, pluginsource.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(root, sha, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             json.dump({'sha': 'x'}, fh)
-    pluginsource.write_marketplace(root, sha)
+    plugin_export.write_marketplace(root, sha)
 
 
 def settings(root):
-    return pluginsource.Settings(root, False, 'origin')
+    return plugin_layout.Settings(root, False, 'origin')
 
 
 class DeriveTest(unittest.TestCase):
@@ -468,7 +469,7 @@ class DeriveTest(unittest.TestCase):
         with self.assertRaisesRegex(allowrules.AllowRulesError, 'no current plugin export'):
             self.derive()
         os.makedirs(os.path.join(self.root, 'not-a-sha'))
-        pluginsource.write_marketplace(self.root, 'not-a-sha')
+        plugin_export.write_marketplace(self.root, 'not-a-sha')
         with self.assertRaisesRegex(allowrules.AllowRulesError, 'no current plugin export'):
             self.derive()
 

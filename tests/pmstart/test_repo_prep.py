@@ -1,6 +1,6 @@
-"""kitlib.pmstart.repo_prep: the PM session start runs the first-use repo prep (kitlib.git.prep;
+"""kitlib.pmstart.repo_prep: the PM session start runs the first-use repo prep (kitlib.worktree.prep;
 docs/new-worktree.md "First-use prep") on each launcher.repos repository. The prep is a fake here;
-tests/git/test_prep.py tests the prep itself."""
+tests/worktree/test_prep.py tests the prep itself."""
 import datetime
 import os
 import tempfile

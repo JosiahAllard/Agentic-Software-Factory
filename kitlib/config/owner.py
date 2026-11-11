@@ -5,7 +5,7 @@
                  exact path. No other prefix is a blanket.
   paths_except   what under a locked directory is not locked (`.claude/worktrees/`).
   shrink_only    owner-only paths (exact, never a directory) that any commit may change by
-                 deleting lines only (kitlib.guard.ownercommits.deletes_only); any other change
+                 deleting lines only (kitlib.ownerfiles.rules.deletes_only); any other change
                  to one stays the owner's.
   email          the author email of the owner's own commits. A trailer counts only on a commit
                  whose AUTHOR email is this one. Unset in `.kit.json`: the machine config's
@@ -31,16 +31,16 @@ from . import schema
 DEFAULT = tuple(schema.OWNER_PATHS)
 DEFAULT_EXCEPT = tuple(schema.OWNER_PATHS_EXCEPT)
 TRAILER = 'Owner-Approved'
-APPROVAL_TRAILER = 'Owner-Approval'     # kitlib.guard.ownercommits.TRAILER
+APPROVAL_TRAILER = 'Owner-Approval'     # kitlib.ownerfiles.rules.TRAILER
 
 
 def trailer_problem(key):
     """None when `key` may be the "owner".trailer, else why not: git matches trailer keys
     without regard to case, so Owner-Approval in any case is the hub approval's trailer."""
     if (key or '').strip().lower() == APPROVAL_TRAILER.lower():
-        return ('"owner".trailer may not be %s: that is the hub approval\'s trailer (commit.py '
-                '--owner-approval), and a claim key equal to it would read every hub approval as '
-                'an owner claim' % APPROVAL_TRAILER)
+        return ('"owner".trailer may not be %s: that is the hub approval\'s trailer (the hub\'s '
+                'commit of an approved change), and a claim key equal to it would read every hub '
+                'approval as an owner claim' % APPROVAL_TRAILER)
     return None
 
 

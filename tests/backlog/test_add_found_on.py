@@ -8,9 +8,10 @@ import os
 import unittest
 from unittest import mock
 
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import opener
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_claim, plan_edit, plan_narrow
 from kitlib.backlog import pull_branch
 from kitlib.backlog.errors import Failure, Refusal, Usage
 from kitlib.git import cmd, refs
@@ -273,7 +274,7 @@ class FoundOn(StoreCase):
         for branch, want in (('kit/one', ['upstream']), ('kit/both', ['origin', 'upstream']),
                              ('KIT/BOTH', ['origin', 'upstream']), ('kit/none', [])):
             with self.subTest(branch=branch):
-                got = pmod._remotes_with(self.ctx, branch)
+                got = plan_narrow._remotes_with(self.ctx, branch)
                 self.assertEqual([r for r, _ref, _tip in got], want)
                 self.assertEqual([ref for _r, ref, _tip in got],
                                  ['refs/remotes/%s/%s' % (r, branch.lower()) for r in want])
@@ -369,21 +370,23 @@ class FoundOn(StoreCase):
         self.assertIsNone(self.get('NEW'))
 
     def test_an_unreadable_record_fails_the_pulled_scope_check(self):
-        # Store.write refuses an unreadable store first (store.require_readable); the guard's own
-        # check is reached by planning directly.
+        # Store.write refuses an unreadable store first (store_read.require_readable); the guard's
+        # own check is reached by planning directly.
         self.seed({'BAD': 'no separator here\n'})
         with self.assertRaises(Failure) as cm:
-            pmod.plan_add(self.store.load(), self.ctx, 'NEW', 'a defect found while working',
-                          ['docs/y.md'], found_on=FOO, why_not_folded=WHY)
+            plan_edit.plan_add(self.store.load(), self.ctx, 'NEW', 'a defect found while working',
+                               ['docs/y.md'], found_on=FOO, why_not_folded=WHY)
         self.assertIn('cannot tell which records kit/foo holds pulled', str(cm.exception))
         self.assertIn('BAD', str(cm.exception))
 
     def failing(self, module, **over):
-        """Patch plan.py's own `module` (refs or cmd) so the named functions answer as `over`
-        says; every other call goes to the real module."""
-        patch = mock.patch.object(pmod, module, _Wrap(getattr(pmod, module), **over))
-        patch.start()
-        self.addCleanup(patch.stop)
+        """Patch the plan modules' own `module` (refs or cmd) so the named functions answer as
+        `over` says; every other call goes to the real module."""
+        for mod in (pmod, plan_narrow, plan_claim):
+            if hasattr(mod, module):
+                patch = mock.patch.object(mod, module, _Wrap(getattr(mod, module), **over))
+                patch.start()
+                self.addCleanup(patch.stop)
 
     def assert_git_failure(self):
         with self.assertRaises(Failure) as cm:
@@ -427,7 +430,7 @@ class FoundOn(StoreCase):
           'Windows, a packed-refs line does not')
 class FoundOnPackedRefs(StoreCase):
     """Loose and packed refs are found alike, the name compared ignoring case (git's own list of
-    ref names, kitlib/backlog/plan.py `_ref_names` and `_spelling`)."""
+    ref names, kitlib/backlog/plan_narrow.py `_ref_names` and `_spelling`)."""
     branch_with = FoundOn.branch_with
     add = FoundOn.add
     overlap = FoundOn.overlap
@@ -467,7 +470,7 @@ class FoundOnPackedRefs(StoreCase):
                              ('KIT/BOTH', ['origin', 'upstream']), ('kit/loose', ['origin']),
                              ('KIT/LOOSE', ['origin']), ('kit/none', [])):
             with self.subTest(branch=branch):
-                self.assertEqual([r for r, _ref, _tip in pmod._remotes_with(self.ctx, branch)],
+                self.assertEqual([r for r, _ref, _tip in plan_narrow._remotes_with(self.ctx, branch)],
                                  want)
 
     def test_two_branches_that_differ_only_in_case_are_usage_however_named(self):
@@ -506,7 +509,7 @@ PM_KIT_JSON = {'backlog': {'id_grammar': 'upper', 'code_main': 'main'},
 
 
 class PmDataWorktree(StoreCase):
-    """The PM data worktree (kitlib.pmdata): a worktree of the code repository on the data branch,
+    """The PM data worktree (kitlib.config.pmdata): a worktree of the code repository on the data branch,
     whose .kit.json names the data remote. The code lands on the main checkout's remote
     (`repo.remote`, origin here), so `add --found-on` measures from that remote's main, not from
     the local main, which lags it until somebody pulls (kitlib/backlog/opener.py `open_store`,
@@ -542,8 +545,8 @@ class PmDataWorktree(StoreCase):
         return stale
 
     def plan(self, ctx, scopes, found_on):
-        return pmod.plan_add(ctx.store.load(), ctx, 'NEW', 'a defect found while working', scopes,
-                             found_on=found_on, why_not_folded=WHY)
+        return plan_edit.plan_add(ctx.store.load(), ctx, 'NEW', 'a defect found while working', scopes,
+                                  found_on=found_on, why_not_folded=WHY)
 
 
 class FoundOnInThePmDataWorktree(PmDataWorktree):
@@ -554,7 +557,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
         stale = self.later_on_main()
         self.branch_with('kit/new', 'kitlib/y/own.py')
         self.lag_main(stale)
-        ctx = opener.open_store(self.pm_worktree(), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(), fetch=False, probes=opener.NO_PROBES)
         change = self.plan(ctx, ['kitlib/x/later.py'], 'kit/new')
         self.assertIn('ADDED NEW, found on kit/new', change.lines)
         change = self.plan(ctx, ['kitlib/y/**'], 'kit/new')
@@ -565,7 +568,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
         stale = self.repo.head()
         self.land('kit/done', 'kitlib/x/done.py')
         self.lag_main(stale)
-        ctx = opener.open_store(self.pm_worktree(), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(), fetch=False, probes=opener.NO_PROBES)
         change = self.plan(ctx, ['docs/y.md'], 'kit/done')
         self.assertTrue(any(line.startswith('NOTE: branch kit/done landed on main as ')
                             for line in change.lines), change.lines)
@@ -573,7 +576,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
     def test_an_unset_code_main_is_the_main_checkouts_main(self):
         self.branch_with(FOO, 'kitlib/x/a.py')
         kit_json = {'backlog': {'id_grammar': 'upper'}, 'repo': PM_KIT_JSON['repo']}
-        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False, probes=opener.NO_PROBES)
         self.assertEqual(ctx.code_main, 'main')
         change = self.plan(ctx, ['docs/y.md'], FOO)
         self.assertIn('ADDED NEW, found on kit/foo', change.lines)
@@ -581,7 +584,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
     def test_a_code_main_that_does_not_resolve_still_fails(self):
         kit_json = {'backlog': {'id_grammar': 'upper', 'code_main': 'trunk'},
                     'repo': PM_KIT_JSON['repo']}
-        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(kit_json), fetch=False, probes=opener.NO_PROBES)
         with self.assertRaises(Failure) as cm:
             self.plan(ctx, ['docs/y.md'], 'kit/gone')
         self.assertIn('`trunk` does not resolve', str(cm.exception))
@@ -590,7 +593,7 @@ class FoundOnInThePmDataWorktree(PmDataWorktree):
     def test_outside_the_pm_data_worktree_the_code_remote_is_repo_remote(self):
         self.pm_worktree()
         self.assertIsNone(pull_branch.code_config(self.repo.root))
-        ctx = opener.open_store(self.repo.root, fetch=False)
+        ctx = opener.open_store(self.repo.root, fetch=False, probes=opener.NO_PROBES)
         self.assertEqual((ctx.code_remote, ctx.code_main), (ctx.remote, ctx.main_branch))
 
 

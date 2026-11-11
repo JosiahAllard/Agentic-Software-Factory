@@ -9,7 +9,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from kitlib import agentname, pmdata
+from kitlib.config import pmdata
+from kitlib.host import agentname
 from kitlib.backlog import policy, roles
 from kitlib.git import refs, repo
 from kitlib.guard import backlogrole, context
@@ -292,7 +293,7 @@ class OwnPull(Base):
 
 class AsFromItsWorktree(Base):
     """`-C <store> --as <branch>` from that branch's linked worktree (backlogrole._worktree_on):
-    the form the tool's own refusal names (plan.holder_form). A builder blocking its own pull of a
+    the form the tool's own refusal names (plan_claim.holder_form). A builder blocking its own pull of a
     store in another checkout was refused as not its own (role=subagent). The store here is the
     main checkout, whose branch is main; read_record is patched, so any folder serves."""
 
@@ -1075,7 +1076,7 @@ class Refs(Base):
         """A .kit.json that is not UTF-8 raises out of the config load (UnicodeDecodeError, no
         ConfigError, so no ctx.config_error): store_kind's fault is no ground to allow. The rule
         `heavy`, which reads the same config before this one, is stubbed out: its raise is the
-        hook's fail-closed failure (kitlib.host.hookmain), which would hide this rule's answer."""
+        hook's fail-closed failure (kitlib.hookrun.main), which would hide this rule's answer."""
         with open(os.path.join(self.w.main, '.kit.json'), 'wb') as f:
             f.write(b'{"repo": {"name": "d\xff\xfeo"}}')
         with mock.patch('kitlib.guard.rules.heavy', lambda *a: None):

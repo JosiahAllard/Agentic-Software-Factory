@@ -95,7 +95,7 @@ _EPOCH_AS_FILETIME = 116444736000000000     # 1970-01-01 in 100 ns ticks since 1
 
 def own_start_time():
     """This process's start time in epoch seconds (kernel32 GetProcessTimes), None when it cannot
-    be read. The same clock as the CreationDate kitlib.pmstart.list_processes reports."""
+    be read. The same clock as the CreationDate kitlib.proc.listing.list_processes reports."""
     import ctypes
     from ctypes import wintypes
     try:
@@ -408,9 +408,10 @@ def hub_jobs(load=None, make_client=None):
     down, has no token file or no pointer, or answers anything else. Never raises. `load` and
     `make_client` as hub_check."""
     try:
-        from kitlib import pmstart
-        port = (load or pmstart.hub_settings)().port
-        health = (make_client or pmstart._hub_client)(port).get("/health", timeout=pmstart.HUB_SITE_TIMEOUT_S)
+        from kitlib.hubclient import client as hubclient, settings as hubsettings
+        port = (load or hubsettings.load)().port
+        health = (make_client or hubclient.hub_client)(port).get(
+            "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         jobs = health.get("jobs") if isinstance(health, dict) else None
         return jobs if isinstance(jobs, dict) else None
     except Exception:                       # noqa: BLE001 - a hub we cannot read is a hub that is not up
@@ -498,7 +499,7 @@ def hub_session_job_block(load=None, make_client=None):
 
 
 def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, hub_job=None):
-    """The PLUGIN check for Watcher: check(last) -> (lines, last), over kitlib.pluginsource.poll
+    """The PLUGIN check for Watcher: check(last) -> (lines, last), over kitlib.pluginsource.refresh.poll
     (docs/plugin-source.md "Behind warnings"). `last` is the kit main sha last reported (None when
     current), kept in the state file so a relaunch does not report the same sha again. With no
     `settings` the machine config's plugin key is read on every call, so a bad key is a failed
@@ -507,13 +508,13 @@ def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, 
     account folders. With auto_refresh on and the hub's plugin-refresh job up (`hub_job()`, default
     hub_plugin_job_up), the hub is the one owner of the refresh: the check reports the behind
     line and starts nothing; with the hub down it still starts the refresh itself."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout, refresh as plugin_refresh
 
     def check(last):
-        s = pluginsource.load() if settings is None else settings
+        s = plugin_layout.load() if settings is None else settings
         if s.auto_refresh and (hub_job or hub_plugin_job_up)():
             s = s._replace(auto_refresh=False)
-        return pluginsource.poll(kit or pluginsource.kit_root(), s, last, spawn=spawn, alive=alive,
+        return plugin_refresh.poll(kit or plugin_layout.kit_root(), s, last, spawn=spawn, alive=alive,
                                  folders=folders)
     return check
 
@@ -521,25 +522,24 @@ def plugin_check(kit=None, settings=None, spawn=None, alive=None, folders=None, 
 def hub_check(load=None, make_client=None):
     """The HUB check for Watcher: check(last) -> (lines, last). Asks the loopback hub server's
     GET health and gives one line, once per stale episode, when its `code` says hub code newer than
-    the running server has landed (kitlib.hubsite.codestale.notice: the owner's restart step).
+    the running server has landed (kitlib.hubclient.codestale.notice: the owner's restart step).
     `last` is True once reported (kept in the state file, so a relaunch does not say it again) and
     None otherwise: a restarted hub, or one that is down, re-arms it. A hub that is down, has no
     token file, or has no pointer to read is no event and no failure; any other error is a failed
     check (ERROR on the third), never a dead watcher. `load` gives the hub Settings and
     `make_client(port)` the client, as kitlib.pmstart.hub_site takes them."""
     def check(last):
-        from kitlib import pmstart
-        from kitlib.hubsite import codestale, serve
-        down = (pmstart.NoHubToken, serve.NotRunning,
-                getattr(pmstart, "NoHubPointer", pmstart.NoHubToken))
+        from kitlib import kitroot
+        from kitlib.hubclient import client as hubclient, codestale, errors, settings as hubsettings
+        down = (errors.NoHubToken, errors.NotRunning, errors.NoHubPointer)
         try:
-            port = (load or pmstart.hub_settings)().port
-            health = (make_client or pmstart._hub_client)(port).get(
-                "/health", timeout=pmstart.HUB_SITE_TIMEOUT_S)
+            port = (load or hubsettings.load)().port
+            health = (make_client or hubclient.hub_client)(port).get(
+                "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         except down:
             return [], None
         text = codestale.notice(health.get("code") if isinstance(health, dict) else None,
-                                pmstart.HUB_TOOL)
+                                kitroot.tool("hub"))
         if text is None:
             return [], None
         return ([] if last else [text]), True
@@ -675,16 +675,15 @@ def rc_check(sessions, reader, dirs=None, ctime=None, rc_pids=None, accounts=Non
     The check's `limit` attribute is the LIMIT check over the same sessions and records (limit_check;
     accounts() default: account_folders of the launcher settings, read again on each call), which
     the Watcher picks up, so every builder of the REMOTE check gets LIMIT too."""
-    from kitlib import pmstart
-    from kitlib.launcher import pipes, settings as launcher_settings, stop
-    from kitlib.proc import process
+    from kitlib.launcher import lookup, pipes, settings as launcher_settings, stop
+    from kitlib.proc import listing, process
     if dirs is None:
         dirs = lambda: pipes.registry_dirs(launcher_settings.load())
     ctime = ctime or process.proc_ctime
     if rc_pids is None:
         # every process: only the pids of live registry records are looked up, so no image filter
-        rc_pids = lambda: {p.get("ProcessId"): pmstart.rc_name(p.get("CommandLine"))
-                           for p in pmstart.list_processes()}
+        rc_pids = lambda: {p.get("ProcessId"): lookup.remote_control_name(p.get("CommandLine"))
+                           for p in listing.list_processes()}
 
     def alive(r):
         try:
@@ -714,10 +713,13 @@ def preload(modules=()):
     import kitlib.launcher.settings
     import kitlib.launcher.usage
     import kitlib.machinesetup.extras
-    import kitlib.hubsite.codestale
-    import kitlib.hubsite.serve
-    import kitlib.pluginsource
-    import kitlib.pmstart.consoletasks      # kitlib.pluginsource's in-use reads (_processes, _tasks)
+    import kitlib.hubclient.client
+    import kitlib.hubclient.codestale
+    import kitlib.hubclient.errors
+    import kitlib.hubclient.settings        # the HUB check's and hub_jobs' settings read
+    import kitlib.pluginsource.layout
+    import kitlib.pluginsource.refresh      # with export, state and prune, which it imports
+    import kitlib.schedtask.read            # kitlib.pluginsource.prune's in-use reads (_processes, _tasks)
     import kitlib.launcher.pipes            # the REMOTE check (rc_check)
     import kitlib.launcher.stop
     import kitlib.proc.process

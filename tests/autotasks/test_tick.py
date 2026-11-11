@@ -12,8 +12,9 @@ import unittest
 from unittest import mock
 
 from kitlib.autotasks import tick as T
+from kitlib.config import pointer
 from kitlib.fs.treelock import TreeLock
-from kitlib.hubsite import serve
+from kitlib.hubclient import errors as huberrors
 from tests import gitfixture
 from tests.home import machine_config, temp_home
 from tests.realgit import real_git
@@ -105,6 +106,17 @@ class Table(unittest.TestCase):
         repos = [('label', main, 'cfgname')]
         self.assertEqual(T.find_repo('Folder-X', repos), main)
         self.assertIsNone(T.find_repo('other', repos))
+
+
+class LauncherRepos(unittest.TestCase):
+    def test_a_folder_that_is_gone_inside_another_repo_is_left_out(self):
+        home = temp_home(self)
+        repo = gitfixture.TempRepo()
+        self.addCleanup(repo.cleanup)
+        machine_config(home, {'launcher': {'repos': {'here': repo.root,
+                                                     'gone': os.path.join(repo.root, 'gone')}}}, case=self)
+        main = os.path.normpath(os.path.realpath(repo.root))
+        self.assertEqual(T.launcher_repos(home), [('here', main, os.path.basename(main))])
 
 
 class State(Base):
@@ -207,22 +219,19 @@ class Place(Base):
         self.assertEqual(lines, [T.HOME_NO_FOLDER % (self.pm_folder, self.home_state(), T.kuser.MOVE_DOC)
                                  + ': nothing started'])
         self.assertNotIn('Copy-Item', lines[0])
-        self.assertIn('config_move.py', lines[0])
+        self.assertIn('move the machine config into it', lines[0])
         self.assertFalse(os.path.lexists(self.pm_folder))
 
     def test_git_that_cannot_tell_is_a_problem_saying_why(self):
-        from kitlib.config import move
-        with mock.patch.object(move, 'ignored', lambda pm, rels: (None, 'fatal: no repo')):
+        with mock.patch.object(pointer, 'ignored', lambda pm, rels: (None, 'fatal: no repo')):
             why = UNIGNORED(self.pm)
         self.assertIn('git could not tell', why)
         self.assertIn('fatal: no repo', why)
 
     def test_git_that_cannot_run_is_a_problem_saying_why_never_a_raise(self):
-        from kitlib.config import move
-
         def boom(pm, rels):
             raise OSError('git.exe not found')
-        with mock.patch.object(move, 'ignored', boom):
+        with mock.patch.object(pointer, 'ignored', boom):
             why = UNIGNORED(self.pm)
         self.assertIn('git could not tell', why)
         self.assertIn('OSError: git.exe not found', why)
@@ -230,12 +239,11 @@ class Place(Base):
     def test_a_base_exception_is_not_swallowed(self):
         # KeyboardInterrupt/SystemExit must pass, and the fake git's Unsupported (a BaseException)
         # is a test trap that must stay loud rather than read as "git could not tell"
-        from kitlib.config import move
         from kitlib.git.fake.errors import Unsupported
         for exc in (Unsupported('check-ignore'), KeyboardInterrupt(), SystemExit(2)):
             def boom(pm, rels, exc=exc):
                 raise exc
-            with mock.patch.object(move, 'ignored', boom):
+            with mock.patch.object(pointer, 'ignored', boom):
                 with self.assertRaises(type(exc)):
                     UNIGNORED(self.pm)
 
@@ -252,9 +260,9 @@ class Ignored(unittest.TestCase):
         with open(os.path.join(self.folder, '.gitignore'), 'w', encoding='utf-8', newline='\n') as fh:
             fh.write(text)
 
-    def test_the_moves_ignore_file_ignores_the_state_folder(self):
-        from kitlib.config import move
-        self.ignore(move.GITIGNORE)
+    def test_machine_setups_ignore_file_ignores_the_state_folder(self):
+        from kitlib.machinesetup import machineconfig
+        self.ignore(machineconfig.GITIGNORE)
         self.assertIsNone(T.unignored(self.repo.root))
 
     def test_an_ignore_file_without_the_line_is_a_problem_naming_it(self):
@@ -379,7 +387,7 @@ class Tick(Base):
 class HubDown(Base):
     def test_nothing_listening_starts_nothing_and_exits_clean_with_one_line(self):
         def down():
-            raise serve.NotRunning(1)
+            raise huberrors.NotRunning(1)
         code, lines = self.go(fetch=down)
         self.assertEqual(code, T.EXIT_OK)
         self.assertEqual(len(lines), 1)
@@ -394,15 +402,16 @@ class HubDown(Base):
         s.close()
         tokens = tempfile.mkdtemp(prefix='autotasks-tokens-')
         self.addCleanup(gitfixture.rmtree, tokens)
-        from kitlib.hubsite import auth, client
-        with mock.patch.object(auth, 'read_token', return_value='t'):
+        from kitlib.hubclient import client
+        from kitlib.hubclient import token as hubtoken
+        with mock.patch.object(hubtoken, 'read_token', return_value='t'):
             fetch = lambda: client.Client(port, tokens=tokens, timeout=5).listing('schedules')   # noqa: E731
             code, lines = self.go(fetch=fetch)
         self.assertEqual((code, len(lines), self.started), (T.EXIT_OK, 1, []))
         self.assertIn('hub not reachable', lines[0])
 
     def test_a_refusal_is_a_failure(self):
-        from kitlib.hubsite import client
+        from kitlib.hubclient import client
 
         def refused():
             raise client.Refused(403, {'ok': False, 'error': 'no'})

@@ -125,13 +125,11 @@ def run(args, cwd=None, stdin=None, env=None):
     return rc, bytes(ctx.out), ''.join(ctx.err)
 
 
-_LOADED = []
-
-
 def _load():
-    if not _LOADED:
-        from . import plumbing, diffs, history, wtcmds, worktreecmd, remote, mergecmd  # noqa: F401
-        _LOADED.append(True)
+    """Import the command modules, which register themselves in COMMANDS. Each call asks the import
+    system, so a command runs in the module sys.modules holds now: a process that keeps this package
+    and drops its command modules (the suite's pool worker, between units) gets them loaded again."""
+    from . import plumbing, diffs, history, wtcmds, worktreecmd, remote, mergecmd  # noqa: F401
 
 
 def missing_cwd_error():

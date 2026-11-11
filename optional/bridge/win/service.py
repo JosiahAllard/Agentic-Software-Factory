@@ -1,6 +1,6 @@
 """One controller serves verified MCP frontends through its private Windows pipe."""
 from optional.bridge.core.messages import DeliveryError
-from kitlib.proc.errors import ProcError
+from kitlib.platform import ProcError
 from .frontend import running
 from .rpc import PipeServer,encode
 

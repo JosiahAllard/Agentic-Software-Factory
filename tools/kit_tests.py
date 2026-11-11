@@ -23,9 +23,9 @@ test modules that import, name or load what changed, or list a folder it is in; 
 transitive closure), prints each selected test package or single module with the reasons it was
 picked, and runs those test modules. Only a change to a `full` path of the table runs the full
 suite, and says why; a path nothing reads runs `always` only. --full runs `python -m unittest
-discover -s tests -t .`'s modules; the landing's merged gate ("landing".gate_once), the daily
-full run and go-live use it, and catch what a direct-users selection leaves out. --plan prints
-and runs nothing.
+discover -s tests -t .`'s modules; the merged gate of a landing whose merge changes a gate config
+file, the daily full run and a repo switch-over use it, and catch what a direct-users selection
+leaves out. --plan prints and runs nothing.
 The modules run in parallel worker processes (kitlib.tooldeps.selfrun), --jobs at a time - by
 default the logical processors the machine lock run holds - longest first by the times recorded
 in the git common dir (kit-tests-times.json), long modules split by class - then the table's
@@ -48,10 +48,10 @@ nothing (kitlib/tooldeps/testcost.py).
 The units also get the home fence's marker (docs/test-tools.md "Home fence"): KIT_HOME_FENCE, the
 home folder this process resolves, unless the environment already carries one. The tools a test
 starts inherit it and refuse that home.
-And the time fence's marker (docs/flaky-tests.md): KIT_TIME_FENCE=1 unless it is set, so a degrade
+And the time fence's marker (docs/test-tools.md "Time fence"): KIT_TIME_FENCE=1 unless it is set, so a degrade
 budget (kitlib.clock.budget) is the ceiling in every unit; kit_tests' own process stays unmarked.
-No test child gets the session's kit binding: PM_KIT_ROOT, PM_KIT_RELEASE_ID, KIT_LIVE_ROOT and
-KIT_PINNED, PM_KIT_ROLE, PM_KIT_HOST and PM_KIT_SESSION_NAME (KIT_SESSION_ENV), each registered
+No test child gets the session's kit binding: PM_KIT_ROOT, KIT_LIVE_ROOT and KIT_PINNED,
+PM_KIT_ROLE, PM_KIT_HOST and PM_KIT_SESSION_NAME (KIT_SESSION_ENV), each registered
 host's session_env variable and its PM_KIT_<HOST>_ variables (hosts.json; session_env_names()) are
 dropped from its environment, so a session's env cannot steer the suite
 (kitlib/tooldeps/childenv.py child_env).

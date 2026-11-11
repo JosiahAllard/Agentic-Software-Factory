@@ -1,4 +1,4 @@
-"""Stop on Linux (docs/launcher.md "Stop"; docs/linux-support-plan.md slice 11): the claude process,
+"""Stop on Linux (docs/launcher.md "Stop"): the claude process,
 then its window, the bash that runs the window's script, only when that script carries exactly the
 name (the PM_KIT_SESSION_NAME line and the claude line); each by pid and creation time; tmux or a
 terminal above the shell is never stopped. kitlib.platform.NAME is patched to 'linux' and the

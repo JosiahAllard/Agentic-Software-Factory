@@ -246,7 +246,7 @@ class Slots(unittest.TestCase):
 
     def slots(self, key, entry, cap=4):
         from kitlib.backlog import offer as omod
-        from kitlib.backlog import opener, plan
+        from kitlib.backlog import opener, plan_narrow
 
         class Store(object):
             def load(s):
@@ -257,7 +257,8 @@ class Slots(unittest.TestCase):
             def __init__(s, root, session):
                 s.root, s.remote, s.store, s.session = root, 'origin', Store(), session
 
-        def open_store(root, fetch=True, session=None, branch=None):
+        def open_store(root, fetch=True, session=None, branch=None, *, probes):
+            self.assertIs(probes, opener.NO_PROBES)     # an offer read stops no pull
             self.opened.append((root, fetch, session))
             return Ctx(root, session)
 
@@ -271,7 +272,7 @@ class Slots(unittest.TestCase):
             return cap
         with mock.patch.object(opener, 'open_store', open_store), \
                 mock.patch.object(opener, 'repo_cap', repo_cap), \
-                mock.patch.object(plan, 'offer_for', offer_for), \
+                mock.patch.object(plan_narrow, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split',
                                   lambda snap, root, remote: (self.holding, [], None)):
             return W.read_slots(self.settings, key, entry)
@@ -305,7 +306,7 @@ class Slots(unittest.TestCase):
 
     def test_read_waits_gives_each_passed_over_pair_once_from_one_store_read(self):
         from kitlib.backlog import offer as omod
-        from kitlib.backlog import opener, plan
+        from kitlib.backlog import opener, plan_narrow
 
         class R(object):
             def __init__(s, rid, **f):
@@ -331,9 +332,10 @@ class Slots(unittest.TestCase):
         def offer_for(snap, ctx, cap=5, holding=None, narrow=False):
             asked.append((cap, narrow))
             return [], passed, holding, None
-        with mock.patch.object(opener, 'open_store', lambda root, fetch=True, session=None:
+        with mock.patch.object(opener, 'open_store',
+                               lambda root, fetch=True, session=None, *, probes:
                                Ctx(root, session)), \
-                mock.patch.object(plan, 'offer_for', offer_for), \
+                mock.patch.object(plan_narrow, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split',
                                   lambda snap, root, remote: ([low], [], why[0])):
             rows = W.read_waits(self.settings, 'game', dict(COORD))
@@ -665,7 +667,7 @@ class StandDown(unittest.TestCase):
             json.dump({'backlog': backlog}, f)
 
     def reason(self, queued, idle):
-        return W.standdown(self.top, survey=lambda top, cfg: (queued, idle))
+        return W.standdown(self.top, survey=lambda top: (queued, idle))
 
     def test_the_keys_default_to_three_queued_and_two_idle(self):
         self.assertEqual(W.read_limits(self.top), (3, 2))
@@ -683,7 +685,7 @@ class StandDown(unittest.TestCase):
     def test_fill_queued_max_zero_is_off_without_a_survey(self):
         self.kit({'fill_queued_max': 0})
 
-        def survey(top, cfg):
+        def survey(top):
             raise AssertionError('surveyed')
         self.assertEqual(W.standdown(self.top, survey=survey), 'off')
 
@@ -707,7 +709,7 @@ def tree(branch, klass, head=None, gate=None, reason=None, idle_s=None):
 
 
 class Survey(unittest.TestCase):
-    """read_survey(top, cfg): (queued, idle) from the verdict queue and one --classify read."""
+    """read_survey(top): (queued, idle) from the verdict queue and one --classify read."""
 
     def setUp(self):
         self.entries = []
@@ -721,8 +723,9 @@ class Survey(unittest.TestCase):
 
     def survey(self):
         from kitlib.coordstate import render
-        from kitlib.gate import verdicts
+        from kitlib.landing import verdicts
         from kitlib.git import refs
+        from kitlib.records import verdict_entry
         from kitlib.git import repo
         from kitlib.worktree import classify
 
@@ -742,14 +745,14 @@ class Survey(unittest.TestCase):
         with mock.patch.object(render, 'main_as_fetched', lambda top: self.main), \
                 mock.patch.object(repo, 'common_dir', lambda top: self.common), \
                 mock.patch.object(verdicts, 'entries', entries), \
-                mock.patch.object(verdicts, 'expired',
+                mock.patch.object(verdict_entry, 'expired',
                                   lambda c, e, m: 'landed' if e['branch'] in self.expired else None), \
                 mock.patch.object(classify, 'classify', fake_classify), \
                 mock.patch.object(classify, 'gate_state',
-                                  lambda main, head, cfg=None: 'green' if head in self.green
+                                  lambda main, head: 'green' if head in self.green
                                   else 'none'), \
                 mock.patch.object(refs, 'is_ancestor', is_ancestor):
-            return W.read_survey('/top', None)
+            return W.read_survey('/top')
 
     def test_queued_is_unexpired_verdicts_and_green_tips_not_in_main_once_each(self):
         self.entries = ['kit/a', 'kit/b', 'kit/gone']
@@ -813,9 +816,9 @@ class Survey(unittest.TestCase):
                 self.survey()
 
     def test_anything_unread_is_unread(self):
-        from kitlib.gate import verdicts
+        from kitlib.records import verdict_entry
         cases = [('main', (None, 'no origin/main')), ('common', (None, 'not a repo')),
-                 ('entries', verdicts.VerdictError('bad file')),
+                 ('entries', verdict_entry.VerdictError('bad file')),
                  ('trees', {'error': 'git cannot list the worktrees'})]
         for name, value in cases:
             self.setUp()
@@ -1348,6 +1351,7 @@ class PullOnAStore(unittest.TestCase):
     def setUp(self):
         from kitlib.backlog import record as rmod
         from kitlib.backlog import store as smod
+        from kitlib.backlog import store_ref
         from tests.backlog import helpers as bh
         from tests.home import temp_home
         patch = mock.patch.dict(os.environ, gitfixture.fixture_env(), clear=True)
@@ -1359,7 +1363,7 @@ class PullOnAStore(unittest.TestCase):
         self.root = os.path.realpath(self.repo.root)
         bh.kit_json_ref(self.repo)
         self.repo.git('push', '-q', 'origin', 'main')
-        self.backend = smod.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        self.backend = store_ref.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         self.store = smod.Store(self.backend, rmod.Rules())
         writes = {}
         for r in (bh.priced('FOO', session='kit'), bh.priced('BAR', session='other'),
@@ -1383,9 +1387,9 @@ class PullOnAStore(unittest.TestCase):
                            threading.Event(), create=create)
 
     def trees(self):
-        from kitlib.worktree import remove
+        from kitlib.worktree import remove_checks
         return {e['branch']: e['path']
-                for e in remove.worktree_entries(remove.worktree_listing(self.root))}
+                for e in remove_checks.worktree_entries(remove_checks.worktree_listing(self.root))}
 
     def branch(self, name):
         return self.repo.git('rev-parse', '--verify', '--quiet', 'refs/heads/' + name,
@@ -1394,6 +1398,7 @@ class PullOnAStore(unittest.TestCase):
     def test_a_record_in_the_offer_is_pulled_onto_its_own_tree(self):
         from kitlib.backlog import audit_check, opener
         from kitlib.backlog import store as smod
+        from kitlib.backlog import store_open
         got = self.pull(['FOO'], 1)
         self.assertEqual(got, ([('FOO', 'kit/fill-foo')], []))
         self.assertTrue(os.path.isdir(self.trees()['kit/fill-foo']))
@@ -1403,7 +1408,7 @@ class PullOnAStore(unittest.TestCase):
         tip = self.repo.git('ls-remote', 'origin', smod.STORE_REF).split('\t')[0]
         self.assertIn('Session: hub-fill', self.repo.git('log', '-1', '--format=%B', tip))
         top, cfg, rules = opener.open_repo(self.root)
-        report = audit_check.check(smod.open_backend(top, cfg, fetch=False), rules, [], 0)
+        report = audit_check.check(store_open.open_backend(top, cfg, fetch=False), rules, [], 0)
         self.assertEqual(report.changes, 2)                 # the seed and the pull
         self.assertEqual([f for f in report.findings if tip[:10] in f.text], [])
 
@@ -1452,13 +1457,13 @@ class WaitsOnAStore(_bh.StoreCase):
                   _bh.priced('FOO', priority='1', scope='kitlib/**'))
 
     def test_a_record_the_narrowing_clears_is_not_a_waits_pair(self):
-        from kitlib.backlog import opener, plan
-        _o, passed, _h, _w = plan.offer_for(self.store.load(), self.ctx)      # unnarrowed
+        from kitlib.backlog import opener, plan_narrow
+        _o, passed, _h, _w = plan_narrow.offer_for(self.store.load(), self.ctx)      # unnarrowed
         self.assertEqual([(p.rec.id, [w.id for w in p.waits]) for p in passed],
                          [('FOO', ['HOLD'])])
         with mock.patch.object(C, 'store_root', lambda settings, repo: self.repo.root), \
                 mock.patch.object(opener, 'open_store',
-                                  lambda root, fetch=True, session=None: self.ctx):
+                                  lambda root, fetch=True, session=None, *, probes: self.ctx):
             self.assertEqual(W.read_waits(None, 'game', dict(COORD)), [])
 
 

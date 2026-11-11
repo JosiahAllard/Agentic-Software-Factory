@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from kitlib.hubsite import api
-from kitlib.hubsite import approvals as ap
+from kitlib.ownerfiles import approvals as ap
 from kitlib.hubsite import skilledits
 from kitlib.hubsite.api import AGENT, ANY, APPROVER, BASE, LOCK_WRITE, OWNER
 from kitlib.hubsite.store import Store
@@ -193,6 +193,19 @@ def seed_approval(store, decision=None):
     return doc_id
 
 
+OP_LINE = 'run D-001 dest=dd/out'
+
+
+def seed_op_approval(store):
+    """An approved op approval, the one kind an agent consumes (by its run line's sha256)."""
+    now = datetime.datetime.fromisoformat(CLOCK())
+    doc = ap.new_op_doc('D-001', 'pm', OP_LINE, 't', now)
+    doc_id = 'A-%d' % (len(store.snapshot()[1].get('approvals') or {}) + 1)
+    doc.update(ap.decide_fields(KEY, doc_id, doc, ap.APPROVE, now))
+    store.put('approvals', doc_id, doc)
+    return doc_id
+
+
 def seed_superseded(store):
     """An approved approval and the one that replaces it, at a fixed id the body names."""
     doc_id = seed_approval(store, ap.APPROVE)
@@ -287,8 +300,11 @@ ROWS = {
     ('POST', '/approvals'): (None, ADD_BODY, None),
     ('POST', '/approvals/{id}/decide'): (seed_approval, {'decision': 'approve', 'if_version': 1},
                                          None),
-    ('POST', '/approvals/{id}/consume'): (lambda s: seed_approval(s, ap.APPROVE),
-                                          {'commit': 'c' * 40, 'if_version': 1}, None),
+    ('POST', '/approvals/{id}/apply'): (lambda s: seed_approval(s, ap.APPROVE),
+                                        {'if_version': 1}, None),
+    ('POST', '/approvals/{id}/consume'): (seed_op_approval,
+                                          {'args_sha256': ap.line_sha256(OP_LINE),
+                                           'if_version': 1}, None),
     ('POST', '/approvals/{id}/delete'): (seed_approval, {'from': 'pm', 'if_version': 1}, None),
     ('POST', '/approvals/{id}/supersede'): (seed_superseded,
                                             {'from': 'pm', 'by': REPLACING, 'if_version': 1},
@@ -448,6 +464,7 @@ class RolesCase(unittest.TestCase):
                 ('POST', '/skill_edits/{id}/done'): AGENT,
                 ('POST', '/skill_edits/{id}/fail'): AGENT,
                 ('POST', '/approvals'): AGENT, ('POST', '/approvals/{id}/decide'): APPROVER,
+                ('POST', '/approvals/{id}/apply'): OWNER,
                 ('POST', '/approvals/{id}/consume'): AGENT,
                 ('POST', '/approvals/{id}/delete'): AGENT,
                 ('POST', '/approvals/{id}/supersede'): AGENT,

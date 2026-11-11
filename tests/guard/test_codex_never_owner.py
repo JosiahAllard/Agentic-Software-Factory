@@ -4,7 +4,7 @@ Codex chat, the unmarked main chat too, so each owner-only check refuses one; th
 Claude chat still passes. Codex's hooks carry no subagent identity (hosts.json capabilities
 subagent_identity_in_hooks false), the same signal rules.agent_session reads.
 
-Each call goes through kitlib.host.hookmain._judge with the host's own adapter, as the real hook
+Each call goes through kitlib.hookrun.main._judge with the host's own adapter, as the real hook
 does (test_host_agent_session's way)."""
 import os
 import unittest
@@ -14,7 +14,8 @@ from hosts.claude.adapter.host import ADAPTER as CLAUDE
 from hosts.codex.adapter import ADAPTER as CODEX
 from kitlib import kitroot, lockmcp
 from kitlib.guard import decide, gaterole, rules
-from kitlib.host import Action, hookmain
+from kitlib.hookrun import main as hookrun
+from kitlib.host import Action, registry
 
 from . import world as W
 
@@ -30,13 +31,13 @@ class Base(unittest.TestCase):
         self.kit = kitroot.root()
 
     def judge(self, adapter, payload, role=None):
-        """The Decision hookmain reaches on `payload` on `adapter`'s host, in a session marked
+        """The Decision hookrun reaches on `payload` on `adapter`'s host, in a session marked
         `role` (None: unmarked, the main chat no launcher started)."""
         env = {'PM_KIT_ROLE': role} if role else {}
         guard = SimpleNamespace(decide=lambda a, environ=None, profile=None:
                                 decide(a, self.w.ctx(environ=environ, profile=profile, kit=self.kit)))
         actions = adapter.parse('PreToolUse', payload)
-        return hookmain._judge(adapter, guard, actions if isinstance(actions, tuple) else (actions,), env, None)
+        return hookrun._judge(adapter, guard, actions if isinstance(actions, tuple) else (actions,), env, None)
 
     def payload(self, tool, data):
         return {'hook_event_name': 'PreToolUse', 'tool_name': tool, 'tool_input': data, 'cwd': self.w.wt}
@@ -55,7 +56,7 @@ class Base(unittest.TestCase):
 
     def mcp(self, adapter, tool):
         return self.payload(adapter.profile.mcp_tool_format.format(
-            plugin=lockmcp.PLUGIN_NAME, server=lockmcp.SERVER_NAME, tool=tool), {})
+            plugin=registry.PLUGIN_NAME, server=lockmcp.SERVER_NAME, tool=tool), {})
 
     def refused_on_codex_only(self, make, rule):
         """`make(adapter)` builds the payload: an unmarked Codex chat is refused by `rule`, the
@@ -150,7 +151,7 @@ class TheOwnerTests(Base):
 
 class EveryCodexCallReachesTheGuard(Base):
     """No fast path on Codex (hosts.json codex hook.fast_path "none"): boot/hook.py hands even a
-    tool guarded_tools leaves out to hookmain, in the unmarked chat as in a marked one; on the
+    tool guarded_tools leaves out to hookrun, in the unmarked chat as in a marked one; on the
     default host (fast_path "all") that call still returns before the kit boots."""
 
     def entry(self):
@@ -162,7 +163,7 @@ class EveryCodexCallReachesTheGuard(Base):
         return hook
 
     def dispatched(self, host, tool, environ):
-        """Whether boot/hook.py <host> PreToolUse reaches hookmain.dispatch for a call to `tool`."""
+        """Whether boot/hook.py <host> PreToolUse reaches hookrun.dispatch for a call to `tool`."""
         import io
         import sys
         import types
@@ -170,7 +171,7 @@ class EveryCodexCallReachesTheGuard(Base):
         hook, seen = self.entry(), []
         boot = types.ModuleType('kitboot')
         boot.boot = lambda here=None: self.kit
-        with mock.patch.dict(sys.modules, {'kitboot': boot}),                 mock.patch('kitlib.host.hookmain.dispatch', lambda *a, **k: seen.append(a[1]) or 0):
+        with mock.patch.dict(sys.modules, {'kitboot': boot}),                 mock.patch('kitlib.hookrun.main.dispatch', lambda *a, **k: seen.append(a[1]) or 0):
             rc = hook.main([host, 'PreToolUse'], io.StringIO('{"tool_name": "%s"}' % tool), io.StringIO(), environ)
         self.assertEqual(rc, 0)
         return seen == ['PreToolUse']

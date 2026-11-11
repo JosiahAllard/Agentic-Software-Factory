@@ -5,7 +5,7 @@ import os
 from kitlib import config as kconfig
 from kitlib.git import repo
 
-from . import commands as cm
+from . import commands_nested as cn
 from . import jail
 from . import paths
 from . import shell as sh
@@ -48,7 +48,7 @@ def lander_alone(event, cmd, gc, home=None):
     text, cwd = (event.command, event.workdir or event.cwd) if event is not None else (None, None)
     if shell is None or not isinstance(text, str) or cmd.depth or cmd.nested_in is not None:
         return False
-    parsed = cm.read(text, shell, cwd, home=home)
+    parsed = cn.read(text, shell, cwd, home=home)
     cmds = parsed.commands
     if not parsed.clean or not cmds or len(cmds) > 2 or cmds[-1].start != cmd.start or cmds[-1].end != cmd.end:
         return False
@@ -116,7 +116,7 @@ def lander_refusal(ctx, cmd, gc, rule, role, why):
 
 def git_jail_unknown(ctx, cmd, gc, cwd, role):
     """An agent session's git that writes a checkout the text cannot place (GIT_DIR and the rest
-    of commands.GIT_ENV_NAMES set, --git-dir, --work-tree, -c core.worktree, --config-env, a
+    of commands_env.GIT_ENV_NAMES set, --git-dir, --work-tree, -c core.worktree, --config-env, a
     computed -C; a -C after any of them does not place it), by any role: it may be a main
     checkout, and the main-checkout git rules judge only history writes there, so a symbolic-ref
     or branch -m that re-points main's HEAD would pass them. Only a plain read passes
@@ -143,7 +143,7 @@ def git_jail(event, ctx, cmd, inv, cwd, role):
     gc = git_call_judged(inv)
     if gc is None or not agent_session(event, ctx):
         return None
-    if not gc.dir:                              # commands.git_call: no place the text can tell
+    if not gc.dir:                              # commands_git.git_call: no place the text can tell
         return git_jail_unknown(ctx, cmd, gc, cwd, role)
     if gc.unknown:
         return None                             # a computed subcommand: the unreadable rule's

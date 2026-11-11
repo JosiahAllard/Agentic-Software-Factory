@@ -19,7 +19,7 @@ resets first among those under the limit, else its last account (docs/launcher.m
   boot_action(record, uptime_s, now) RUN, MARK or None: what the boot one-shot does, pure
 
 Every EVERY_S the job lists the processes, reads sessions.json, stop.log and the usage files, and
-runs decide() for each coordinator entry (an agent entry) that kitlib.pmstart.down_entries lists.
+runs decide() for each coordinator entry (an agent entry) that kitlib.launcher.lookup.down_entries lists.
 A Start runs `<kit>/tools/launch.py start --session KEY --account N` as a child, the line the PM
 checklist prints, at most one per run. What it pushes to the PM (ctx.event, detail `KEY:aN`):
 `restarted` (or `restarted-unchecked` when the account has no usage file, so its limit was not
@@ -49,14 +49,14 @@ offers a record id that it did not offer on the first run after that stop that r
 baseline, kept as `held` {stop_at, ids}). So a coordinator woken for some records that stops again
 is not woken for them again. The offer is read only for an entry held on a deliberate stop whose
 autostart and pace_hold (DOWN_RUNS, the cap, the backoff) pass, through kitlib.backlog
-(opener.open_store with no fetch, plan.offer_for), from the store the repo's .kit.json names, else
-the PM data worktree's (store.pm_data_live_store). A store that cannot be read wakes nothing and is
-a note, not a failure. The wake judges session liveness as `next` does (session_liveness, from the
-run's own sessions.json and process listing): a record of a session that is not running takes no
-place in the offer, so the wake sees what `next` offers. An owner wake (an answered or filed question it
-asked, class ones included, or a decided approval of its repo, newer than the stopped session's
-start) is read first, on the same terms, and needs no baseline. A wake start passes `--prompt` with the reason, the new ids and the
-entry's state note path.
+(opener.open_store with no fetch, plan_narrow.offer_for), from the store the repo's .kit.json names,
+else the PM data worktree's (store_live.pm_data_live_store). A store that cannot be read wakes
+nothing and is a note, not a failure. The wake judges session liveness as `next` does
+(session_liveness, from the run's own sessions.json and process listing): a record of a session that
+is not running takes no place in the offer, so the wake sees what `next` offers. An owner wake (an
+answered or filed question it asked, class ones included, or a decided approval of its repo, newer
+than the stopped session's start) is read first, on the same terms, and needs no baseline. A wake
+start passes `--prompt` with the reason, the new ids and the entry's state note path.
 
 The account: accounts.restart_pick, the signed-in account whose week resets first of those whose
 week has reset (accounts.week_state: a recorded reset passed, 0%, even on a stale reading) or
@@ -67,7 +67,7 @@ known, not signed in, or at or over accounts.HEADROOM_LIMIT of a week that has n
 reading under the limit still starts there.
 
 The hub is the only thing that restarts agents (the launcher's sign-in task is retired,
-kitlib.launcher.autostart). After a boot it also runs, once, `launch.py after-reboot` as a
+docs/launcher.md "Autostart"). After a boot it also runs, once, `launch.py after-reboot` as a
 detached windowless child: it starts the plain sessions and resumes the PM, and leaves the
 coordinators to this job. It runs once per boot, at any uptime: on the hub process's first run
 whose boot (now - uptime) is not the one kept, so a late sign-in still gets it and a hub restart in
@@ -91,12 +91,12 @@ import subprocess
 import sys
 import time
 
-from kitlib import platform, pmstart, pmwatch
+from kitlib import kitroot, platform, pmwatch
 from kitlib.hubsite import jobs
 from kitlib.launcher import accounts as A
 from kitlib.launcher import lookup, state
 from kitlib.launcher.settings import LaunchError
-from kitlib.proc import spawn
+from kitlib.proc import listing, spawn
 
 NAME = 'coord-restart'
 EVERY_S = 300
@@ -119,7 +119,7 @@ _NOWIN = 0x08000000            # CREATE_NO_WINDOW (Windows only: POSIX Popen ref
 _STOP = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) stopped '([^']*)' .*; successor '([^']*)'")
 _ACCOUNT = re.compile(r'-a(\d+)(?:-r\d+)?\Z')
 STAMP_S = 1                    # stop.log stamps are whole seconds (pmwatch.stop_log_reader's allowance)
-DETAIL_MAX = 64                # kitlib.hubsite.push field(): a header field's length
+DETAIL_MAX = 64                # kitlib.hubclient.push field(): a header field's length
 _STAMP = '%Y-%m-%d %H:%M:%S'
 _FIRST = ('restarted', 'restarted-unchecked', 'gave-up', 'over-limit', 'not-signed-in')
 
@@ -380,8 +380,8 @@ def boot_slack(uptime_s):
 
 
 def list_processes():
-    """The jobs' default process listing: kitlib.pmstart.list_processes with PROC_TIMEOUT_S."""
-    return pmstart.list_processes(timeout=PROC_TIMEOUT_S)
+    """The jobs' default process listing: kitlib.proc.listing.list_processes with PROC_TIMEOUT_S."""
+    return listing.list_processes(timeout=PROC_TIMEOUT_S)
 
 
 def skip_timed_out(e):
@@ -428,11 +428,11 @@ def wake_sessions(key, entry):
 def store_root(settings, repo):
     """The checkout whose configured backlog store holds `repo`'s records: the repo's folder in
     launcher.repos when its .kit.json names a "backlog".store, else its PM data worktree when that
-    names one (store.pm_data_live_store), else the repo's folder (the implicit store).
+    names one (store_live.pm_data_live_store), else the repo's folder (the implicit store).
     BacklogUnread when the repo is not in launcher.repos, its .kit.json cannot be read, or its PM
     data worktree cannot be found or read: a store that may be the wrong one is never read."""
     from kitlib import config as kconfig
-    from kitlib.backlog import store as bstore
+    from kitlib.backlog import store_live
     try:
         root = settings.repo_path(repo)
     except LaunchError:
@@ -442,7 +442,7 @@ def store_root(settings, repo):
     except (kconfig.ConfigError, OSError) as exc:
         raise BacklogUnread('its .kit.json cannot be read (%s)' % type(exc).__name__)
     try:                                # its expected failures come back as `why`; anything else
-        path, why = bstore.live_store_root(root, cfg)           # is a bug and fails the run
+        path, why = store_live.live_store_root(root, cfg)       # is a bug and fails the run
     except (kconfig.ConfigError, OSError) as exc:
         raise BacklogUnread('its PM data worktree cannot be found (%s)' % type(exc).__name__)
     if why:
@@ -467,13 +467,13 @@ def read_offer(settings, key, entry, with_cap=False, session_live=None):
     with `with_cap`, `.kit.json` backlog.cap of the repo's main checkout (opener.repo_cap), else
     None. No fetch: the hub's own backlog fetch keeps the local store fresh. `session_live` (an
     offer.SessionLiveness, session_liveness) judges whether another session's record reserves its
-    scope; None: it always does. With it, the same offer `next` prints (plan.offer_for: live
+    scope; None: it always does. With it, the same offer `next` prints (plan_narrow.offer_for: live
     pulls, unmet `requires:`, the fold-in guard, session liveness). BacklogUnread when
     the store or the cap cannot be read (a backlog Refusal, a ConfigError, a PartitionError, an
     OSError). A LaunchError is not caught here: store_root already makes a repo missing from
     launcher.repos BacklogUnread, so any other is a fault of the run. coord-restart's wake
     (offered_ids) and the fill watch (kitlib.hubjobs.fill_watch) both read it."""
-    from kitlib.backlog import opener, plan
+    from kitlib.backlog import opener, plan_narrow
     from kitlib.backlog import offer as omod
     from kitlib.backlog.errors import Refusal
     from kitlib.config import ConfigError
@@ -484,12 +484,13 @@ def read_offer(settings, key, entry, with_cap=False, session_live=None):
         if with_cap:
             cap = opener.repo_cap(settings.repo_path(repo))
         for session in wake_sessions(key, entry):
-            ctx = opener.open_store(root, fetch=False, session=session)
+            ctx = opener.open_store(root, fetch=False, session=session, probes=opener.NO_PROBES)
             ctx.session_live = session_live
             if snap is None:            # one read of the store and its live pulls for both offers
                 snap = ctx.store.load()
                 holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
-            offers, _passed, _holding, _own = plan.offer_for(snap, ctx, cap=None, holding=holding)
+            offers, _passed, _holding, _own = plan_narrow.offer_for(snap, ctx, cap=None,
+                                                                    holding=holding)
             ids.extend(o.rec.id for o in offers if o.rec.id not in ids)
     except (Refusal, ConfigError, omod.PartitionError, OSError) as exc:
         raise BacklogUnread('the store could not be read (%s)' % type(exc).__name__)
@@ -517,7 +518,7 @@ def owner_items(pending, key):
 
 
 def row_created(row):
-    """A process row's Created (ISO, kitlib.pmstart.list_processes) as epoch seconds, or None."""
+    """A process row's Created (ISO, kitlib.proc.listing.list_processes) as epoch seconds, or None."""
     try:
         return datetime.datetime.fromisoformat(row.get('Created') or '').timestamp()
     except (AttributeError, TypeError, ValueError):
@@ -569,7 +570,7 @@ class RestartJob(object):
         self.procs = procs or list_processes
         self.child = child or run_child
         self.clock = clock or time.time
-        self.kit = kit or pmstart.KIT_ROOT
+        self.kit = kit or kitroot.root()
         self.uptime = uptime or uptime_s
         self.detached = detached or spawn_detached
         self._boot_checked = False      # this hub process has asked once whether after-reboot is due
@@ -614,7 +615,7 @@ class RestartJob(object):
             if t is not None:
                 created[n] = t if n not in created else min(created[n], t)
         changed = self._note_sightings(sessions, live, records, now, created)
-        down = {k: e for k, e in pmstart.down_entries(sessions, live)
+        down = {k: e for k, e in lookup.down_entries(sessions, live)
                 if not k.startswith('_') and e.get('agent') and e.get('stem')}
         for key in list(self._down):
             if key not in down:

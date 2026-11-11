@@ -15,18 +15,21 @@
       Refused (4) before its header when its stdout is a file another gate run is writing
       (kitlib.gate.outfile; docs/gate-records.md "Whose run a log is")
   gate.py land BRANCH --expect-tip SHA [--expect-main SHA] [-C DIR] [--summary TEXT]
-                      [--full] [--fresh] [--wait SECONDS] [--log-dir D] [--keep-branch]
+                      [--fresh] [--wait SECONDS] [--log-dir D] [--keep-branch]
                       [--reviewed-by REVIEWER_ID --submit]
       land BRANCH from the main checkout, as tools/land.py does: merge onto <remote>/<main> as it
       is at the landing's turn, gate the merged tree, push, verify, then delete the landed branch
       (remote and local) and remove its worktree, never forced, unless --keep-branch (docs/gate-landing-policy.md
-      "Branch cleanup"); --fresh or --full runs every step of the merged gate: nothing is read
-      from or stored in the gate cache (docs/gate-landing-policy.md "Gate reuse"). --submit: started detached;
+      "Branch cleanup"). The merged gate runs the steps the merge's diff selects, in their cmd
+      form, and every step in full once when the merge changes a gate config file; no flag makes
+      it --full. --fresh runs every selected step: nothing is read from or stored in the gate
+      cache (docs/gate-landing-policy.md "Gate reuse"). --submit: started detached;
       prints a REVIEW line for each branch whose queued verdict is at the tip submitted, then the
       one SUBMITTED line with its wait-result command, and exits 0; it needs --reviewed-by,
       before --submit: the reviewer id of the verdict queued at the tip (as tools/land.py)
   gate.py [-C DIR] --rerun [--slug S] [--log-dir D]
-      after a red --full run of a clean tree: rerun only its failing test classes, each paired
+      after a red whole run (--full or default-mode) of a clean tree: rerun only its failing
+      test classes, each paired
       with a control at the merge base, and the steps it never reached, under the machine lock;
       0 FLAKE (the tip lands on that record), 1 REAL (or VOID), 4 nothing to rerun (kitlib.gate.
       rerun; docs/gate-rerun-checkout.md "Targeted rerun")
@@ -46,6 +49,9 @@
       gate run, another session's, or a landing's (a load node's land gate shows as none on the
       node: kitlib.gate.stop; docs/gate-rerun-checkout.md "Stopping a gate"). The gate it stops exits 16 with a
       `stopped` result record
+
+A `.kit.json` that still writes a retired key gets one WARNING line on stderr per gate or
+landing run (kitlib.config.retired_text), never in the detached --submitted landing.
 
 A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.gate, prints and exits.
 Exit codes (kitlib.gate): 0 OK, 1 FAILED, 2 USAGE, 3 STUCK, 4 REFUSED, 5 BUSY, 16 STOPPED; 9
@@ -82,14 +88,15 @@ if __name__ == '__main__':      # from the kit's main checkout: run from pushed 
     if _code is not None:
         sys.exit(_code)
 
+from kitlib import config as kconfig                              # noqa: E402
 from kitlib import gate as G                                       # noqa: E402
-from kitlib import pluginsource                                    # noqa: E402
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.coordstate import log as coordlog                       # noqa: E402
-from kitlib.gate import land as landmod                            # noqa: E402
+from kitlib.landing import lander as landmod                       # noqa: E402
 from kitlib.gate import budget, caller, measure, outfile, rerun, runner  # noqa: E402
 from kitlib.gate import result as resultmod                       # noqa: E402
 from kitlib.gate import stop as stopmod                            # noqa: E402
-from kitlib.gate import submit as submitmod                        # noqa: E402
+from kitlib.landing import submit as submitmod                     # noqa: E402
 from kitlib.lock.store import LockError, Store                     # noqa: E402
 
 
@@ -118,7 +125,7 @@ def gate_parser():
                      'read from or stored in the gate cache')
     sel.add_argument('--only', nargs='+', metavar='STEP', help='exactly these steps (no record)')
     sel.add_argument('--rerun', action='store_true',
-                     help='rerun only the failing test classes of the red --full run, each '
+                     help='rerun only the failing test classes of the red whole run, each '
                      'paired with a control at the merge base, under the machine lock (one per '
                      'red run; counts toward the gate budget; docs/gate-rerun-checkout.md "Targeted rerun")')
     p.add_argument('--plan', action='store_true', help='print what would run; run nothing')
@@ -142,9 +149,9 @@ def land_parser():
     p.add_argument('--expect-tip', required=True, metavar='SHA')
     p.add_argument('-C', dest='root', default='.', help='the main checkout (default: here)')
     p.add_argument('--summary', help='the merge title after "Merge <branch>: "')
-    p.add_argument('--full', action='store_true', help='gate every non-manual step')
     p.add_argument('--fresh', action='store_true',
-                   help='run every merged-gate step: nothing read from or stored in the gate cache')
+                   help='run every selected merged-gate step: nothing read from or stored in the '
+                        'gate cache')
     p.add_argument('--wait', type=int, default=None, metavar='SECONDS',
                    help='wait this long for the landing\'s turn (default 0: BUSY at once; with '
                         '--submit, "landing".wait_s)')
@@ -164,6 +171,8 @@ def do_land(argv):
     p = land_parser()
     a = p.parse_args(argv)
     root = os.path.abspath(a.root)
+    if not a.submitted:         # the submitting run said it; the detached landing does not
+        sys.stderr.write(kconfig.retired_text(root))
     if a.wait is not None and a.wait < 0:
         p.error('--wait is 0 or more seconds')
     if a.submit and a.submitted:
@@ -191,7 +200,7 @@ def do_land(argv):
     # A detached landing waits the configured "landing".wait_s for its turn; one run here, 0.
     wait_s = a.wait if a.wait is not None or submitted is not None else 0
     return emit(guarded(landmod.land, root, a.branch, a.expect_main, a.expect_tip,
-                        summary=a.summary, full=a.full, wait_s=wait_s, say=say,
+                        summary=a.summary, wait_s=wait_s, say=say,
                         book_kw={'store': Store(say=say)}, log_dir=a.log_dir,
                         keep_branch=a.keep_branch, fresh=a.fresh, submitted=submitted))
 
@@ -341,7 +350,7 @@ def main(argv):
         # No -C or a relative one: this gate.py on another checkout of its own repository. An
         # absolute -C names the tree on purpose.
         if not (a.root and os.path.isabs(a.root)):
-            refused = caller.own_copy_refusal(root, pluginsource.live_root(KIT), rel=a.root)
+            refused = caller.own_copy_refusal(root, plugin_layout.live_root(KIT), rel=a.root)
             if refused is not None:
                 return emit(refused)
         refused = caller.log_dir_refusal(a.log_dir, root, os.getcwd())
@@ -353,6 +362,7 @@ def main(argv):
             return emit(G.Outcome(G.REFUSED, refused))
         if warning:
             say(warning)
+        sys.stderr.write(kconfig.retired_text(root))
         try:
             book_kw = {'store': Store(say=say)}
             if a.rerun:

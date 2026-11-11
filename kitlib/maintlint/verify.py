@@ -12,7 +12,7 @@ record says (docs/maint-lint.md "Path checks").
 And whether the store and the code agree on what landed (docs/maint-lint.md "Landing checks"),
 against the code base code_base reads: the pushed main (refs/remotes/<remote>/<main>), else the
 local one. A branch has LANDED when its tip is in the base and off the base's first-parent chain
-(kitlib.worktree.remove.merged_worktrees' rule), so a fresh branch, whose tip is a base tip, never
+(kitlib.worktree.remove_checks.merged_worktrees' rule), so a fresh branch, whose tip is a base tip, never
 has.
 
   code_base(root, remote, main)        `((ref, chain, ancestors), None)` or `(None, why)`
@@ -159,7 +159,7 @@ def landed_pulls(snap, root, remote, base, cmd, tips=branch_tips):
 
 
 LANDED_CLOSE = re.compile(r'^closes (\S+): landed ([0-9a-f]{40})$')
-# Every subject that ends a record (kitlib.backlog.plan's close, retire and delete).
+# Every subject that ends a record (kitlib.backlog.plan_end's close, retire and delete).
 ENDS = re.compile(r'^(?:closes|retires|deletes) (\S+): ')
 
 

@@ -1,6 +1,7 @@
 """Claude Code's delivery of hub push notifications (docs/hub-push.md "Push notifications").
 
-kitlib.hubsite.push decides what to send and when; this module sends it. Every live Claude Code
+kitlib/hubsite/push.py decides what to send and when; this module sends it in the words of
+kitlib.hubclient.push. Every live Claude Code
 session publishes a registry record, <config folder>/sessions/<pid>.json (kitlib.launcher.pipes),
 and listens on a named pipe for cross-session messages. A message is two JSON lines written to
 that pipe: an auth frame carrying the session's peer token, then a user frame whose content is
@@ -49,7 +50,7 @@ import time
 from urllib.parse import quote
 import uuid
 
-from kitlib.hubsite import push
+from kitlib.hubclient import push
 from kitlib.launcher import lookup, pipes, state
 from kitlib.launcher.settings import LaunchError
 
@@ -291,7 +292,7 @@ def _pump(process, data, size, timeout, threads):
 
 
 class HubPush(object):
-    """Delivery of hub push notifications to Claude Code sessions, for kitlib.hubsite.push."""
+    """Delivery of hub push notifications to Claude Code sessions, for kitlib/hubsite/push.py."""
 
     def __init__(self, settings, ctime=None, writer=None):
         from kitlib.proc import process

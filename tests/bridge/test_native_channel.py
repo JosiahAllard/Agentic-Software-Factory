@@ -13,8 +13,8 @@ from unittest.mock import patch
 import uuid
 
 from optional.bridge.core.messages import DeliveryError
-from kitlib.proc.errors import ProcError
-from kitlib.proc.pipe import PrivateListener,peek
+from kitlib.platform import ProcError
+from kitlib.platform.windows.pipe import PrivateListener,peek
 from optional.bridge.win.channel import NativeChannel,revalidate_channel
 from optional.bridge.win.controller import Controller
 from optional.bridge.win.frontend import FrontendInspector
@@ -168,7 +168,7 @@ class NativeChannelTests(unittest.TestCase):
     def test_actual_sibling_pipe_server_is_rejected_before_publication(self):
         name=r'\\.\pipe\LOCAL\owned-sibling-channel-'+uuid.uuid4().hex
         code=("import sys; sys.path.insert(0,"+repr(str(self.kit))+"); "
-            "from kitlib.proc.pipe import PrivateListener; "
+            "from kitlib.platform.windows.pipe import PrivateListener; "
             "p=PrivateListener("+repr(name)+"); print('ready',flush=True); sys.stdin.readline(); p.close()")
         sibling=self.job.start([sys.executable,'-I','-c',code],stdin=subprocess.PIPE,stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW,close_fds=True)

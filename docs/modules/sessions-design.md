@@ -1,6 +1,6 @@
 # Sessions design
 
-Low-level design of `kitlib/launcher`, `kitlib/pmwatch`, the session starts (`pmstart`, `coordinatorstart`, `hoststart`, `agentstart`) and `kitlib/coordstate`. The high-level design is ARCHITECTURE.md ("Layers", services and apps) and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-006, W-009, W-019, W-035).
+Low-level design of `kitlib/launcher`, `kitlib/pmwatch`, the session starts (`pmstart`, `coordinatorstart`, `hoststart`, `agentstart`) and `kitlib/coordstate`. The high-level design is ARCHITECTURE.md ("Layers", services and apps) and wins on a conflict.
 
 ## Contract
 

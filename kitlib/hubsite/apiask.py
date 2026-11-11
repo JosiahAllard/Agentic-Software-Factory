@@ -17,12 +17,6 @@ def questions_list(api, req):
     return {'items': api.items('questions', req, since=True)}
 
 
-# The class a question bound to no record declares (docs/hub-questions.md "A question's class"):
-# a standing rule (a delegation run line too), the machine, work across repositories, or a
-# one-off go (a landing, an archive). A bound question's answer is filed into its record instead.
-QUESTION_CLASSES = ('rule', 'machine', 'cross-repo', 'go')
-
-
 def _class(b, bound):
     """Check b's `class` for a question that is `bound` to a record or not, once the fields it
     ends with are known: refused `invalid`, field `class`, for a class on a bound question, a
@@ -35,9 +29,9 @@ def _class(b, bound):
         return
     if given is None:
         raise _invalid('a question needs --record REPO:ID or --class %s (one bound to no '
-                       'record says what kind it is)' % '|'.join(QUESTION_CLASSES), 'class')
-    if given not in QUESTION_CLASSES:
-        raise _invalid('class is one of %s, not %s' % (', '.join(QUESTION_CLASSES),
+                       'record says what kind it is)' % '|'.join(hubvalidate.QUESTION_CLASSES), 'class')
+    if given not in hubvalidate.QUESTION_CLASSES:
+        raise _invalid('class is one of %s, not %s' % (', '.join(hubvalidate.QUESTION_CLASSES),
                                                       ascii(given)), 'class')
 
 

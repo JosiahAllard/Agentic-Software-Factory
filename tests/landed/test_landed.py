@@ -214,7 +214,7 @@ class Containment(Fixture):
     def test_a_misnamed_remote_cannot_answer_and_names_the_remotes_there_are(self):
         """`remote get-url origin` exits 2 (no such remote) while the clone has `upstream`: the
         configured remote is misnamed, so the local main, which holds an unpushed merge, must
-        not decide (kitlib/backlog/store.py find_remote's rule)."""
+        not decide (kitlib/backlog/store_ref.py find_remote's rule)."""
         self.land_locally()
         self.git('remote', 'rename', 'origin', 'upstream')
         code, out = self.look()
@@ -302,7 +302,7 @@ class TheMainBranchAndRemoteComeFromConfig(Fixture):
 
 
 class Verdicts(Fixture):
-    """The gate log folders (kitlib.gate.runner.log_base / log_folder): FAILED only from evidence."""
+    """The gate log folders (kitlib.records.place.log_base / log_folder): FAILED only from evidence."""
 
     def setUp(self):
         super().setUp()
@@ -387,7 +387,7 @@ class Verdicts(Fixture):
 
 
 class TheDefaultLogDirIsTheGates(Fixture):
-    """No "landing".log_dir: `<temp>/<repo name>-gate`, as kitlib.gate.runner.log_base; with no
+    """No "landing".log_dir: `<temp>/<repo name>-gate`, as kitlib.records.place.log_base; with no
     "repo".name the name is read from the remote's URL (docs/kit-json.md "With no file")."""
 
     def gate_dir(self, base=None):

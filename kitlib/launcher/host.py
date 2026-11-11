@@ -6,7 +6,6 @@ stopping a process by pid and creation time, and recording a new session's pipe 
 import datetime
 import os
 import subprocess
-import sys
 import time
 
 from kitlib import platform
@@ -18,7 +17,7 @@ UPTIME = '/proc/uptime'         # Linux: seconds since boot, first field
 
 def _user_env(name):
     """A user environment variable from the registry (HKCU\\Environment), or None."""
-    if sys.platform != 'win32':
+    if platform.NAME != 'windows':
         return None
     try:
         import winreg
@@ -104,7 +103,7 @@ class Host(object):
                     return float(f.read().split()[0]) / 60.0
             except (OSError, ValueError, IndexError):
                 return float('inf')
-        if sys.platform != 'win32':
+        if platform.NAME != 'windows':
             return float('inf')
         import ctypes
         f = ctypes.windll.kernel32.GetTickCount64

@@ -11,7 +11,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import machinesetup, pmdata
+from kitlib import machinesetup
+from kitlib.config import pmdata
 from kitlib.config import pointer, user
 from kitlib.machinesetup import pointer as mpointer
 from kitlib.preflight import configline

@@ -1,5 +1,5 @@
 {
-  "landing": {"shared_paths": ["kitlib/*", "boot/*", "hosts/*", "githooks/*", "kit.json", "hosts.json"], "self_review_max_lines": 150, "gate_once": true},
+  "landing": {"self_review_max_lines": 150},
   "maint_lint": {"gate_time": {"prefix": "KIT-GATE-SLOW", "bound_s": 900, "session": "kit"}},
   "roles": {"lander": {"edit_main_checkout": true, "why": "landers fetch and fast-forward main from their worktree"}},
   "repo": {"name": "Agentic-Project_Manager-Kit"},
@@ -29,7 +29,6 @@
         "name": "module-map",
         "always": true,
         "globs": ["*"],
-        "warn": true,
         "cmd": ["{python}", "tools/module_map.py", "-C", "{root}", "--check", "--base", "{base}"],
         "pass": ["module_map: OK"]
       }
@@ -44,7 +43,7 @@
       {"glob": "tests/launcher/test_stop_linux.py", "hits": ["/home/u"], "why": " (an invented posix home)"},
       {"glob": "tests/launcher/test_window_linux.py", "hits": ["/home/u"], "why": " (an invented posix home)"},
       {"glob": "tests/lock/test_store_linux.py", "hits": ["/home/u"], "why": " (an invented posix home)"},
-      {"glob": "tests/stubs/test_memory.py", "hits": ["/home/u"], "why": " (an invented posix home)"},
+      {"glob": "tests/machinesetup/test_memory.py", "hits": ["/home/u"], "why": " (an invented posix home)"},
       {"glob": "tests/worktree/test_holders_linux.py", "hits": ["/home/u"], "why": " (an invented posix home)"},
       {"glob": ".kit.json", "hits": ["/home/u", "/home/u,.*"], "why": " (this entry list names the invented homes above)"}
     ]

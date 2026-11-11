@@ -1,4 +1,4 @@
-"""Every kitlib module imports on any platform (docs/linux-support-plan.md section 2.1, rule 3):
+"""Every kitlib module imports on any platform (docs/modules/base-design.md "Contract"):
 no DLL is loaded and no Windows-only module (msvcrt, winreg, ctypes.WINFUNCTYPE) is reached at
 import, so a missing piece fails at its first call, naming it.
 

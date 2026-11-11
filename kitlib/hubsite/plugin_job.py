@@ -5,10 +5,10 @@ refresh").
   PluginJob(home=None, ...)      its run(ctx): one check, and the refresh when it is due
 
 Every EVERY_S the job reads the kit's refs/remotes/<remote>/main and the export's state.json,
-as pm_watch's check does (kitlib.pluginsource poll), and runs `<kit>/tools/plugin_refresh.py
+as pm_watch's check does (kitlib.pluginsource.refresh poll), and runs `<kit>/tools/plugin_refresh.py
 --apply` as a child process, waiting for it, when the export is behind that main, a migrated
 account folder's last refresh at it did not go through, or a host copy step left its install
-pending (kitlib.pluginsource pending: Codex deferred while it ran). A child, not the library in this
+pending (kitlib.pluginsource.state pending: Codex deferred while it ran). A child, not the library in this
 process: the hub keeps the code it started with, and a landing that changes the refresh must be
 run by the new code. The child does the whole refresh, the host copy steps included (so the
 Codex copy too, except from a session PM_KIT_ROLE marks: docs/plugin-source.md "Codex").
@@ -29,7 +29,9 @@ import subprocess
 import sys
 import time
 
-from kitlib import platform, pluginsource
+from kitlib import platform
+from kitlib.pluginsource import (
+    layout as plugin_layout, state as plugin_state, refresh as plugin_refresh)
 from kitlib.proc import process     # loaded now: refresh.pid reads it mid-run; kill_tree
 from kitlib.proc import spawn
 from kitlib.hubsite import jobs
@@ -52,16 +54,16 @@ def make(sources):
 
 
 def _kit():
-    kit, why = pluginsource.default_kit(pluginsource.kit_root())
+    kit, why = plugin_layout.default_kit(plugin_layout.kit_root())
     if why:
-        raise pluginsource.RefreshError(why)
+        raise plugin_layout.RefreshError(why)
     return kit
 
 
 def _rc(state, folder):
-    k = pluginsource.folder_key(folder)
+    k = plugin_state.folder_key(folder)
     for f, r in (state.get('folders') or {}).items():
-        if pluginsource.folder_key(f) == k and isinstance(r, dict):
+        if plugin_state.folder_key(f) == k and isinstance(r, dict):
             return r.get('rc')
     return None
 
@@ -106,7 +108,7 @@ def run_child(argv, cwd, start=None, kill_tree=None, ctime=None):
 class PluginJob(object):
     """run(ctx) is the job. Every part a test replaces is an argument: `kit` (default the
     checkout this kit runs from, or the one its export's marker names), `load(kit)` the plugin
-    Settings, `folders()` the account folders (default kitlib.pluginsource.account_folders(home)),
+    Settings, `folders()` the account folders (default kitlib.pluginsource.state.account_folders(home)),
     `child(argv, cwd)` -> (exit code, lines) (default run_child), `alive` refresh.pid's liveness
     test, `clock` epoch seconds. `home` is passed to the child as --home when given."""
 
@@ -114,8 +116,8 @@ class PluginJob(object):
                  clock=None):
         self.home = home
         self.kit = kit
-        self.load = load or (lambda kit: pluginsource.load(home, kit=kit))
-        self.folders = folders or (lambda: pluginsource.account_folders(home))
+        self.load = load or (lambda kit: plugin_layout.load(home, kit=kit))
+        self.folders = folders or (lambda: plugin_state.account_folders(home))
         self.child = child or run_child
         self.alive = alive
         self.clock = clock or time.time
@@ -124,21 +126,21 @@ class PluginJob(object):
     def __call__(self, ctx):
         kit = self.kit or _kit()
         s = self.load(kit)
-        main, why = pluginsource.tracking_main(pluginsource.source_kit(kit), s.remote)
+        main, why = plugin_layout.tracking_main(plugin_layout.source_kit(kit), s.remote)
         if main is None:
-            raise pluginsource.RefreshError('cannot read %s/%s: %s' % (s.remote, pluginsource.MAIN, why))
+            raise plugin_layout.RefreshError('cannot read %s/%s: %s' % (s.remote, plugin_layout.MAIN, why))
         if not main:
-            return jobs.Skip('no %s/%s tracking ref: nothing to check' % (s.remote, pluginsource.MAIN))
-        state = pluginsource.read_state(s.export_dir)       # StateError: a failure
+            return jobs.Skip('no %s/%s tracking ref: nothing to check' % (s.remote, plugin_layout.MAIN))
+        state = plugin_state.read_state(s.export_dir)       # StateError: a failure
         if state is None:
-            return jobs.Skip('no export yet: %s' % pluginsource.refresh_cmd(True))
+            return jobs.Skip('no export yet: %s' % plugin_layout.refresh_cmd(True))
         folders = list(self.folders())
-        todo = pluginsource.unmigrated(state, folders)
+        todo = plugin_state.unmigrated(state, folders)
         if todo:
-            return jobs.Skip('not migrated in %s: %s' % (', '.join(todo), pluginsource.refresh_cmd(True)))
+            return jobs.Skip('not migrated in %s: %s' % (', '.join(todo), plugin_layout.refresh_cmd(True)))
         behind = state.get('sha') != main
         failed = [f for f in folders if _rc(state, f) != 0]
-        deferred = sorted(pluginsource.pending(s.export_dir))
+        deferred = sorted(plugin_state.pending(s.export_dir))
         if not behind and not failed and not deferred:
             self._failed = None
             return 'current at %s' % main[:12]
@@ -146,8 +148,8 @@ class PluginJob(object):
                 else 'not refreshed in %s' % ', '.join(failed) if failed
                 else 'the %s copy deferred' % ', '.join(deferred))
         if not s.auto_refresh:
-            return jobs.Skip('%s; plugin.auto_refresh is off: %s' % (what, pluginsource.refresh_cmd()))
-        if pluginsource.lock_live(s.export_dir, self.alive):
+            return jobs.Skip('%s; plugin.auto_refresh is off: %s' % (what, plugin_layout.refresh_cmd()))
+        if plugin_refresh.lock_live(s.export_dir, self.alive):
             return jobs.Skip('%s; %s' % (what, BUSY))
         last = self._failed
         if last is not None and last[0] == main and self.clock() - last[1] < RETRY_S:
@@ -168,7 +170,7 @@ class PluginJob(object):
                                                        (said or lines or ['no output'])[-1])
             self._failed = (main, self.clock(), text)
             raise RefreshFailed(text)
-        left = pluginsource.pending(s.export_dir)
+        left = plugin_state.pending(s.export_dir)
         if left:
             # a host copy deferred (Codex running): not a failure, but tried again RETRY_S on
             text = '; '.join(left[k] for k in sorted(left))
@@ -206,7 +208,7 @@ class _Log(object):
     def __init__(self, root):
         try:
             os.makedirs(root, exist_ok=True)
-            self.fh = open(os.path.join(root, pluginsource.LOGFILE), 'a', encoding='utf-8',
+            self.fh = open(os.path.join(root, plugin_refresh.LOGFILE), 'a', encoding='utf-8',
                            errors='replace', newline='\n')
         except OSError:
             self.fh = None

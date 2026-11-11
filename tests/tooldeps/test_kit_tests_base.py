@@ -128,7 +128,8 @@ class PidHoldOptIn(unittest.TestCase):
     def test_the_one_process_run_from_no_console_asks_for_no_window(self):
         """kit_tests starts its one process through kitlib.proc.spawn.call, which adds a keyword
         when kit_tests has no console (pythonw, a detached parent): the fakes here take it."""
-        from kitlib.proc import job, win32
+        from kitlib.proc import job
+        from kitlib.platform.windows import win32
         with mock.patch.object(job, 'has_console', return_value=False):
             rc, order, seen, out = self.run_full(1)
         self.assertEqual((rc, order), (0, ['units']), out)
@@ -272,17 +273,17 @@ class HomeFenceEnvironment(unittest.TestCase):
         self.assertEqual([os.path.normcase(m or '') for m in seen], [os.path.normcase(home)] * 2)
 
 
-MODULES = ['tests.a.test_m', 'tests.git.test_g', 'tests.gate.test_land_x', 'tests.gate.test_other']
+MODULES = ['tests.a.test_m', 'tests.git.test_g', 'tests.landing.test_land_x', 'tests.gate.test_other']
 
 
 class KitSessionEnvironment(unittest.TestCase):
     """No test child gets the session's kit binding (kit_tests KIT_SESSION_ENV): PM_KIT_ROOT,
-    PM_KIT_RELEASE_ID, KIT_LIVE_ROOT, KIT_PINNED, PM_KIT_ROLE, PM_KIT_HOST, PM_KIT_SESSION_NAME,
+    KIT_LIVE_ROOT, KIT_PINNED, PM_KIT_ROLE, PM_KIT_HOST, PM_KIT_SESSION_NAME,
     PM_KIT_CODEX_STATE, PM_KIT_CODEX_EXE and every host's session_env variable (hosts.json) are
     dropped from the pooled units', the --jobs 1 process's, the real-git count child's and --list's
     loader's environment, while another variable passes and kit_tests' own process keeps them all."""
     HOST_SESSION = {n: 'host-session' for n in hostregistry.union('session_env')}
-    SESSION = dict({'PM_KIT_ROOT': r'C:\session\kit', 'PM_KIT_RELEASE_ID': 'session-pin',
+    SESSION = dict({'PM_KIT_ROOT': r'C:\session\kit',
                     'KIT_LIVE_ROOT': r'C:\session\main', 'KIT_PINNED': 'live',
                     'PM_KIT_ROLE': 'worker', 'PM_KIT_HOST': 'claude',
                     'PM_KIT_SESSION_NAME': 'coord-x', 'PM_KIT_CODEX_STATE': r'C:\codex\state',
@@ -383,7 +384,7 @@ class BothTiers(unittest.TestCase):
         with mock.patch.object(cli.kitrun, 'run_pass', side_effect=lambda args, *a, **k: ran.append(args) or 0):
             rc, calls, text = self.run_both([0, 0])
         self.assertEqual(rc, 0, text)
-        self.assertEqual(ran, [cli.FULL, ['tests.git.test_g', 'tests.gate.test_land_x']])
+        self.assertEqual(ran, [cli.FULL, ['tests.git.test_g', 'tests.landing.test_land_x']])
 
     def test_a_red_real_git_pass_fails_the_run_and_prints_no_ok(self):
         rc, calls, text = self.run_both([0, 1])
@@ -516,7 +517,7 @@ class ChangedTestsOnRealGit(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         self.assertEqual([c[:2] for c in calls],
                          [('1', MODULES),
-                          ('0', ['tests.a.test_m', 'tests.git.test_g', 'tests.gate.test_land_x'])])
+                          ('0', ['tests.a.test_m', 'tests.git.test_g', 'tests.landing.test_land_x'])])
         self.assertEqual(self.oks(text), [OK_BOTH], text)
 
     def test_plan_names_the_real_git_modules_and_runs_nothing(self):

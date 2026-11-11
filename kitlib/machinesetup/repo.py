@@ -1,12 +1,12 @@
 """The committed repo setup (`tools/machine_setup.py --repo PATH`; installer/new-repo.ps1 is its
-PowerShell front end; docs/install.md "Committed setup (--repo)"). Plan decision 27: machine
+PowerShell front end; docs/install.md "Committed setup (--repo)"). Machine
 setup writes nothing into a repository by default, and this mode keeps the old committed setup for
 a repository that wants it. Nothing here prints or exits: run() gives the exit code and the lines.
 
 The target is an existing git checkout, named by its top level. It writes these and nothing else:
   <target>/.kit.json          "repo".main_branch and .name, "backlog".store "ref" (named, so the
-                              backlog tool writes it: kitlib.backlog.store.open_backend), "owner".email
-                              and .agent_emails, and
+                              backlog tool writes it: kitlib.backlog.store_open.open_backend),
+                              "owner".email and .agent_emails, and
                               with a stack "gate": "tools/gate.json". The name is `repo_name`,
                               else the folder's name lower-cased; either must be a lower-case repo
                               name, or it refuses.
@@ -14,12 +14,12 @@ The target is an existing git checkout, named by its top level. It writes these 
                               existing file is never overwritten: only the lines it lacks are
                               appended, under INSTALLER_MARK, in the file's own line ending.
   <target>/docs/INDEX.md      a starter doc index (templates/common/INDEX.md), only if absent. It
-                              opts the repository into the doc index check (plan decision 26); the
+                              opts the repository into the doc index check; the
                               tracked .md files it does not name are listed, never refused.
   <target>/tools/gate.json    with a stack: templates/stacks/<stack>/tools/gate.json, only if absent
   <target>/tools/<file>       with a stack: its other tools files, each only if absent
   <target>/<skills>/...       with a stack: its skills (kitlib.stackskill), the kit's path written in
-  <target>/.claude/settings.local.json   its autoMemoryDirectory (kitlib.stubs.memory) when neither
+  <target>/.claude/settings.local.json   its autoMemoryDirectory (kitlib.machinesetup.memory) when neither
                               it nor settings.json has the key: created holding it alone, or the key
                               added and nothing else changed. The key is a machine path, so it goes
                               in the ignored local file, never a tracked one. A key already in
@@ -58,6 +58,14 @@ STACK = re.compile(r'^[a-z0-9]+$')
 PLAIN_ARG = re.compile(r'^[A-Za-z0-9_./:\\-]+$')
 INSTALLER_MARK = '# Added by the kit installer'
 STACK_MARK = '# From the stack template'
+# The template files a repo setup reads, relative to templates/common/ and templates/stacks/<stack>/
+# (the stack's tools/ files are copied whole, its skills by kitlib.stackskill).
+# The line files, target name to template name. The kit ships the attributes template as
+# "gitattributes": a tracked .gitattributes would apply to the kit's own checkout.
+LINE_TEMPLATES = {'.gitignore': '.gitignore', '.gitattributes': 'gitattributes'}
+INDEX_TEMPLATE = 'INDEX.md'
+STACK_META = 'stack.json'           # its "gitignore" and "gitattributes" line lists
+STACK_GATE = 'tools/gate.json'      # the same path in the stack folder and in the target
 CRASHED = re.compile(r'^Traceback \(most recent call last\):')
 PM_DATA_WHY = {
     1: 'refused, it changed nothing',
@@ -107,7 +115,7 @@ class RepoContext(object):
         self.pm_data = (pm_data or '').strip()
         self.private_remote = (private_remote or '').strip()
         self.python = python or sys.executable
-        self.memory_root = memory_root      # the memory root; None: kitlib.stubs.memory's default
+        self.memory_root = memory_root      # the memory root; None: kitlib.machinesetup.memory's default
 
 
 def trim_slash(p):
@@ -219,15 +227,15 @@ class Setup(object):
             raise Refused('%s exists already; nothing was written' % self.kit_json)
         self._plan_stack()
         self._plan_memory()
-        gate_line = '  "gate": "tools/gate.json",\n' if c.stack else ''
+        gate_line = '  "gate": "%s",\n' % STACK_GATE if c.stack else ''
         self.text = ('{\n'
                      '  "repo": {"main_branch": "%s", "name": "%s"},\n'
                      '%s'
                      '  "backlog": {"store": "ref"},\n'
                      '  "owner": {"email": "%s", "agent_emails": ["%s"]}\n'
                      '}\n' % (c.main_branch, self.repo_name, gate_line, c.owner_email, c.agent_email))
-        self.line_files = [self._plan_line_file('.gitignore', self.stack_lines['gitignore']),
-                           self._plan_line_file('.gitattributes', self.stack_lines['gitattributes'])]
+        self.line_files = [self._plan_line_file(name, tpl, self.stack_lines[name.lstrip('.')])
+                           for name, tpl in LINE_TEMPLATES.items()]
         self._plan_index()
         self._plan_skills()
         rc, url, _err = _git(self.target, 'remote', 'get-url', 'origin')
@@ -249,9 +257,9 @@ class Setup(object):
 
     def _plan_stack(self):
         c = self.ctx
-        self.stack_lines = {'gitignore': [], 'gitattributes': []}
+        self.stack_lines = {name.lstrip('.'): [] for name in LINE_TEMPLATES}
         self.gate_text, self.tool_files = None, []
-        self.gate_dst = os.path.join(self.target, 'tools', 'gate.json')
+        self.gate_dst = os.path.join(self.target, *STACK_GATE.split('/'))
         if not c.stack:
             return
         if not STACK.match(c.stack):
@@ -262,30 +270,28 @@ class Setup(object):
             known = ', '.join(sorted(n for n in os.listdir(stacks) if os.path.isdir(os.path.join(stacks, n)))) \
                 if os.path.isdir(stacks) else ''
             raise Refused("--stack '%s' is not a stack the kit has (%s)" % (c.stack, known), EXIT_USAGE)
-        meta_path = os.path.join(stack_dir, 'stack.json')
+        meta_path = os.path.join(stack_dir, STACK_META)
         try:
             meta = json.loads(_read_text(meta_path))
         except ValueError as e:
             raise Refused('cannot read %s - %s; nothing was written' % (meta_path, e))
-        for k in ('gitignore', 'gitattributes'):
+        for k in self.stack_lines:
             if isinstance(meta, dict) and meta.get(k):
                 self.stack_lines[k] = [str(x) for x in meta[k]]
-        gate_src = os.path.join(stack_dir, 'tools', 'gate.json')
+        gate_src = os.path.join(stack_dir, *STACK_GATE.split('/'))
         if not os.path.isfile(gate_src):
             raise Refused('the kit has no %s' % gate_src, EXIT_USAGE)
         self.gate_text = _read_text(gate_src)
         tools = os.path.join(stack_dir, 'tools')
         self.tool_files = [(n, os.path.join(tools, n), os.path.join(self.target, 'tools', n))
                            for n in sorted(os.listdir(tools))
-                           if n.lower() != 'gate.json' and os.path.isfile(os.path.join(tools, n))]
+                           if n.lower() != os.path.basename(STACK_GATE)
+                           and os.path.isfile(os.path.join(tools, n))]
         if os.path.exists(self.gate_dst):
             raise Refused('%s exists already; nothing was written' % self.gate_dst)
 
-    def _plan_line_file(self, name, stack_want):
+    def _plan_line_file(self, name, tpl_name, stack_want):
         path = os.path.join(self.target, name)
-        # The kit ships the attributes template as "gitattributes": a tracked .gitattributes would
-        # apply to the kit's own checkout.
-        tpl_name = 'gitattributes' if name == '.gitattributes' else name
         tpl = _lines(_read_text(os.path.join(self.ctx.kit, 'templates', 'common', tpl_name)))
         stack_want = _wanted(stack_want)
         want = list(dict.fromkeys(_wanted(tpl) + stack_want))
@@ -320,16 +326,16 @@ class Setup(object):
         self.index_text, self.unindexed = None, []
         if not self.index_new:
             return
-        self.index_text = _read_text(os.path.join(self.ctx.kit, 'templates', 'common', 'INDEX.md'))
+        self.index_text = _read_text(os.path.join(self.ctx.kit, 'templates', 'common', INDEX_TEMPLATE))
         named = set(re.findall(r'`([^`]+)`', self.index_text))
         rc, out, _err = _git(self.target, '-c', 'core.quotePath=false', 'ls-files', '-z', '--', '*.md')
         if rc == 0:
             self.unindexed = [n for n in out.split('\0') if n and n not in named]
 
     def _plan_memory(self):
-        """The autoMemoryDirectory survey (kitlib.stubs.memory); Refused when the settings file is
+        """The autoMemoryDirectory survey (kitlib.machinesetup.memory); Refused when the settings file is
         one it cannot edit."""
-        from kitlib.stubs import memory
+        from . import memory
         self.memory = memory.survey(self.target, override=self.ctx.memory_root)
         self.memory_added = False
         if self.memory.state == memory.BAD:
@@ -376,7 +382,7 @@ class Setup(object):
             out += ['    ' + u for u in self.unindexed]
         if c.stack:
             out.append('  would create  %s   (from %s)' % (self.gate_dst, os.path.join(
-                'templates', 'stacks', c.stack, 'tools', 'gate.json')))
+                'templates', 'stacks', c.stack, *STACK_GATE.split('/'))))
         else:
             out.append('  no gate section (no --stack): see Next, step 3')
         for n, _src, dst in self.tool_files:
@@ -400,7 +406,7 @@ class Setup(object):
         return out
 
     def memory_lines(self):
-        from kitlib.stubs import memory
+        from . import memory
         m = self.memory
         if m.state == memory.MISSING:
             return ['would add autoMemoryDirectory = %s to %s' % (m.want, m.path)]
@@ -470,7 +476,7 @@ class Setup(object):
     def write_memory(self):
         """Add the planned autoMemoryDirectory; a refusal (the file changed since the plan, a failed
         write) stops like any failed write, the file left as it was."""
-        from kitlib.stubs import memory
+        from . import memory
         m = self.memory
         if m.state != memory.MISSING:
             return
@@ -564,7 +570,7 @@ class Setup(object):
                'commit .gitignore,',
                '     %s as usual' % usual]
         if self.memory_added:
-            from kitlib.stubs import memory
+            from . import memory
             out.append('     %s (its %s, a machine path) is git-ignored: nothing to commit for it'
                        % (memory.local_rel(), memory.KEY))
         tools = os.path.join(c.kit, 'tools')
@@ -577,8 +583,9 @@ class Setup(object):
         else:
             out += ['  3. the gate: with no gate section gate.py detects the stack (source: auto; '
                     'docs/gate.md). To choose the steps, copy a stack\'s',
-                    '     %s to tools/gate.json and add  "gate": "tools/gate.json"  to .kit.json,'
-                    % os.path.join(c.kit, 'templates', 'stacks', '<stack>', 'tools', 'gate.json'),
+                    '     %s to %s and add  "gate": "%s"  to .kit.json,'
+                    % (os.path.join(c.kit, 'templates', 'stacks', '<stack>', *STACK_GATE.split('/')),
+                       STACK_GATE, STACK_GATE),
                     '     or write gate.steps in .kit.json (docs/kit-json.md)']
         out.append('  4. core.hooksPath (the kit\'s pre-push hook): the first worktree or PM start sets it '
                    'locally when none is set (docs/new-worktree.md "First-use prep"); by hand: git -C "%s" '

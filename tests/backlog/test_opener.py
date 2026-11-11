@@ -1,5 +1,6 @@
 """kitlib.backlog.opener in process (docs/backlog.md): open_store's defaults against a ref store on
-a temporary repository with a bare remote, open_repo's Failure outside a repository, the verbs
+a temporary repository with a bare remote, its required probes bound to the store's repository,
+open_repo's Failure outside a repository, the verbs
 `planner` maps (block's reason, unblock's one blocker, retarget and its dry run), and the
 `kitlib.backlog.open_store` name."""
 import os
@@ -16,6 +17,7 @@ from kitlib.backlog import ledger as lmod
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_ref
 from tests.backlog.helpers import StoreCase, TODAY, rec, record_text
 from tests.gitfixture import TempRepo, fixture_env, rmtree
 
@@ -42,13 +44,13 @@ class OpenStore(unittest.TestCase):
                               clear=True)
         env.start()
         self.addCleanup(env.stop)
-        backend = smod.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
+        backend = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF)
         snap = smod.Store(backend, rmod.Rules()).load()
         backend.publish(snap, {'FOO': record_text()}, 'seed\n')
         self.repo.git('update-ref', '-d', smod.STORE_REF)
 
     def test_the_defaults_fetch_with_no_session_and_no_branch(self):
-        ctx = opener.open_store(self.repo.root)
+        ctx = opener.open_store(self.repo.root, probes=opener.NO_PROBES)
         self.assertIsNotNone(ctx.store.load().get('FOO'), 'the default open did not fetch')
         self.assertIs(ctx.store.backend.fetch, True)
         self.assertIsNone(ctx.session)
@@ -57,11 +59,12 @@ class OpenStore(unittest.TestCase):
         self.assertTrue(same_path(ctx.root, self.repo.root), ctx.root)
         self.assertEqual((ctx.remote, ctx.main_branch), ('origin', 'main'))
         self.assertEqual(ctx.current_branch(), 'main')
+        self.assertEqual((ctx.liveness, ctx.quiet), (None, None))
 
     def test_the_context_is_built_without_a_ledger(self):
         self.assertFalse(hasattr(lmod, 'Ledger'))
         with mock.patch.object(lmod, 'read_entries') as read_entries:
-            ctx = opener.open_store(self.repo.root, fetch=False)
+            ctx = opener.open_store(self.repo.root, fetch=False, probes=opener.NO_PROBES)
         read_entries.assert_not_called()
         self.assertIsInstance(ctx, pmod.Context)
         self.assertFalse(hasattr(ctx, 'ledger'))
@@ -72,11 +75,29 @@ class OpenStore(unittest.TestCase):
         self.assertIsInstance(rules, rmod.Rules)
 
     def test_each_argument_reaches_the_context(self):
-        ctx = opener.open_store(self.repo.root, fetch=False, session='S-1', branch='tools/wk')
+        asked = []
+        live = lambda top, branch: (asked.append(('live', top, branch)), (None, 'abc'))[1]
+        quiet = lambda top, branch, main: (asked.append(('quiet', top, branch, main)),
+                                           (None, 3600))[1]
+        ctx = opener.open_store(self.repo.root, fetch=False, session='S-1', branch='tools/wk',
+                                probes=(live, quiet))
         self.assertIsNone(ctx.store.load().get('FOO'), 'fetch=False fetched')
         self.assertIs(ctx.store.backend.fetch, False)
         self.assertEqual(ctx.session, 'S-1')
         self.assertEqual(ctx.branch, 'tools/wk')
+        # The probes are bound to the store's repository: the plan names only the branch.
+        self.assertEqual(ctx.liveness('kit/x'), (None, 'abc'))
+        self.assertEqual(ctx.quiet('kit/x', 'm1'), (None, 3600))
+        self.assertEqual([a[0] for a in asked], ['live', 'quiet'])
+        self.assertEqual([a[2:] for a in asked], [('kit/x',), ('kit/x', 'm1')])
+        for a in asked:
+            self.assertTrue(same_path(a[1], self.repo.root), a[1])
+
+    def test_the_opener_without_probes_raises(self):
+        # The backlog has no default probe: a caller that names none is a TypeError, not a
+        # context that reaches up for one.
+        with self.assertRaises(TypeError):
+            opener.open_store(self.repo.root, fetch=False)
 
     def test_a_folder_that_is_no_repository_is_a_failure(self):
         with self.assertRaises(errors.Failure):

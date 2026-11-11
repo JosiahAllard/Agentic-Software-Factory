@@ -73,7 +73,7 @@ class RolesTest(unittest.TestCase):
         self.assertIn('kitlib/backlog/roles.py', schema.OWNER_PATHS)
 
     def test_the_groups_are_read_from_the_role_files(self):
-        """decision 17: every role file's role is in the group its mode (or `group:`) gives, and in
+        """Every role file's role is in the group its mode (or `group:`) gives, and in
         no other; no name but the owner's is in a group without a role file (an old name is)."""
         roster = {r.name: r for r in content.roster(R.KIT)}
         groups = {'lead': R.LEADS, 'builder': R.BUILDERS, 'docs': R.DOCS, 'read-only': R.READ_ONLY,

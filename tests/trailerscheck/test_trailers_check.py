@@ -1,6 +1,6 @@
 """tools/trailers.py over kitlib.trailerscheck (docs/repo-checks.md "trailers"): the gate step that
 warns on each branch commit with no agent Co-Authored-By trailer and never fails for one, judged
-by the rule review_pack uses (kitlib.reviewpack.trailers). The fixture repository is the
+by the rule review_pack uses (kitlib.trailerscheck.trailers). The fixture repository is the
 review-pack one: `main` names the fixture identity as the owner, an agent commit passes
 `-c user.email=agent@example.invalid`."""
 import contextlib
@@ -148,7 +148,7 @@ class Merged(TrailersCase):
 
 
 class LandingTree(TrailersCase):
-    """A landing merges and gates in a detached landing tree (kitlib.gate.land; docs/gate-landing.md
+    """A landing merges and gates in a detached landing tree (kitlib.landing.merge; docs/gate-landing.md
     "Landing", step 5), main never checked out there. `--merged` takes a detached HEAD
     whose first-parent chain from the base is merges only (the landing's), and refuses any other
     detached HEAD and every branch but main."""

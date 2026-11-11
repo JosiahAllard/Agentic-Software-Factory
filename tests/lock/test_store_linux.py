@@ -1,8 +1,8 @@
-"""The lock store's exclusion on Linux (docs/linux-support-plan.md section 8, slice 3): a named
+"""The lock store's exclusion on Linux: a named
 lock (Store.lock) and a run's liveness lock (Store.run_mutex, run_mutex_held, run_dead) are flocks
 on files in a scratch store (kitlib.platform.linux.locks). Two processes contend for a named lock;
 a killed holder frees it; run_dead sees a killed run. Store() with no root is the machine's store
-under the profile folder from the password database (slice 9), fenced under the tests.
+under the profile folder from the password database, fenced under the tests.
 
 BumpRaises runs on every platform: a lock the platform cannot take (PlatformUnsupported, an
 OSError) is raised by Store.bump, never skipped as a busy lock is, so a stub cannot hide there."""
@@ -169,7 +169,7 @@ class RunLiveness(Scratch):
 
 
 class MachineStore(unittest.TestCase):
-    """The machine's store on Linux (slice 9): ~/.claude/machine-lock under the profile folder
+    """The machine's store on Linux: ~/.claude/machine-lock under the profile folder
     from the password database, never $HOME; fenced under the tests like the Windows one. Runs on
     every platform: NAME and the password database are patched, and the profile is absolute as
     this host spells one (paths.is_absolute is os.path.isabs; on Linux the same test)."""

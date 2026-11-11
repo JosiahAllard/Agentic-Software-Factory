@@ -24,7 +24,7 @@ LOCK = 'python tools/machine_lock.py'
 
 
 class Rec(dict):
-    """A backlog record as kitlib.backlog.store's Snapshot gives it: get() and all()."""
+    """A backlog record as kitlib.backlog.store_read's Snapshot gives it: get() and all()."""
 
     def all(self, key):
         v = self.get(key)
@@ -375,8 +375,9 @@ class LockVerbs(Base):
                 self.assertIn('(status, run; never --force)', d.reason)
 
     def test_a_force_before_any_verb_is_named_without_a_leading_space(self):
-        from kitlib.guard import commands as cm, shell as sh
-        parsed = cm.read(LOCK + ' --force status', sh.BASH, self.w.wt)
+        from kitlib.guard import shell as sh
+        from kitlib.guard import commands_nested as cn
+        parsed = cn.read(LOCK + ' --force status', sh.BASH, self.w.wt)
         self.assertEqual(rolepolicy.lock_verb(parsed, 'read')[0], '(no verb) --force')
         d = self.denied(self.shell(LOCK + ' --force status', 'reviewer'), 'role-lock')
         self.assertIn('machine_lock.py (no verb) --force is not', d.reason)
@@ -495,13 +496,14 @@ class LockVerbs(Base):
         """python -m with a module whose last part is machine_lock runs the lock CLI: its words
         are judged by their verb, as a run of the script is."""
         lock = 'tools/machine_lock.py'
-        from kitlib.guard import commands as cm, shell as sh
+        from kitlib.guard import shell as sh
+        from kitlib.guard import commands_nested as cn
         for shell, text in (('bash', 'python -m tools.machine_lock stop 42'),
                             ('bash', 'cd tools; python -m machine_lock stop 42'),
                             ('bash', 'python -u -m tools.machine_lock hold create x'),
                             ('powershell', 'py -3 -m tools.machine_lock stop 42')):
             with self.subTest(shell=shell, text=text):
-                parsed = cm.read(text, sh.PS if shell == 'powershell' else sh.BASH, self.w.wt)
+                parsed = cn.read(text, sh.PS if shell == 'powershell' else sh.BASH, self.w.wt)
                 self.assertIsNotNone(rolepolicy.lock_verb(parsed, 'read'))
                 d = rolepolicy.check(self.shell(text, 'reviewer', shell=shell), self.w.ctx())
                 self.assertIsNotNone(d, text)
@@ -699,7 +701,7 @@ class KitExport(Base):
         self.assertFalse(self.is_export(root))
 
     def test_no_export_root_the_guard_can_name_fails_closed(self):
-        """No plugin config and no LOCALAPPDATA (kitlib.pluginsource.settings raises), or a config
+        """No plugin config and no LOCALAPPDATA (kitlib.pluginsource.layout.settings raises), or a config
         the guard cannot read: the export folder is not the kit's."""
         self.w.user_config({})
         self.w.environ.pop('LOCALAPPDATA', None)

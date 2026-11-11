@@ -1,5 +1,6 @@
-"""kitlib.sessionmark.child_environment: a session launched on one host inherits neither the
-launching session's mark nor another host's session variables (docs/multi-host-plan.md 2.1). The
+"""kitlib.host.sessionmark.child_environment: a session launched on one host inherits neither the
+launching session's mark nor another host's session variables (docs/new-host.md "The `hosts.json`
+entry"). The
 hosts come from a test copy of hosts.json with a second host, so nothing here names the kit's."""
 import copy
 import json
@@ -8,7 +9,7 @@ import shutil
 import tempfile
 import unittest
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.host import registry
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

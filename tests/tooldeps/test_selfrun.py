@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib.config import user
-from kitlib.proc import shield
+from kitlib.platform.windows import shield
 from kitlib.tooldeps import selfrun
 from tests.fs.test_rmtree import read_only_repo
 from tests.gitfixture import rmtree
@@ -69,8 +69,8 @@ class Jobs(unittest.TestCase):
     @windows_only('the lock is Windows only')
     def test_the_variable_is_the_one_the_lock_sets(self):
         from kitlib.lock import giveback
-        from kitlib.lock import run as lock_run
-        self.assertEqual(selfrun.CPUMASK_ENV, lock_run.CPUMASK_ENV)
+        from kitlib.lock import run_held
+        self.assertEqual(selfrun.CPUMASK_ENV, run_held.CPUMASK_ENV)
         self.assertEqual(selfrun.GIVE_ENV, giveback.GIVE_ENV)
 
 

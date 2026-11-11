@@ -1,5 +1,5 @@
-"""kitlib.hubsite.api: the hub's verbs as functions over the store, with no transport in them (the
-hub site design, section 2 "HTTP API" and section 9).
+"""kitlib.hubsite.api: the hub's verbs as functions over the store, with no transport in them
+(docs/modules/hub-design.md "Packages and files").
 
   ROUTES     the table every transport iterates: Route(method, pattern, role, handler). A pattern
              is a full path under BASE; a `{name}` segment takes one path segment. role is OWNER,
@@ -126,7 +126,7 @@ WATCHER_STALE_S) or 'none' (no heartbeat readable), age its seconds (null with n
 that raises is 'down' with a null age.
 
 Code. GET snapshot and GET health carry `code`: null when this hub gives none, else {"stale",
-"restart"} from Hub.code_state (kitlib.hubsite.codestale): stale is true once the hub code on disk
+"restart"} from Hub.code_state (kitlib.hubclient.codestale): stale is true once the hub code on disk
 is newer than this process, restart the owner's to-do text then (null otherwise). The server sets
 Api.code_status when it is built; a status that raises or is not an object gives null. The
 tunnel's health holds fixed words only and carries none.
@@ -189,10 +189,10 @@ from . import schema
 from .store import HubError
 from .apibase import (  # noqa: F401 - re-exported: callers and tests read these off api
     BASE, API_VERSION, OWNER, AGENT, ANY, APPROVER, LOCK_WRITE, ROLES, CALLERS, NOT_STRONG,
-    NOT_LOCK_WRITER, WRITES_WHY, STATUS, WAIT_MAX_S, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
+    NOT_LOCK_WRITER, WRITES_WHY, STATUS, FEED_MAX, LIMIT_DIGITS, LOCK_POLL_S,
     LOCK_DAYS_MAX, TUNNEL_VIA, ACK_WINDOW_S, REACH_GRACE_S, ROUTE_SLACK_S, VIEWS, OWNER_FROM,
-    AGENT_FROM, AGENT_STORY_STATUSES, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
-    _ID_SPLIT, _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
+    AGENT_FROM, ApiConfig, DAYS_MAX, AGENT_SAYS, Route, Request, _TRUE, _FALSE,
+    _NAME, _SURROGATE, _REF_SHAPED, PAGE_HTML_MAX, error_body, _invalid, _natural,
     _version, _fields, _typed, _text, _flag, _pin, _q, _q_flag, _q_int, _when, _via, _reason, _timeout,
     _one_of, _SEGMENT, SEGMENT_SAYS, _record_view, _agent_from, _session_from)
 from .apipark import (  # noqa: F401 - re-exported: callers and tests read these off api
@@ -204,7 +204,7 @@ from .apipages import (  # noqa: F401 - re-exported: callers and tests read thes
     pages_delete)
 from .apilog import (  # noqa: F401 - re-exported: callers and tests read these off api
     inbox_add, inbox_read, LANDING_FIELDS, _newest, landings_list, landings_add, _mark_spent,
-    _repo_name_of, HANDOFF_KINDS, _CONTROL, newest_handoffs, handoffs_list, handoffs_add)
+    _repo_name_of, _CONTROL, newest_handoffs, handoffs_list, handoffs_add)
 from .apiskills import (  # noqa: F401 - re-exported: callers and tests read these off api
     SKILL_EDIT_CHANGE, SKILL_EDIT_WITHDRAW, _skill_name, _skill_text, _skill_source, _blob_field,
     skill_edits_list, _source_at, _main_blob, skill_edits_get, skill_edits_add, skill_edits_edit,
@@ -227,14 +227,14 @@ from .apiposts import (  # noqa: F401 - re-exported: callers and tests read thes
     to_pm_list, _unpath_act, to_pm_add, _queued, to_pm_edit, to_pm_delete, _refusal, to_pm_send,
     to_pm_reply)
 from .apiapprovals import (  # noqa: F401 - re-exported: callers and tests read these off api
-    _approval, approvals_add, approvals_decide, approvals_consume, approvals_delete,
-    approvals_supersede, approvals_verify)
+    _approval, approvals_add, approvals_decide, approvals_apply, _narrowed, _applied,
+    approvals_consume, approvals_delete, approvals_supersede, approvals_verify)
 from .apiread import (  # noqa: F401 - re-exported: callers and tests read these off api
     backlog, completed, _segment, skill_get, skill_source_get, record, record_new, _strings,
     record_add, record_edit, record_delete, record_unblock, _listing, pending, _unpath_pending,
     wait, _wait_for, SNAPSHOT_SKIP, _snapshot_colls, snapshot, health)
 from .apiask import (  # noqa: F401 - re-exported: callers and tests read these off api
-    questions_list, QUESTION_CLASSES, _class, questions_add, _pulled_refs, _asked, _cited,
+    questions_list, _class, questions_add, _pulled_refs, _asked, _cited,
     BINDS_FROM, questions_bind, questions_edit, questions_delete)
 from .apilock import (  # noqa: F401 - re-exported: callers and tests read these off api
     _remote, _lock, _writes, _viewed, lock_view, _wrote, _confirmed, _strs, lock_hold_add,
@@ -326,7 +326,7 @@ def _launcher_entries():
 
 def launcher_coordinators():
     """{session key: its `repo`} of the launcher's sessions.json entries that run a coordinator
-    (`agent` set, as kitlib.hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
+    (`agent` set, as hubjobs.fill_watch.is_coordinator and kitlib.launcher.handoff read
     it), read now. Raises as launcher_keys does; Api.coordinator_keys says so."""
     return {k: e.get('repo') for k, e in _launcher_entries() if e.get('agent')}
 
@@ -682,7 +682,7 @@ class Api(object):
                 q = asked.get(d['id']) or {}
                 if d.get('note') == 'filed' and isinstance(q.get('standing'), dict):
                     d['standing'] = True        # the PM logs it too (_for)
-                if not isinstance(q.get('record'), dict) and q.get('class') in QUESTION_CLASSES:
+                if not isinstance(q.get('record'), dict) and q.get('class') in hubvalidate.QUESTION_CLASSES:
                     d['class'] = q['class']     # the PM audits a classed answer (hub.py pending)
             out.append(d)
         now, flips = self.now(), []
@@ -942,7 +942,7 @@ def _record_state(api, record):
 def _filed_as(before, after):
     """What a filed answer did to its record, from the record's state before and after the
     filing (_record_state): `pulled` (someone is working on it: it was, or the answer ended a
-    hold that had stopped its pull, which is back, plan.restore_pull), `freed` (it was parked or
+    hold that had stopped its pull, which is back, plan_claim.restore_pull), `freed` (it was parked or
     blocked and now is open: work can start), `held` (it waits on more), or None when a state
     could not be read (the push then treats it as before this field: docs/hub-push.md "Push
     notifications")."""
@@ -1225,9 +1225,9 @@ def stories_set(api, req):
     for name in ('status', 'reviewer', 'review_note', 'backlog_id', 'closed_note'):
         _text(b, name)
     status = b['status']
-    if status not in AGENT_STORY_STATUSES:
+    if status not in hubvalidate.AGENT_STORY_STATUSES:
         raise _invalid('status is one of %s, not %r (submitted and withdrawn are the owner\'s)'
-                       % (', '.join(AGENT_STORY_STATUSES), status), 'status')
+                       % (', '.join(hubvalidate.AGENT_STORY_STATUSES), status), 'status')
     doc_id = req.params['id']
     d = api.doc('stories', doc_id, b)
     if d.get('status') == 'withdrawn':
@@ -1297,6 +1297,7 @@ ROUTES = (
     _r('POST', '/schedules', OWNER, schedules_set),
     _r('POST', '/approvals', AGENT, approvals_add),
     _r('POST', '/approvals/{id}/decide', APPROVER, approvals_decide),
+    _r('POST', '/approvals/{id}/apply', OWNER, approvals_apply),
     _r('POST', '/approvals/{id}/consume', AGENT, approvals_consume),
     _r('POST', '/approvals/{id}/delete', AGENT, approvals_delete),
     _r('POST', '/approvals/{id}/supersede', AGENT, approvals_supersede),

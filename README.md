@@ -18,8 +18,8 @@ Live since 2026-10-15, with landings in three repositories, and covered by tests
   untouched. A daily full run covers the rest (`tools/land.py`, `tools/gate.py`, docs/gate-landing.md
   "Landing", `tools/daily_full.py`).
 - **Guardrails stop risky actions and say what to do instead.** The hook guard refuses a
-  destructive git command in a main checkout, a search from a drive root or a heavy run outside
-  the lock, and each refusal names the right form on an `Instead:` line
+  destructive git command in a main checkout or a search from a drive root, and each
+  refusal names the right form on an `Instead:` line
   (`kitlib/guard/rules.py`, docs/guard.md). A pre-push hook refuses a non-fast-forward push to
   main (`githooks/`).
 - **Shared machine resources are scheduled.** Heavy runs queue for CPU and GPU slots in the
@@ -27,7 +27,7 @@ Live since 2026-10-15, with landings in three repositories, and covered by tests
   docs/lock-api.md, docs/gate-landing.md "The landing queue").
 - Also in use: worktree cleanup (`tools/worktree_remove.py`).
 
-Not done: some Linux items (the kit runs on Windows and Linux; docs/linux-support-plan.md lists what is open),
+Not done: some Linux items (the kit runs on Windows and Linux),
 and the Codex bridge is not live yet. Codex is a supported host for the roles, hooks and commit
 tools; the bridge between agents is the part that is not.
 
@@ -76,7 +76,7 @@ test and land code at the same time. The kit lays the rails they run on:
 ## Who it is for
 
 One person running several Claude Code sessions across several git repositories on one Windows
-PC. It needs Windows, Python 3 (standard library only), git and Claude Code.
+PC. It runs on Windows and Linux and needs Python 3 (standard library only), git and Claude Code.
 
 ## What you get
 

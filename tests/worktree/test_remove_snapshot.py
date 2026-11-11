@@ -17,7 +17,7 @@ import shutil
 import unittest
 from unittest import mock
 
-from kitlib.worktree import remove
+from kitlib.worktree import remove, remove_abandon, remove_checks
 from tests import gitfixture
 from tests.platforms import windows_only
 
@@ -90,7 +90,7 @@ class WindowCase(unittest.TestCase):
 
     def git_calls(self):
         """A stand-in for `remove.git` that records each `worktree remove` and runs every call."""
-        real = remove.git
+        real = remove_checks.git
         calls = []
 
         def spy(cwd, *args, **kw):
@@ -263,9 +263,9 @@ class IgnoredAfterTheLastStatusRead(WindowCase):
     def test_git_remove_itself_refuses_a_tree_that_holds_an_ignored_file(self):
         # No verb in front: every caller of git_remove gets the read, whatever it checked itself.
         late = os.path.join(self.path, 'run.log')
-        ctx, refused = remove.open_ctx(self.repo)
+        ctx, refused = remove_checks.open_ctx(self.repo)
         self.assertIsNone(refused)
-        registered_path = remove.registrations(ctx.main)[remove.canon(self.path)][0]
+        registered_path = remove_checks.registrations(ctx.main)[remove.canon(self.path)][0]
         self.fx.write('run.log', 'mine\n', root=self.path)
         gone = remove.git_remove(ctx, self.path, registered_path)
         out = '\n'.join(ctx.out)
@@ -276,9 +276,9 @@ class IgnoredAfterTheLastStatusRead(WindowCase):
         self.assert_kept_intact(out)
 
     def test_git_remove_refuses_a_tree_whose_status_cannot_be_read(self):
-        ctx, refused = remove.open_ctx(self.repo)
+        ctx, refused = remove_checks.open_ctx(self.repo)
         self.assertIsNone(refused)
-        registered_path = remove.registrations(ctx.main)[remove.canon(self.path)][0]
+        registered_path = remove_checks.registrations(ctx.main)[remove.canon(self.path)][0]
         spy = self.git_calls()
         unread = (None, None, None, 'git status exited 128: fatal: index file corrupt')
         with mock.patch.object(remove, 'git', spy), \
@@ -304,8 +304,8 @@ class IgnoredAfterTheLastStatusRead(WindowCase):
             self.fx.write('run.log', 'mine\n', root=p)
             return done
 
-        with mock.patch.object(remove, 'clear_disposable', seam):
-            got = remove.abandon(self.repo, 'open', 'superseded')
+        with mock.patch.object(remove_abandon, 'clear_disposable', seam):
+            got = remove_abandon.abandon(self.repo, 'open', 'superseded')
         out = '\n'.join(got.lines)
         self.assertTrue(os.path.isfile(late), out)
         self.assertEqual(got.code, 1, out)
@@ -382,7 +382,7 @@ class GitFails(WindowCase):
     """`git worktree remove` failing is reported by what is left, never retried or forced."""
 
     def failing_git(self, err, destroy=False):
-        real = remove.git
+        real = remove_checks.git
         calls = []
 
         def fake(cwd, *args, **kw):

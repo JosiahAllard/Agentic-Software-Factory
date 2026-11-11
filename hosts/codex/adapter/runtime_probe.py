@@ -198,7 +198,7 @@ def _capture(exe, model, home, shell_enabled, runner=None, canary=False):
     thread.start()
     try:
         try:
-            # kitlib.proc.spawn adds the no-window flag (plan section 6: no Windows calls here)
+            # kitlib.proc.spawn adds the no-window flag (no Windows calls here)
             result = (runner or spawn.run)(argv, cwd=home, env=env, shell=False,
                                            capture_output=True, text=True,
                                            encoding="utf-8", timeout=25, stdin=subprocess.DEVNULL)

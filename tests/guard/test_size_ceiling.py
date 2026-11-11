@@ -1,7 +1,7 @@
-"""A size ceiling per kitlib/guard module, and for the guard as a whole (docs/guard-v2.md "Size ceilings").
+"""A size ceiling per kitlib/guard module, and for the guard as a whole (docs/guard-core.md "Size ceilings").
 
 The rules it enforces: the builder size line (about 1,500 lines of non-test code per file) and the
-owner's ruling of 2026-10-17 (minimal guard v2, docs/guard-v2.md). The guard grew from about 14.4k
+owner's ruling of 2026-10-17 (minimal guard v2, docs/guard-core.md "Size ceilings"). The guard grew from about 14.4k
 to 18.4k lines after that ruling, so growth is a deliberate edit: CEILINGS below is the one list.
 
 Fails when
@@ -18,39 +18,41 @@ import unittest
 GUARD = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                      'kitlib', 'guard')
 SLACK_PERCENT = 5
-TOTAL_CEILING = 18810
+TOTAL_CEILING = 18600
 CEILINGS = {
     '__init__.py': 21,
-    'backlogrole.py': 1166,
-    'commands.py': 1736,
+    'backlogrole.py': 1167,
+    'commands.py': 760,
+    'commands_env.py': 302,
+    'commands_git.py': 159,
+    'commands_nested.py': 558,
     'context.py': 591,
     'delegfile.py': 579,
-    'fallback.py': 578,
+    'fallback.py': 580,
     'gaterole.py': 89,
     'generated.py': 76,
     'hub.py': 407,
     'jail.py': 325,
     'modes.py': 87,
-    'ownercommits.py': 402,
     'paths.py': 154,
-    'place.py': 403,
+    'place.py': 404,
     'prepush.py': 552,
     'refusal_log.py': 169,
-    'rolepolicy.py': 625,
-    'rules.py': 764,
+    'rolepolicy.py': 626,
+    'rules.py': 766,
     'rules_base.py': 491,
     'rules_edit.py': 1183,
     'rules_gitcommit.py': 368,
-    'rules_gitcore.py': 639,
+    'rules_gitcore.py': 641,
     'rules_gitjail.py': 287,
     'rules_gitread.py': 504,
     'rules_gitref.py': 1244,
     'rules_net.py': 429,
-    'rules_owner.py': 737,
-    'rules_push.py': 409,
+    'rules_owner.py': 738,
+    'rules_push.py': 410,
     'rules_run.py': 799,
     'rules_tools.py': 651,
-    'rules_write.py': 880,
+    'rules_write.py': 881,
     'shell.py': 1465,
 }
 

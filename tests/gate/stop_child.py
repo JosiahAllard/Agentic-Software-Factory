@@ -10,7 +10,7 @@ import sys
 import time
 
 from kitlib.lock import run as lockrun
-from tests.gate.land_child import scratch_store
+from tests.landing.land_child import scratch_store
 
 SLEEP = [sys.executable, '-c', 'import time; time.sleep(600)']
 

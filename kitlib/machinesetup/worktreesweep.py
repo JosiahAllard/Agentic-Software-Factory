@@ -11,7 +11,7 @@ that holds no export marker any more (kitlib.allowrules.export_state GONE). A st
 registered again with `-Force`. With `worktree_sweep` false (--no-worktree-sweep) a missing or
 stale task is a note carrying the line instead.
 
-The task runs the kit's live main checkout (`tool_root`): pluginsource.live_root, else the
+The task runs the kit's live main checkout (`tool_root`): pluginsource.layout.live_root, else the
 checkout an export's marker records, else the kit itself. A kit in a branch worktree, or an export
 with neither, registers nothing: the copy is unreviewed, or goes away with a later prune. Two
 repositories that take one task name get none. On Linux the task is the pm-kit job of the same
@@ -23,14 +23,13 @@ import re
 import subprocess
 
 from kitlib import platform
-from kitlib import pluginsource
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.config import ConfigError, load as load_kit_config
 from kitlib.git import repo as gitrepo
-from kitlib.launcher.pythonw import base_pythonw
 from kitlib.proc import spawn
-from kitlib.worktree.remove import main_checkout
-from kitlib.worktree.task import (AT, NOT_THE_STORE_ALIAS, PYTHONW_IS, argument, description, quoted,
-                                  task_name)
+from kitlib.schedtask.line import NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
+from kitlib.schedtask.pythonw import base_pythonw
+from kitlib.worktree.task import AT, argument, description, task_name
 
 from .agenttemp import NOT_A_FILE
 from .common import Report
@@ -44,21 +43,21 @@ EXIT_MEANS = {1: 'refused, failed, or deferred by a held lock: run it again once
 
 def tool_root(kit, environ=None):
     """The kit folder whose worktree_remove.py the task runs: the live root a tool pinned to an
-    export runs for (pluginsource.live_root), else, for an export, the main checkout its marker
-    records (pluginsource.export_checkout), else `kit` itself when it is no export. None for an
+    export runs for (pluginsource.layout.live_root), else, for an export, the main checkout its marker
+    records (pluginsource.layout.export_checkout), else `kit` itself when it is no export. None for an
     export with neither: a task naming the export runs a folder a later prune removes."""
     kit = os.path.normpath(os.path.abspath(kit))
-    live = pluginsource.live_root(kit, environ)
+    live = plugin_layout.live_root(kit, environ)
     if os.path.normcase(os.path.normpath(live)) != os.path.normcase(kit):
         return os.path.normpath(live)
     if is_export(kit):
-        checkout = pluginsource.export_checkout(kit)
+        checkout = plugin_layout.export_checkout(kit)
         return os.path.normpath(checkout) if checkout else None
     return kit
 
 
 def is_export(folder):
-    return os.path.isfile(os.path.join(folder, pluginsource.MARKER))
+    return os.path.isfile(os.path.join(folder, plugin_layout.MARKER))
 
 
 def task_line(main, name, tool, force=False, pythonw=None):
@@ -110,15 +109,21 @@ def dry_run(tool, main, python, timeout=DRY_RUN_TIMEOUT, run=None):
 def repo_task(folder):
     """(main checkout, repo name) for the repository at `folder`: the name is `.kit.json`'s
     repo.name, else the main checkout's folder name (as kitlib.worktree.task.resolve names it).
-    GitReadError (a RuntimeError) when git cannot find the main checkout; ConfigError for a
-    refused .kit.json."""
-    main = main_checkout(folder)
+    The main checkout is the parent of git's common dir, in its real spelling, as the sweep tool
+    itself names it. RuntimeError when `folder` is not a directory (git would answer for the repo
+    holding its parent) or git cannot find the main checkout; ConfigError for a refused .kit.json."""
+    if not os.path.isdir(folder):
+        raise RuntimeError('cannot find the main checkout of %s: not a directory' % folder)
+    common, why = gitrepo.common_dir(folder)
+    if common is None:
+        raise RuntimeError('cannot find the main checkout of %s (%s)' % (folder, why))
+    main = os.path.realpath(os.path.abspath(os.path.dirname(common)))
     name = load_kit_config(main).repo.get('name') or os.path.basename(os.path.normpath(main))
     return main, name
 
 
 def find(tasks, name):
-    """The task named `name` in the task scheduler's root folder, from consoletasks.parse's list."""
+    """The task named `name` in the task scheduler's root folder, from kitlib.schedtask.read.parse's list."""
     want = name.lower()
     for t in tasks:
         if (t.get('path') or '').lstrip('\\').lower() == want:
@@ -130,9 +135,9 @@ def removed_export(task, export_root):
     """The export folder name (12 hex) a path in `task`'s actions runs from when that folder under
     `export_root` holds no export marker (allowrules.export_state GONE); None when none does."""
     from kitlib import allowrules
-    from kitlib.pmstart.consoletasks import words
+    from kitlib.schedtask.read import words
     top = os.path.normcase(os.path.normpath(export_root)).rstrip(os.sep) + os.sep
-    current = pluginsource.current_folder(export_root)
+    current = plugin_layout.current_folder(export_root)
     for a in task.get('actions') or []:
         for w in words(a.get('exe') or '') + words(a.get('args') or ''):
             p = os.path.normcase(os.path.normpath(w))
@@ -160,7 +165,7 @@ def survey(plan, ctx):
         plan.note('extras', 'worktree sweep tasks: the kit at %s is a plugin export with no live main checkout '
                             '(no %s, and its marker records no checkout), so a task would run a folder a later '
                             'prune removes; pass --kit <kit main checkout>; none planned'
-                            % (root or ctx.kit, pluginsource.LIVE_ROOT_ENV))
+                            % (root or ctx.kit, plugin_layout.LIVE_ROOT_ENV))
         return
     tool = os.path.join(root, TOOL)
     if not os.path.isfile(tool):
@@ -173,8 +178,8 @@ def survey(plan, ctx):
                             % (root, place.detail or place.kind))
         return
     try:
-        export = pluginsource.load(ctx.home, kit=ctx.kit).export_dir
-    except (ConfigError, pluginsource.RefreshError) as e:
+        export = plugin_layout.load(ctx.home, kit=ctx.kit).export_dir
+    except (ConfigError, plugin_layout.RefreshError) as e:
         export = None
         plan.note('extras', 'worktree sweep tasks: plugin.export_dir could not be read (%s), so a task that '
                             'runs a removed plugin export is not looked for' % e)

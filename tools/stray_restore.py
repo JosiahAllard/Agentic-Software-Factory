@@ -26,7 +26,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import sessionmark, strayrestore as sr                   # noqa: E402
+from kitlib import strayrestore as sr                   # noqa: E402
+from kitlib.host import sessionmark                   # noqa: E402
 
 USAGE = 2
 

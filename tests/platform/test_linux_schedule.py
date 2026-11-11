@@ -1,4 +1,4 @@
-"""kitlib.platform.linux.schedule (docs/linux-support-plan.md slice 10): the systemd user units,
+"""kitlib.platform.linux.schedule: the systemd user units,
 crontab lines and XDG autostart entries a pm-kit job is written as, their read-back, the backend
 choice, the foreign-file refusals and linger's read-only note.
 

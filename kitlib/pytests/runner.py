@@ -2,7 +2,7 @@
 writes its log to the stream it is given.
 
 A test module is a `test*.py` of the tools folder (`.kit.json` "repo".tools_dir) that
-kitlib.tooldeps' scan counts as one; a name may also be `module.Class` or `module.Class.test`.
+tool_deps' scan counts as one; a name may also be `module.Class` or `module.Class.test`.
 
 Units. What `python -m unittest discover` did, split up: a unit is one test module, or one
 class-shard of a module in `shards` (whole TestCase classes round-robin, so class and module
@@ -31,17 +31,17 @@ interpreter, runs outside the job, and TerminateJobObject ends exactly that job.
 looked up or killed by number. The same kill runs when a unit exited but a leftover process of its
 own still holds its output pipe open after LINGER seconds.
 
-The shield (`shield_unit`, kitlib.proc.shield): the unit's own process denies PROCESS_TERMINATE to
-Everyone for its whole life, so a stale `taskkill /PID <n> /T /F` meant for a dead shell cannot
-end it; the job's kills need no access to the process and still end it. The runner never lifts
-it: when the runner ends, its jobs close and KILL_ON_JOB_CLOSE ends every unit and what it
-started - so end the runner, never a unit, by its pid. Only the unit's own process is shielded,
+The shield (`shield_unit`, kitlib.platform.windows.shield): the unit's own process denies
+PROCESS_TERMINATE to Everyone for its whole life, so a stale `taskkill /PID <n> /T /F` meant for a
+dead shell cannot end it; the job's kills need no access to the process and still end it. The runner
+never lifts it: when the runner ends, its jobs close and KILL_ON_JOB_CLOSE ends every unit and what
+it started - so end the runner, never a unit, by its pid. Only the unit's own process is shielded,
 not what it starts. A unit that cannot be shielded runs unshielded, with a note.
 
-The pid hold (`PidHoldRun`, kitlib.proc.shield.PidHold), opt-in only (PID_HOLD_FLAG, `--pid-hold`;
-off by default; kitlib.gate.steps refuses it in a gate step). The shield cannot cover what a unit
-starts: a test's git, made a moment after a shell died, can be given that shell's pid, and the
-second stale taskkill then ends it with exit 1 and no output - the same shape as `merge-base
+The pid hold (`PidHoldRun`, kitlib.platform.windows.shield.PidHold), opt-in only (PID_HOLD_FLAG,
+`--pid-hold`; off by default; kitlib.gate.steps refuses it in a gate step). The shield cannot cover
+what a unit starts: a test's git, made a moment after a shell died, can be given that shell's pid,
+and the second stale taskkill then ends it with exit 1 and no output - the same shape as `merge-base
 --is-ancestor`'s NO (kitlib.reviewpack.tips' GOTCHA). Unheld, the
 ancestry answer at least is no longer misread: kitlib.git.refs.is_ancestor asks `rev-list -n 1`
 (and confirms a NO with `merge-base --independent`), whose answers all exit 0, and gives no answer
@@ -55,7 +55,7 @@ cannot be made, or that stops during the run, leaves the run going unheld, and t
 `pid hold: FAILED ... NOT held` with the reason, at the start and again before the summary. Its
 cost: docs/test-tools.md "The pid shield".
 
-`.kit.json` "tool_tests" keys read here (the section is shared with kitlib.tooldeps; the kit schema,
+`.kit.json` "tool_tests" keys read here (the section is shared with tool_deps; the kit schema,
 kitlib/config/schema.py, checks their types; `settings` adds the checks below):
   shards         {"test_x": 4}        modules split into N class-shards (no `.` in a name)
   serial         ["test_x", "test_y.C"]  units run one at a time after the pool
@@ -83,8 +83,8 @@ from kitlib.config import ConfigError, load as load_config
 from kitlib.config import schema
 from kitlib.config.types import check as check_type
 from kitlib.git import cmd as gitcmd
-from kitlib.proc import shield as pid_shield
-from kitlib.proc import win32
+from kitlib.platform.windows import shield as pid_shield
+from kitlib.platform.windows import win32
 from kitlib.proc.job import Job, JobError
 
 SECTION = 'tool_tests'
@@ -206,8 +206,8 @@ def child_command(unit, audit, root, path=None):
 # --- one unit -----------------------------------------------------------------------------------
 
 def process_dacl(handle):
-    """(DACL pointer, security descriptor to LocalFree) of a process (kitlib.proc.shield; a seam
-    the tests patch)."""
+    """(DACL pointer, security descriptor to LocalFree) of a process
+    (kitlib.platform.windows.shield; a seam the tests patch)."""
     return pid_shield.process_dacl(handle)
 
 
@@ -219,12 +219,13 @@ NOT_HELD = 'a stale taskkill can still end a process a test starts'
 class PidHoldRun(object):
     """A test run's opted-in pid hold (PID_HOLD_FLAG; off by default, never in the gate).
 
-    `start()` before the first unit: keeps this process's hold (kitlib.proc.shield.hold(), or
-    `make()`) running, warmed for WARM seconds and published, or finds a running hold this process
-    inherited (shield.inherited) and makes none. `end()` after the last unit says whether the run
-    stayed held to its end. Each returns the one line to print, starting `pid hold: `. A hold that
-    cannot be made, or stops during the run, never ends the run: the run goes on unheld, and both
-    lines say `FAILED` and `NOT held` with the reason."""
+    `start()` before the first unit: keeps this process's hold
+    (kitlib.platform.windows.shield.hold(), or `make()`) running, warmed for WARM seconds and
+    published, or finds a running hold this process inherited (shield.inherited) and makes none.
+    `end()` after the last unit says whether the run stayed held to its end. Each returns the one
+    line to print, starting `pid hold: `. A hold that cannot be made, or stops during the run, never
+    ends the run: the run goes on unheld, and both lines say `FAILED` and `NOT held` with the
+    reason."""
 
     def __init__(self, make=None, inherited=None):
         self.make = make or pid_shield.hold
@@ -272,10 +273,10 @@ def _why(e):
 
 
 def shield_unit(proc):
-    """Shield the unit's own process from kills by pid for its whole life (kitlib.proc.shield).
-    Called by Job.start while the child is still suspended; raises OSError, having written
-    nothing, when it cannot: off Windows always (PlatformUnsupported), as the shield is a
-    process DACL; there the unit runs unshielded, its note says so."""
+    """Shield the unit's own process from kills by pid for its whole life
+    (kitlib.platform.windows.shield). Called by Job.start while the child is still suspended; raises
+    OSError, having written nothing, when it cannot: off Windows always (PlatformUnsupported), as
+    the shield is a process DACL; there the unit runs unshielded, its note says so."""
     if kitlib.platform.NAME != 'windows':
         raise kitlib.platform.PlatformUnsupported('the pid shield is a Windows process DACL; '
                                                   'this platform has none')

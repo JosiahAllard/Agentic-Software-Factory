@@ -77,7 +77,7 @@ def run_child(a):
     root = os.path.abspath(a.root)
     tools = runner.tools_path(root)
     child.set_path(tools, a.path, drop=(HERE,))
-    return child.run_child(a.child, a.shard, a.audit, root, tools, sys.stdout, a.path)
+    return child.run_child(a.child, a.shard, tool_deps if a.audit else None, root, tools, sys.stdout, a.path)
 
 
 def main(argv=None, out=None):

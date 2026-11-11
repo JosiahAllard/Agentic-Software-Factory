@@ -1,4 +1,4 @@
-"""The content contract (ARCHITECTURE.md "Content"; docs/multi-host-plan.md section 2.3): the
+"""The content contract (ARCHITECTURE.md "Content"): the
 neutral model of a role and a skill as `content/` writes them, and the `ContentRenderer` protocol
 each host's adapter implements to turn them into that host's files. Names no host.
 
@@ -39,8 +39,8 @@ tokens.
 
 A skill is a folder, `content/skills/<name>/`, whose files every host ships unchanged.
 
-`banner(source)` is the line every rendered file a comment can go in opens with (decision 19 in
-docs/multi-host-plan.md section 7): the repo-relative file it is generated from, and the command
+`banner(source)` is the line every rendered file a comment can go in opens with: the repo-relative
+file it is generated from, and the command
 that renders it. Each renderer puts it in its file type's comment form; JSON takes none.
 """
 import dataclasses
@@ -56,7 +56,7 @@ EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
 SANDBOXES = ('read-only', 'workspace-write')
 CACHES = ('long',)
 COMPACT = (100000, 1000000)   # a role's `compact:` bounds, the Claude CLI's own --autocompact range
-# The role-policy modes (kitlib.guard.rolepolicy, which takes them from here).
+# The role-policy modes (the guard's role policy takes them from here).
 MODES = ('controller', 'write', 'read', 'test', 'lander')
 # A role's group (kitlib.backlog.roles reads them): its mode's (MODE_GROUP), or the `group:` it
 # names, which must be one its mode allows (GROUP_MODES). A role with no mode has no group.

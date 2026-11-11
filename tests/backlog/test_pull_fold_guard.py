@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from kitlib.backlog import plan as pmod
+from kitlib.backlog import plan_claim, plan_narrow
 from kitlib.backlog import policy
 from kitlib.backlog.errors import Failure, Refusal, Usage
 from kitlib.git import cmd, refs
@@ -43,9 +44,11 @@ class _Branches(StoreCase):
         self.repo.git('checkout', '-q', '-f', 'main')
 
     def failing(self, module, **over):
-        patch = mock.patch.object(pmod, module, _Wrap(getattr(pmod, module), **over))
-        patch.start()
-        self.addCleanup(patch.stop)
+        for mod in (pmod, plan_narrow, plan_claim):     # the plan modules that call git
+            if hasattr(mod, module):
+                patch = mock.patch.object(mod, module, _Wrap(getattr(mod, module), **over))
+                patch.start()
+                self.addCleanup(patch.stop)
 
 
 class PullOwnBranchOnly(_Branches):
@@ -127,8 +130,8 @@ class PullFold(_Branches):
 
     def test_one_pull_diffs_each_live_branch_once(self):
         self.seed(priced('FOO', scope='kitlib/other/**'))
-        real = pmod._branch_changes
-        with mock.patch.object(pmod, '_branch_changes', side_effect=real) as spy:
+        real = plan_narrow._branch_changes
+        with mock.patch.object(plan_narrow, '_branch_changes', side_effect=real) as spy:
             self.verb('pull', 'FOO')
         self.assertEqual(self.get('FOO').get('state'), 'pulled')
         self.assertEqual([c.args[1] for c in spy.call_args_list], [HOLDER])
@@ -243,7 +246,7 @@ class PullFold(_Branches):
 
 
 class NextFold(_Branches):
-    """`next` runs the fold-in guard `pull` runs (plan.offer_for, `_offer_folds`): a record whose
+    """`next` runs the fold-in guard `pull` runs (plan_narrow.offer_for, `_offer_folds`): a record whose
     scope folds into another live pull's branch is passed over, not offered, so `next` never
     offers what `pull` then refuses. A branch git cannot diff passes the candidate over with a
     "cannot tell" note: `next` never fails on it, `pull` still does."""
@@ -254,7 +257,7 @@ class NextFold(_Branches):
         self.seed(held('HOLD', HOLDER, 'docs/held.md'))
 
     def offer(self):
-        offers, passed, _holding, _own = pmod.offer_for(self.store.load(), self.ctx)
+        offers, passed, _holding, _own = plan_narrow.offer_for(self.store.load(), self.ctx)
         return [o.rec.id for o in offers], {p.rec.id: p.why for p in passed}
 
     def test_a_folding_record_is_passed_over_and_the_next_one_offered(self):
@@ -282,10 +285,10 @@ class NextFold(_Branches):
         self.seed(priced('R1', priority='1', scope='kitlib/x/**'),
                   priced('R2', priority='2', scope='kitlib/x/b.py'))
         snap = self.store.load()
-        main, passed, _h, _o = pmod.offer_for(snap, self.ctx, branch='main')
+        main, passed, _h, _o = plan_narrow.offer_for(snap, self.ctx, branch='main')
         self.assertEqual([o.rec.id for o in main], ['R2'])
         self.assertIn(FOLD, {p.rec.id: p.why for p in passed}['R1'])
-        mine, passed, _h, _o = pmod.offer_for(snap, self.ctx, branch=HOLDER)
+        mine, passed, _h, _o = plan_narrow.offer_for(snap, self.ctx, branch=HOLDER)
         self.assertEqual([o.rec.id for o in mine], ['R1'])
         self.assertIn('R2', {p.rec.id for p in passed})
         self.ctx = pmod.Context(self.store, self.repo.root, branch=HOLDER, today=TODAY)
@@ -296,14 +299,14 @@ class NextFold(_Branches):
     def test_the_two_offers_a_pull_checks_read_the_diffs_once(self):
         self.seed(priced('R1', scope='kitlib/x/**'), priced('R2', scope='kitlib/y/**'))
         self.ctx = pmod.Context(self.store, self.repo.root, branch=HOLDER, today=TODAY)
-        real, reads = pmod._live_changes, []
+        real, reads = plan_narrow._live_changes, []
 
         def live_changes(*args):
             reads.append(args[2])
             return real(*args)
-        with mock.patch.object(pmod, '_live_changes', live_changes):
-            _offers, _passed, _holding, also, _notes = pmod.current_offer(self.store.load(),
-                                                                          self.ctx)
+        with mock.patch.object(plan_narrow, '_live_changes', live_changes):
+            _offers, _passed, _holding, also, _notes = plan_narrow.current_offer(self.store.load(),
+                                                                                 self.ctx)
         self.assertEqual([r.id for r in also], ['R2'])
         self.assertEqual(reads, [None])
 
@@ -433,12 +436,12 @@ class PullFoldInThePmDataWorktree(PmDataWorktree):
         stale = self.later_on_main()
         self.branch_with(HOLDER, 'kitlib/y/own.py')
         self.lag_main(stale)
-        ctx = opener.open_store(self.pm_worktree(), fetch=False)
+        ctx = opener.open_store(self.pm_worktree(), fetch=False, probes=opener.NO_PROBES)
         holding = [parse('HOLD', id='HOLD', state='pulled', pulled_at=TODAY, pulled_by=HOLDER,
                          scope='docs/held.md')]
-        hits, notes = pmod._pull_fold_hits(ctx, ['kitlib/x/later.py'], holding, BRANCH)
+        hits, notes = plan_narrow._pull_fold_hits(ctx, ['kitlib/x/later.py'], holding, BRANCH)
         self.assertEqual((hits, notes), ([], []))
-        hits, _notes = pmod._pull_fold_hits(ctx, ['kitlib/y/**'], holding, BRANCH)
+        hits, _notes = plan_narrow._pull_fold_hits(ctx, ['kitlib/y/**'], holding, BRANCH)
         self.assertEqual(hits, ['kitlib/y/** vs kitlib/y/own.py (changed on kit/holder)'])
 
 

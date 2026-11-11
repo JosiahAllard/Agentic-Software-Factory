@@ -35,7 +35,7 @@ from optional.bridge.win.frontend import NativeFrontend,arguments,running
 from optional.bridge.win.rpc import PipeClient
 from optional.bridge.port import NativeSource
 from optional.bridge.paths import RPC_WORKER_REL,kit_file
-from kitlib.proc.pipe import process_image,process_sids
+from kitlib.platform.windows.pipe import process_image,process_sids
 from kitlib.proc.process import proc_ctime
 
 

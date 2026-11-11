@@ -9,9 +9,9 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib.gate import result as gresult
 from kitlib.git import repo as gitrepo
 from kitlib.modulemap import scope, scopelog
+from kitlib.records import place
 
 from tests.gitfixture import TempRepo, fixture_env
 from tests.home import result_drive
@@ -50,7 +50,7 @@ class RepoCase(unittest.TestCase):
 
     def folder(self):
         common, _ = gitrepo.common_dir(self.root)
-        return os.path.join(self.drive, 'pm-kit', 'kit-gate-scope', gresult.repo_key(common))
+        return os.path.join(self.drive, 'pm-kit', 'kit-gate-scope', place.repo_key(common))
 
     def put(self, when, rec, name=None):
         """A record file stamped `when` in the scope folder; `rec` a dict, or text written as is."""
@@ -128,8 +128,8 @@ class WriteTest(RepoCase):
         self.assertNotIn(gone_tmp, left)
 
     def test_no_dev_drive_writes_nothing_and_says_why(self):
-        with mock.patch.object(gresult, 'kit_folder',
-                               side_effect=gresult.ResultError('no dev_drive set')):
+        with mock.patch.object(place, 'kit_folder',
+                               side_effect=place.NoKitFolder('no dev_drive set')):
             got = scopelog.write(self.root, scope.scope_of(self.mm, ['node/n.cs']), 'main', MB)
         self.assertEqual(got, (None, 'no dev_drive set'))
         self.assertFalse(os.path.exists(self.folder()))
@@ -171,8 +171,8 @@ class WriteTest(RepoCase):
 
     def test_a_record_that_cannot_be_kept_is_a_line_and_exit_0(self):
         self.repo.write('node/n.cs', 'class N2 {}')
-        with mock.patch.object(gresult, 'kit_folder',
-                               side_effect=gresult.ResultError('no dev_drive set')):
+        with mock.patch.object(place, 'kit_folder',
+                               side_effect=place.NoKitFolder('no dev_drive set')):
             code, out = self.cli('--scope', '--record')
         self.assertEqual(code, 0, out)
         self.assertIn('module_map scope: record not kept: no dev_drive set', out)

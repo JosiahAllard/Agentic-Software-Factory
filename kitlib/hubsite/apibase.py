@@ -40,12 +40,13 @@ import datetime
 import math
 import re
 
-from . import pagecheck
+from kitlib import hubvalidate
+from kitlib.hubclient.push import PM_KEY
+from kitlib.hubclient.token import AGENT, ANY, OWNER
+from kitlib.hubvalidate import BASE, natural as _natural, pagecheck
 from .store import HubError
 
-BASE = '/api/v1'
 API_VERSION = 'v1'
-OWNER, AGENT, ANY = 'owner', 'agent', 'any'
 APPROVER = 'approver'               # a route for the strong owner alone ("Roles")
 LOCK_WRITE = 'lock-write'           # a lock write: the owner here, the strong owner remotely
 ROLES = (OWNER, AGENT, ANY, APPROVER, LOCK_WRITE)   # what a route may ask for
@@ -65,19 +66,17 @@ WRITES_WHY = {
               'the strong owner, or Cloudflare Access)'}
 STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, 'store': 503,
           'unavailable': 503, 'internal': 500}
-WAIT_MAX_S = 55
 FEED_MAX = 200                      # the landing feed events GET snapshot and GET landings give
 LIMIT_DIGITS = 9                    # GET landings `limit`: longer is refused, never a huge int()
 LOCK_POLL_S = 0.5                   # how often GET lock/wait looks at the lock's revision
 LOCK_DAYS_MAX = 366                 # GET lock/stats `days`
 TUNNEL_VIA = 'tunnel'               # the tunnel listener's via (kitlib.hubsite.httpd): a remote view
 ACK_WINDOW_S = 30 * 60              # a creator's time to handle an item handed to it ("Routes")
-REACH_GRACE_S = WAIT_MAX_S + 30     # a key is reachable this long after its last wait ("Routes")
+REACH_GRACE_S = hubvalidate.WAIT_MAX_S + 30   # a key is reachable this long after its last wait ("Routes")
 ROUTE_SLACK_S = 0.01                # a PM wait looks again this long after a route's turn is due
 VIEWS = ('backlog', 'completed', 'notices', 'repos', 'usage', 'agents', 'skills')
 OWNER_FROM = 'you'                  # a to-do's or a story's `from` when the owner wrote it
-AGENT_FROM = 'pm'                   # a to-do's `from` when an agent gives none
-AGENT_STORY_STATUSES = ('review', 'questions', 'added', 'declined')
+AGENT_FROM = PM_KEY                 # a to-do's `from` when an agent gives none
 DAYS_MAX = 3650
 # what a caller who is not the owner is told in place of the store's own message, by code
 AGENT_SAYS = {'store': 'the hub store is not available: the owner sees why'}
@@ -88,7 +87,6 @@ Request = collections.namedtuple('Request', 'role params body query via strong f
 
 _TRUE = ('1', 'true', 'yes', 'on')
 _FALSE = ('', '0', 'false', 'no', 'off')
-_ID_SPLIT = re.compile(r'([0-9]+)')
 _NAME = re.compile(r'[\x21-\x7e]+(?: [\x21-\x7e]+)*')
 _SURROGATE = re.compile('[\ud800-\udfff]')     # a lone one: half a character
 # A hub item's id or a ruling's anywhere in a page id ("Pages" in apipages): hubvalidate._REF's pattern, plus
@@ -103,11 +101,6 @@ def error_body(code, message, field=''):
 
 def _invalid(message, field=''):
     return HubError('invalid', message, field)
-
-
-def _natural(doc_id):
-    # split on a group: text at the even places, ASCII digits at the odd ones
-    return [int(p) if i % 2 else p.lower() for i, p in enumerate(_ID_SPLIT.split(doc_id))]
 
 
 def _version(doc):
@@ -224,11 +217,11 @@ def _timeout(req):
     """A wait's `timeout` query: seconds, WAIT_MAX_S when not given; not capped here."""
     raw = _q(req, 'timeout')
     try:
-        timeout = float(raw) if raw else float(WAIT_MAX_S)
+        timeout = float(raw) if raw else float(hubvalidate.WAIT_MAX_S)
     except ValueError:
         timeout = float('nan')
     if not math.isfinite(timeout) or timeout < 0:
-        raise _invalid('timeout is a number of seconds from 0 to %d, not %r' % (WAIT_MAX_S, raw),
+        raise _invalid('timeout is a number of seconds from 0 to %d, not %r' % (hubvalidate.WAIT_MAX_S, raw),
                        'timeout')
     return timeout
 

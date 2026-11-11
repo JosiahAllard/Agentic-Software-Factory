@@ -17,8 +17,8 @@ from optional.bridge.win.leader import ServiceLeader
 from optional.bridge.win.rpc import PipeServer,encode,request
 from optional.bridge.win.rpcworker import exchange
 from optional.bridge.win.transport import PipeTarget
-from kitlib.proc.errors import ProcError
-from kitlib.proc.pipe import connect,write
+from kitlib.platform import ProcError
+from kitlib.platform.windows.pipe import connect,write
 from kitlib.proc.process import own_ctime
 
 

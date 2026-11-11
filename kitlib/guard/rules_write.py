@@ -7,6 +7,7 @@ import re
 from kitlib.git import repo
 
 from . import commands as cm
+from . import commands_nested as cn
 from . import jail
 from . import paths
 from . import shell as sh
@@ -505,12 +506,12 @@ def ps_line_plain(cmd):
     no assignment or other expression statement, no computed name, no Start-Process); every word is
     literal or only reads an environment variable (PS_ENV_READ_WORD_RE; no other variable, member
     call or subexpression); and neither the raw line nor any decoded word matches
-    PS_DRIVE_REMAP_RE, commands.PS_SCRIPT_TEXT_RE or PS_DOTNET_RE. Anything else may remap a drive.
+    PS_DRIVE_REMAP_RE, commands_nested.PS_SCRIPT_TEXT_RE or PS_DOTNET_RE. Anything else may remap a drive.
     The line is read again with `~` as the home its own parse read (Command.home)."""
     src = cmd.source
-    if any(r.search(src) for r in (PS_DRIVE_REMAP_RE, cm.PS_SCRIPT_TEXT_RE, PS_DOTNET_RE)):
+    if any(r.search(src) for r in (PS_DRIVE_REMAP_RE, cn.PS_SCRIPT_TEXT_RE, PS_DOTNET_RE)):
         return False
-    parsed = cm.read(src, sh.PS, cmd.cwd, home=cmd.home)
+    parsed = cn.read(src, sh.PS, cmd.cwd, home=cmd.home)
     if not parsed.clean:
         return False
     for c in parsed.commands:
@@ -523,7 +524,7 @@ def ps_line_plain(cmd):
         if not git and inv.name not in PS_PROVIDER_CMDLETS | PS_READ_CMDLETS:
             return False
         for w in c.words:
-            if w.dyn and not PS_ENV_READ_WORD_RE.match(w.text) or any(r.search(w.text) for r in (PS_DRIVE_REMAP_RE, cm.PS_SCRIPT_TEXT_RE, PS_DOTNET_RE)):
+            if w.dyn and not PS_ENV_READ_WORD_RE.match(w.text) or any(r.search(w.text) for r in (PS_DRIVE_REMAP_RE, cn.PS_SCRIPT_TEXT_RE, PS_DOTNET_RE)):
                 return False
     return True
 
@@ -698,7 +699,7 @@ OUTER = object()                                # write_place: the command's own
 def write_place(ctx, cmd, w, base=OUTER):
     """(path, why) of the Word `w` the command `cmd` writes, read from cmd's directory and shell:
     path None when the guard cannot place it (why says why), a PowerShell drive or provider path
-    shell.resolve_path cannot place among them (docs/guard-v2.md B16). `base`, when given, is the
+    shell.resolve_path cannot place among them (docs/guard-fallback.md "Weakened checks, by row" B16). `base`, when given, is the
     folder a relative `w` is read from instead of cmd's directory: the -WorkingDirectory a
     Start-Process program runs in (commands.run_dir), None when the guard cannot place that."""
     here_dir = cmd.cwd if base is OUTER else base
@@ -720,7 +721,7 @@ def write_place(ctx, cmd, w, base=OUTER):
 
 def find_runs(cmd):
     """[(find command, its invocation)]: each bash find whose -exec, -execdir, -ok or -okdir runs
-    `cmd`, nearest first, through any shell nested between (commands.expand nests only those
+    `cmd`, nearest first, through any shell nested between (commands_nested.expand nests only those
     words under a find)."""
     out, outer = [], cmd.nested_in
     while outer is not None:

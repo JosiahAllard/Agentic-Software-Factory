@@ -7,10 +7,9 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib import commit as C
+from kitlib.commit import run as C
 from tests.backlog.helpers import record_text
 from tests.commit import test_commit
-from tests.commit import test_commit_approval as tca
 from tests.commit.test_commit import AGENT, OWNER, LinkedCase
 
 setUpModule = test_commit.setUpModule
@@ -111,7 +110,7 @@ class WhatPasses(NarrowedCase):
         self.narrowed_pair()
         self.put('kit/b/x.py', 'x\n')
         from kitlib.backlog import narrowed as nmod
-        with mock.patch.object(nmod.smod, 'open_backend', side_effect=OSError('store down')):
+        with mock.patch.object(nmod.store_open, 'open_backend', side_effect=OSError('store down')):
             code, out = self.commit('store down', 'kit/b/x.py')
         self.assertEqual(code, 0, out)
         self.assertIn('WARNING: the narrowed-record check could not read the backlog store '
@@ -140,21 +139,6 @@ class WhoCommits(NarrowedCase):
         self.assertEqual(code, 1, out)
         self.assertIn('REFUSED: needs kit/b/x.py, held by L-ONE on kit/l', out)
         self.assertEqual(self.head(), head)
-
-
-class AnApprovedCommit(NarrowedCase, tca.ApprovalCase):
-
-    def test_an_owner_approved_commit_is_checked_before_anything_is_written(self):
-        self.narrowed_pair()
-        self.approve({'CLAUDE.md': 'new rules\n', 'kit/b/x.py': 'x\n'})
-        head = self.head()
-        code, out = self.approved_commit('kit/b/x.py', 'CLAUDE.md')
-        self.assertEqual(code, 1, out)
-        self.assertIn('REFUSED: needs kit/b/x.py, held by L-ONE on kit/l', out)
-        self.assertEqual(self.head(), head)
-        self.assertEqual(self.read('CLAUDE.md'), 'rules\n')
-        self.assertFalse(os.path.exists(os.path.join(self.wt, 'kit', 'b', 'x.py')))
-        self.assert_not_consumed()
 
 
 class AMerge(NarrowedCase, test_commit.MergeCase):
@@ -187,7 +171,7 @@ class AMerge(NarrowedCase, test_commit.MergeCase):
 class TheImportStaysLazy(unittest.TestCase):
 
     def test_importing_kitlib_commit_does_not_import_kitlib_backlog(self):
-        code = ('import sys; import kitlib.commit; '
+        code = ('import sys; import kitlib.commit.run; '
                 'print(sorted(m for m in sys.modules if m.split(".")[:2] == ["kitlib", "backlog"]))')
         p = subprocess.run([sys.executable, '-c', code], cwd=KIT, capture_output=True, text=True,
                            timeout=60)

@@ -371,10 +371,10 @@ class RefsTest(RepoFixture):
 
 class AKilledGitIsNoAncestryAnswer(RepoFixture):
     """A git ended from outside (a stale `taskkill /PID <n> /T /F`
-    that reached a reused pid, kitlib.proc.shield's GOTCHA) exits 1 having printed nothing, the
-    shape `merge-base --is-ancestor` gives for NO. refs.is_ancestor must give no answer for it,
-    never a NO git did not say. The pair asked is a real NO (feature is not in initial), so an
-    answer of False could only come from reading the kill as one."""
+    that reached a reused pid, kitlib.platform.windows.shield's GOTCHA) exits 1 having printed
+    nothing, the shape `merge-base --is-ancestor` gives for NO. refs.is_ancestor must give no answer
+    for it, never a NO git did not say. The pair asked is a real NO (feature is not in initial), so
+    an answer of False could only come from reading the kill as one."""
 
     def test_exit_1_with_no_output_is_no_answer(self):
         calls = []

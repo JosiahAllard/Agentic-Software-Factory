@@ -44,7 +44,6 @@ PINNED = {
         'name': 'module-map',
         'always': True,
         'globs': ['*'],
-        'warn': True,
         'cmd': ['{python}', 'tools/module_map.py', '-C', '{root}', '--check', '--base', '{base}'],
         'pass': ['module_map: OK'],
     }],

@@ -1,6 +1,6 @@
 # lock release pre-check
 
-`tools/lock_release_check.py` says whether the kit's release checkout may take a commit now. It refuses while the release would change the lock tool and any run in the machine's lock store is live. Logic: `kitlib/lock/release.py`; tests: `tests/lock/test_release.py`. No kit tool calls it: the release step must run it before it moves the checkout (docs/go-live.md).
+`tools/lock_release_check.py` says whether the kit's release checkout may take a commit now. It refuses while the release would change the lock tool and any run in the machine's lock store is live. Logic: `kitlib/lock/release.py`; tests: `tests/lock/test_release.py`. No kit tool calls it: the release step must run it, and the kit tests, before it moves the release checkout.
 
 ```
 python tools/lock_release_check.py [-C KIT] <commit>

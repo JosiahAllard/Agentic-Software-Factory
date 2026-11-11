@@ -8,7 +8,7 @@ import unittest
 
 from hosts.claude.adapter import events
 from hosts.claude.adapter.host import ADAPTER, MATCHER
-from kitlib import agentname
+from kitlib.host import agentname
 from kitlib.guard import paths, rules
 from kitlib.host import Action, Decision, registry
 
@@ -81,7 +81,7 @@ class Parse(unittest.TestCase):
     def test_agent_reads_the_identity_alone(self):
         self.assertEqual(events.agent({'agent_id': 'a1'}), 'a1')
         self.assertIsNone(events.agent({}))
-        self.assertRaises(ValueError, events.agent, None)     # hookmain then tags the deny main
+        self.assertRaises(ValueError, events.agent, None)     # hookrun then tags the deny main
 
 
 class Render(unittest.TestCase):

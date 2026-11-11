@@ -1,6 +1,6 @@
 # Backlog design
 
-Low-level design of `kitlib/backlog`. The high-level design is ARCHITECTURE.md ("Contracts": Backlog claims) and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-021, W-026).
+Low-level design of `kitlib/backlog`. The high-level design is ARCHITECTURE.md ("Contracts": Backlog claims) and wins on a conflict.
 
 ## Contract
 

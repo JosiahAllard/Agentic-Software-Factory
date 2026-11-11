@@ -13,7 +13,7 @@ reach its hooks through Codex's native agent definitions yet (README.md, "Not ve
       A write or test role needs an assigned linked worktree in the host's worktree folder
       (kitlib.worktree.hostdirs), a lander the main checkout. No persistent setting is written.
   execute(plan)               refuses
-  launch_environment(plan, environ)   the session's environment: kitlib.sessionmark.child_environment
+  launch_environment(plan, environ)   the session's environment: kitlib.host.sessionmark.child_environment
                               with the plan's variables
   require_host_worktree(cwd, place)   the assigned worktree, refused outside the host's folder
 """
@@ -23,7 +23,7 @@ from pathlib import Path
 import re
 import sys
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from kitlib.lockmcp import SERVER_NAME
 
 from hosts.codex.adapter import content as codex_content

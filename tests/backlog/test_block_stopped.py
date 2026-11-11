@@ -1,15 +1,14 @@
-"""Blocking or releasing a pulled record whose work stopped (kitlib.backlog.plan stop_pull,
-plan_block, plan_release; docs/backlog.md "Stopping a pull"): its holder may, and anybody may when
-the pull is dead or `Context.liveness` finds its worktree dead. One commit frees the scope, the
-body says where the work was left, and the branch is never touched."""
+"""Blocking or releasing a pulled record whose work stopped (kitlib.backlog.plan_claim stop_pull,
+plan_hold plan_block, plan_claim plan_release; docs/backlog.md "Stopping a pull"): its holder
+may, and anybody may when the pull is dead or `Context.liveness` finds its worktree dead. One
+commit frees the scope, the body says where the work was left, and the branch is never
+touched."""
 import os
 import time
 import unittest
-from unittest import mock
 
 from kitlib.backlog import check
 from kitlib.backlog import offer as omod
-from kitlib.backlog import opener
 from kitlib.backlog import store as smod
 from kitlib.backlog.errors import Refusal, Usage
 from kitlib.worktree import classify
@@ -122,7 +121,8 @@ class Block(StoppedCase):
                                             '`--reason T`, written to the body')
 
     def test_the_real_probe_lets_a_dead_worktree_be_blocked(self):
-        # opener's seam end to end: classify.branch_liveness on this repository.
+        # The worktree's liveness probe end to end (kitlib.worktree.quiet PROBES, which
+        # tools/backlog.py hands the opener): classify.branch_liveness on this repository.
         path = self.repo.worktree('other', OTHER)
         self.repo.write('w.txt', 'work\n', root=path)
         self.repo.commit('work', 'w.txt', cwd=path)
@@ -179,7 +179,7 @@ class Release(StoppedCase):
 
 class PullResume(StoppedCase):
     """`pull` of a record whose body carries stop_pull's `Stopped on branch` note names that
-    branch and tip (plan.resume_line), so the puller resumes from it."""
+    branch and tip (plan_claim.resume_line), so the puller resumes from it."""
 
     def note(self, branch, tip):
         return 'Stopped on branch %s at %s, branch kept.' % (branch, tip)
@@ -228,15 +228,6 @@ class PullResume(StoppedCase):
         self.assertEqual(self.resume(self.verb('pull', 'FOO')),
                          ['  resume on %s? Work stopped there at %s, branch kept'
                           % (OTHER, tip[:10])])
-
-
-class Opener(unittest.TestCase):
-
-    def test_the_probe_is_the_classifiers_imported_when_asked(self):
-        with mock.patch.object(classify, 'branch_liveness',
-                               return_value=(None, 'abc')) as probe:
-            self.assertEqual(opener.liveness('Q:/repo', 'kit/x'), (None, 'abc'))
-        probe.assert_called_once_with('Q:/repo', 'kit/x')
 
 
 if __name__ == '__main__':

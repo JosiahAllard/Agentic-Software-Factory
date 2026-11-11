@@ -2,7 +2,7 @@
 
 Pure read functions, each taking its source (a folder, a config dict, a line reader) and where
 needed a clock. They write nothing, start no thread and open no socket; the server calls them on
-each request and caches none of them (kitlib.hubsite.serve SiteViews: each GET snapshot reads
+each request and caches none of them (kitlib.hubsite.serveviews SiteViews: each GET snapshot reads
 usage and agents again).
 
   notices(notice_dir)           -> [doc]    lock-window notices, oldest first
@@ -20,7 +20,9 @@ import datetime
 import os
 import re
 
-from kitlib import pmstart, pmwatch, roster
+from kitlib import pmwatch
+from kitlib.config import pm as pmconfig
+from kitlib.content import rosterdoc
 from kitlib.hubsite import skilledits
 from kitlib.maintlint import result as lint_result
 
@@ -49,7 +51,7 @@ def notice(notice_dir, notice_id):
 
 
 def repos(cfg, stored=(), read=None, toplevel=None, kit_dir=None):
-    """The repositories the PM knows (kitlib.pmstart.known_repos of the pm_start config `cfg`),
+    """The repositories the PM knows (kitlib.config.pm.known_repos of the pm_start config `cfg`),
     each with the aliases the hub store holds for it: `stored` is the list of the store's repos/
     docs ({"name", "aliases"}). A stored repo the config does not know is still listed, so an
     alias is never hidden. [{"name", "aliases"}], sorted by name without regard to case. Raises
@@ -61,7 +63,7 @@ def repos(cfg, stored=(), read=None, toplevel=None, kit_dir=None):
         kw["toplevel"] = toplevel
     if kit_dir is not None:
         kw["kit_dir"] = kit_dir
-    names = {n.lower(): n for n in pmstart.known_repos(cfg, **kw)}
+    names = {n.lower(): n for n in pmconfig.known_repos(cfg, **kw)}
     aliases = {}
     for d in stored or ():
         if not isinstance(d, dict) or not isinstance(d.get("name"), str) or not d["name"]:
@@ -169,7 +171,7 @@ def agents(agents_dir):
         except OSError:
             fm = {}
         out.append({"name": name, "description": fm.get("description", ""),
-                    "model": fm.get("model", ""), "effort": fm.get("effort", roster.NONE)})
+                    "model": fm.get("model", ""), "effort": fm.get("effort", rosterdoc.NONE)})
     return {"available": True, "agents": out}
 
 

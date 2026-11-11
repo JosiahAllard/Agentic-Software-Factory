@@ -1,4 +1,4 @@
-"""kitlib.clock, the time fence (docs/flaky-tests.md): a fenced process gets the ceiling for a
+"""kitlib.clock, the time fence (docs/test-tools.md "Time fence"): a fenced process gets the ceiling for a
 degrade budget, an unmarked one the budget itself; the marker reaches this process (tests/__init__.py),
 the units of tools/kit_tests.py (child_env) and a kit child started with the test's environment,
 and no child built without it; and no code outside the test runner sets it."""
@@ -122,7 +122,7 @@ class Production(unittest.TestCase):
     defines it), tools/kit_tests.py (the test runner), kitlib/tooldeps/childenv.py (its test
     children's environment) and the design doc name it."""
     ALLOWED = {'kitlib/clock.py', 'tools/kit_tests.py', 'kitlib/tooldeps/childenv.py',
-               'docs/flaky-tests.md'}
+               'docs/test-tools.md'}
 
     def test_only_the_test_runner_names_the_marker(self):
         found, scanned = naming(KIT)

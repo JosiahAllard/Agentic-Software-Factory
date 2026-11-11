@@ -1,6 +1,6 @@
 # Content design
 
-Low-level design of `kitlib/content`, `kitlib/githooks` and the `content/` folder. The high-level design is ARCHITECTURE.md ("Content") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-008).
+Low-level design of `kitlib/content`, `kitlib/githooks` and the `content/` folder. The high-level design is ARCHITECTURE.md ("Content") and wins on a conflict.
 
 ## Contract
 
@@ -18,7 +18,7 @@ Low-level design of `kitlib/content`, `kitlib/githooks` and the `content/` folde
 | Path | Holds |
 |---|---|
 | `kitlib/content/__init__.py` | Load roles and skills, `roster()`, `names_of()`, render through each host's `ContentRenderer`, drift check |
-| `kitlib/content/roster.py` | docs/ROSTER.md's tables from the roles and each host's model maps |
+| `kitlib/content/rosterdoc.py` | docs/ROSTER.md's tables from the roles and each host's model maps |
 | `kitlib/content/oncommit.py` | Is this a kit checkout, which staged paths need a render |
 | `kitlib/githooks/` | The pre-commit dispatch: the render step, then the opt-in ledger check |
 | `content/roles/`, `content/skills/`, `content/default-profile.md`, `content/README.md` | The sources |
@@ -41,4 +41,4 @@ A role: one file in `content/roles/`, then render. A skill: one folder in `conte
 
 ## Reference
 
-docs/content.md, content/README.md, docs/ROSTER.md, docs/specialty-skills.md, docs/shipping.md.
+docs/content.md, content/README.md, docs/ROSTER.md, docs/shipping.md.

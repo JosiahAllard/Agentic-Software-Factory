@@ -5,7 +5,7 @@ anything is written: no model for the trailer, no work tree, a broken `.kit.json
 detached HEAD, a branch other than that repository's main branch (unless branch_ok), or uncommitted
 changes to the ledger file (another edit would be swept in). `finish` then commits the ledger file
 under its write lock, alone (`git commit -- <file>`, never -a: other staged files stay staged and out of the commit) as
-`ledger: R-nnnn <title>` with the kit's Co-Authored-By trailer (kitlib.commit.coauthor), and with
+`ledger: R-nnnn <title>` with the kit's Co-Authored-By trailer (kitlib.attribution.coauthor), and with
 push sends the current branch to that repository's `repo.remote` (`origin` by default) once the
 lock is given up. A failure
 after the write leaves the entry written and says what was not done. Nothing here prints or exits.
@@ -20,14 +20,14 @@ import os
 import re
 import time
 
+from kitlib import attribution
 from kitlib import config as kconfig
-from kitlib import commit as kcommit
 from kitlib.git import cmd, refs, repo
 
 from . import write
 from .errors import Refused, Usage
 
-MODEL_ENV = kcommit.MODEL_ENV
+MODEL_ENV = attribution.MODEL_ENV
 TITLE_LIMIT = 60
 PUSH_TIMEOUT = 120      # seconds
 INDEX_LOCK_WAIT = 3.0   # seconds commit_one keeps retrying add+commit while git's index.lock is busy
@@ -56,7 +56,7 @@ def locate(path, noun='the ledger'):
 
 def _settings(root, noun='the ledger'):
     try:
-        return kcommit.settings(kconfig.load(root))
+        return kconfig.commit_settings(kconfig.load(root))
     except kconfig.ConfigError as e:
         raise Refused('%s repository\'s .kit.json: %s' % (noun, e))
 
@@ -69,7 +69,7 @@ def prepare(path, branch_ok=False, model=None, env=None, noun='the ledger', prov
     """A Plan for committing the file at `path` alone (with `extra`, those files too: each in the
     same work tree and, like `path`, without uncommitted changes), or Usage/Refused. Call before
     writing."""
-    name, _source, error = kcommit.resolve_model(False, model, env, provider)
+    name, _source, error = attribution.resolve_model(False, model, env, provider)
     if error:
         raise Usage(error)
     if not (name or '').strip():
@@ -96,7 +96,7 @@ def prepare(path, branch_ok=False, model=None, env=None, noun='the ledger', prov
             raise Refused('git status failed: %s' % why)
         if out.strip():
             raise Refused('%s has uncommitted changes; refusing so another edit is not swept in' % one)
-    return Plan(root, rel, kcommit.coauthor(name, sets['coauthor_families'], provider), env,
+    return Plan(root, rel, attribution.coauthor(name, provider, sets['coauthor_families']), env,
                 tuple(more))
 
 

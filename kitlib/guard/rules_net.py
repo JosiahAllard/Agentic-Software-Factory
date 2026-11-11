@@ -281,7 +281,7 @@ def _net_ctor(src, kind, args, end, out):
     """Add the path a StreamWriter or FileStream constructor with `args` writes to `out`: its first
     argument. True when the guard does not read it: no arguments, or a StreamWriter's first argument
     that is not a plain string (a Stream it writes through, judged where it is opened, or a path the
-    line computes). A FileStream opened only to read counts as a write (docs/guard-v2.md v2:114)."""
+    line computes). A FileStream opened only to read counts as a write (docs/guard-rules.md "Shell writes")."""
     if not args:
         return True
     text, s, e = args[0]

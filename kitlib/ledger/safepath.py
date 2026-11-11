@@ -20,6 +20,8 @@ here prints or exits.
 import os
 import stat
 
+from kitlib import platform
+
 REPARSE_POINT = getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0x400)
 ADMINISTRATORS = 'S-1-5-32-544'
 SYSTEM = 'S-1-5-18'
@@ -47,7 +49,7 @@ def refusal(path):
         except OSError as exc:
             return head + 'cannot check %s (%s): check that this user may read it' % (p, exc)
         if st is not None and (getattr(st, 'st_file_attributes', 0) & REPARSE_POINT
-                               or (os.name != 'nt' and stat.S_ISLNK(st.st_mode))):
+                               or (platform.NAME != 'windows' and stat.S_ISLNK(st.st_mode))):
             return head + ('%s is a reparse point (a junction, symlink or other tag); the ledger '
                            'file and every folder above it must be plain: %s' % (p, REPARSE_FIX))
         if st is not None and p == full and stat.S_ISREG(st.st_mode) and st.st_nlink > 1:
@@ -57,7 +59,7 @@ def refusal(path):
     for p in (full, os.path.dirname(full)):
         if not os.path.lexists(p):
             continue
-        if os.name != 'nt':
+        if platform.NAME != 'windows':
             why = _posix_owner_refusal(p)
             if why:
                 return head + why
@@ -147,7 +149,7 @@ def _sid_text(api, sid):
 
 def owner_sid(path):
     """`(owner SID text, None)` or `(None, why)` for a file or folder. The tests' seam."""
-    if os.name != 'nt':
+    if platform.NAME != 'windows':
         return None, 'the owner check is Windows only'
     api = _win()
     ctypes = api.ctypes
@@ -167,7 +169,7 @@ def user_sid():
     """`(this process's user SID text, None)` or `(None, why)`; cached once read."""
     if _ME:
         return _ME[0], None
-    if os.name != 'nt':
+    if platform.NAME != 'windows':
         return None, 'the owner check is Windows only'
     api = _win()
     ctypes, wintypes = api.ctypes, api.wintypes

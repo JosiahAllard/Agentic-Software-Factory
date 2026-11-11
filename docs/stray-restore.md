@@ -66,11 +66,11 @@ To recover a discarded file, run `git cat-file blob <bytes_blob> > <path>` in Gi
 
 ## Who runs it
 
-The owner (an unmarked session not run under a Codex chat), the PM, a coordinator or the lander. The tool reads the session mark (`kitlib/sessionmark.py`, `docs/guard-fallback.md` "Session mark") and refuses any other mark.
+The owner (an unmarked session not run under a Codex chat), the PM, a coordinator or the lander. The tool reads the session mark (`kitlib/host/sessionmark.py`, `docs/guard-fallback.md` "Session mark") and refuses any other mark.
 
 A subagent shares its parent's mark, so a worker that a coordinator dispatches passes this check. Only the guard could tell such a worker apart. That is accepted on purpose: a restore loses nothing by design, because every discarded byte is kept in a branch tip.
 
-The mark itself can be dropped. As `kitlib/sessionmark.py` says, `PM_KIT_ROLE= python ...` runs a command unmarked, and an unmarked run counts as the owner, except under a Codex chat or a process tree that cannot be read (`strayrestore.why_not`), so any agent on Claude can pass `allowed()`. The check guards against mistakes, not against evasion. The tool's safety rests on the no-loss rule: it discards only bytes a branch tip holds, whoever runs it.
+The mark itself can be dropped. As `kitlib/host/sessionmark.py` says, `PM_KIT_ROLE= python ...` runs a command unmarked, and an unmarked run counts as the owner, except under a Codex chat or a process tree that cannot be read (`strayrestore.why_not`), so any agent on Claude can pass `allowed()`. The check guards against mistakes, not against evasion. The tool's safety rests on the no-loss rule: it discards only bytes a branch tip holds, whoever runs it.
 
 The guard judges a `python <kit>/tools/stray_restore.py ...` run by the script's own file, and it never sees the tool's child git. So the run needs no guard rule.
 

@@ -23,9 +23,9 @@ from optional.bridge.core.jsonwire import encode_frame
 from optional.bridge.core.messages import BeforeWriteError, DeliveryError, OutboundMessage, SenderAuthority
 from optional.bridge.core.outbox import Outbox
 from optional.bridge.core.pairing import ChatBinding, PairingStore
-from kitlib.proc.pipe import PrivateListener, connect
+from kitlib.platform.windows.pipe import PrivateListener, connect
 from optional.bridge.win.transport import PipeTarget, write_peer
-from kitlib.proc.errors import ProcError
+from kitlib.platform import ProcError
 from kitlib.proc.process import own_ctime
 from tests.bridge.test_pairing import chat
 

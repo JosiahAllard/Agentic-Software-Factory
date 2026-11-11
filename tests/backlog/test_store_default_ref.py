@@ -8,10 +8,11 @@ import unittest
 from unittest import mock
 
 from kitlib import config as kconfig
-from kitlib import pmdata
+from kitlib.config import pmdata
 from kitlib.backlog import at_landing
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.backlog import store_open, store_ref
 from kitlib.backlog.errors import Refusal
 
 from tests.backlog import ownertree
@@ -42,7 +43,7 @@ class DefaultRef(unittest.TestCase):
             json.dump(data, f)
 
     def backend(self):
-        return smod.open_backend(self.root, kconfig.load(self.root), fetch=False)
+        return store_open.open_backend(self.root, kconfig.load(self.root), fetch=False)
 
     def publish(self, backend, *records):
         writes = {}
@@ -75,7 +76,8 @@ class DefaultRef(unittest.TestCase):
         self.assertEqual(self.ref_tip(), (tip, '%s\t%s' % (tip, smod.STORE_REF)))
 
     def test_the_default_store_still_reads(self):
-        named = smod.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF, fetch=False)
+        named = store_ref.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF,
+                                     fetch=False)
         self.publish(named, priced('FOO'))
         snap = smod.Store(self.backend(), rmod.Rules()).load()
         self.assertIsNotNone(snap.get('FOO'))
@@ -131,7 +133,7 @@ class DefaultRef(unittest.TestCase):
     def test_the_refusal_in_the_pm_data_worktree_itself_never_points_at_itself(self):
         pmdata.write(self.repo.common_dir(), 'pmdata', 'private', self.repo.head())
         wt = self.repo.worktree('pm', branch='pmdata')
-        backend = smod.open_backend(wt, kconfig.load(wt), fetch=False)
+        backend = store_open.open_backend(wt, kconfig.load(wt), fetch=False)
         with self.assertRaises(Refusal) as caught:
             self.publish(backend, priced('FOO'))
         text = str(caught.exception)
@@ -145,7 +147,8 @@ class DefaultRef(unittest.TestCase):
         test_default_store_warn.py), so no refusal of its reaches the advice."""
         act = at_landing._Act('FOO', 'kit/x', 'abc')
         args = ['close', 'FOO', '--reason', '"landed abc"']
-        named = smod.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF, fetch=False)
+        named = store_ref.RefBackend(self.root, 'origin', smod.STORE_REF, smod.STORE_REF,
+                                     fetch=False)
         said = at_landing._refused_advice(Refusal('busy'), named, self.root, act, args,
                                           lambda *a: 'PLAIN ' + ' '.join(a))
         self.assertEqual(said, 'close it with: PLAIN close FOO --reason "landed abc"')

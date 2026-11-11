@@ -1,6 +1,6 @@
 # Ledger design
 
-Low-level design of `kitlib/ledger` and `kitlib/pending`. The high-level design is ARCHITECTURE.md ("Data ownership") and wins on a conflict. Where today's tree differs: docs/redesign-work.md (W-004, W-011, W-042).
+Low-level design of `kitlib/ledger` and `kitlib/pending`. The high-level design is ARCHITECTURE.md ("Data ownership") and wins on a conflict.
 
 ## Contract
 

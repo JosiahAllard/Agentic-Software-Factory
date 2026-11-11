@@ -1,5 +1,5 @@
 """kitlib.platform, the seam: NAME, the backend each platform gets, and the contract every
-backend provides in full (docs/linux-support-plan.md section 2.1)."""
+backend provides in full (docs/modules/base-design.md "Contract")."""
 import importlib
 import unittest
 from unittest import mock
@@ -28,9 +28,9 @@ class Backends(unittest.TestCase):
         self.assertEqual(sorted(names), sorted(api.NAMES))
         self.assertEqual(len(set(names)), len(names))
 
-    @windows_only('the Windows backend binds the real kitlib.proc functions')
+    @windows_only('the Windows backend binds its own process and cpu functions')
     def test_the_windows_backend_is_todays_kitlib_proc_functions(self):
-        from kitlib.proc import cpu, process
+        from kitlib.platform.windows import cpu, process
         windows = importlib.import_module('kitlib.platform.windows')
         for name in api.NAMES:
             with self.subTest(name=name):
@@ -62,7 +62,8 @@ class Backends(unittest.TestCase):
             for name in names:
                 with self.subTest(name=name):
                     with self.assertRaisesRegex(platform.PlatformUnsupported,
-                                                r'%s is not built on Linux yet \(the %s area, slice %d '
+                                                r'%s is not built on Linux yet '
+                                                r'\(the %s area, slice %d\)'
                                                 % (name, area, slice_number)):
                         getattr(linux, name)(1, 2)
 

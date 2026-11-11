@@ -6,7 +6,7 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib import sessionmark
+from kitlib.host import sessionmark
 from tests import gitfixture
 from tests.home import temp_home
 from tests.realgit import real_git as on_real_git

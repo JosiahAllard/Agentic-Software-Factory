@@ -7,8 +7,9 @@ import os
 import tempfile
 import unittest
 
-from kitlib import kitroot, pluginsource, pmstart
-from kitlib.stubs import memory as kmemory
+from kitlib import kitroot, pmstart
+from kitlib.pluginsource import layout as plugin_layout, export as plugin_export
+from kitlib.machinesetup import memory as kmemory
 from tests.pmstart import HANDOFF_FAKE, keep_off_hub_site, keep_off_launcher_repos
 
 NOW = datetime.datetime(2026, 10, 6, 9, 0)
@@ -32,9 +33,9 @@ class AllowRulesCheckTest(unittest.TestCase):
         self.addCleanup(d.cleanup)
         self.root = os.path.join(d.name, 'export')
         for sha in (CUR, OLD):
-            write(os.path.join(self.root, sha, pluginsource.MARKER), {'sha': sha})
-        pluginsource.write_marketplace(self.root, CUR)
-        self.settings = pluginsource.Settings(self.root, False, 'origin')
+            write(os.path.join(self.root, sha, plugin_layout.MARKER), {'sha': sha})
+        plugin_export.write_marketplace(self.root, CUR)
+        self.settings = plugin_layout.Settings(self.root, False, 'origin')
         self.repo = os.path.join(d.name, 'repo')
         os.makedirs(self.repo)
         self.slash = self.root.replace('\\', '/')

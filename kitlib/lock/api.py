@@ -32,7 +32,8 @@ from kitlib.lock import layout as lay
 from kitlib.lock import queue as qm
 from kitlib.lock import stale as stale_mod
 from kitlib.lock import status as st
-from kitlib.lock.run import expected_end, request_stop
+from kitlib.lock.run import expected_end
+from kitlib.lock.run_end import request_stop
 from kitlib.lock.store import (EXIT_BUSY, EXIT_HOLD, EXIT_REQUIRE, EXIT_RESERVED, EXIT_USAGE,
                                ID_RE, LockError, Store, actor_host, caller, iso, memory_now, owns,
                                parse_iso, public, read_json, read_record, utc_now)

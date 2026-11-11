@@ -52,7 +52,8 @@ def queue_review(root, branches, tips):
     needs one (docs/gate-landing.md "Landing" step 4). Only for a branch with no entry at all and whose head
     is that tip: an entry a test wrote is never replaced, and a tip that is not the branch's head
     (a landing the test means to refuse earlier) gets none. The branches queued."""
-    from kitlib.gate import verdicts
+    from kitlib.landing import verdicts
+    from kitlib.records import verdict_entry
     from kitlib.git import repo as repomod
     branches = branches if isinstance(branches, (list, tuple)) else [branches]
     tips = tips if isinstance(tips, (list, tuple)) else [tips]
@@ -62,11 +63,11 @@ def queue_review(root, branches, tips):
         return queued
     for b, t in zip(branches, tips):
         try:
-            if (not isinstance(t, str) or os.path.exists(verdicts.entry_path(common, b))
+            if (not isinstance(t, str) or os.path.exists(verdict_entry.entry_path(common, b))
                     or verdicts.head_of(common, b) != t):
                 continue
             verdicts.add(common, dict(REVIEW, branch=b, tip=t, range='main..%s' % t))
-        except verdicts.VerdictError:
+        except verdict_entry.VerdictError:
             continue            # not a branch the queue takes: the landing refuses it as before
         queued.append(b)
     return queued
@@ -93,7 +94,7 @@ def test_env():
 # with no trace for the hour the suite's pool waits on a unit. Fd 2: under
 # tools/kit_tests.py's pool it is the unit's unit-<n>.out (kitlib.tooldeps.pool_worker), and it is
 # so even when unittest's buffer has replaced sys.stderr. The slowest gate test takes well under
-# DUMP_S, and TakeTurns (tests/gate/test_land.py) waits HANG_S = 600 before it fails a hang.
+# DUMP_S, and TakeTurns (tests/landing/test_land.py) waits HANG_S = 600 before it fails a hang.
 # DUMP_S is well under the pool's whole-unit kitlib.tooldeps.selfrun.UNIT_TIMEOUT (300), since a
 # test starts some way into its unit: a dump at 300 never fired before the unit was killed.
 DUMP_S = 120

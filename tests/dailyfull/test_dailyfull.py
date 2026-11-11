@@ -17,6 +17,7 @@ from kitlib.config import load as load_config
 from kitlib.gate import runner
 from kitlib.git import cmd as gitcmd
 from kitlib.lock import store as lockstore
+from kitlib.records import place
 from tests.gate import fixtures
 from tests.home import temp_home
 
@@ -77,7 +78,7 @@ class Case(fixtures.GateRepoCase):
 
     def setUp(self):
         # A temp home (tests/home.py): the run's log folder still comes from the machine config
-        # (runner.log_base -> kitlib.config.user.work_temp), read from an empty one, never the real.
+        # (place.log_base -> kitlib.config.user.work_temp), read from an empty one, never the real.
         temp_home(self)
         fixtures.GateRepoCase.setUp(self)
         self.out = os.path.join(self.tmp, 'daily')
@@ -137,13 +138,13 @@ class Green(Case):
         with open(blocker, 'w') as fh:
             fh.write('x')
         shared, said = os.path.join(self.tmp, 'shared'), []
-        name = runner.repo_name(self.cfg(), self.main_dir)
-        with mock.patch.object(runner.kuser, 'work_temp', return_value=os.path.join(blocker, 'k')), \
-                mock.patch.object(runner.kuser, 'shared_temp', return_value=shared):
+        name = place.repo_name(self.cfg(), self.main_dir)
+        with mock.patch.object(place.kuser, 'work_temp', return_value=os.path.join(blocker, 'k')), \
+                mock.patch.object(place.kuser, 'shared_temp', return_value=shared):
             o = D.run(self.main_dir, self.cfg(), stamp='20261008-040000', say=said.append,
                       book_kw=self.book_kw)
         self.assertEqual(o.code, G.OK, o.lines)
-        want = os.path.join(shared, '%s-gate' % runner.slug_of(name), 'daily', '20261008-040000')
+        want = os.path.join(shared, '%s-gate' % place.slug_of(name), 'daily', '20261008-040000')
         self.assertEqual(o.log_dir, want)
         self.assertTrue(os.path.isfile(os.path.join(want, D.RESULT)))
         self.assertTrue(any('could not be made' in s for s in said), said)
@@ -200,8 +201,8 @@ class Unchanged(Case):
         with open(blocker, 'w') as fh:
             fh.write('x')
         shared = os.path.join(self.tmp, 'shared')
-        with mock.patch.object(runner.kuser, 'work_temp', return_value=os.path.join(blocker, 'k')), \
-                mock.patch.object(runner.kuser, 'shared_temp', return_value=shared):
+        with mock.patch.object(place.kuser, 'work_temp', return_value=os.path.join(blocker, 'k')), \
+                mock.patch.object(place.kuser, 'shared_temp', return_value=shared):
             D.run(self.main_dir, self.cfg(), stamp='20261008-040000', book_kw=self.book_kw)
             o = D.run(self.main_dir, self.cfg(), stamp='20261009-040000', book_kw=self.book_kw)
         self.assertEqual(o.code, G.OK, o.lines)

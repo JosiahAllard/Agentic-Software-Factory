@@ -11,7 +11,7 @@ Heavy programs (ARCHITECTURE.md "Kinds": a program is heavy because it is on the
 Roles. role_name(action) is `main` for a kitlib.host.Action of the main session (no `agent`),
   else its `agent_role` when the roles table names it, else `subagent`. The host adapter gives
   agent_role in the kit's naming: Claude's adapter drops exactly the kit plugin's prefix
-  (`<plugin>:lander` is `lander`; kitlib.agentname.bare), and any other form names no role.
+  (`<plugin>:lander` is `lander`; kitlib.host.agentname.bare), and any other form names no role.
   permissions(action, roles) is that role's entry over its base (`main` or `subagent`) over
   ROLE_DEFAULTS.
 
@@ -89,7 +89,7 @@ HEAVY_DEFAULTS = (
      'why': 'a Gradle run configures and builds the project'},
 )
 
-# The same programs as Linux names them (docs/linux-support-plan.md section 3, finding 8), added
+# The same programs as Linux names them, added
 # on Linux only: godot[0-9]* would make godot4.exe heavy on Windows too. godot4 and the like (an
 # AppImage, Godot4.AppImage, too), flatpak's exported launchers (exports/bin/org.godotengine.Godot,
 # exports/bin/org.blender.Blender), and `flatpak run <app id>`: flatpak's other verbs on an app id
@@ -366,3 +366,17 @@ def load_gate_checks(cfg):
 
 def check_heavy_entry(entry, where='heavy entry'):
     return check(schema.HEAVY_ENTRY, entry, where)
+
+
+def commit_settings(cfg):
+    """`{'merge_fold', 'coauthor_families', 'main_branch', 'remote', 'rule_pointer'}` from a
+    checked Config.
+    Raises ConfigError on a family name that is blank or not single-spaced."""
+    sec = cfg.section('commit')
+    families = sec['coauthor_families'] or []
+    if not all(f.strip() and f == ' '.join(f.split()) for f in families):
+        raise ConfigError('.kit.json "commit".coauthor_families must be a list of names '
+                          '(one or more words, single-spaced), e.g. ["Codex"]')
+    return {'merge_fold': bool(sec['merge_fold']), 'coauthor_families': families,
+            'main_branch': cfg.main_branch, 'remote': cfg.remote,
+            'rule_pointer': cfg.section('checkout_guard')['rule_pointer']}

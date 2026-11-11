@@ -1,6 +1,14 @@
-"""Remove a SCRATCH worktree: a detached tree an agent made under its temp folder (red evidence run
+"""Scratch trees: detached throwaway trees for evidence against another commit (a red-first run, a
+gate's targeted rerun). Nothing here prints.
+
+`make_tree` makes one at `<main checkout>/<worktrees_dir>/redfirst-<base10>-<pid>`; `cleanup_here`
+puts back the base's version of every file the run checked out (`put_back`), then removes the
+tree through kitlib.worktree.remove_checks's checks and remove's git_remove, never forced (`remove_tree`);
+`leftover_line` names a tree left registered with the worktree_remove command that removes it.
+
+Remove a SCRATCH worktree: a detached tree an agent made under its temp folder (red evidence run
 against an older commit), whose work is disposable (docs/worktree-remove.md "Tools", `--scratch`).
-tools/worktree_remove.py `<path> --scratch` is the entry point. Nothing here prints.
+tools/worktree_remove.py `<path> --scratch` is the entry point.
 
 `remove_scratch(top, argument)` removes the tree only when every one of these holds, checked in
 this order before anything is touched:
@@ -31,13 +39,17 @@ through kitlib.worktree.remove.git_remove (its last status read, then a plain `g
 remove`: never forced). A status, list, reflog or hash that cannot be read refuses.
 """
 import os
+import subprocess
+import time
 
+from kitlib import kitroot, platform
 from kitlib.config import user as kuser
+from kitlib.git import cmd
 
-from . import holders, remove
+from . import holders, remove, remove_checks
 from .holders import canon
 
-OK, REFUSED = remove.OK, remove.REFUSED
+OK, REFUSED = remove_checks.OK, remove_checks.REFUSED
 ROOT_VARS = ('AGENT_TEMP', 'TEMP', 'TMP')
 REF_SPACES = ('refs/heads', 'refs/remotes')
 NOTHING = 'nothing was removed'
@@ -97,7 +109,7 @@ def target(ctx, argument, rts, dropped):
         ctx.say('refused   %s is inside the main checkout %s: a workstream worktree, never a'
                 ' scratch one; use the slug form without --scratch; %s' % (path, ctx.main, NOTHING))
         return REFUSED
-    home = next((h for h in remove.homes_of(ctx) if _strictly_under(path, h)), None)
+    home = next((h for h in remove_checks.homes_of(ctx) if _strictly_under(path, h)), None)
     if home:
         ctx.say('refused   %s is inside the worktree folder %s: a workstream worktree, never a'
                 ' scratch one; use the slug form without --scratch; %s' % (path, home, NOTHING))
@@ -114,8 +126,8 @@ def target(ctx, argument, rts, dropped):
         ctx.say('nothing   %s does not exist' % path)
         return OK
     try:
-        entries = remove.worktree_entries(remove.worktree_listing(ctx.main))
-    except remove.GitReadError as e:
+        entries = remove_checks.worktree_entries(remove_checks.worktree_listing(ctx.main))
+    except remove_checks.GitReadError as e:
         ctx.say('refused   %s: the worktree list could not be read (%s); %s' % (path, e, NOTHING))
         return REFUSED
     entry = next((e for e in entries if canon(e['path']) == canon(path)), None)
@@ -153,16 +165,16 @@ def reflog(path):
     for the files ref format: a reftable repository never has the file, so any other format
     refuses. A per-worktree ref that is not a commit refuses."""
     args = ('rev-parse', '--show-ref-format')
-    rc, out, err = remove.git(path, *args)
+    rc, out, err = remove_checks.git(path, *args)
     if rc != 0 or not out:
-        return None, remove.failure(args, rc, err)
+        return None, remove_checks.failure(args, rc, err)
     if out != 'files':
         return None, ('its refs are stored as %s, whose reflog this verb cannot read (only the'
                       ' files format keeps logs/HEAD)' % out)
     args = ('rev-parse', '--absolute-git-dir')
-    rc, out, err = remove.git(path, *args)
+    rc, out, err = remove_checks.git(path, *args)
     if rc != 0 or not out:
-        return None, remove.failure(args, rc, err)
+        return None, remove_checks.failure(args, rc, err)
     log = os.path.join(out, 'logs', 'HEAD')
     try:
         with open(log, encoding='utf-8', errors='replace') as fh:
@@ -181,9 +193,9 @@ def reflog(path):
     # A per-worktree ref (refs/worktree, refs/bisect, refs/rewritten) lives in the tree's git dir
     # and goes with it: its commit must be kept by a shared ref, as a reflog entry must.
     args = ('for-each-ref', '--format=%(objectname) %(objecttype) %(refname)', *PER_WORKTREE)
-    rc, out, err = remove.git(path, *args)
+    rc, out, err = remove_checks.git(path, *args)
     if rc != 0:
-        return None, remove.failure(args[:1], rc, err)
+        return None, remove_checks.failure(args[:1], rc, err)
     for line in out.splitlines():
         p = line.split(' ', 2)
         if len(p) != 3 or p[1] != 'commit':
@@ -203,9 +215,9 @@ def _reaches(ctx, oids, also=()):
     lost = []
     for batch in _batches(oids):
         args = ('rev-list', *batch, '--not', *also, '--branches', '--remotes', '--tags')
-        rc, out, err = remove.git(ctx.main, *args)
+        rc, out, err = remove_checks.git(ctx.main, *args)
         if rc != 0:
-            return None, remove.failure(args[:1], rc, err)
+            return None, remove_checks.failure(args[:1], rc, err)
         listed = set(out.split())
         lost.extend(o for o in batch if o in listed)
     return lost, None
@@ -222,11 +234,11 @@ def _holder(ctx, refs, oid):
     failed = None
     for _, name in refs:
         # exit 1 is git's NO; anything else is a failed read: the next ref may still prove it.
-        rc, _, err = remove.git(ctx.main, 'merge-base', '--is-ancestor', oid, name)
+        rc, _, err = remove_checks.git(ctx.main, 'merge-base', '--is-ancestor', oid, name)
         if rc == 0:
             return name, None
         if rc != 1 and failed is None:
-            failed = remove.failure(('merge-base', '--is-ancestor', oid[:10], name), rc, err)
+            failed = remove_checks.failure(('merge-base', '--is-ancestor', oid[:10], name), rc, err)
     return None, failed
 
 
@@ -246,7 +258,7 @@ def all_reached(ctx, path, head, logged):
                  % (head[:10], len(oids) - 1), why)
         return False
     if head in lost:
-        rc, count, _ = remove.git(ctx.main, 'rev-list', '--count', head, '--not', '--branches',
+        rc, count, _ = remove_checks.git(ctx.main, 'rev-list', '--count', head, '--not', '--branches',
                                   '--remotes', '--tags')
         ctx.say('refused   %s: no ref reaches its detached HEAD %s (%s commit(s) of its own would'
                 ' be lost); whether to drop them is the owner\'s call; %s'
@@ -267,9 +279,9 @@ def reachable(ctx, path, head, logged):
     printed, or None after saying why the tree is refused (`all_reached` first)."""
     args = ('for-each-ref', '--format=%(objectname) %(objecttype) %(refname)', 'refs/heads',
             'refs/remotes', 'refs/tags')
-    rc, out, err = remove.git(ctx.main, *args)
+    rc, out, err = remove_checks.git(ctx.main, *args)
     if rc != 0:
-        _unknown(ctx, path, head[:10], remove.failure(args[:1], rc, err))
+        _unknown(ctx, path, head[:10], remove_checks.failure(args[:1], rc, err))
         return None
     if not all_reached(ctx, path, head, logged):
         return None
@@ -311,10 +323,10 @@ def hashes(tree, rels):
     for batch in _batches(rels):
         # Paths after `--` are files, never options; hash-object applies the path's filters (autocrlf).
         args = ('hash-object', '--') + tuple(batch)
-        rc, out, err = remove.git(tree, *args)
+        rc, out, err = remove_checks.git(tree, *args)
         got = out.splitlines()
         if rc != 0 or len(got) != len(batch):
-            return None, remove.failure(args[:1], rc, err)
+            return None, remove_checks.failure(args[:1], rc, err)
         result.update(zip(batch, (g.strip() for g in got)))
     return result, None
 
@@ -325,9 +337,9 @@ def staged(tree, rels):
     if not rels:
         return {}, None
     args = ('ls-files', '-s')
-    rc, out, err = remove.git(tree, *args)
+    rc, out, err = remove_checks.git(tree, *args)
     if rc != 0:
-        return None, remove.failure(args, rc, err)
+        return None, remove_checks.failure(args, rc, err)
     got, want = {}, set(rels)
     for line in out.splitlines():
         meta, _, rel = line.partition('\t')
@@ -343,20 +355,20 @@ def staged(tree, rels):
 def found(ctx, wants):
     """`({(rel, blob): ref}, None)` for each wanted (rel, blob) some ref under REF_SPACES holds
     at `rel`; `(None, why)` when git cannot say."""
-    rc, out, err = remove.git(ctx.main, 'for-each-ref', '--format=%(refname)', *REF_SPACES)
+    rc, out, err = remove_checks.git(ctx.main, 'for-each-ref', '--format=%(refname)', *REF_SPACES)
     if rc != 0:
-        return None, remove.failure(('for-each-ref',), rc, err)
+        return None, remove_checks.failure(('for-each-ref',), rc, err)
     refs = [r.strip() for r in out.splitlines() if r.strip()]
     asks = [(ref, rel, blob) for rel, blob in wants for ref in refs]
     if not asks:
         return {}, None
     # One `<ref>:<path>` per line; each answer is `<oid> <type> <size>` or `<name> missing`.
     args = ('cat-file', '--batch-check')
-    rc, out, err = remove.git(ctx.main, *args, stdin=''.join(
+    rc, out, err = remove_checks.git(ctx.main, *args, stdin=''.join(
         '%s:%s\n' % (ref, rel) for ref, rel, _ in asks).encode('utf-8'))
     answers = out.splitlines()
     if rc != 0 or len(answers) != len(asks):
-        return None, remove.failure(args, rc, err)
+        return None, remove_checks.failure(args, rc, err)
     hits = {}
     for (ref, rel, blob), answer in zip(asks, answers):
         parts = answer.split()
@@ -434,12 +446,12 @@ def restore(ctx, path, plan, count):
     if plan['checkout']:
         steps.append(('checkout', '-q', 'HEAD', '--') + tuple(plan['checkout']))
     # Literal pathspecs: a `[` in a file name is never a glob that names other files.
-    literal = dict(remove.git_env(), GIT_LITERAL_PATHSPECS='1')
+    literal = dict(remove_checks.git_env(), GIT_LITERAL_PATHSPECS='1')
     for args in steps:
-        rc, out, err = remove.git(path, *args, env=literal)
+        rc, out, err = remove_checks.git(path, *args, env=literal)
         if rc != 0:
             ctx.say('failed    %s: %s; git worktree remove was NOT run'
-                    % (path, remove.failure(args[:1], rc, err or out)))
+                    % (path, remove_checks.failure(args[:1], rc, err or out)))
             return False
     for rel in plan['delete']:
         if not _delete(ctx, path, rel, plan['blobs']):
@@ -479,10 +491,10 @@ def _delete(ctx, path, rel, blobs):
 def unmoved(ctx, path, head, logged):
     """True when the tree's HEAD, HEAD reflog and per-worktree ref tips are what was checked; else
     says why (a commit made while the verb ran would otherwise be removed with the tree)."""
-    rc, now, err = remove.git(path, 'rev-parse', '--verify', 'HEAD')
+    rc, now, err = remove_checks.git(path, 'rev-parse', '--verify', 'HEAD')
     if rc != 0 or now != head:
         ctx.say('failed    %s: HEAD moved after it was checked (%s, was %s); git worktree remove'
-                ' was NOT run' % (path, now[:10] if rc == 0 else remove.failure(
+                ' was NOT run' % (path, now[:10] if rc == 0 else remove_checks.failure(
                     ('rev-parse',), rc, err), head[:10]))
         return False
     again, why = reflog(path)
@@ -495,7 +507,7 @@ def unmoved(ctx, path, head, logged):
 
 def remove_scratch(top, argument, cwd=None, environ=None):
     """`<path> --scratch`: Outcome(code, lines)."""
-    ctx, refused = remove.open_ctx(top, cwd)
+    ctx, refused = remove_checks.open_ctx(top, cwd)
     if refused:
         return refused
     return ctx.outcome(_remove_scratch(ctx, argument, environ))
@@ -525,12 +537,12 @@ def _remove_scratch(ctx, argument, environ):
     if why:
         ctx.say('refused   %s: %s; %s' % (path, why, NOTHING))
         return REFUSED
-    work, _, ignored, why = remove.dirty(ctx, path)
+    work, _, ignored, why = remove_checks.dirty(ctx, path)
     if work is None:
         ctx.say('refused   %s: its status could not be read (%s); %s' % (path, why, NOTHING))
         return REFUSED
     if ignored:
-        ctx.say('refused   %s has %s. %s.' % (path, remove.ignored_reason(ignored, path),
+        ctx.say('refused   %s has %s. %s.' % (path, remove_checks.ignored_reason(ignored, path),
                                              NOTHING[0].upper() + NOTHING[1:]))
         return REFUSED
     plan, why = preserved(ctx, path, work)
@@ -546,3 +558,111 @@ def _remove_scratch(ctx, argument, environ):
     if not remove.git_remove(ctx, path, entry['path']):
         return REFUSED
     return OK
+
+
+# ---- making a scratch tree and removing it after its run ----------------------------------------
+PREFIX = 'redfirst-'
+HOLD_STEP_S = 5
+OWN_CONSOLE = ({'creationflags': subprocess.CREATE_NO_WINDOW} if platform.NAME == 'windows'
+               else {'start_new_session': True})
+
+
+def git(cwd, *args):
+    """`(rc, stdout, stderr)` of a git started on its own console (OWN_CONSOLE)."""
+    r = cmd.subprocess_run(('git', '-C', cwd) + args, capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', env=remove_checks.git_env(), **OWN_CONSOLE)
+    return r.returncode, (r.stdout or '').strip(), (r.stderr or '').strip()
+
+
+def make_tree(main, worktrees_dir, base):
+    path = os.path.join(main, worktrees_dir, '%s%s-%d' % (PREFIX, base[:10], os.getpid()))
+    if os.path.lexists(path):
+        return None, 'the throwaway path %s exists already' % path
+    rc, out, err = git(main, 'worktree', 'add', '--detach', path, base)
+    if rc != 0:
+        return None, 'git worktree add failed: %s' % (err or out)
+    return path, None
+
+
+def put_back(tw, base, new, had):
+    """Undo kitlib.redfirst.run.copy_in: the base's version of each file it had; each file it never
+    had out of the index and off the disk. Returns the problems."""
+    problems = []
+    if had:
+        rc, out, err = git(tw, 'checkout', base, '--', *had)
+        if rc != 0:
+            problems.append('git checkout %s -- %s: %s' % (base[:10], ' '.join(had), err or out))
+    if new:
+        rc, out, err = git(tw, 'rm', '-q', '--cached', '--ignore-unmatch', '--', *new)
+        if rc != 0:
+            problems.append('git rm --cached %s: %s' % (' '.join(new), err or out))
+        for f in new:
+            full = os.path.join(tw, *f.split('/'))
+            try:
+                if os.path.isfile(full):
+                    os.remove(full)
+            except OSError as e:
+                problems.append('%s: %s' % (full, e))
+    return problems
+
+
+def remove_tree(ctx, tw, wait_s, step_s=HOLD_STEP_S, sleep=time.sleep):
+    """kitlib.worktree.remove_checks's checks, then remove's git_remove; never forced. True when gone."""
+    work, disposable, ignored, why = remove_checks.dirty(ctx, tw)
+    if why:
+        ctx.say('leftover  %s: its status could not be read (%s); not removed' % (tw, why))
+        return False
+    left = list(work) + list(disposable) + list(ignored)
+    if left:
+        ctx.say('leftover  %s holds files the run left (%s); not removed' % (tw, holders.listed(left)))
+        return False
+    links, why = holders.links_inside(tw)
+    if why or links:
+        ctx.say('leftover  %s: %s; not removed' % (tw, why or 'it holds links: ' + '; '.join(links)))
+        return False
+    deadline = time.monotonic() + wait_s
+    held = holders.blockers(tw)
+    while held and time.monotonic() < deadline:
+        sleep(step_s)
+        held = holders.blockers(tw)
+    if held:
+        ctx.say('leftover  %s is held after %d s; git was NOT run' % (tw, wait_s))
+        ctx.describe(tw, held)
+        return False
+    entry = remove_checks.registrations(ctx.main).get(holders.canon(tw))
+    if entry is None:
+        ctx.say('leftover  %s is not a registered worktree; not removed' % tw)
+        return False
+    return remove.git_remove(ctx, tw, entry[0])
+
+
+def cleanup_here(main, tw, base, new, had, wait_s, say, step_s=HOLD_STEP_S):
+    """put_back, then remove_tree, in this process. True when the tree is gone; never raises."""
+    try:
+        problems = put_back(tw, base, new, had)
+        for p in problems:
+            say('failed    putting back: %s' % p)
+        if problems:
+            return False
+        ctx, refusal = remove_checks.open_ctx(main)
+        if refusal:
+            for line in refusal.lines:
+                say(line)
+            return False
+        try:
+            return remove_tree(ctx, tw, wait_s, step_s)
+        finally:
+            for line in ctx.out:
+                say(line)
+    except Exception as e:  # noqa: BLE001  (the caller reports a leftover, exit 4)
+        say('failed    cleanup: %s: %s' % (type(e).__name__, e))
+        return False
+
+
+def leftover_line(tw, landed, main):
+    """The line for a throwaway worktree `tw` left registered, naming the kit's own
+    worktree_remove.py with -C the main checkout `main` (docs/install.md "Ported repo tools")."""
+    name = os.path.basename(tw)
+    verb = '%s %s' % (kitroot.command('worktree_remove', main), name)
+    return ('leftover  %s stays registered; once nothing holds it: %s'
+            % (tw, verb if landed else verb + ' --abandon "red-first throwaway"'))

@@ -1,7 +1,7 @@
 """The guard as Claude Code runs it, `boot/hook.py claude PreToolUse`: a PreToolUse event on stdin,
 hook JSON (or nothing) on stdout, exit 0. HOME/USERPROFILE point at a scratch folder, so no real
 machine config is read, and the payloads touch no repository (a temp folder that is not a checkout).
-The entry hands the event to hosts.claude.adapter through kitlib.host.hookmain; these tests run it
+The entry hands the event to hosts.claude.adapter through kitlib.hookrun.main; these tests run it
 end to end."""
 import importlib.util
 import io
@@ -25,9 +25,10 @@ ARGS = ['claude', 'PreToolUse']
 # will not import: the hook imports these and nothing else of the kit
 HOOK_FILES = ('boot/kitboot.py', 'tools/machine_lock.py', 'hosts/__init__.py', 'hosts/claude/__init__.py',
               'hosts/claude/adapter/__init__.py', 'hosts/claude/adapter/events.py',
-              'hosts/claude/adapter/host.py', 'kitlib/host/__init__.py', 'kitlib/host/hookmain.py',
+              'hosts/claude/adapter/host.py', 'kitlib/host/__init__.py', 'kitlib/hookrun/__init__.py',
+              'kitlib/hookrun/main.py',
               'kitlib/host/registry.py', 'hosts.json',
-              'kitlib/agentname.py', 'kitlib/lockmcp/__init__.py')
+              'kitlib/host/agentname.py', 'kitlib/lock/__init__.py', 'kitlib/lock/names.py')
 
 
 def load():
@@ -237,7 +238,7 @@ class GuardError(unittest.TestCase):
                 'for m in list(sys.modules.values()) if getattr(m, "__file__", None) '
                 'and os.path.abspath(m.__file__).startswith(root + os.sep))]))'
                 % (os.path.dirname(ENTRY), ARGS, os.path.dirname(os.path.dirname(ENTRY))))
-        env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PM_KIT_ROOT', 'PM_KIT_RELEASE_ID')}
+        env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PM_KIT_ROOT')}
 
         def loaded(tool):
             ev = json.dumps({'tool_name': tool, 'tool_input': {}, 'cwd': self.base, 'hook_event_name': 'PreToolUse'})

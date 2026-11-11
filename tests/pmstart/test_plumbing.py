@@ -1,4 +1,4 @@
-"""kitlib.pmstart's machine-facing helpers with their system calls faked: the process listing, the
+"""kitlib.pmstart's machine-facing helpers with their system calls faked: the
 repository name lookup, the pm_data settings read and kit_sync's cannot-read lines."""
 import os
 import subprocess
@@ -6,9 +6,11 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from kitlib import pmdata, pmstart
+from kitlib import pmstart
+
+from kitlib.config import pm as pmconfig
+from kitlib.config import pmdata
 from kitlib.git import cmd as gitcmd, refs, repo
-from tests.platforms import windows_only
 
 KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -17,50 +19,18 @@ def ran(rc=0, out="", err=""):
     return SimpleNamespace(returncode=rc, stdout=out, stderr=err)
 
 
-class ListProcessesTest(unittest.TestCase):
-
-    def call(self, result):
-        with mock.patch.object(pmstart.subprocess, "run", return_value=result) as run:
-            out = pmstart.list_processes()
-        args, kw = run.call_args
-        self.assertEqual(args[0][:3], ["powershell", "-NoProfile", "-NonInteractive"])
-        self.assertEqual(kw["timeout"], pmstart.TIMEOUT)
-        return out
-
-    def test_a_list_is_returned_as_is_and_one_process_becomes_a_list(self):
-        self.assertEqual(self.call(ran(out='[{"ProcessId": 1}, {"ProcessId": 2}]')),
-                         [{"ProcessId": 1}, {"ProcessId": 2}])
-        self.assertEqual(self.call(ran(out='{"ProcessId": 1}')), [{"ProcessId": 1}])
-        self.assertEqual(self.call(ran(out="")), [])
-
-    def test_a_failed_powershell_raises_with_its_exit_code_and_stderr(self):
-        with self.assertRaises(RuntimeError) as c:
-            self.call(ran(rc=3, err="  access denied \n"))
-        self.assertEqual(str(c.exception), "powershell exit 3: access denied")
-
-    @windows_only("Windows only")
-    def test_with_no_console_powershell_is_started_with_no_window(self):
-        """Session start runs this where there may be no console: PowerShell must not open one."""
-        from kitlib.proc import job, win32
-        for console, flags in ((False, win32.CREATE_NO_WINDOW), (True, 0)):
-            with mock.patch.object(job, "has_console", return_value=console), \
-                    mock.patch.object(pmstart.subprocess, "run", return_value=ran(out="")) as run:
-                self.assertEqual(pmstart.list_processes(), [])
-            self.assertEqual(run.call_args[1].get("creationflags", 0), flags, console)
-
-
 class ToplevelTest(unittest.TestCase):
 
     def test_names_the_repository_holding_the_path(self):
         with mock.patch.object(gitcmd, "subprocess_run", return_value=ran(out="C:/x/MyRepo\n")):
-            self.assertEqual(pmstart._toplevel(KIT), "MyRepo")
+            self.assertEqual(pmconfig._toplevel(KIT), "MyRepo")
 
     def test_outside_a_repository_or_without_git_gives_none(self):
         with mock.patch.object(gitcmd, "subprocess_run", return_value=ran(rc=128, out="C:/x/MyRepo\n")):
-            self.assertIsNone(pmstart._toplevel(KIT))
+            self.assertIsNone(pmconfig._toplevel(KIT))
         for exc in (OSError("no git"), subprocess.TimeoutExpired("git", 4)):
             with mock.patch.object(gitcmd, "subprocess_run", side_effect=exc):
-                self.assertIsNone(pmstart._toplevel(KIT))
+                self.assertIsNone(pmconfig._toplevel(KIT))
 
 
 class PmDataSettingsTest(unittest.TestCase):

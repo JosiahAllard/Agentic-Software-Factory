@@ -1,8 +1,8 @@
 # Action Hub: approvals, landings, hand-offs
 
 ## approvals/A-NNN
-A change an agent asks the owner to approve before it commits it. The rules (signature, expiry, what
-verifies) are `kitlib/hubsite/approvals.py`, "The document"; the routes are `kitlib.hubsite.api`
+A change to owner-only paths an agent asks the owner to approve; the hub commits it once approved ("Applying" below). The rules (signature, expiry, what
+verifies) are `kitlib/ownerfiles/approvals.py`, "The document"; the routes are `kitlib.hubsite.api`
 ("Approvals" in its docstring).
 
 | Field | Written by | Meaning |
@@ -12,11 +12,14 @@ verifies) are `kitlib/hubsite/approvals.py`, "The document"; the routes are `kit
 | repo | agent | the repository, as the repo_id of its remote URL (`approvals.repo_id`) |
 | title, reason | agent | what the change is and why; reason is optional |
 | head | agent | the commit the change applies to (40 hex) |
+| branch | agent | the branch the hub applies the change on, in its linked worktree ("Applying"); `approvals add` and `hub_approval_request` give the checkout's current branch. Covered by the signature when present (`approvals.canonical`; one signed before branches stays valid), and shown to the owner on the card and in `hub.py approvals show` |
 | files | agent, server | `[{path, base_blob, blob, content}]` sorted by path; the server computes `blob` from `content`. A null `base_blob` is a new file, a null `content` (and `blob`) a delete (`approvals.new_doc`) |
 | diff | server | the unified diff lines the page shows, from the base read with git from this machine's checkout of `repo` to `content` (`approvals.diff`) |
 | created_at | server | ISO time of the request |
-| decision, decided_at, sig | server | once the owner decides; `sig` (the approval key's signature) on an approval only |
-| commit, consumed_at | server | once an agent consumes the approval for a commit |
+| decision, decided_at, sig | server | once the owner decides; `sig` (the approval key's signature) on an approval only, over the id, repo, head, each file's path, base blob and blob, the decision, `decided_at` and, when present, `branch` (`approvals.canonical`) |
+| commit, consumed_at | server | once the hub applies the approval: its commit ("Applying"). Nothing else writes them: no route takes a commit from an agent |
+| applied | server | `{by, branch, worktree}`: the hub applied it, in that worktree |
+| apply | server | `{at, error}`: the hub's last try to apply it failed, and why; the approval stays approved |
 | spent, spent_at | server | the commit on main that carries the approval and when the hub learned it: set once, from a landing feed event's `approvals` ("landings/L-NNN"), on a consumed file approval of the event's repo only. Display only, for a later page (no page reads them yet): the status stays, and whether an approval is used up is read from main itself (`approvals.spent`). An approval that reached main some other way than `tools/land.py` has none |
 | superseded | server | `{by, from, at}`: a decided approval nobody consumed, marked superseded by the PM or its repository's coordinator (`from`), by the approval `by` (`A-<n>`) or the commit `by` on main, at `at` (`approvals.supersede_fields`). The stored status and the decision stay; the status reads `superseded`, final: it is not pending, not consumed and not verified. Not covered by the signature |
 | record | agent | `{repo, id}`: the backlog record the change is for; absent or null on an unbound request |
@@ -24,16 +27,22 @@ verifies) are `kitlib/hubsite/approvals.py`, "The document"; the routes are `kit
 
 Routes, below `/api/v1`:
 
-- POST `/approvals` (agent): body `repo`, `title`, `head`, `files`, optional `reason` and `record`; adds
+- POST `/approvals` (agent): body `repo`, `title`, `head`, `files`, optional `reason`, `branch` and `record`; adds
   a pending request. A repository this machine has no checkout of is refused (`invalid`, field `repo`),
   and so is a `base_blob` that is not the file at `head` (field `files`). A `record` (`approvals add
   --record REPO:ID`) parks the record until the request is decided (docs/hub-questions.md "A question bound to a record"); an
   `op` approval takes none (`invalid`, field `record`).
 - POST `/approvals/{id}/decide` (role `approver`: the strong owner alone, docs/hub-remote-access.md "The
   strong owner"): body `decision` (`approve` or `deny`) and `if_version`. Only a pending request is
-  decided.
-- POST `/approvals/{id}/consume` (agent): body `commit` and `if_version`; only an approval that is
-  `approved` is consumed.
+  decided. An approve of a file request is applied in the same write ("Applying"): the answer gives
+  `applied` true and the `commit`, or `applied` false and `why`.
+- POST `/approvals/{id}/apply` (owner): optional `if_version`; the hub applies an `approved` file
+  request again ("Applying"), answered as the decide route's. Any other status is `conflict`, field
+  `status`; an op approval is `conflict`, field `kind`. `hub.py approvals apply A-n [--if-version V]`
+  prints `APPLIED A-n <commit>`, or `UNAPPLIED A-n: <why>` and exits 1.
+- POST `/approvals/{id}/consume` (agent) consumes an op approval only (kind `op`, below). A body
+  with `commit` is `invalid`, field `commit`: a file approval is consumed by the hub's apply alone, so
+  no agent can spend one the owner approved and the hub has not applied.
 - POST `/approvals/{id}/delete` (agent): the requester withdraws a request (`hub.py approvals withdraw A-n
   --from KEY --if-version V`), as `questions withdraw` does: the body gives `from` and `if_version`, both
   required, and the document is deleted. Only an undecided request is withdrawn, pending or expired
@@ -77,8 +86,8 @@ approves is the operation id, the repo and the line. A pending op request expire
 
 - POST `/approvals` (agent): body `kind` `op`, `op`, `repo`, `line`, `title`, optional `reason` and
   `what`. No checkout is read. Any other `kind` is `invalid`, field `kind`.
-- POST `/approvals/{id}/consume` (agent): body `args_sha256` (in place of `commit`) and `if_version`. Both
-  `commit` and `args_sha256` is `invalid`.
+- POST `/approvals/{id}/consume` (agent): body `args_sha256` and `if_version`. A `commit` is `invalid`,
+  field `commit`.
 - GET `/approvals/{id}/verify` (agent): query `kind=op`, `op`, `repo` and `args` (the line's SHA-256);
   answers `{ok, valid, why, version}`. The version pins the consume that follows. Only `approved`
   verifies: a consumed op approval was used once.
@@ -88,11 +97,8 @@ The change checks (`check`, `consume_fields`) refuse an op approval, and the op 
 as the agent's unsigned note, and its exact line, `run D-nnn` and then one `NAME=VALUE` a line; no head or
 diff. `delegated.py request` asks for one, and `delegated.py run --approval` verifies and consumes it.
 
-The agent's side of an approval is `commit.py --owner-approval hub:A-<n>` (docs/commit.md "Owner
-approval"): it verifies the approval, writes what the approved change gives on HEAD (the approved
-content where HEAD holds the base's copy, else its clean merge onto a newer HEAD, `approvals.delta_targets`)
-and commits it, then consumes the approval for that commit and verifies it with the commit; `gate land` and the pre-push hook verify it again
-(`kitlib.guard.ownercommits`). A file approval, used or not, holds until it is spent or 30 days after
+An agent never commits a file approval: the hub does ("Applying" below), and `gate land` and the
+pre-push hook verify it again (`kitlib.ownerfiles.rules`). A file approval, used or not, holds until it is spent or 30 days after
 the decision (`approvals.APPROVAL_LIFE_S`, through `approvals.approval_end`); an op approval for 24
 hours (`approvals.APPROVED_TTL_S`). Spent: a commit that main as last fetched
 (`refs/remotes/<remote>/<main>`) reaches carries its `Owner-Approval: hub:A-<n>` trailer
@@ -112,20 +118,20 @@ not consumed, once more 4 hours before it expires (docs/hub-push.md "Push notifi
 
 An agent asks for one with `hub.py approvals add --title T --file PATH CONTENT_FILE [--file ...]
 [--checkout DIR] [--repo R] [--head SHA] [--reason TEXT]`, or the MCP tool `hub_approval_request`
-(docs/hub-mcp.md); both build the body with `kitlib.hubapprove` and post it to POST `/approvals`, and
-neither decides or consumes a request. Each PATH (relative to the repository top, with `/`) gets
+(docs/hub-mcp.md); both build the body with `kitlib.ownerfiles.request` and post it to POST `/approvals`, and
+neither decides nor applies a request. Each PATH (relative to the repository top, with `/`) gets
 CONTENT_FILE's exact bytes as its content, read as UTF-8 with its line endings kept, so the blob is the
-one `commit.py --owner-approval` writes; the work tree is never read for it, since the consumer needs the
-file still at its base. The base is PATH's blob at `--head` (default: the checkout's HEAD), none for a
+one the hub commits; the work tree is never read for it, since the hub needs the file still at its base.
+The request names the checkout's current branch (a detached HEAD is refused). The base is PATH's blob at `--head` (default: the checkout's HEAD), none for a
 file absent there; `--repo` defaults to the checkout's origin. It refuses before anything is posted, in
-the builder's or `approvals.new_doc`'s words (`kitlib/hubapprove`'s docstring lists them): a checkout that
+the builder's or `approvals.new_doc`'s words (`kitlib/ownerfiles/request.py`'s docstring lists them): a checkout that
 is not a git work tree or has no HEAD or origin it can name, a bad head, no file, a path that is not a
 plain repository path or that an owner approval may not carry (a render source in a kit checkout, a path
-the repository's owner rules do not lock: `hubapprove.owner_paths_error` says where each is committed
+the repository's owner rules do not lock: `kitlib.ownerfiles.request.owner_paths_error` says where each is committed
 instead), a new file the work tree already has, a file at head whose work tree copy git does not hash to
-its base, unreadable, non-UTF-8 or over-`approvals.MAX_CONTENT_BYTES` content, content that is the file at
+its base, unreadable, non-UTF-8 or over-`hubvalidate.MAX_CONTENT_BYTES` content, content that is the file at
 head, content git would store as another blob (core.autocrlf or a text, eol or filter attribute changes it
-on staging, which the consumer's staged check refuses), and what `new_doc` refuses (`MAX_FILES`,
+on staging, so the applied file would differ from its own commit), and what `new_doc` refuses (`hubvalidate.MAX_FILES`,
 `MAX_PATH`, `MAX_TITLE`, `MAX_REASON`). What the hub refuses comes back as the hub said it (`REFUSED
 <code>: <message>`).
 
@@ -141,17 +147,66 @@ badge: its title, repo, head, reason and the stored diff as text. Approve and De
 with the version the page read; they are disabled unless the snapshot says `strong`, and a refusal (a 403
 included) is shown on the card in the server's words.
 
+## Applying
+
+The hub commits a file approval itself, when the owner approves it (the decide route) or later with
+`hub.py approvals apply A-<n>` (the apply route, the owner's alone: the guard holds the verb for an
+agent, docs/guard-owner.md). The steps are `kitlib/ownerfiles/apply.py`'s docstring; the route side is
+`kitlib.hubsite.apiapprovals._applied`.
+
+- Where: the request's `branch`, in the one linked worktree of this machine's checkout of `repo` that
+  has it checked out (`apply.worktree_for`). The main checkout's branch, a branch no linked worktree
+  has, or a request with no `branch` is refused.
+- Checks, read-only and in order: the approval is signed, approved, unconsumed and unexpired for that
+  worktree's repository (`approvals.check`), and the branch is the one it names (the signature covers
+  it); the worktree's HEAD is the branch, with no merge, cherry-pick, revert or rebase in progress;
+  every approved path is one an owner approval may carry, by the request's own check
+  (`request.owner_paths_error`: no render source of a kit checkout, since the hub's commit renders
+  nothing, and no path the owner rules below, read at HEAD, leave unlocked), which the hub's POST of
+  a request does not run; each approved file of the work tree is HEAD's copy and the approved change
+  applies on HEAD by the delta rule (`prewrite`, docs/commit.md "Owner approval" for the rule); the
+  worktree's filters (`.gitattributes`, `core.autocrlf`: `git hash-object --path`) keep each approved
+  file as its approved blob; nothing is staged, on an approved path or any other; the backlog's
+  narrowed-scope check passes on the paths (docs/commit.md "A narrowed record").
+- The commit: made on a private index from HEAD's tree and the approved blobs (hashed as they are,
+  no filters), one parent, the request's title and reason and `Owner-Approval: hub:A-<n>`, author and
+  committer `PM kit hub <hub@pm-kit.invalid>` (`apply.AUTHOR`, never the owner), no hook. The
+  owner-file rules (`kitlib.ownerfiles.rules.violations`) must pass it before the branch moves, read
+  as `gate land` reads them (`kitlib.landing.checks` `owner_refusal`): the config the commit holds merged
+  with main's (`<remote>/<main>` as last fetched, else the main checkout's HEAD), never the work
+  tree's `.kit.json`, so an uncommitted edit there cannot loosen them. A main checkout that is not on
+  its main branch is refused, as `gate land` refuses it: another branch's `.kit.json` would choose
+  the rules.
+- The branch is moved by compare-and-swap from the HEAD the checks read, then the approved files are
+  written and their index entries set to the commit's. The decision (for an approve), `commit`,
+  `consumed_at` and `applied` are one write pinned to the version the caller gave.
+- What cannot be applied stays `approved` with `apply` {at, error}: nothing is committed and the
+  worktree is untouched. A failure after the branch moved puts the branch, the files and the index
+  back and names anything it could not put back; so does a failed consume write.
+
+The agent who asked sees the result in `hub.py approvals show A-<n>` and in a push ("applied" or
+"unapplied", docs/hub-push.md "Push notifications"). On an unapplied one it puts the worktree right
+(the reason names what: a file changed, something staged, the wrong branch) and the owner applies it
+again. `tools/commit.py --owner-approval` is a usage error naming this (docs/commit.md "Owner
+approval").
+
+Known limits:
+- A request with no `branch` (one stored before branches) is never applied: the owner asks again.
+- A failed put-back of the branch after a concurrent commit on it (the compare-and-swap of `undo`
+  refused) leaves the hub's commit in the branch's history, unconsumed: the reason names it.
+- The hub's commit carries no `Co-Authored-By` line, so `tools/trailers.py` warns on it.
+
 ## landings/L-NNN
 The landing feed: one event per branch `tools/land.py` landed, posted by the landing itself after the
 push is verified and the landing lock released (docs/gate-landing.md "Landing feed"). The event is the land
 ledger line's fields (`result.LEDGER_FIELDS`, picked from the same land record) and the extras
-(`kitlib.hubsite.landings.EXTRA_FIELDS`); the types are `schema.FIELDS['landings']`.
+(`kitlib.landing.feed.EXTRA_FIELDS`); the types are `schema.FIELDS['landings']`.
 
 | Field | Written by | Meaning |
 |---|---|---|
 | (doc id) | server | `L-001`, `L-002`, ...: the document's id, not a field; a higher number is newer |
 | branch, tip, run_id, started_at, finished_at, verdict, code, summary, gate_once, escalated | agent | the branch's land ledger line, field for field |
-| repo | agent | the repository's name (`runner.repo_name`) |
+| repo | agent | the repository's name (`records.place.repo_name`) |
 | main_branch, main | agent | the main branch and the new main the landing pushed: one commit for every branch of a batch |
 | records | agent | the backlog record ids the landing closed for this branch (a list, maybe empty) |
 | mode | agent | the merged gate's mode, from its gate-OK record on the new main, or null |
@@ -196,7 +251,7 @@ docstring "Hand-offs".
 |---|---|---|
 | (doc id) | server | `C-001`, `C-002`, ...: the document's id, not a field; a higher number is newer |
 | from | agent | the session's key: a launcher session key (sessions.json, read on each add) or `pm`, checked as a question's `from` is |
-| kind | agent | `handoff`, `restart` or `stop` (`api.HANDOFF_KINDS`): the ready reply's word; or `checkin`: a session started by a hand-off has read its note and taken over (the usage crossover stops the old session on it, docs/launcher.md "Usage crossover") |
+| kind | agent | `handoff`, `restart` or `stop` (`hubvalidate.HANDOFF_KINDS`): the ready reply's word; or `checkin`: a session started by a hand-off has read its note and taken over (the usage crossover stops the old session on it, docs/launcher.md "Usage crossover") |
 | state_path | agent | the absolute path of the state note, on one line |
 | at | server | ISO time the hub took it |
 

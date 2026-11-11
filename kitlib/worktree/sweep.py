@@ -9,7 +9,7 @@ the sweep stops (exit 1), what it already removed standing.
 
 Per worktree (`sweep_skip`, the first failing check named): the main checkout, anything outside
 the worktrees dir, `exempt`, a detached HEAD, a missing directory and a `git worktree lock` are
-never swept. Landed is `remove.merged_worktrees`'s rule: the tip in the base AND off its
+never swept. Landed is `remove_checks.merged_worktrees`'s rule: the tip in the base AND off its
 first-parent chain, so a fresh worktree is never swept. Then: its branch checked out elsewhere; a
 machine lock record naming it; a backlog record `state: pulled` with `pulled_by` its branch (an
 open claim); last activity under `idle_s`; any uncommitted, untracked or ignored-not-build-output
@@ -17,7 +17,7 @@ file; then the holder probe; and with `apply`, last, the status read again. A sw
 through `remove.git_remove` (never retried, never forced) and `remove.delete_branch` (`-d`).
 
 Stale marks (kitlib.worktree.marks): an UNLANDED worktree a coordinator marked stale is ABANDONED
-instead, by `remove._abandon` (its archive tag first, then the tree, then the branch), after the
+instead, by `remove_abandon._abandon` (its archive tag first, then the tree, then the branch), after the
 same checks but the landed and fresh ones; its open-claim check matches the branch without regard
 to case. A mark is void (the tree is skipped as UNLANDED, the mark kept) when the tree is not the
 one it names, its tip moved, or its last activity is newer than the mark. The marks are read once,
@@ -39,9 +39,9 @@ from kitlib.config import ConfigError, user
 from kitlib.proc import spawn
 from kitlib.records import landing
 
-from . import holders, marks, remove
+from . import holders, marks, remove, remove_abandon, remove_checks
 from .holders import canon, extended, plain, prune, WALK_MAX
-from .remove import OK, REFUSED, failure, git
+from .remove_checks import OK, REFUSED, failure, git
 
 SWEEP_IDLE_S = 24 * 3600            # idle 24h+
 FETCH_TIMEOUT_S = 300
@@ -56,7 +56,7 @@ def fetch_args(s):
     """`git fetch` of the base with an explicit refspec, so the tracking ref is updated whatever
     the remote's configured fetch refspec says; `+`: the base reads as it stands on the remote."""
     return ('fetch', '--no-tags', s['remote'],
-            '+refs/heads/%s:%s' % (s['base'], remove.merge_base_ref(s)))
+            '+refs/heads/%s:%s' % (s['base'], remove_checks.merge_base_ref(s)))
 
 
 def fetch_base(ctx, timeout=FETCH_TIMEOUT_S):
@@ -64,7 +64,7 @@ def fetch_base(ctx, timeout=FETCH_TIMEOUT_S):
     (GIT_TERMINAL_PROMPT=0, GCM_INTERACTIVE=never): a scheduled task has no terminal."""
     args = fetch_args(ctx.s)
     rc, _, err = git(ctx.main, *args, timeout=timeout,
-                     env=dict(remove.git_env(), GIT_TERMINAL_PROMPT='0'))
+                     env=dict(remove_checks.git_env(), GIT_TERMINAL_PROMPT='0'))
     if rc != 0:
         return failure(args, rc, err)
     return None
@@ -233,10 +233,10 @@ def sweep_skip(ctx, entry, home, base, chain, ancestors, entries, machine, now, 
     key = canon(path)
     if key == canon(main):
         return 'the main checkout: never touched'
-    if not remove.is_workstream(ctx, path):
+    if not remove_checks.is_workstream(ctx, path):
         return 'not under %s: only workstream worktrees are swept' % s['worktrees_dir']
-    if remove.exemption(s, path):
-        return 'exempt (%s)' % remove.exemption(s, path)
+    if remove_checks.exemption(s, path):
+        return 'exempt (%s)' % remove_checks.exemption(s, path)
     if branch is None:
         return 'detached HEAD: no branch, never swept'
     if not os.path.isdir(path):
@@ -289,7 +289,7 @@ def sweep_skip(ctx, entry, home, base, chain, ancestors, entries, machine, now, 
 def sweep_status(ctx, path):
     """Why the status of `path` stops the sweep, or None when it is clean. Read in `sweep_skip`
     and AGAIN just before `git worktree remove`."""
-    work, disposable, ignored, why = remove.dirty(ctx, path)
+    work, disposable, ignored, why = remove_checks.dirty(ctx, path)
     if work is None:
         return 'its status could not be read (%s)' % why
     # disposable_untracked counts here: the sweep deletes nothing but the tree git removes.
@@ -298,7 +298,7 @@ def sweep_status(ctx, path):
         return 'uncommitted or untracked files (%d): %s%s' % (
             len(lines), '; '.join(lines[:5]), ' ...' if len(lines) > 5 else '')
     if ignored:
-        return remove.ignored_reason(ignored, path)
+        return remove_checks.ignored_reason(ignored, path)
     return holders.link_reason(path)
 
 
@@ -308,7 +308,7 @@ def sweep(top, apply=False, now=None, machine=machine_lock_entries, idle_s=SWEEP
     `now` (epoch seconds) and `machine` (a `machine_lock_entries`-like callable) are test seams.
     Under `apply` the lines and the exit status are appended to `<log_dir or shared temp>/
     <sweep_log_name>`."""
-    ctx, refused = remove.open_ctx(top, cwd)
+    ctx, refused = remove_checks.open_ctx(top, cwd)
     if refused:
         return refused
     if canon(top) != canon(ctx.main):
@@ -344,26 +344,26 @@ def _sweep(ctx, apply, now, machine, idle_s):
                 % (up, why))
         return REFUSED
     try:
-        listing = remove.worktree_listing(main)
-    except remove.GitReadError as e:
+        listing = remove_checks.worktree_listing(main)
+    except remove_checks.GitReadError as e:
         ctx.say('failed    %s; nothing was removed' % e)
         return REFUSED
     held, why = machine()
     if held is None:
         ctx.say('deferred  the machine lock cannot be read (%s); nothing was removed' % why)
         return REFUSED
-    base, why = remove.base_commit(ctx)
+    base, why = remove_checks.base_commit(ctx)
     if base is None:
         ctx.say('failed    cannot read %s (%s); nothing was removed' % (up, why))
         return REFUSED
-    got, why = remove.ancestry(ctx, base)
+    got, why = remove_checks.ancestry(ctx, base)
     if got is None:
         ctx.say('failed    git rev-list --parents %s: %s; nothing was removed' % (base, why))
         return REFUSED
     chain, ancestors = got
     ctx.say('base      %s %s (fetched)' % (up, base[:10]))
-    home = canon(remove.home_of(ctx))
-    entries = remove.worktree_entries(listing)
+    home = canon(remove_checks.home_of(ctx))
+    entries = remove_checks.worktree_entries(listing)
     counts = {'removed': 0, 'would remove': 0, 'skipped': 0, 'failed': 0, 'abandoned': 0,
               'would abandon': 0}
     deferred = False
@@ -391,7 +391,7 @@ def _sweep(ctx, apply, now, machine, idle_s):
         if not apply:
             if stale:
                 ctx.say('would     abandon %s under %s%s (marked stale %s by %s: %s), then delete'
-                        ' branch %s' % (path, remove.ARCHIVE, os.path.basename(path),
+                        ' branch %s' % (path, remove_checks.ARCHIVE, os.path.basename(path),
                                         marks.shown_at(mark), mark['by'], mark['why'],
                                         entry['branch']))
                 counts['would abandon'] += 1
@@ -458,7 +458,7 @@ def abandon_marked(ctx, where, entry, mark, name):
                 ctx.say('skipped   %s: its stale mark changed or was cleared since it was read;'
                         ' git was NOT run' % name)
                 return 'skipped'
-            status = remove._abandon(ctx, entry['path'], marks.tag_why(mark), False, None,
+            status = remove_abandon._abandon(ctx, entry['path'], marks.tag_why(mark), False, None,
                                      expect=entry['head'])
             if status != OK:
                 ctx.say('  mark     the stale mark of %s stays' % branch)
@@ -479,7 +479,7 @@ def end_marks(ctx, where, marked, entries, apply):
     gone, failed = [], 0
     for mark in marked:
         branch = mark['branch']
-        tip, why = remove.branch_tip(ctx.main, branch)
+        tip, why = remove_abandon.branch_tip(ctx.main, branch)
         if tip is None:
             ctx.say('failed    the stale mark of %s: its branch cannot be read (%s)' % (branch, why))
             failed += 1

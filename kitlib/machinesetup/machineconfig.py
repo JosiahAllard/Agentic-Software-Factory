@@ -8,12 +8,13 @@ every change that writes a key checks the file still holds what the run last saw
 the snapshot on to the bytes it wrote, so two keys planned in one run both land, while a file
 another program changed since the survey refuses the write. The file's other keys and its layout
 (BOM, line ends, indent: kitlib.machinesetup.settings.read) are kept, and the file is put back when
-the machine config cannot be read after the write. A folder with no .gitignore gets the one the
-move writes (kitlib.config.move.GITIGNORE) before the first key lands, so local.json is never
-unignored. Nothing here prints or exits.
+the machine config cannot be read after the write. A folder with no .gitignore gets GITIGNORE before
+the first key lands, so local.json is never unignored. Nothing here prints or exits.
 """
 import os
+import tempfile
 
+from kitlib import platform
 from kitlib.config import ConfigError
 from kitlib.config import user as kuser
 
@@ -21,6 +22,11 @@ from . import settings
 from .common import is_link
 
 NEW_LAYOUT = {'bom': False, 'crlf': False, 'final': True, 'indent': 2, 'ascii': False}
+# The machine config folder's ignore file: the private files (local.json, the hub's tokens, the
+# tick's state, the managed settings), backups, and this module's own temp files (_write_new).
+IGNORE_FILE = '.gitignore'
+TMP_SUFFIX = '.move-tmp'
+GITIGNORE = 'local.json\nhub/\nauto-tasks/\nmanaged-settings.json\n*.bak*\n*%s\n' % TMP_SUFFIX
 
 
 class Snapshot(object):
@@ -76,11 +82,10 @@ def set_key(home, snap, key, value, replace=False):
         raise RuntimeError('%s already has %s; not overwritten' % (path, key))
     data[key] = value
     new = settings.write(layout, data)
-    from kitlib.config import move as kmove      # at the call: move imports kitlib.coordinatorstart, which imports this package
     folder = os.path.dirname(path)
     os.makedirs(folder, exist_ok=True)
-    if not os.path.lexists(os.path.join(folder, kmove.IGNORE_FILE)):
-        kmove._write_new(os.path.join(folder, kmove.IGNORE_FILE), kmove.GITIGNORE.encode('utf-8'))
+    if not os.path.lexists(os.path.join(folder, IGNORE_FILE)):
+        _write_new(os.path.join(folder, IGNORE_FILE), GITIGNORE.encode('utf-8'))
     _replace(path, new)
     try:
         kuser.user_config(home)
@@ -92,6 +97,32 @@ def set_key(home, snap, key, value, replace=False):
         raise RuntimeError('the machine config could not be read after setting %s (%s); put back'
                            % (key, e))
     snap.raw = new
+
+
+def _write_new(full, data):
+    """Write `data` to `full`, which must not exist: a new temp file beside it (named
+    .<name>.*TMP_SUFFIX, which GITIGNORE ignores), then a move that fails when the target
+    appeared meanwhile (os.link on Linux, os.rename on Windows). On any failure the temp file is removed."""
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix='.%s.' % os.path.basename(full), suffix=TMP_SUFFIX,
+                               dir=os.path.dirname(full))
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+        if platform.NAME == 'linux':
+            os.link(tmp, full)              # rename replaces an existing target on POSIX
+            try:
+                os.remove(tmp)              # the target is written: a stray temp file is not a failure
+            except OSError:
+                pass
+        else:
+            os.rename(tmp, full)            # fails when the target exists (Windows); needs no hard links
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _replace(path, data):

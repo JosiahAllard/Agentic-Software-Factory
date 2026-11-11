@@ -75,7 +75,7 @@ class ToolTest(unittest.TestCase):
         os.remove(self.log)
         r = self.run_tool('--apply')                 # the default folder is not migrated yet
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        # the hint names the kit's own tool in full (docs/multi-host-plan.md section 7 decision 21)
+        # the hint names the kit's own tool in full (docs/install.md "Ported repo tools")
         self.assertIn('REFUSED %s: not migrated to the export yet: python "%s" --migrate --apply '
                       '--folder "%s"' % (self.default, TOOL.replace('\\', '/'), self.default),
                       r.stdout)

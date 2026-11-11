@@ -40,7 +40,8 @@ holds it (docs/worktree-remove.md).
 the MAIN checkout's, and the sweep takes only the main checkout. A relative path argument means
 the caller's directory. A registered DETACHED worktree outside the worktree folders is named by
 its path, never its slug. A thin entry point (ARCHITECTURE.md, Layers): it parses, calls
-kitlib.worktree.remove, .scratch, .sweep, .classify or .marks, prints and exits. Exit codes: 0 done (or
+kitlib.worktree.remove, .remove_checks, .remove_abandon, .scratch, .sweep, .classify or .marks,
+prints and exits. Exit codes: 0 done (or
 nothing to do); 1 refused, a leftover, git failed, the sweep deferred, --classify found a tree of
 class A, B, C, E or O, or --classify --apply left a B or C tree or did not remove an A, E or O
 one; 2
@@ -54,6 +55,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib.git import repo as gitrepo                              # noqa: E402
 from kitlib.worktree import classify, marks, remove, scratch, sweep  # noqa: E402
+from kitlib.worktree import remove_abandon, remove_checks           # noqa: E402
 
 USAGE = 2
 VALUE_OPTIONS = ('--abandon', '--tag', '--mark-stale')     # each takes the next word as its value
@@ -232,7 +234,7 @@ def main(argv=None):
         elif verb == 'sweep':
             outcome = sweep.sweep(top, apply=apply)
         elif verb == 'check':
-            outcome = remove.check(top)
+            outcome = remove_checks.check(top)
         elif verb == 'mark-stale':
             outcome = marks.mark(top, target, why)
         elif verb == 'unmark-stale':
@@ -240,11 +242,11 @@ def main(argv=None):
         elif verb == 'scratch':
             outcome = scratch.remove_scratch(top, target)
         elif verb == 'abandon-branch':
-            outcome = remove.abandon_branch(top, target, why, tag=tag)
+            outcome = remove_abandon.abandon_branch(top, target, why, tag=tag)
         elif verb == 'remove-branch':
             outcome = remove.remove_branch(top, target)
         elif verb == 'abandon':
-            outcome = remove.abandon(top, target, why, keep_branch=keep, tag=tag)
+            outcome = remove_abandon.abandon(top, target, why, keep_branch=keep, tag=tag)
         else:
             outcome = remove.remove(top, target, keep_branch=keep)
     except KeyboardInterrupt:

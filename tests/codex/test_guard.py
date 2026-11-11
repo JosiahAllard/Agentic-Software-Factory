@@ -1,5 +1,5 @@
 """Codex hook payloads judged end to end: hosts.codex.adapter's parse and screen, then kitlib.guard with
-the role policy on, as kitlib.host.hookmain runs them (the role policy every host shares is tests/guard/test_rolepolicy.py).
+the role policy on, as kitlib.hookrun.main runs them (the role policy every host shares is tests/guard/test_rolepolicy.py).
 
 Codex's hooks carry no subagent identity, so a session is held by its PM_KIT_ROLE mark alone (the
 role-only policy, hosts.json capabilities). The Codex branch held every marked call as a subagent;
@@ -12,7 +12,8 @@ from unittest import mock
 from hosts.codex.adapter import ADAPTER
 from kitlib import kitroot
 from kitlib.guard import decide
-from kitlib.host import Decision, hookmain
+from kitlib.hookrun import main as hookrun
+from kitlib.host import Decision
 from tests.guard import world as W
 from tests.guard.test_rolepolicy import kit
 
@@ -32,12 +33,12 @@ class Base(unittest.TestCase):
         return self.event('apply_patch', {'command': '*** Begin Patch\n' + body + '*** End Patch'})
 
     def judge(self, payload, role='worker'):
-        """The Decision hookmain reaches on `payload` in a session marked `role` (None: the owner's)."""
+        """The Decision hookrun reaches on `payload` in a session marked `role` (None: the owner's)."""
         env = {'PM_KIT_ROLE': role} if role else {}
         guard = SimpleNamespace(decide=lambda a, environ=None, profile=None:
                                 decide(a, self.w.ctx(environ=environ, kit=kitroot.root())))
         actions = ADAPTER.parse('PreToolUse', payload)
-        return hookmain._judge(ADAPTER, guard, actions if isinstance(actions, tuple) else (actions,), env, None)
+        return hookrun._judge(ADAPTER, guard, actions if isinstance(actions, tuple) else (actions,), env, None)
 
     def denied(self, payload, rule, role='worker'):
         d = self.judge(payload, role)
@@ -50,8 +51,8 @@ class Base(unittest.TestCase):
 
 
 class MarkedSessions(Base):
-    """Codex's hooks carry no subagent identity, so hookmain holds a marked session as an
-    unidentified agent of its mark's role (kitlib.host.hookmain): the main-checkout rule and the
+    """Codex's hooks carry no subagent identity, so hookrun holds a marked session as an
+    unidentified agent of its mark's role (kitlib.hookrun.main): the main-checkout rule and the
     write jail hold it as they hold a subagent elsewhere. The owner's unmarked session is unchanged."""
     ROLES = ('worker', 'senior-worker', 'analyst', 'test-runner', 'lander', 'pm', 'coordinator')
 
@@ -270,14 +271,14 @@ class Tools(Base):
 
 
 class Hook(Base):
-    """The verdict as the hook writes it (hookmain.run with the Codex adapter's render)."""
+    """The verdict as the hook writes it (hookrun.run with the Codex adapter's render)."""
 
     def run_hook(self, payload, decide_with):
         import io
         import json
         out = io.StringIO()
         with mock.patch('kitlib.guard.decide', decide_with):
-            code = hookmain.run(ADAPTER, 'PreToolUse', io.StringIO(json.dumps(payload)), out, environ={},
+            code = hookrun.run(ADAPTER, 'PreToolUse', io.StringIO(json.dumps(payload)), out, environ={},
                                 entry='C:/kit/run.py')
         return code, json.loads(out.getvalue())['hookSpecificOutput'] if out.getvalue() else None
 

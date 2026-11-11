@@ -1,8 +1,8 @@
 """Read the owner's delegation list (docs/delegations.md): one file, read only, never written.
 
 The file is `owner-delegations.json` in the PM repository's machine config folder
-(`<PM repo>/.pm-kit`, kitlib.config.user.locate's OK; tools/config_move.py copies it there from
-`~/.pm-kit`). No setting and no environment variable moves it; only a test passes `home=`. With no
+(`<PM repo>/.pm-kit`, kitlib.config.user.locate's OK; the owner moves one still in `~/.pm-kit`
+there by hand). No setting and no environment variable moves it; only a test passes `home=`. With no
 PM-repo pointer there is no list (nothing is delegated); a machine config that cannot be read
 (locate's UNMOVED or BAD) is a DelegationError. A link or junction on the file or on the folder
 refuses, so the list is the file the owner wrote in that folder.

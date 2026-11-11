@@ -82,11 +82,13 @@ What a failure leaves, step by step:
     a caller says a store is meant to stay local.
 
 Every pass ends in the status object (GitSync.status), which the server's /health reads.
+_failure(sync) reads it as (step, reason); scrub(text) takes the `user:password@` part out of
+any URL in git's words before they are shown or logged.
 
 The commit is a plain data commit: the machine's own git identity (no --author, no -c), the fixed
 subject SUBJECT, no body, no agent trailer, limited by pathspec to the store folder, hooks left
 on, never signed (`--no-gpg-sign`: a signing program may ask for a passphrase, and nobody watches
-this thread). It does not go through kitlib.commit: that is the path for an agent's change to
+this thread). It does not go through commit.py: that is the path for an agent's change to
 tracked code, with a model trailer and a staged machine-path scan, and neither fits data the owner
 wrote in a browser. Other paths staged in the data worktree stay staged and out of the commit.
 
@@ -166,8 +168,8 @@ import re
 import threading
 import time
 
-from kitlib import commit as kcommit
-from kitlib import pmdata
+from kitlib import kitroot
+from kitlib.config import pmdata
 from kitlib.git import cmd, refs, repo
 
 from . import store as _store
@@ -200,6 +202,29 @@ _IDENTITY_KEYS = r'^(user|author|committer)\.(name|email)$'
 # is none to push to.
 Plan = collections.namedtuple('Plan', 'root rel branch remote')
 
+# the user and password part of a URL: everything between `://` and the last `@` of its host
+# part. A quote does not end it (a password may hold `'`); a space, `"`, `<` and `>` do. So in
+# `'https://h','x@y'` (a URL with no user part, then other text with an `@` and no space or
+# `/` before it) what stands between is lost: too much is taken out, never a password left
+# in. No rule here tells that text from a password that holds `','`.
+_USERINFO = re.compile(r'(?<=://)[^/?#\s"<>]*@')
+
+
+def scrub(text):
+    """`text` without the `user:password@` part of any URL in it. git's own words may quote a
+    remote URL, and a remote URL may carry a token: nothing shown or logged here keeps one."""
+    return _USERINFO.sub('', str(text))
+
+
+def _failure(sync):
+    """(the step the last pass of the git sync `sync` failed at, git's reason with scrub()
+    applied); ('', '') when it is not failing. Never waits for a pass."""
+    status = sync.status()
+    failed = status.get('failed') or ''
+    if not failed:
+        return '', ''
+    return str(failed), scrub(status.get('detail') or '')
+
 
 class Refused(Exception):
     """The store folder cannot be synced from where it is; the message says why."""
@@ -219,9 +244,9 @@ def _kit_checkout_error(root, branch, remote):
     is not on the data branch recorded in its kit-pm-data.json (docs/pm-data-branch.md "Layout"),
     or one pushing to another remote than the recorded one (a checkout holding the kit's code is
     _kit_code_error's). Returns the recorded remote for the data branch, else None."""
-    same, why = repo.same_repository(root, kcommit.KIT_ROOT)
+    same, why = repo.same_repository(root, kitroot.root())
     if same is None:
-        kit_common, _ = repo.common_dir(kcommit.KIT_ROOT)
+        kit_common, _ = repo.common_dir(kitroot.root())
         if kit_common is not None:      # the kit is in git; the store's repository could not be told
             raise Refused('cannot tell whether %s is the kit\'s repository: %s' % (root, why))
         return None

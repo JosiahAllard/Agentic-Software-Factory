@@ -1,5 +1,5 @@
-"""Containment on Linux: the Job of kitlib.proc.job (docs/linux-support-plan.md section 2.3 and
-section 8, slice 5). On Linux kitlib.proc.job.Job is this module's Job, with the same methods and
+"""Containment on Linux: the Job of the process face. On Linux the face's Job is this module's Job,
+with the same methods and
 meanings, on the strongest tier the machine gives, probed at run time (probe()):
 
   S1  a cgroup v2 scope of the user's systemd (`systemd-run --user --scope -p Delegate=yes`) with
@@ -19,7 +19,7 @@ W1 comes from the same kind of trial (w1_trial): an NsJob on `sleep`, seen in a 
 own, killed through its pid 1 and seen gone.
 A process that itself runs in a kit job's leaf (a pool worker, a unit, a slot's command) reads the
 tier from that job's cgroup instead, with no trial, and makes its jobs inside it (nesting, below).
-Tier.text names the tier and what it lacks, the line the lock and its runs show (slice 7).
+Tier.text names the tier and what it lacks, the line the lock and its runs show.
 
 The layout of a job's cgroup J (S1, S2): the command and its tree in J/main, the kill_on_close
 watchdog in J/w, and the jobs a member makes in J/j-<owner pid>-<n>-<hex>, so killing J kills the
@@ -72,7 +72,7 @@ owner checks the path is a kit job's cgroup, named as this job named it, before 
 Stragglers (leftovers): end(kill=False) unpins J and releases the watchdog, so what the command
 left keeps running unpinned in J, in the outer job when J is nested, as on Windows; leftovers()
 moves them out of J into a scope of their own (top-level, through systemd) or a sibling job
-directory (nested). Its call sites are slice 7's.
+directory (nested). Its callers are the lock's runs and jobs.
 
 W2: the stub carries PMKIT_JOB, a list of job tokens each child inherits; the members are the
 processes whose environment names the token plus the command's descendants. terminate stops every
@@ -107,58 +107,43 @@ systemd would take the pids it names for its own namespace's, and is W2, never a
 jobs stay in this namespace, which the lock's run record lists (jobns), so a run nested at any
 depth is in that run, and the job's kill ends them all.
 
+The parts: the cgroup and systemd side is kitlib.platform.linux.contain_cgroup, the /proc reads
+kitlib.platform.linux.contain_proc, the stub, watchdog and starter scripts
+kitlib.platform.linux.contain_scripts; this module holds the tiers, the probe, the carrier and
+the Jobs.
+
 This module imports on any platform; its calls need Linux."""
 import errno
-import itertools
 import os
-import re
-import secrets
 import select
 import shutil
 import signal
-import stat as statmod
 import subprocess
 import sys
 import threading
 import time
 
+from kitlib.platform.jobparts import JobError, _Held
 from kitlib.platform.linux import cpu as lcpu
 from kitlib.platform.linux import hardware
 from kitlib.platform.linux import process as lproc
+from kitlib.platform.mask import cores_text, mask_text
+from kitlib.platform.linux.contain_scripts import NSTART, STUB, WATCH, WSTUB
+from kitlib.platform.linux.contain_cgroup import (bus_env, BUSCTL, _call, cg_dir, CGROOT, cgroup2,
+                                                  cgroup_of, delegated_group, LEAF, no_expand,
+                                                  owned, parent_job, prefix, _read, _read_int,
+                                                  rmtree_cgroup, SH, sweep, SYSTEMCTL, SYSTEMD_RUN,
+                                                  _tag, _tool, wait_empty, WATCH_LEAF, _write)
+from kitlib.platform.linux.contain_proc import (_boot, cpu_ticks, MARK_ENV, marked, _nspid, _pidns,
+                                                _pids, pstat, rss, _same, tree, vm_hwm)
 
-CGROOT = '/sys/fs/cgroup'
-PROC = '/proc'
-SH = '/bin/sh'
-SYSTEMD_RUN = 'systemd-run'       # seams: a test points these at a fake
-SYSTEMCTL = 'systemctl'
-BUSCTL = 'busctl'
-PREFIX_ENV = 'KIT_SCOPE_PREFIX'
-PREFIX = 'pmkit'
-MARK_ENV = 'PMKIT_JOB'
+
 W1_ENV = 'PMKIT_W1_NS'            # NSTART sets it to its job's pid namespace (_in_w1)
 READY_SECONDS = 30.0              # a stub has this long to say it is in its cgroup
 GONE_SECONDS = 5.0                # a killed job has this long to empty
 TIDY_SECONDS = 0.5                # a released nested job has this long to empty before close
-CALL_SECONDS = 30                 # a systemctl or busctl call
-HELP_SECONDS = 5                  # systemd-run --help
 KILL_PASSES = 8
 CONTROLLERS = ('cpuset', 'cpu', 'memory', 'pids')
-LEAF, WATCH_LEAF = 'main', 'w'
-TOP = re.compile(r'[A-Za-z0-9_.-]+-job-\d+-\d+-[0-9a-f]+\.scope\Z')
-TOP_PID = re.compile(r'[A-Za-z0-9_.-]+-job-(\d+)-\d+-[0-9a-f]+\.scope\Z')   # TOP, its maker's pid
-LEFT = re.compile(r'[A-Za-z0-9_.-]+-leftovers-(\d+)-\d+-[0-9a-f]+\Z')
-NESTED = re.compile(r'j-\d+-\d+-[0-9a-f]+\Z')
-BASE = '/pm-kit'                  # the boot hook's cgroup (kitlib.machinesetup.delegation)
-SYSTEMD_DIR = '/run/systemd/system'
-HOOKS = ('/etc/local.d/pm-kit-cgroup.start', '/etc/cron.d/pm-kit')
-GROUP_CONTROLLERS = ('cpuset', 'memory', 'pids')
-ANCHOR = BASE + '/anchor'          # the leaf the kit's tmux server runs in
-ATTACH = 'tmux -L pm-kit attach -t pm-kit-anchor \\; new-window'     # delegation.ATTACH
-SETUP = 'sudo python3 %s --delegation --apply' % os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
-    'tools', 'machine_setup.py')
-_PREFIX_OK = re.compile(r'[A-Za-z0-9_.-]{1,40}\Z')
-_count = itertools.count(1)
 
 S2_LACK = 'cpu pinning by the cgroup (affinity only: a child can set its own back)'
 PEAK_LACK = 'peak memory (sampled)'
@@ -168,693 +153,9 @@ W2_LACKS = ('a guaranteed kill (a tree walk and an environment marker: a process
 W1_LACKS = (S2_LACK, PEAK_LACK)
 WHAT = {'S1': 'strong', 'S2': 'partial', 'W1': 'partial', 'W2': 'weak'}
 
-# $1 job cgroup name, $2 the job cgroup to join ('' : the scope systemd put it in), $3 ready fd,
-# $4 go fd, $5 watch fd, $6 armed (1/0), $7 variables to unset, $8 1: systemd puts it in $2/main
-# (a carried job: it waits for `in` on the go pipe first), then the command.
-STUB = r'''n=$1 j=$2 r=$3 g=$4 k=$5 arm=$6 un=$7 put=$8; shift 8
-own() {
-  cg=; while IFS= read -r l; do case $l in 0::*) cg=${l#0::};; esac; done </proc/self/cgroup
-}
-if [ "$put" = 1 ]; then
-  IFS= read -r m <&$g
-  [ "$m" = in ] || exit 125
-fi
-own
-if [ -z "$j" ]; then
-  case $cg in */"$n") j=$cg;; *) echo "x not in its scope: $cg" >&$r; exit 125;; esac
-  mkdir "/sys/fs/cgroup$j/main" "/sys/fs/cgroup$j/w" ||
-    { echo "x cannot make its leaves" >&$r; exit 125; }
-fi
-echo 0 >"/sys/fs/cgroup$j/main/cgroup.procs" || { echo "x cannot join $j/main" >&$r; exit 125; }
-own
-[ "$cg" = "$j/main" ] || { echo "x not in its leaf: $cg" >&$r; exit 125; }
-( ( trap '' INT HUP TERM QUIT PIPE
-    echo 0 >"/sys/fs/cgroup$j/w/cgroup.procs" || exit 125
-    eval "exec $r>&- $g>&- 0<&$k $k<&-"
-    exec >/dev/null 2>&1
-    while IFS= read -r c; do
-      case $c in arm) arm=1;; disarm) arm=0;; release) exit 0;; esac
-    done
-    [ "$arm" = 1 ] && echo 1 >"/sys/fs/cgroup$j/cgroup.kill"
-  ) & echo "w $!" >&$r )
-eval "exec $k<&-"
-echo "s $$ $j" >&$r
-IFS= read -r go <&$g
-[ "$go" = go ] || exit 125
-eval "exec $r>&- $g>&-"
-for v in $un; do unset "$v"; done
-exec "$@"
-'''
-
-# W2's stub: $1 ready fd, $2 go fd, then the command.
-WSTUB = r'''r=$1 g=$2; shift 2
-echo "s $$" >&$r
-IFS= read -r go <&$g
-[ "$go" = go ] || exit 125
-eval "exec $r>&- $g>&-"
-exec "$@"
-'''
-
-# W2's watchdog (python -I -S -c): argv token, watch fd, armed (1/0), passes.
-WATCH = r'''import os, signal, sys, time
-tok, fd, arm, passes = sys.argv[1], int(sys.argv[2]), sys.argv[3] == '1', int(sys.argv[4])
-for s in (signal.SIGINT, signal.SIGHUP, signal.SIGTERM, signal.SIGQUIT):
-    signal.signal(s, signal.SIG_IGN)
-spared = set()
-with os.fdopen(fd, 'rb', 0) as f:
-    for line in f:
-        c = line.strip()
-        if c == b'arm':
-            arm = True
-        elif c == b'disarm':
-            arm = False
-        elif c == b'release':
-            sys.exit(0)
-        elif c.startswith(b'spare '):
-            spared.update(int(x) for x in c.split()[1:])
-if not arm:
-    sys.exit(0)
-def marked(pid):
-    try:
-        with open('/proc/%d/environ' % pid, 'rb') as e:
-            env = e.read().split(b'\0')
-    except OSError:
-        return False
-    return any(v.startswith(b'PMKIT_JOB=') and tok.encode() in v[10:].split() for v in env)
-me = os.getpid()
-for _ in range(passes):
-    fds = []
-    for n in os.listdir('/proc'):
-        if not n.isdigit() or int(n) == me or int(n) in spared or not marked(int(n)):
-            continue
-        try:
-            pfd = os.pidfd_open(int(n))
-        except OSError:
-            continue
-        if marked(int(n)):
-            fds.append(pfd)
-        else:
-            os.close(pfd)
-    if not fds:
-        break
-    for sig in (signal.SIGSTOP, signal.SIGKILL):
-        for pfd in fds:
-            try:
-                signal.pidfd_send_signal(pfd, sig)
-            except OSError:
-                pass
-    for pfd in fds:
-        os.close(pfd)
-    time.sleep(0.05)
-'''
-
-# W1's starter (python -I -S -c; the module docstring): its ready, go and watch pipes at 3, 4 and
-# 5 (FDS), argv armed (1/0), the stub's shell, the stub (WSTUB), then the command. It says
-# `r <pid 1's pid>`, the reaper `x <why>` when it fails, the stub `s <its pid in the namespace>`.
-# The uid and gid are read before the unshare: after it they read as the overflow id until the
-# maps are written, and only the writer's own id may be mapped (from inside the namespace, root
-# included: so root is never W1, W1_ROOT).
-NSTART = r'''import os, select, signal, sys, time
-R, G, K = 3, 4, 5
-arm, sh, stub, cmd = sys.argv[1] == '1', sys.argv[2], sys.argv[3], sys.argv[4:]
-def say(text):
-    try:
-        os.write(R, (text + '\n').encode('utf-8', 'replace'))
-    except OSError:
-        pass
-def live(n):
-    try:
-        with open('/proc/%s/stat' % n, 'rb') as f:
-            data = f.read()
-        return data[data.rindex(b')') + 2:][:1] not in (b'Z', b'X')
-    except (OSError, ValueError):
-        return False
-def kill_all(spared):
-    for _ in range(8):
-        fds = []
-        for n in os.listdir('/proc'):
-            if n.isdigit() and int(n) != 1 and int(n) not in spared:
-                try:
-                    fd = os.pidfd_open(int(n))
-                except OSError:
-                    continue
-                if live(n):
-                    fds.append(fd)
-                else:
-                    os.close(fd)
-        if not fds:
-            return
-        for sig in (signal.SIGSTOP, signal.SIGKILL):
-            for fd in fds:
-                try:
-                    signal.pidfd_send_signal(fd, sig)
-                except OSError:
-                    pass
-        for fd in fds:
-            os.close(fd)
-        time.sleep(0.05)
-def reaper(st, up):
-    global arm
-    try:
-        import ctypes
-        libc = ctypes.CDLL(None, use_errno=True)
-        os.unshare(os.CLONE_NEWNS)
-        for src, dst, kind, flags in ((b'none', b'/', None, 16384 | 262144),
-                                      (b'proc', b'/proc', b'proc', 2 | 4 | 8)):
-            if libc.mount(src, dst, kind, flags, None) != 0:
-                e = ctypes.get_errno()
-                raise OSError(e, 'mount %s: %s' % (dst.decode(), os.strerror(e)))
-    except (ImportError, AttributeError, OSError) as e:
-        say('x no fresh /proc in the job: %s' % e)
-        os._exit(125)
-    os.environ['PMKIT_W1_NS'] = str(os.stat('/proc/self/ns/pid').st_ino)
-    wr, ww = os.pipe()
-    os.set_blocking(wr, False)
-    os.set_blocking(ww, False)
-    signal.signal(signal.SIGCHLD, lambda *a: None)
-    signal.set_wakeup_fd(ww)
-    child = os.fork()
-    if child == 0:
-        try:
-            os.close(K)
-            signal.set_wakeup_fd(-1)
-            for s in TERMINAL + (signal.SIGCHLD, signal.SIGPIPE, signal.SIGXFSZ):
-                signal.signal(s, signal.SIG_DFL)
-            os.execv(sh, [sh, '-c', stub, 'pmkit-job', str(R), str(G)] + cmd)
-        except BaseException as e:
-            say('x the stub could not start: %s' % e)
-        os._exit(127)
-    os.close(R)
-    os.close(G)
-    null = os.open('/dev/null', os.O_RDWR)
-    for fd in (0, 1, 2):
-        os.dup2(null, fd)
-    os.close(null)
-    poll = select.poll()
-    for fd in (K, up, wr):
-        poll.register(fd, select.POLLIN)
-    status, told, released, closed, spared, buf = None, False, False, False, set(), b''
-    while True:
-        kids = True
-        while True:
-            try:
-                pid, s = os.waitpid(-1, os.WNOHANG)
-            except ChildProcessError:
-                kids = False
-                break
-            if pid == 0:
-                break
-            if pid == child:
-                status = s
-        if status is not None and not told:
-            told = True
-            try:
-                os.write(st, b'%d\n' % status)
-            except OSError:
-                pass
-        if not kids and (released or closed):
-            os._exit(0)
-        try:
-            ready = poll.poll()
-        except InterruptedError:
-            continue
-        for fd, _ in ready:
-            if fd == wr:
-                try:
-                    os.read(wr, 512)
-                except OSError:
-                    pass
-                continue
-            try:
-                data = os.read(fd, 4096)
-            except OSError:
-                data = b''
-            if fd == up:
-                if not data:
-                    poll.unregister(up)
-                    if not told:
-                        os._exit(0)
-                continue
-            if not data:
-                poll.unregister(K)
-                closed = True
-                if arm and not released:
-                    if not spared:
-                        os._exit(0)
-                    kill_all(spared)
-                continue
-            buf += data
-            while b'\n' in buf:
-                line, buf = buf.split(b'\n', 1)
-                words = line.split()
-                if words == [b'arm']:
-                    arm = True
-                elif words == [b'disarm']:
-                    arm = False
-                elif words == [b'release']:
-                    released = True
-                elif words[:1] == [b'spare']:
-                    spared.update(int(x) for x in words[1:] if x.isdigit())
-TERMINAL = (signal.SIGINT, signal.SIGQUIT, signal.SIGHUP)
-for s in TERMINAL:
-    signal.signal(s, signal.SIG_IGN)
-uid, gid = os.getuid(), os.getgid()
-try:
-    os.unshare(os.CLONE_NEWUSER | os.CLONE_NEWPID)
-    for name, text in (('setgroups', 'deny'), ('uid_map', '%d %d 1' % (uid, uid)),
-                       ('gid_map', '%d %d 1' % (gid, gid))):
-        with open('/proc/self/' + name, 'w') as f:
-            f.write(text)
-except (AttributeError, OSError) as e:
-    say('x no user and PID namespace: %s' % e)
-    sys.exit(125)
-st_r, st_w = os.pipe()
-up_r, up_w = os.pipe()
-pid = os.fork()
-if pid == 0:
-    os.close(st_r)
-    os.close(up_w)
-    try:
-        reaper(st_w, up_r)
-    finally:
-        os._exit(1)
-os.close(st_w)
-os.close(up_r)
-say('r %d' % pid)
-for fd in (R, G, K):
-    os.close(fd)
-null = os.open('/dev/null', os.O_RDWR)
-for fd in (0, 1, 2):
-    os.dup2(null, fd)
-data = b''
-while b'\n' not in data:
-    chunk = os.read(st_r, 64)
-    if not chunk:
-        break
-    data += chunk
-try:
-    status = int(data.split(b'\n')[0])
-except ValueError:
-    status = None
-if status is not None and os.WIFEXITED(status):
-    os._exit(os.WEXITSTATUS(status))
-sig = os.WTERMSIG(status) if status is not None and os.WIFSIGNALED(status) else signal.SIGKILL
-try:
-    signal.signal(sig, signal.SIG_DFL)
-except (OSError, ValueError):
-    pass
-os.kill(os.getpid(), sig)
-os._exit(128 + sig)
-'''
-
-
-def _jobmod():
-    from kitlib.proc import job
-    return job
-
 
 def _error(text):
-    return _jobmod().JobError(text)
-
-
-def prefix():
-    """The first word of every top-level scope's name: KIT_SCOPE_PREFIX when it is a plain name
-    (a test run's own, so its scopes can be listed and checked gone), else pmkit."""
-    p = os.environ.get(PREFIX_ENV, '')
-    return p if _PREFIX_OK.match(p) else PREFIX
-
-
-def _tag():
-    return '%d-%d-%s' % (os.getpid(), next(_count), secrets.token_hex(3))
-
-
-def _read(path):
-    with open(path, 'r', encoding='utf-8', errors='replace') as f:
-        return f.read()
-
-
-def _read_int(path):
-    try:
-        return int(_read(path).split()[0])
-    except (OSError, ValueError, IndexError):
-        return None
-
-
-def _write(path, text):
-    with open(path, 'w', encoding='ascii') as f:
-        f.write(text)
-
-
-def cg_dir(cg):
-    return CGROOT + cg
-
-
-def cgroup_of(pid='self'):
-    """The cgroup v2 path of pid ('/user.slice/...'), None when no such process; raises OSError
-    when it cannot be read or has no cgroup v2 line."""
-    try:
-        text = _read('%s/%s/cgroup' % (PROC, pid))
-    except (FileNotFoundError, ProcessLookupError):
-        return None
-    for line in text.splitlines():
-        if line.startswith('0::'):
-            return line[3:] or '/'
-    raise OSError(errno.ENOENT, 'no cgroup v2 line in /proc/%s/cgroup' % pid)
-
-
-def is_job_cgroup(cg):
-    """True when cg is a cgroup a kit job made: a top-level kit job scope, or a nested job
-    directory under one (each step a nested job name). Plain absolute paths only."""
-    if not isinstance(cg, str) or not cg.startswith('/') or '\0' in cg:
-        return False
-    parts = cg.split('/')[1:]
-    if any(p in ('', '.', '..') for p in parts):
-        return False
-    tops = [i for i, p in enumerate(parts) if TOP.match(p)]
-    if not tops:
-        return False
-    return all(NESTED.match(p) for p in parts[tops[-1] + 1:])
-
-
-def owned(cg, name):
-    """True when cg is the job cgroup this job made: a kit job cgroup whose last step is `name`."""
-    return is_job_cgroup(cg) and cg.rsplit('/', 1)[1] == name
-
-
-def parent_job(own=None):
-    """The job cgroup this process runs in (it is in that job's main leaf, with write access to
-    the job's cgroup), or None."""
-    try:
-        cg = cgroup_of('self') if own is None else own
-    except OSError:
-        return None
-    if not cg or not cg.endswith('/' + LEAF):
-        return None
-    parent = cg[:-len(LEAF) - 1]
-    if not is_job_cgroup(parent) or not os.access(cg_dir(parent) + '/cgroup.procs', os.W_OK):
-        return None
-    return parent
-
-
-def delegated_group(own=None):
-    """(BASE, None) when this process may make its jobs in the boot hook's cgroup: it is this
-    user's folder, holding the controllers, and this process runs under it (in the anchor, where
-    the kit's tmux server runs, or in a job there), so a move needs only this user's write on
-    BASE/cgroup.procs. Else (None, why not), or (None, None) when there is no such route to name
-    (no cgroup v2, or no group on a systemd box). `own`: this process's cgroup (a test's)."""
-    if not cgroup2():
-        return None, None
-    d = cg_dir(BASE)
-    try:
-        st = os.lstat(d)
-    except FileNotFoundError:
-        if os.path.isdir(SYSTEMD_DIR):
-            return None, None
-        return None, ('the boot hook did not run (no %s; it is %s or %s, which '
-                      '`machine_setup.py --delegation` sets up)' % (d, HOOKS[0], HOOKS[1]))
-    except OSError as e:
-        return None, 'the kit\'s cgroup %s cannot be read (%s)' % (BASE, e)
-    if not statmod.S_ISDIR(st.st_mode):
-        return None, 'the kit\'s cgroup %s is a link or a file, not a folder' % d
-    me = os.getuid()
-    if st.st_uid != me:
-        return None, ('the kit\'s cgroup %s is owned by uid %d, not this user (uid %d)'
-                      % (BASE, st.st_uid, me))
-    try:
-        cg = cgroup_of('self') if own is None else own
-    except OSError as e:
-        return None, 'this process\'s cgroup cannot be read (%s)' % e
-    if not cg or not cg.startswith(BASE + '/'):
-        if not populated(ANCHOR):
-            return None, ('this process runs outside %s (in %s), and the kit\'s tmux server has '
-                          'ended (%s is empty): run %s again, or reboot, to start it; a tmux '
-                          'server started from a shell is not contained' % (BASE, cg, ANCHOR, SETUP))
-        return None, ('this process runs outside %s (in %s): start work from the kit\'s tmux '
-                      'server: %s' % (BASE, cg, ATTACH))
-    if not os.access(d + '/cgroup.procs', os.W_OK):
-        return None, 'the kit\'s cgroup %s: its cgroup.procs is not writable by this user' % BASE
-    try:
-        ctl = set(_read(d + '/cgroup.subtree_control').split())
-    except OSError as e:
-        return None, 'the kit\'s cgroup %s: its controllers cannot be read (%s)' % (BASE, e)
-    lack = [c for c in GROUP_CONTROLLERS if c not in ctl]
-    if lack:
-        return None, 'the kit\'s cgroup %s lacks the controllers %s' % (BASE, ', '.join(lack))
-    return BASE, None
-
-
-def sweep(base):
-    """Removes the job and leftovers folders in `base` whose maker (the pid in the name) has gone
-    and which hold no process: systemd collects its scopes, and in the boot hook's group this
-    does. A folder still in use, or not named as a kit job's, is never touched."""
-    try:
-        names = os.listdir(cg_dir(base))
-    except OSError:
-        return
-    for n in names:
-        m = TOP_PID.match(n) or LEFT.match(n)
-        if m is None or os.path.exists('%s/%s' % (PROC, m.group(1))):
-            continue
-        cg = base + '/' + n
-        if not populated(cg):
-            rmtree_cgroup(cg)
-
-
-def cgroup2():
-    """True when /sys/fs/cgroup is a cgroup2 mount (mountinfo, not a guess)."""
-    try:
-        text = _read('%s/self/mountinfo' % PROC)
-    except OSError:
-        return False
-    for line in text.splitlines():
-        left, _, right = line.partition(' - ')
-        f = left.split()
-        if len(f) > 4 and f[4] == CGROOT and right.split()[:1] == ['cgroup2']:
-            return True
-    return False
-
-
-def bus_env(env):
-    """A copy of env that reaches the user's systemd bus (XDG_RUNTIME_DIR added when it is
-    missing and /run/user/<uid>/bus exists), or None when no user bus can be named."""
-    env = dict(env)
-    if env.get('DBUS_SESSION_BUS_ADDRESS') or env.get('XDG_RUNTIME_DIR'):
-        return env
-    d = '/run/user/%d' % os.getuid()
-    if os.path.exists(d + '/bus'):
-        env['XDG_RUNTIME_DIR'] = d
-        return env
-    return None
-
-
-def _tool(name):
-    if os.sep in name:
-        return name if os.access(name, os.X_OK) else None
-    return shutil.which(name)
-
-
-def _call(argv):
-    """(True when it exited 0, its stderr) of a systemctl or busctl call; never trusted alone:
-    each caller reads back what the call was to change."""
-    env = bus_env(os.environ) or dict(os.environ)
-    try:
-        r = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, env=env, timeout=CALL_SECONDS, creationflags=0)
-    except (OSError, subprocess.SubprocessError) as e:
-        return False, str(e)
-    return r.returncode == 0, r.stderr.decode('utf-8', 'replace').strip()
-
-
-_no_expand = {}
-
-
-def no_expand(run):
-    """['--expand-environment=no'] when systemd-run `run` names that switch in its --help, else
-    []. systemd 254 added it (254 to 257: off by default with --scope; 258 turned it on), and an
-    older one refuses it, but its --scope expands nothing: the stub's $ reach the shell either
-    way. Asked once for each path."""
-    if run not in _no_expand:
-        try:
-            out = subprocess.run([run, '--help'], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, timeout=HELP_SECONDS,
-                                 creationflags=0).stdout
-        except (OSError, subprocess.SubprocessError):
-            out = b''
-        _no_expand[run] = ['--expand-environment=no'] if b'--expand-environment' in out else []
-    return list(_no_expand[run])
-
-
-def populated(cg):
-    """True while cg or a cgroup under it holds a process; False when empty or gone."""
-    try:
-        for line in _read(cg_dir(cg) + '/cgroup.events').splitlines():
-            if line.startswith('populated '):
-                return line.split()[1] == '1'
-    except OSError:
-        return False
-    return False
-
-
-def wait_empty(cg, seconds):
-    end = time.monotonic() + seconds
-    pause = 0.001
-    while populated(cg):
-        if time.monotonic() >= end:
-            return False
-        time.sleep(pause)
-        pause = min(pause * 2, 0.05)
-    return True
-
-
-def rmtree_cgroup(cg):
-    """rmdir cg and the cgroups under it, deepest first; one still holding a process stays."""
-    d = cg_dir(cg)
-    for root, dirs, _files in os.walk(d, topdown=False):
-        try:
-            os.rmdir(root)
-        except OSError:
-            pass
-
-
-def rss(pid):
-    """Bytes resident of pid now (statm), 0 when gone."""
-    try:
-        return int(_read('%s/%d/statm' % (PROC, pid)).split()[1]) * os.sysconf('SC_PAGE_SIZE')
-    except (OSError, ValueError, IndexError):
-        return 0
-
-
-def vm_hwm(pid):
-    """Bytes: the peak resident set of pid (VmHWM), 0 when gone."""
-    try:
-        for line in _read('%s/%d/status' % (PROC, pid)).splitlines():
-            if line.startswith('VmHWM:'):
-                return int(line.split()[1]) * 1024
-    except (OSError, ValueError, IndexError):
-        pass
-    return 0
-
-
-def cpu_ticks(pid):
-    """utime + stime + cutime + cstime of pid in clock ticks, 0 when gone."""
-    try:
-        text = _read('%s/%d/stat' % (PROC, pid))
-        f = text[text.rindex(')') + 2:].split()
-        return sum(int(x) for x in f[11:15])
-    except (OSError, ValueError, IndexError):
-        return 0
-
-
-def _pids():
-    """Every pid PROC lists, or [] when it cannot be read."""
-    try:
-        return [int(n) for n in os.listdir(PROC) if n.isdigit()]
-    except OSError:
-        return []
-
-
-def _stat_bytes(pid):
-    with open('%s/%d/stat' % (PROC, pid), 'rb') as f:
-        return f.read()
-
-
-def pstat(pid, boot=None):
-    """(ctime, ppid, exited) of pid from ONE read of its stat, so the parent and the identity are
-    the same process's; None when it is gone or cannot be read."""
-    try:
-        data = _stat_bytes(pid)
-        close = data.rindex(b')')
-        f = data[close + 2:].split()
-        return (lproc._ctime(int(f[19]), boot), int(f[1]),
-                f[0].decode('ascii', 'replace') in lproc.EXITED)
-    except (OSError, ValueError, IndexError):
-        return None
-
-
-def _boot():
-    try:
-        return lproc.boot()
-    except OSError:
-        return None
-
-
-def tree(root, ctime, boot=None):
-    """{pid: ctime} of root's descendants, or {} when root is not the process ctime names. Each
-    child's parent and ctime come from one stat read, taken between two reads of the parent that
-    find it unchanged, so a pid that ends and is reused while the walk runs never joins the tree
-    (it is under its new parent, or its parent is gone)."""
-    boot = _boot() if boot is None else boot
-    if boot is None or ctime is None:
-        return {}
-    kids = {}
-    for pid in _pids():
-        st = pstat(pid, boot)
-        if st is not None and pid != root:
-            kids.setdefault(st[1], []).append(pid)
-    out = {}
-    queue = [(root, ctime)]
-    while queue:
-        q, qc = queue.pop(0)
-        if not kids.get(q) or not _same(q, qc, boot):
-            continue
-        got = []
-        for c in kids[q]:
-            st = pstat(c, boot)
-            if st is not None and st[1] == q and c not in out:
-                got.append((c, st[0]))
-        if not _same(q, qc, boot):
-            continue
-        for c, ct in got:
-            out[c] = ct
-            queue.append((c, ct))
-    return out
-
-
-def _same(pid, ctime, boot):
-    st = pstat(pid, boot)
-    return st is not None and st[0] == ctime
-
-
-def marked(token):
-    """{pid: ctime} of the processes whose environment's PMKIT_JOB names token (the ctime read
-    before and after the environment, so the two are the same process's)."""
-    want = token.encode('ascii')
-    boot = _boot()
-    out = {}
-    if boot is None:
-        return out
-    for pid in _pids():
-        st = pstat(pid, boot)
-        if st is not None and _marks(pid, want) and _same(pid, st[0], boot):
-            out[pid] = st[0]
-    return out
-
-
-def _marks(pid, want):
-    try:
-        with open('%s/%d/environ' % (PROC, pid), 'rb') as f:
-            env = f.read().split(b'\0')
-    except OSError:
-        return False
-    key = MARK_ENV.encode('ascii') + b'='
-    return any(v.startswith(key) and want in v[len(key):].split() for v in env)
-
-
-def _pidns(pid):
-    """The inode of pid's PID namespace ('self': this process's), None when it cannot be read."""
-    return lproc.pidns(pid)
-
-
-def _nspid(pid):
-    """pid's pids in each PID namespace this /proc sees it in, outermost first (its status NSpid
-    line), [] when it cannot be read: the last is its pid in its own namespace."""
-    try:
-        for line in _read('%s/%s/status' % (PROC, pid)).splitlines():
-            if line.startswith('NSpid:'):
-                return [int(x) for x in line.split()[1:]]
-    except (OSError, ValueError):
-        pass
-    return []
+    return JobError(text)
 
 
 # ------------------------------------------------------------------ the tier
@@ -1186,7 +487,7 @@ _mixed = {}
 
 
 class Job:
-    """kitlib.proc.job.Job on Linux: Job(mask=None, kill_on_close=True) is a ScopeJob (S1, S2), an
+    """The face's Job on Linux: Job(mask=None, kill_on_close=True) is a ScopeJob (S1, S2), an
     NsJob (W1) or a WeakJob (W2) as probe() finds (`tier` instead: a test's or the trial's). One
     command per job: start a second time and it raises JobError. `pin`, `effective` and `note`
     mean what they mean on Windows. short=True: a short command (a git call), carried in this
@@ -1214,7 +515,7 @@ class Job:
         self.mask = (mask & every) if mask is not None else None
         if mask is not None and not self.mask:
             self.note, self.mask = ('this machine has none of cores %s'
-                                    % _jobmod().cores_text(mask)), None
+                                    % cores_text(mask)), None
         self.wd = None
         self.pin = 'pinned' if self.mask is not None else None
         self.effective = self.mask
@@ -1222,9 +523,9 @@ class Job:
     # ---- start
     def start(self, cmd, before_resume=None, **kw):
         """Popen(cmd) through the stub, in the job and pinned before it runs, then let go; as
-        kitlib.proc.job.Job.start on Windows (Ctrl+C held the same way, _Held). Raises OSError
-        when the command cannot start (FileNotFoundError when it is not found), and JobError when
-        it cannot be put in the job; the stub is then ended. `creationflags` are Windows's and
+        kitlib.platform.windows.job.Job.start on Windows (Ctrl+C held the same way, _Held). Raises
+        OSError when the command cannot start (FileNotFoundError when it is not found), and JobError
+        when it cannot be put in the job; the stub is then ended. `creationflags` are Windows's and
         dropped; shell=True runs cmd under /bin/sh."""
         if self._child is not None or self.closed:
             raise _error('a job on Linux starts one command; this one has started one or is closed')
@@ -1241,7 +542,7 @@ class Job:
             raise ValueError('Job.start on Linux takes no executable=')
         env = dict(os.environ if kw.get('env') is None else kw['env'])
         _find(cmd[0], env, kw.get('cwd'))
-        held = _jobmod()._Held()
+        held = _Held()
         try:
             p = self._begin(cmd, env, kw)
             try:
@@ -1341,7 +642,7 @@ class Job:
         except OSError:
             return self.pin
         if got != self.mask:
-            mt = _jobmod().cpu.mask_text
+            mt = mask_text
             self.pin, self.effective = 'overridden', got
             self.note = ('a limit outside the job wins: the command runs on cpus %s, not %s'
                          % (mt(got), mt(self.mask)))
@@ -1504,7 +805,7 @@ class ScopeJob(Job):
         self.parent, self.carried = via.cg, via
         try:
             return self._begin_in(cmd, env, kw, via)
-        except _jobmod().JobError as e:
+        except JobError as e:
             self.parent = self.carried = self.cg = self.name = self.unit = self.wd = None
             if getattr(e, 'refused', False):
                 via.refuse(str(e))
@@ -1570,7 +871,7 @@ class ScopeJob(Job):
                     unset.append('INVOCATION_ID')
                 props = ['-p', 'Delegate=yes']
                 if self.mask is not None and self.cpuset:
-                    props += ['-p', 'AllowedCPUs=' + _jobmod().cpu.mask_text(self.mask)]
+                    props += ['-p', 'AllowedCPUs=' + mask_text(self.mask)]
                 argv = ([run, '--user', '--scope', '--quiet', '--collect'] + no_expand(run)
                         + ['--unit', self.unit] + props + ['--'])
                 join, penv = '', benv
@@ -1640,7 +941,7 @@ class ScopeJob(Job):
             os.mkdir(d + '/' + WATCH_LEAF)
             if self.mask is not None and self.cpuset:
                 if os.path.exists(d + '/cpuset.cpus'):
-                    _write(d + '/cpuset.cpus', _jobmod().cpu.mask_text(self.mask))
+                    _write(d + '/cpuset.cpus', mask_text(self.mask))
                 else:
                     self.cpuset = False
                     self.note = 'the cpus are pinned by affinity only: the outer job has no cpuset'
@@ -1676,7 +977,7 @@ class ScopeJob(Job):
             return False
         if not self.cpuset:
             return self._pin_affinity(self.pids(), mask)
-        text = _jobmod().cpu.mask_text(mask) if mask is not None else ''
+        text = mask_text(mask) if mask is not None else ''
         d = cg_dir(self.cg)
         if self.parent is None and self.base is None:
             _call([_tool(SYSTEMCTL) or SYSTEMCTL, '--user', 'set-property', '--runtime',

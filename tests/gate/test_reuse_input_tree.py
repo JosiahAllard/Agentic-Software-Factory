@@ -7,7 +7,8 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
-from kitlib.gate import land, reuse, runner
+from kitlib.gate import reuse, runner
+from kitlib.landing import lander as land
 from kitlib.gate import steps as S
 from kitlib.records import gate_ok
 from tests.gate import fixtures, test_reuse
@@ -40,8 +41,7 @@ class InputTree(ReuseCase):
     no input, a batch, a docs-only record, a result that was not a pass, or a record without input
     keys serves nothing."""
     GATE = {'steps': [UNIT, BASEY, WHOLE, FULLY, GU, GW, MERGED, PLAIN]}
-    # a default-mode record lands; gate_once off, as its --full merged gate reuses nothing
-    KIT = {'landing': {'shared_paths': ['shared/*'], 'gate_once': False}}
+    KIT = {}        # a default-mode record lands; the merged gate of a plain change may reuse
     ASKING = ('unit', 'basey', 'whole', 'fully', 'gu', 'gw', 'merged')
 
     def full_tip(self):

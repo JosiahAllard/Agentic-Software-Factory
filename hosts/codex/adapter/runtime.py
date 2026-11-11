@@ -142,8 +142,8 @@ def evaluate_bound(event, binding, ctx=None, profile=None, environ=None):
                              % base.config_error(binding.cwd))
         held = PolicyOn(base)
         # A root is a marked session, judged as an agent of its mark as a hook here judges one
-        # (hookmain.UNIDENTIFIED), so the backlog's role check stays the tool's own under that mark.
-        from kitlib.host.hookmain import UNIDENTIFIED
+        # (hookrun.UNIDENTIFIED), so the backlog's role check stays the tool's own under that mark.
+        from kitlib.hookrun.main import UNIDENTIFIED
         agent = binding.thread if getattr(binding, 'parent', None) else UNIDENTIFIED
         for action in parsed if isinstance(parsed, tuple) else (parsed,):
             action = replace(action, role=binding.role, agent=agent, agent_role=binding.role)
@@ -161,8 +161,7 @@ def evaluate_bound(event, binding, ctx=None, profile=None, environ=None):
 
 
 def _log(decision, action, environ):
-    """The refusal log's line for a broker deny (kitlib.guard.refusal_log; docs/guard-v2.md
-    "Refusal log"): `decision` refused `action` (an ask too: Codex refuses it), or None for the
+    """The refusal log's line for a broker deny (kitlib.guard.refusal_log; docs/guard-core.md "Refusal log"): `decision` refused `action` (an ask too: Codex refuses it), or None for the
     broker's own error (rule host-runtime-error, no Action). The role tag is 'subagent', as the
     deny's reason tags it: every bound call is judged as an agent. Never raises."""
     try:
@@ -307,7 +306,7 @@ def command_env(role):
     """The environment changes a sandboxed kit command runs with: the bound role and this host
     marked, the session name dropped, and every other host's model variable cleared, so a
     commit never takes its attribution from another host's session."""
-    from kitlib import sessionmark
+    from kitlib.host import sessionmark
     from kitlib.host import registry
     env = {ROLE_ENV: role, 'PM_KIT_HOST': HOST, sessionmark.SESSION_NAME_ENV: None}
     for h in registry.load().values():

@@ -25,8 +25,8 @@ from unittest import mock
 
 from kitlib.config import ConfigError, load as load_config
 from kitlib.proc import job as job_mod
-from kitlib.proc import shield as pid_shield
-from kitlib.proc import win32
+from kitlib.platform.windows import shield as pid_shield
+from kitlib.platform.windows import win32
 from kitlib.pytests import child, runner
 from kitlib.tooldeps import deps as tool_deps
 from tests.gitfixture import TempRepo, rmtree, stale_local_main
@@ -607,7 +607,7 @@ class ThePidHold(Fakes):
         report = os.path.join(self.dir, 'unit.json')
         self.write('test_grandchild', textwrap.dedent('''
             import json, os, subprocess, sys, unittest
-            from kitlib.proc import shield
+            from kitlib.platform.windows import shield
 
             class G(unittest.TestCase):
                 def test_starts_a_child(self):
@@ -768,7 +768,7 @@ class TheAudit(AuditRepo):
         self.assertEqual(code, 0, out)
 
     def test_the_hook_rules(self):
-        a = child.Audit('test_backlog', self.root)
+        a = child.Audit('test_backlog', self.root, tool_deps)
         a.current = 'test_backlog.X.test_y'
         for rel in ('docs/reference/BACKLOG_STORE.md', 'tools/backlog.py', 'tools/README.md',
                     'tools/__pycache__/x.pyc', '.git/HEAD'):
@@ -785,7 +785,7 @@ class TheAudit(AuditRepo):
         os.rename(self.join('tools'), self.join('scripts'))
         with open(self.join('.kit.json'), 'w', encoding='utf-8') as fh:
             json.dump({'repo': {'tools_dir': 'scripts'}, 'tool_tests': AUDIT_TABLES}, fh)
-        a = child.Audit('test_backlog', self.root)
+        a = child.Audit('test_backlog', self.root, tool_deps)
         a.current = 'test_backlog.X.test_y'
         a.hook('open', (self.join('scripts/backlog.py'), 'r', 0))
         self.assertEqual(a.findings, {})
@@ -793,7 +793,7 @@ class TheAudit(AuditRepo):
         self.assertEqual(sorted(a.findings), ['scripts/gate.py'])
 
     def test_a_whole_tree_class_reads_anything(self):
-        a = child.Audit('test_machine_paths', self.root)
+        a = child.Audit('test_machine_paths', self.root, tool_deps)
         a.current = 'test_machine_paths.TheRealTree.test_x'
         a.hook('open', (self.join('docs/INDEX.md'), 'r', 0))
         self.assertEqual(a.findings, {})
@@ -804,7 +804,7 @@ class TheAudit(AuditRepo):
     def test_other_checkouts_and_a_scan_readers_non_py_reads(self):
         # .claude/worktrees/** is another checkout, never this tree's input; a module reaching
         # tool_deps may read tools/*.py, but README/json stay audited.
-        a = child.Audit('test_exit_status', self.root)  # its closure holds tool_deps (via gate)
+        a = child.Audit('test_exit_status', self.root, tool_deps)  # its closure holds tool_deps (via gate)
         self.assertIn('tool_deps', a.reach)
         a.current = 'test_exit_status.X.test_y'
         for rel in ('.claude/worktrees/other/tools/gate.py', '.claude/worktrees/other/docs/x.md',

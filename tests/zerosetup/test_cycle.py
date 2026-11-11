@@ -1,4 +1,4 @@
-"""Zero repo setup, end to end (docs/multi-host-plan.md section 7, step 20's proof; docs/install.md
+"""Zero repo setup, end to end (docs/install.md
 "What first use writes"): a fresh clone of an unrelated repository, with nothing of the kit
 committed in it, runs a PM-to-worker-to-land cycle through the kit's own library calls, and its
 history afterwards holds the worker's change and nothing else.
@@ -10,12 +10,12 @@ The cycle, in the order a PM and a worker run it:
      hand (docs/kit-json.md "Machine config keys"): the gate's and the landing's result records go
      under it (docs/gate-records.md "Result record"), never into the clone;
   2. the PM makes the worker's worktree (kitlib.worktree.new.create, tools/new_worktree.py),
-     which runs the first-use repo prep (kitlib.git.prep: info/exclude, core.hooksPath);
-  3. the worker commits in the worktree (kitlib.commit.commit, tools/commit.py);
+     which runs the first-use repo prep (kitlib.worktree.prep: info/exclude, core.hooksPath);
+  3. the worker commits in the worktree (kitlib.commit.run.commit, tools/commit.py);
   4. the worker gates the branch --full with no gate configured (kitlib.gate.runner.branch_gate:
      the stack is detected, `source: auto`, and the clone's own unittest tests run), which writes
      the full-gate OK record a landing takes for the tip;
-  5. the PM lands it from the main checkout (kitlib.gate.land.Lander, `gate.py land`): merge, the
+  5. the PM lands it from the main checkout (kitlib.landing.lander.Lander, `gate.py land`): merge, the
      merged tree's gate, the push to the remote, the branch cleanup.
 
 What stands in for the machine (the rest is the kit's code as it runs):
@@ -41,13 +41,14 @@ import unittest
 from unittest import mock
 
 import kitlib.config as kconfig
-from kitlib import commit as kcommit
+from kitlib.commit import run as kcommit
 from kitlib import kitroot
 from kitlib import gate as G
 from kitlib.config import user as kuser
-from kitlib.gate import land, runner
+from kitlib.gate import runner
+from kitlib.landing import lander as land
 from kitlib.git import cmd as gitcmd
-from kitlib.git import prep
+from kitlib.worktree import prep
 from kitlib.git.fake import repo as fakerepo
 from kitlib.guard import prepush
 from kitlib.lock import store as lockstore
@@ -198,7 +199,7 @@ class Cycle(object):
         tip = self.worker_commit(wt, FIX, 'Fix add')
         self.assertEqual(self.git('log', '-1', '--format=%ae', cwd=wt), WORKER)
         self.pre_commit_passed(wt)
-        # ... and pushes its branch: the worktree shares the clone's remote (decision 23)
+        # ... and pushes its branch: the worktree shares the clone's remote
         self.git('push', '-q', 'origin', 'kit/fix-add', cwd=wt)
         self.assertEqual(self.remote_git('rev-parse', 'kit/fix-add'), tip)
         # 4. the worker's gate: no gate configured, the clone's own tests detected and run, --full

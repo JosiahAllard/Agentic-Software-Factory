@@ -17,6 +17,7 @@ try:
     from kitlib.lock import background as bg
     from kitlib.lock import queue as qm
     from kitlib.lock import run as rm
+    from kitlib.lock import run_held
     from kitlib.lock import status as st
     from kitlib.lock.store import EXIT_BUSY, LockError, Settings, memory_now
     from kitlib.proc import process
@@ -242,7 +243,7 @@ class Admission(MemCase):
         self.assertIn("memory: need 4096 MB", self.busy("plain", resource=res).message)
         prid = "r-20261006T120000Z-abcdef"
         self.live_record(prid, pid=pp, ctime=ct, has={"cpu": 2}, cores=[0, 1])
-        env = clean_env(**{rm.NEST_ENV: "%s:%d:%d" % (prid, pp, ct)})
+        env = clean_env(**{run_held.NEST_ENV: "%s:%d:%d" % (prid, pp, ct)})
         s = self.book("child", env=env, resource=res, no_wait=True)     # its parent lacks res
         try:
             self.assertFalse(s.nested)                          # it went through acquire

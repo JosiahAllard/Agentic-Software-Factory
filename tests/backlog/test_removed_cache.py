@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from kitlib.backlog import removed_cache
-from kitlib.backlog import store as smod
+from kitlib.backlog import store_read
 from tests.gitfixture import TempRepo, real_fixture
 from tests.realgit import real_git
 
@@ -37,25 +37,25 @@ class RemovedCache(unittest.TestCase):
         return glob.glob(os.path.join(self.root, '.git', 'kit-removed-*.json'))
 
     def uncached(self):
-        return smod.scan_removed(self.root, 'HEAD', 'backlog')
+        return store_read.scan_removed(self.root, 'HEAD', 'backlog')
 
     def test_cached_equals_uncached_over_a_merge_and_runs_no_log_the_second_time(self):
         want = _rows(self.uncached())
         self.assertEqual(sorted(r[0] for r in want), ['A', 'B'])
-        self.assertEqual(_rows(smod.removed_records(self.root, 'HEAD', 'backlog')), want)
+        self.assertEqual(_rows(store_read.removed_records(self.root, 'HEAD', 'backlog')), want)
         self.assertEqual(len(self.cache_files()), 1)
-        with mock.patch.object(smod, 'scan_removed') as scan:
-            self.assertEqual(_rows(smod.removed_records(self.root, 'HEAD', 'backlog')), want)
+        with mock.patch.object(store_read, 'scan_removed') as scan:
+            self.assertEqual(_rows(store_read.removed_records(self.root, 'HEAD', 'backlog')), want)
             scan.assert_not_called()
 
     def scans(self):
         """The revs `scan_removed` is asked for by one `removed_records` call, and its rows."""
-        with mock.patch.object(smod, 'scan_removed', wraps=smod.scan_removed) as scan:
-            got = smod.removed_records(self.root, 'HEAD', 'backlog')
+        with mock.patch.object(store_read, 'scan_removed', wraps=store_read.scan_removed) as scan:
+            got = store_read.removed_records(self.root, 'HEAD', 'backlog')
         return [c.args[1] for c in scan.call_args_list], _rows(got)
 
     def test_a_tip_with_no_new_deletion_keeps_the_list_and_one_with_a_deletion_rescans(self):
-        smod.removed_records(self.root, 'HEAD', 'backlog')
+        store_read.removed_records(self.root, 'HEAD', 'backlog')
         old = self.repo.head()
         self.repo.write('backlog/D.md', 'id: D\n')
         new = self.repo.commit('add D', 'backlog/D.md')
@@ -70,7 +70,7 @@ class RemovedCache(unittest.TestCase):
         self.assertIn('C', [r[0] for r in rows])
 
     def test_a_tip_that_is_not_a_descendant_is_read_in_full(self):
-        smod.removed_records(self.root, 'HEAD', 'backlog')
+        store_read.removed_records(self.root, 'HEAD', 'backlog')
         self.repo.git('reset', '-q', '--hard', 'HEAD~1')       # the cached tip is not an ancestor
         revs, rows = self.scans()
         self.assertEqual(revs, ['HEAD'])
@@ -78,13 +78,13 @@ class RemovedCache(unittest.TestCase):
         self.assertEqual([r[0] for r in rows], ['B'])
 
     def test_a_corrupt_cache_falls_back_and_a_failed_write_does_not_fail_the_read(self):
-        smod.removed_records(self.root, 'HEAD', 'backlog')
+        store_read.removed_records(self.root, 'HEAD', 'backlog')
         with open(self.cache_files()[0], 'w', encoding='utf-8') as f:
             f.write('{not json')
         want = _rows(self.uncached())
-        self.assertEqual(_rows(smod.removed_records(self.root, 'HEAD', 'backlog')), want)
+        self.assertEqual(_rows(store_read.removed_records(self.root, 'HEAD', 'backlog')), want)
         with mock.patch.object(removed_cache.atomic, 'write_text', side_effect=OSError('full')):
-            self.assertEqual(_rows(smod.removed_records(self.root, 'HEAD', 'backlog')), want)
+            self.assertEqual(_rows(store_read.removed_records(self.root, 'HEAD', 'backlog')), want)
 
 
 if __name__ == '__main__':

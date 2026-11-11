@@ -1,4 +1,4 @@
-"""The lock's process checks on Linux (docs/linux-support-plan.md section 8, slice 4), on the /proc
+"""The lock's process checks on Linux, on the /proc
 ctime `(boot << 64) | starttime` (kitlib.platform.linux.process):
 
 - a record or token written before a reboot names no live process after it (the boot id is the
@@ -18,7 +18,7 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib.lock import run, store as store_mod
+from kitlib.lock import run, run_end, store as store_mod
 from kitlib.lock.store import Store
 from kitlib.platform.linux import process as procfs
 from kitlib.proc import process
@@ -218,23 +218,24 @@ class EndOthers(Base):
     def test_the_stamp_is_after_a_process_created_before_it_and_not_after_one_created_after(self):
         a = self.spawn()
         time.sleep(0.05)
-        stamp = run.filetime_now()
+        stamp = run_end.filetime_now()
         time.sleep(0.05)
         b = self.spawn()
         self.assertEqual(stamp >> 64, procfs.boot())
         self.assertLess(process.proc_ctime(a.pid), stamp)
         self.assertGreaterEqual(process.proc_ctime(b.pid), stamp)
-        self.assertLessEqual(stamp, run.filetime_now())
+        self.assertLessEqual(stamp, run_end.filetime_now())
 
     def test_a_job_process_created_before_the_stamp_is_ended_and_one_after_it_is_not(self):
         a = self.spawn()
         time.sleep(0.05)
-        stamp = run.filetime_now()
+        stamp = run_end.filetime_now()
         time.sleep(0.05)
         b = self.spawn()
-        with mock.patch.object(run, 'filetime_now', return_value=stamp), \
-                mock.patch.object(run, 'END_PASSES', 2), mock.patch.object(run, 'END_WAIT_S', 0.2):
-            left = run._end_others(FakeJob([a, b]), [])
+        with mock.patch.object(run_end, 'filetime_now', return_value=stamp), \
+                mock.patch.object(run_end, 'END_PASSES', 2), \
+                mock.patch.object(run_end, 'END_WAIT_S', 0.2):
+            left = run_end._end_others(FakeJob([a, b]), [])
         self.assertEqual(left, [b.pid])
         self.assertEqual(a.wait(30), -9)
         self.assertIsNone(b.poll())
@@ -242,8 +243,9 @@ class EndOthers(Base):
     def test_a_kept_process_and_its_tree_are_spared(self):
         a = self.spawn()
         time.sleep(0.05)
-        with mock.patch.object(run, 'END_PASSES', 2), mock.patch.object(run, 'END_WAIT_S', 0.2):
-            left = run._end_others(FakeJob([a]), [(a.pid, process.proc_ctime(a.pid))])
+        with mock.patch.object(run_end, 'END_PASSES', 2), \
+                mock.patch.object(run_end, 'END_WAIT_S', 0.2):
+            left = run_end._end_others(FakeJob([a]), [(a.pid, process.proc_ctime(a.pid))])
         self.assertEqual(left, [])
         self.assertIsNone(a.poll())
 

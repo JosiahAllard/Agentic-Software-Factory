@@ -13,9 +13,10 @@ import unittest
 from unittest import mock
 
 import kitlib.platform
-from kitlib import kitroot, pmdata
+from kitlib import kitroot
+from kitlib.config import pmdata
 from kitlib.records import gate_ok
-from kitlib.worktree import classify, holders, marks, remove, sweep
+from kitlib.worktree import classify, holders, marks, remove, remove_checks, sweep
 from tests import gitfixture
 from tests.home import result_drive
 from tests.realgit import real_git
@@ -152,22 +153,9 @@ class Classes(ClassifyCase):
         self.assertEqual((row['class'], row['branch']), ('E', None), row)
         self.assertIn('detached', out)
 
-    def test_a_record_from_a_gate_without_full_is_c_not_full(self):
-        self.configure({'landing': {'gate_once': False}})     # on by default: green then
-        path = self.workstream('half')
-        head = self.git('rev-parse', 'HEAD', cwd=path)
-        gate_ok.record_pass(self.repo, head, {}, {'version': 'test'}, 'r', gate_ok.utc(), [],
-                            full=False)
-        rc, out, data = self.run_classify()
-        row = self.row(data, path)
-        self.assertEqual((row['class'], row['gate']),
-                         ('C', 'not full: the record for %s is from a gate run without --full'
-                          % head), row)
-
-    def test_a_scoped_record_is_green_when_the_base_sets_gate_once(self):
-        """"landing".gate_once (docs/gate-run.md "Gate once at landing"): a landing takes a
-        default-mode record, so the tree is as finished as with a --full one."""
-        self.configure({'landing': {'gate_once': True}})
+    def test_a_default_mode_record_is_green(self):
+        """A landing takes a default-mode record (docs/gate-landing.md "Landing"), so the tree is
+        as finished as with a --full one; no base setting decides it."""
         path = self.workstream('scoped')
         head = self.git('rev-parse', 'HEAD', cwd=path)
         gate_ok.record_pass(self.repo, head, {}, {'version': 'test'}, 'r', gate_ok.utc(), [],
@@ -176,23 +164,23 @@ class Classes(ClassifyCase):
         row = self.row(data, path)
         self.assertEqual((row['class'], row['gate']), ('B', 'green'), row)
 
-    def test_a_docs_record_is_not_green_under_gate_once(self):
-        self.configure({'landing': {'gate_once': True}})
+    def test_a_docs_record_is_c_not_full(self):
         path = self.workstream('docs')
         head = self.git('rev-parse', 'HEAD', cwd=path)
         gate_ok.record_pass(self.repo, head, {}, {'version': 'test'}, 'r', gate_ok.utc(), [],
                             full=False, mode='docs')
         rc, out, data = self.run_classify()
         row = self.row(data, path)
-        self.assertEqual(row['class'], 'C', row)
-        self.assertTrue(row['gate'].startswith('not full: '), row)
+        self.assertEqual((row['class'], row['gate']),
+                         ('C', 'not full: the record for %s is from a gate run without --full'
+                          % head), row)
 
     def test_the_backlog_store_is_opened_once_for_every_tree(self):
         self.configure({'backlog': {'store': 'main'}})
         for slug in ('one', 'two', 'three'):
             self.workstream(slug)
-        with mock.patch.object(remove.backlog_store, 'open_backend',
-                               wraps=remove.backlog_store.open_backend) as opened:
+        with mock.patch.object(remove.store_open, 'open_backend',
+                               wraps=remove.store_open.open_backend) as opened:
             rc, out, data = self.run_classify()
         self.assertEqual(opened.call_count, 1)
         self.assertEqual(len(data['trees']), 3)
@@ -336,7 +324,7 @@ class EmptyTrees(ClassifyCase):
     CONFIG = {'backlog': {'store': 'main'}}
 
     def pm_worktree(self, store):
-        """The PM data worktree (kitlib.pmdata), outside the worktree folder, its `.kit.json`
+        """The PM data worktree (kitlib.config.pmdata), outside the worktree folder, its `.kit.json`
         naming `store` uncommitted (the tree is dirty, so C itself)."""
         pmdata.write(self.fx.common_dir(), 'pmdata', 'private', self.git('rev-parse', 'HEAD'))
         path = os.path.join(os.path.realpath(self.fx.base), 'pm')
@@ -885,7 +873,7 @@ class StaleMarkShown(ClassifyCase):
         self.assertEqual(self.row(data, path)['class'], 'C')
         self.assert_no_mark_offered(out, '1 dirty file(s): it marks a clean tree only')
         got = marks.mark(self.repo, 'kit/wip', 'stale', liveness=lambda m, b: (None, 'tip'))
-        self.assertEqual(got.code, remove.REFUSED, got.lines)    # the note agrees with the tool
+        self.assertEqual(got.code, remove_checks.REFUSED, got.lines)    # the note agrees with the tool
 
     def test_a_landed_dirty_tree_takes_no_mark(self):
         path = self.workstream('after')

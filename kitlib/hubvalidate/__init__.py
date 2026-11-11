@@ -5,6 +5,11 @@ kitlib.hubsite.storecheck.check takes); it knows nothing of the page, ArtifactDa
 transport.
 Nothing here prints, parses arguments or exits.
 
+The submodules: pagecheck (what a published page's HTML may hold: one check, refused whole, never
+stripped) and todosteps (an owner to-do's steps as PowerShell, and the to-do refusals). The
+constants the hub's api, client, tools and MCP server share are below: BASE, WAIT_MAX_S,
+QUESTION_CLASSES, AGENT_STORY_STATUSES, HANDOFF_KINDS, MAX_FILES, MAX_CONTENT_BYTES, OWNER_ONLY.
+
   validate(docs, only=None, known_repos=())
                               [Finding] for every document; `only` (a set of "collection/doc_id")
                               limits the findings to those documents while refs and repos are
@@ -14,6 +19,7 @@ Nothing here prints, parses arguments or exits.
   batch_docs(entries, base)   (docs, findings) from an ArtifactData batch (a list of entries with
                               op, collection, doc_id and a data object or a file_path)
   summary(findings)           "N error(s), M warning(s)"
+  natural(doc_id)             the sort key of a hub id: its digit runs compared as numbers
 
 A Finding is (level, rel, field, code, message). level is `error` (the page would drop or hide
 the data), `warn` (the data is intact but wrong or unreachable) or `note` (a check was skipped).
@@ -33,7 +39,7 @@ Finding = collections.namedtuple('Finding', 'level rel field code message')
 ERROR, WARN, NOTE = 'error', 'warn', 'note'
 
 # status values per collection (docs/action-hub.md: questions, stories, todos, to_pm, finding_marks,
-# skill_edits; approvals: kitlib.hubsite.approvals)
+# skill_edits; approvals: kitlib.ownerfiles.approvals)
 STATUSES = {
     'questions': ('open', 'answered', 'logged', 'done', 'filed'),
     'stories': ('submitted', 'review', 'questions', 'added', 'declined', 'withdrawn'),
@@ -43,6 +49,21 @@ STATUSES = {
     'finding_marks': ('dismissed', 'passed_on', 'done'),
     'skill_edits': ('draft', 'submitted', 'committed', 'superseded', 'failed', 'withdrawn'),
 }
+# limits and word lists of the hub's api (docs/action-hub.md), read by the api, the client, tools/hub.py
+# and the MCP server
+BASE = '/api/v1'                    # the path every api route is below
+WAIT_MAX_S = 55                     # the longest one GET /wait is held, seconds
+# The class a question bound to no record declares (docs/hub-questions.md "A question's class"):
+# a standing rule (a delegation run line too), the machine, work across repositories, or a
+# one-off go (a landing, an archive). A bound question's answer is filed into its record instead.
+QUESTION_CLASSES = ('rule', 'machine', 'cross-repo', 'go')
+AGENT_STORY_STATUSES = ('review', 'questions', 'added', 'declined')    # the statuses an agent may set
+HANDOFF_KINDS = ('handoff', 'restart', 'stop', 'checkin')               # a hand-off record's kind
+MAX_FILES = 64                      # files in one approval
+MAX_CONTENT_BYTES = 256 * 1024      # one approved file's content, UTF-8
+# the hub MCP tool names pinned for the owner's hub writes (kitlib.hubmcp re-exports them): none ships
+# yet, and the guard reads them from here to deny them to agents
+OWNER_ONLY = ('hub_answer', 'hub_todo_done', 'hub_story_submit', 'hub_to_pm_send')
 # the collection a Q-/M-/T-/P-/S-/A-/E-/L-/C- id names (the store's id prefixes), and the fields
 # that carry such ids (an A-, E-, L- or C- id is never a ref; E is a skill edit, L a landing feed
 # event, C a session's hand-off record, docs/action-hub.md)
@@ -52,11 +73,19 @@ REF_FIELDS = {'questions': ('refs',), 'inbox': ('ref', 'refs'), 'parked': ('q',)
               'todos': ('refs',), 'to_pm': ('refs',)}
 REPO_COLLECTIONS = ('questions', 'inbox', 'todos', 'to_pm', 'stories', 'parked', 'landings')
 ANY_REPO = ('all', 'pm', '')        # a repo tag that needs no repos/ entry
+_ID_SPLIT = re.compile(r'([0-9]+)')
 _REF = re.compile(r'(?<![A-Za-z0-9])([QMTPS])-\d+(?![A-Za-z0-9])', re.I)
 # a kit plugin export folder (kitlib.pluginsource: <export_dir>/<sha12>, the default export_dir
 # %LOCALAPPDATA%\pm-kit\plugin): a plugin refresh replaces it, so a to-do command naming it goes
 # stale (plugin-path)
 PLUGIN_EXPORT = re.compile(r'(?i)[^\s"\']*?[\\/]plugin[\\/]+[0-9a-f]{12}(?![0-9a-z])')
+
+
+def natural(doc_id):
+    """The sort key of a hub id: text compared case-blind, each run of ASCII digits as a number,
+    so Q-9 sorts before Q-10."""
+    # split on a group: text at the even places, ASCII digits at the odd ones
+    return [int(p) if i % 2 else p.lower() for i, p in enumerate(_ID_SPLIT.split(doc_id))]
 
 
 def _f(level, coll, doc_id, field, code, message):

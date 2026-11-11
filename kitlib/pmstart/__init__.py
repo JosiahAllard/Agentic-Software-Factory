@@ -17,29 +17,7 @@ from kitlib.config import user as kuser
 from kitlib.ledger import files as ledger_files, rulebook
 from kitlib.host import registry
 from kitlib.pmstart import configcheck, consoletasks, fglock
-from kitlib.proc import spawn
-
-TIMEOUT = 4
-
-_PS = ("Get-CimInstance Win32_Process | Select-Object Name,CommandLine,ExecutablePath,"
-       "ProcessId,ParentProcessId,@{n='Created';e={$_.CreationDate.ToString('o')}}"
-       " | ConvertTo-Json -Compress")
-
-
-def list_processes(timeout=TIMEOUT):
-    """All processes as dicts with Name, CommandLine, ExecutablePath, ProcessId, ParentProcessId, Created (PowerShell Get-CimInstance).
-    subprocess.TimeoutExpired after `timeout` seconds (the session start's TIMEOUT by default).
-    On Linux the rows are read from /proc (kitlib.platform.linux.process.rows), with no timeout;
-    OSError when /proc cannot be listed."""
-    if platform.NAME == 'linux':
-        from kitlib.platform.linux import process as linux_process
-        return linux_process.rows()
-    r = spawn.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _PS],
-                  capture_output=True, text=True, timeout=timeout)
-    if r.returncode != 0:
-        raise RuntimeError("powershell exit %d: %s" % (r.returncode, r.stderr.strip()[:200]))
-    data = json.loads(r.stdout or "[]")
-    return [data] if isinstance(data, dict) else data
+from kitlib.proc import listing
 
 
 def standing(cfg):
@@ -350,7 +328,7 @@ START_SLACK = 2       # seconds: heartbeat and process list may round the same s
 
 
 def _created(p):
-    """A process dict's Created (list_processes, ISO 8601) as epoch seconds; None when absent or unreadable."""
+    """A process dict's Created (listing.list_processes, ISO 8601) as epoch seconds; None when absent or unreadable."""
     try:
         return datetime.datetime.fromisoformat(p.get("Created") or "").timestamp()
     except (TypeError, ValueError):
@@ -897,7 +875,7 @@ def agent_temp_task_exists(name=AGENT_TEMP_TASK):
     TIMEOUT seconds): False only when schtasks says it does not exist; RuntimeError or OSError when
     schtasks fails another way (access denied, a timeout) or cannot be run."""
     from kitlib.machinesetup.agenttemp import task_registered
-    return task_registered(name, TIMEOUT)
+    return task_registered(name, listing.TIMEOUT)
 
 
 def agent_temp_lines(env=None, sweep_key=None, task_exists=None):
@@ -1111,7 +1089,7 @@ def checklist(cfg, now=None, procs=None, check_only=False, **fakes):
 
     def procs_once():
         if "p" not in box:
-            box["p"] = procs if procs is not None else list_processes()
+            box["p"] = procs if procs is not None else listing.list_processes()
         return box["p"]
 
     checks = [

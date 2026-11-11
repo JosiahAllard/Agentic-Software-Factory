@@ -9,6 +9,7 @@ from unittest import mock
 from kitlib.backlog import offer as omod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
+from kitlib.proc import listing
 
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
@@ -123,14 +124,13 @@ class SessionLive(unittest.TestCase):
 
 class RealReaders(unittest.TestCase):
     """launcher_stems and running_names themselves, over a temp sessions.json and a canned
-    process list (mocked at the launcher settings and pmstart/lookup, never at the readers)."""
+    process list (mocked at the launcher settings and listing/lookup, never at the readers)."""
 
     def test_the_readers_tell_a_running_stem_from_an_idle_one(self):
         import json
         import os
         import shutil
         import tempfile
-        from kitlib import pmstart
         from kitlib.launcher import lookup
         from kitlib.launcher import settings as lsettings
         root = tempfile.mkdtemp(prefix='kit-live-')
@@ -143,7 +143,7 @@ class RealReaders(unittest.TestCase):
                 {'Name': 'claude.exe', 'CommandLine': 'claude'}]
         with mock.patch.object(lsettings, 'load',
                                return_value=lsettings.Settings({'state_dir': root}, root)), \
-                mock.patch.object(pmstart, 'list_processes', return_value=rows), \
+                mock.patch.object(listing, 'list_processes', return_value=rows), \
                 mock.patch.object(lookup, 'launched', side_effect=lambda procs: procs):
             self.assertEqual(omod.launcher_stems(), {'alpha': 'alpha-coordinator',
                                                      'kit': 'coord-example'})

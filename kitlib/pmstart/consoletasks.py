@@ -30,7 +30,7 @@ from kitlib.launcher import autostart
 from kitlib.machinesetup import agenttemp
 from kitlib.proc import spawn
 
-TIMEOUT_S = 4       # the session start's own TIMEOUT (kitlib.pmstart.TIMEOUT)
+TIMEOUT_S = 4       # the session start's own TIMEOUT (kitlib.proc.listing.TIMEOUT)
 NS = '{http://schemas.microsoft.com/windows/2004/02/mit/task}'
 CONSOLE = frozenset(('python.exe', 'py.exe', 'powershell.exe', 'pwsh.exe', 'cmd.exe', 'bash.exe'))
 NAME_SUFFIXES = ('-worktree-sweep', '-daily-full')    # kitlib.worktree.task.task_name; docs/daily-full.md

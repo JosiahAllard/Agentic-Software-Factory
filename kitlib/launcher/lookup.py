@@ -4,13 +4,14 @@ A launched session is a claude.exe with a command line, not the Store app's (und
 on Linux a process named as the claude host's Linux process_names (claude, node) with one.
 Its name is the --remote-control argument (else -n), matched exactly and case-sensitively as a whole token:
 "x-a1" never matches "x-a1-r2". Process rows are dicts with Name, CommandLine, ExecutablePath,
-ProcessId and ParentProcessId (kitlib.pmstart.list_processes, or a test's list).
+ProcessId and ParentProcessId (kitlib.proc.listing.list_processes, or a test's list).
 """
 import re
 
 from kitlib import platform, pmstart
 from kitlib.host import registry
 from kitlib.launcher.settings import LaunchError
+from kitlib.proc import listing
 
 _N = re.compile(r"""(?:^|\s)-n\s+(?:"([^"]*)"|'([^']*)'|(\S+))""")
 
@@ -23,7 +24,7 @@ def rc_name(cmd):
         return n
     m = _N.search(cmd or '')
     return next((g for g in m.groups() if g), None) if m else None
-list_processes = pmstart.list_processes
+list_processes = listing.list_processes
 
 
 def _default_profile():

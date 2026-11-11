@@ -95,7 +95,7 @@ _EPOCH_AS_FILETIME = 116444736000000000     # 1970-01-01 in 100 ns ticks since 1
 
 def own_start_time():
     """This process's start time in epoch seconds (kernel32 GetProcessTimes), None when it cannot
-    be read. The same clock as the CreationDate kitlib.pmstart.list_processes reports."""
+    be read. The same clock as the CreationDate kitlib.proc.listing.list_processes reports."""
     import ctypes
     from ctypes import wintypes
     try:
@@ -677,14 +677,14 @@ def rc_check(sessions, reader, dirs=None, ctime=None, rc_pids=None, accounts=Non
     the Watcher picks up, so every builder of the REMOTE check gets LIMIT too."""
     from kitlib import pmstart
     from kitlib.launcher import pipes, settings as launcher_settings, stop
-    from kitlib.proc import process
+    from kitlib.proc import listing, process
     if dirs is None:
         dirs = lambda: pipes.registry_dirs(launcher_settings.load())
     ctime = ctime or process.proc_ctime
     if rc_pids is None:
         # every process: only the pids of live registry records are looked up, so no image filter
         rc_pids = lambda: {p.get("ProcessId"): pmstart.rc_name(p.get("CommandLine"))
-                           for p in pmstart.list_processes()}
+                           for p in listing.list_processes()}
 
     def alive(r):
         try:

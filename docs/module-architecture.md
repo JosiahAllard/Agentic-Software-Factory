@@ -114,6 +114,7 @@ None: no module is open to every other.
 | autotasks | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | autotasks | fs | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | autotasks | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| autotasks | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | autotasks | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | autotasks | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | autotasks | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -123,11 +124,13 @@ None: no module is open to every other.
 | backlog | fs | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | backlog | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | backlog | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| backlog | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | backlog | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | backlog | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | backlog | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | backlog | machinepaths | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | backlog | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| backlog | proc | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | blendermcp | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | blendermcp | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | blendermcp | mcpwire | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -141,10 +144,12 @@ None: no module is open to every other.
 | commit | docs | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | commit | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | commit | guard | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| commit | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | commit | machinepaths | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | commit | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | commit | verdict | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | config | platform | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
+| config | proc | build | foundation layer, same-layer use: allowed as of 2026-11-11 |
 | content | git | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
 | content | host | build | policy layer, same-layer use: allowed as of 2026-11-06 |
 | content | proc | build | policy layer uses foundation layer: allowed as of 2026-11-06 |
@@ -175,6 +180,7 @@ None: no module is open to every other.
 | delegations | fs | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | delegations | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | delegations | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| delegations | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | delegations | hubsite | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | delegations | landed | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | delegations | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -232,6 +238,7 @@ None: no module is open to every other.
 | hosts | host | build | outer layer uses policy layer: allowed as of 2026-11-06 |
 | hosts | hostrpc | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | hoststart | build | outer layer uses feature layer: allowed as of 2026-11-06 |
+| hosts | hubclient | build | outer layer uses feature layer: allowed as of 2026-11-11 |
 | hosts | hubmcp | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | hosts | kitlib-root | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | hosts | launcher | build | outer layer uses feature layer: allowed as of 2026-11-06 |
@@ -255,6 +262,8 @@ None: no module is open to every other.
 | hubbacklog | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubbacklog | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubbacklog | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| hubclient | config | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
+| hubclient | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | hubjobs | backlog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | coordstate | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -262,6 +271,7 @@ None: no module is open to every other.
 | hubjobs | gate | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | hubjobs | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubjobs | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| hubjobs | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | hubjobs | hubsite | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubjobs | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -275,6 +285,7 @@ None: no module is open to every other.
 | hubjobs | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubmcp | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubmcp | hubapprove | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| hubmcp | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | hubmcp | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
 | hubmcp | mcpwire | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubsite | autotasks | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -287,6 +298,7 @@ None: no module is open to every other.
 | hubsite | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | hubsite | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | hubsite | hubbacklog | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| hubsite | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | hubsite | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | hubsite | kitlib-root | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | hubsite | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -310,6 +322,7 @@ None: no module is open to every other.
 | launcher | fs | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | launcher | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | launcher | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| launcher | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | launcher | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | launcher | platform | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | launcher | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -352,7 +365,7 @@ None: no module is open to every other.
 | maintlint | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | maintlint | dailyfull | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | maintlint | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
-| maintlint | hubsite | build | feature layer, same-layer use: allowed as of 2026-11-06 |
+| maintlint | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | maintlint | hubvalidate | build | feature layer, same-layer use: allowed as of 2026-11-10 |
 | maintlint | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | maintlint | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -373,7 +386,7 @@ None: no module is open to every other.
 | modulemap | records | build | feature layer uses foundation layer: allowed as of 2026-11-11 |
 | opt-agenttemp | config | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-agenttemp | machinesetup | build | outer layer uses feature layer: allowed as of 2026-11-06 |
-| opt-agenttemp | pmstart | build | outer layer uses feature layer: allowed as of 2026-11-06 |
+| opt-agenttemp | proc | build | outer layer uses foundation layer: allowed as of 2026-11-11 |
 | opt-bridge | host | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-bridge | kitlib-root | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
 | opt-bridge | platform | build | outer layer uses foundation layer: allowed as of 2026-11-06 |
@@ -406,6 +419,7 @@ None: no module is open to every other.
 | pmstart | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmstart | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmstart | host | build | feature layer uses policy layer: allowed as of 2026-11-06 |
+| pmstart | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | pmstart | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmstart | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmstart | ledger | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -416,6 +430,7 @@ None: no module is open to every other.
 | pmstart | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pmwatch | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
+| pmwatch | hubclient | build | feature layer, same-layer use: allowed as of 2026-11-11 |
 | pmwatch | launcher | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | machinesetup | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | pmwatch | pluginsource | build | feature layer, same-layer use: allowed as of 2026-11-06 |
@@ -428,7 +443,6 @@ None: no module is open to every other.
 | preflight | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | preflight | verdict | build | feature layer, same-layer use: allowed as of 2026-11-06 |
 | preflight | worktree | build | feature layer, same-layer use: allowed as of 2026-11-06 |
-| proc | config | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
 | proc | platform | build | foundation layer, same-layer use: allowed as of 2026-11-06 |
 | pytests | config | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | pytests | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
@@ -505,6 +519,7 @@ None: no module is open to every other.
 | tools | host | build | outer layer uses policy layer: allowed as of 2026-11-06 |
 | tools | hosts | build | outer layer, same-layer use: allowed as of 2026-11-06 |
 | tools | hubapprove | build | outer layer uses feature layer: allowed as of 2026-11-06 |
+| tools | hubclient | build | outer layer uses feature layer: allowed as of 2026-11-11 |
 | tools | hubjobs | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | hubsite | build | outer layer uses feature layer: allowed as of 2026-11-06 |
 | tools | hubvalidate | build | outer layer uses feature layer: allowed as of 2026-11-06 |
@@ -581,6 +596,7 @@ Crossings counted, not refused; each count is driven down to its goal.
 | guard-build-backlog | guard | backlog | build | 0 | - |
 | guard-build-commit | guard | commit | build | 0 | - |
 | guard-build-delegations | guard | delegations | build | 0 | - |
+| guard-build-hubclient | guard | hubclient | build | 0 | - |
 | guard-build-hubvalidate | guard | hubvalidate | build | 0 | - |
 | guard-build-hubsite | guard | hubsite | build | 0 | - |
 | guard-build-ledger | guard | ledger | build | 0 | - |

@@ -1,55 +1,25 @@
-"""The nightly sweep: remove every registered worktree that has landed, has been idle
-`idle_s` (24 h) and that nothing holds; a dry run unless `apply` (docs/worktree-remove.md). Returns Outcome(code, lines).
-
-Run-wide, each failing closed (exit 1, nothing removed), in this order: the landing lock free
-(`landing_hold`: a landing moves the base, so it is read before anything is fetched); `git fetch`
-of the base; the worktree list; the machine lock readable (`machine_lock_entries`); the base and
-its history. Under `apply` the landing lock is read again just before each removal; held then,
-the sweep stops (exit 1), what it already removed standing.
-
-Per worktree (`sweep_skip`, the first failing check named): the main checkout, anything outside
-the worktrees dir, `exempt`, a detached HEAD, a missing directory and a `git worktree lock` are
-never swept. Landed is `remove_checks.merged_worktrees`'s rule: the tip in the base AND off its
-first-parent chain, so a fresh worktree is never swept. Then: its branch checked out elsewhere; a
-machine lock record naming it; a backlog record `state: pulled` with `pulled_by` its branch (an
-open claim); last activity under `idle_s`; any uncommitted, untracked or ignored-not-build-output
-file; then the holder probe; and with `apply`, last, the status read again. A swept worktree goes
-through `remove.git_remove` (never retried, never forced) and `remove.delete_branch` (`-d`).
-
-Stale marks (kitlib.worktree.marks): an UNLANDED worktree a coordinator marked stale is ABANDONED
-instead, by `remove_abandon._abandon` (its archive tag first, then the tree, then the branch), after the
-same checks but the landed and fresh ones; its open-claim check matches the branch without regard
-to case. A mark is void (the tree is skipped as UNLANDED, the mark kept) when the tree is not the
-one it names, its tip moved, or its last activity is newer than the mark. The marks are read once,
-after the base: a marks file that cannot be read counts as a failure (exit 1) and no marked tree is
-acted on, while the landed sweep goes on. Under `apply`, the abandon runs under the marks lock and
-only while the mark is still the one read; it is held to the checked tip (`expect`), and the mark is
-dropped once the abandon is done. Last, a mark whose branch is gone is dropped (`apply`), and a
-mark whose branch has no worktree is named for `--unmark-stale`.
+"""The nightly sweep's checks (docs/worktree-remove.md); the sweep itself is
+kitlib.worktree.nightly, which acts on classify's list. Here: the run-wide reads it fails closed
+on (the landing lock, `landing_hold`; the fetch of the base, `fetch_base`; the machine lock,
+`machine_lock_entries`), the reads classify shares (`machine_lock_holder`, `last_activity`), and
+the checks of a stale-marked tree before the sweep abandons it (`sweep_skip`, `sweep_status`).
 """
-import datetime
 import json
 import os
 import subprocess
 import sys
-import time
 
 from kitlib import kitroot
-from kitlib.config import ConfigError, user
+from kitlib.config import ConfigError
 from kitlib.proc import spawn
 from kitlib.records import landing
 
-from . import holders, marks, remove, remove_abandon, remove_checks
+from . import holders, marks, remove_checks
 from .holders import canon, extended, plain, prune, WALK_MAX
-from .remove_checks import OK, REFUSED, failure, git
+from .remove_checks import failure, git
 
 SWEEP_IDLE_S = 24 * 3600            # idle 24h+
 FETCH_TIMEOUT_S = 300
-
-
-def sweep_log_name(ctx):
-    """`<repo name>-worktree-sweep.log` (`"repo".name`, else the main checkout's folder name)."""
-    return '%s-worktree-sweep.log' % ctx.s['name']
 
 
 def fetch_args(s):
@@ -222,23 +192,22 @@ def last_activity(main, path, branch):
     return (best[0], best[1]), None
 
 
-def sweep_skip(ctx, entry, home, base, chain, ancestors, entries, machine, now, idle_s, mark=None):
-    """Why this worktree is NOT swept, or None when every check before the holder probe passed.
-    Cheapest checks first; the first that fails is the reason printed. `mark` is the stale mark of
-    its branch (kitlib.worktree.marks), or None: an UNLANDED tree whose mark holds passes, to be
-    abandoned."""
+def sweep_skip(ctx, entry, base, ancestors, entries, machine, now, idle_s, mark):
+    """Why the UNLANDED, stale-marked tree `entry` is NOT abandoned, or None when every check
+    before the holder probe passed. Cheapest checks first; the first that fails is the reason
+    printed. `mark` is the stale mark of its branch (kitlib.worktree.marks). A landed tree is
+    never here: classify decides it."""
     s, main = ctx.s, ctx.main
     path, branch, head = entry['path'], entry['branch'], entry['head']
-    up = s['upstream']
     key = canon(path)
     if key == canon(main):
         return 'the main checkout: never touched'
     if not remove_checks.is_workstream(ctx, path):
-        return 'not under %s: only workstream worktrees are swept' % s['worktrees_dir']
+        return 'not under %s: only workstream worktrees are abandoned' % s['worktrees_dir']
     if remove_checks.exemption(s, path):
         return 'exempt (%s)' % remove_checks.exemption(s, path)
     if branch is None:
-        return 'detached HEAD: no branch, never swept'
+        return 'detached HEAD: no branch, never abandoned'
     if not os.path.isdir(path):
         return 'its directory is missing (an orphan: `--check` reports it)'
     if entry['locked'] is not None:
@@ -246,19 +215,14 @@ def sweep_skip(ctx, entry, home, base, chain, ancestors, entries, machine, now, 
             ': ' + entry['locked'] if entry['locked'] else '')
     if not head:
         return 'git reported no HEAD for it'
-    stale = head not in ancestors and mark is not None
-    if head not in ancestors:
+    if head in ancestors:
+        return 'its tip is in the base: classify decides a landed tree'
+    void = marks.void_reason(mark, path, head)
+    if void:
         rc, count, _ = git(main, 'rev-list', '--count', '%s..%s' % (base, head))
-        unlanded = 'UNLANDED: %s has %s commit(s) not in %s %s' % (
-            branch, count if rc == 0 and count else 'an unknown number of', up, base[:10])
-        if mark is None:
-            return unlanded
-        void = marks.void_reason(mark, path, head)
-        if void:
-            return '%s; its stale mark is void: %s' % (unlanded, void)
-    elif head in chain:
-        return ('no commit of its own has landed (fresh, or only synced with %s): a fresh'
-                ' worktree is never swept' % s['base'])
+        return 'UNLANDED: %s has %s commit(s) not in %s %s; its stale mark is void: %s' % (
+            branch, count if rc == 0 and count else 'an unknown number of', s['upstream'],
+            base[:10], void)
     others = sorted(os.path.normpath(e['path']) for e in entries
                     if e['branch'] == branch and canon(e['path']) != key)
     if others:
@@ -266,7 +230,7 @@ def sweep_skip(ctx, entry, home, base, chain, ancestors, entries, machine, now, 
     holder = machine_lock_holder(machine, path, branch)
     if holder:
         return 'machine lock holder: %s' % holder
-    ids, why = (marks.claims if stale else remove.pulled_by)(ctx, base, branch)
+    ids, why = marks.claims(ctx, base, branch)
     if ids is None:
         return 'the open-claim check failed (%s)' % why
     if ids:
@@ -276,10 +240,9 @@ def sweep_skip(ctx, entry, home, base, chain, ancestors, entries, machine, now, 
     if got is None:
         return 'its last activity cannot be read (%s)' % why
     when, what = got
-    if stale:
-        void = marks.void_reason(mark, path, head, got)
-        if void:
-            return 'UNLANDED; its stale mark is void: %s' % void
+    void = marks.void_reason(mark, path, head, got)
+    if void:
+        return 'UNLANDED; its stale mark is void: %s' % void
     if now - when < idle_s:
         return 'active %.1f h ago (newest: %s), under the %d h idle bar' % (
             max(now - when, 0) / 3600.0, what, idle_s // 3600)
@@ -288,7 +251,7 @@ def sweep_skip(ctx, entry, home, base, chain, ancestors, entries, machine, now, 
 
 def sweep_status(ctx, path):
     """Why the status of `path` stops the sweep, or None when it is clean. Read in `sweep_skip`
-    and AGAIN just before `git worktree remove`."""
+    and AGAIN just before the abandon."""
     work, disposable, ignored, why = remove_checks.dirty(ctx, path)
     if work is None:
         return 'its status could not be read (%s)' % why
@@ -300,215 +263,3 @@ def sweep_status(ctx, path):
     if ignored:
         return remove_checks.ignored_reason(ignored, path)
     return holders.link_reason(path)
-
-
-def sweep(top, apply=False, now=None, machine=machine_lock_entries, idle_s=SWEEP_IDLE_S,
-          log_dir=None, cwd=None):
-    """`--sweep-merged [--apply]` on the repository `top` is in, which must be its main checkout.
-    `now` (epoch seconds) and `machine` (a `machine_lock_entries`-like callable) are test seams.
-    Under `apply` the lines and the exit status are appended to `<log_dir or shared temp>/
-    <sweep_log_name>`."""
-    ctx, refused = remove_checks.open_ctx(top, cwd)
-    if refused:
-        return refused
-    if canon(top) != canon(ctx.main):
-        ctx.say('refused   the sweep runs on the main checkout only (%s), not %s; nothing was'
-                ' removed' % (ctx.main, top))
-        return ctx.outcome(REFUSED)
-    status = _sweep(ctx, apply, time.time() if now is None else now, machine, idle_s)
-    if apply:
-        try:
-            log = os.path.join(log_dir or user.shared_temp(), sweep_log_name(ctx))
-            with open(log, 'a', encoding='utf-8') as fh:
-                fh.write(''.join(line + '\n' for line in ctx.out) + 'exit      %d\n\n' % status)
-        except (OSError, RuntimeError) as e:
-            ctx.say('note      the sweep log could not be written: %s' % e)
-    return ctx.outcome(status)
-
-
-def _sweep(ctx, apply, now, machine, idle_s):
-    s, main = ctx.s, ctx.main
-    up = s['upstream']
-    mode = 'apply' if apply else 'dry run (nothing is removed; --apply acts)'
-    ctx.say('sweep     %s, %s UTC, idle bar %d h, repository %s' % (
-        mode, datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime('%Y-%m-%d %H:%M'),
-        idle_s // 3600, main))
-    why = landing_hold(ctx)
-    if why:
-        ctx.say('deferred  %s: a landing is in progress or its lock is unreadable; nothing was'
-                ' removed' % why)
-        return REFUSED
-    why = fetch_base(ctx)
-    if why:
-        ctx.say('failed    the fetch of %s failed (%s); nothing was removed (fail closed)'
-                % (up, why))
-        return REFUSED
-    try:
-        listing = remove_checks.worktree_listing(main)
-    except remove_checks.GitReadError as e:
-        ctx.say('failed    %s; nothing was removed' % e)
-        return REFUSED
-    held, why = machine()
-    if held is None:
-        ctx.say('deferred  the machine lock cannot be read (%s); nothing was removed' % why)
-        return REFUSED
-    base, why = remove_checks.base_commit(ctx)
-    if base is None:
-        ctx.say('failed    cannot read %s (%s); nothing was removed' % (up, why))
-        return REFUSED
-    got, why = remove_checks.ancestry(ctx, base)
-    if got is None:
-        ctx.say('failed    git rev-list --parents %s: %s; nothing was removed' % (base, why))
-        return REFUSED
-    chain, ancestors = got
-    ctx.say('base      %s %s (fetched)' % (up, base[:10]))
-    home = canon(remove_checks.home_of(ctx))
-    entries = remove_checks.worktree_entries(listing)
-    counts = {'removed': 0, 'would remove': 0, 'skipped': 0, 'failed': 0, 'abandoned': 0,
-              'would abandon': 0}
-    deferred = False
-    where, marked = read_marks(ctx)
-    if marked is None:
-        counts['failed'] += 1
-    for entry in entries:
-        path = os.path.normpath(entry['path'])
-        name = '%s [%s]' % (path, entry['branch'] or 'detached')
-        mark = marks.find(marked, entry['branch']) if entry['branch'] else None
-        stale = mark is not None and entry['head'] not in ancestors
-        reason = sweep_skip(ctx, entry, home, base, chain, ancestors, entries, held, now, idle_s,
-                            mark)
-        if reason:
-            ctx.say('skipped   %s: %s' % (name, reason))
-            counts['skipped'] += 1
-            continue
-        blocked = holders.blockers(path)
-        if blocked:
-            ctx.say('skipped   %s: held - %d path(s) cannot be deleted; git was NOT run'
-                    % (name, len(blocked)))
-            ctx.describe(path, blocked)
-            counts['skipped'] += 1
-            continue
-        if not apply:
-            if stale:
-                ctx.say('would     abandon %s under %s%s (marked stale %s by %s: %s), then delete'
-                        ' branch %s' % (path, remove_checks.ARCHIVE, os.path.basename(path),
-                                        marks.shown_at(mark), mark['by'], mark['why'],
-                                        entry['branch']))
-                counts['would abandon'] += 1
-            else:
-                ctx.say('would     remove %s, then git branch -d %s' % (path, entry['branch']))
-                counts['would remove'] += 1
-            continue
-        why = landing_hold(ctx)
-        if why:
-            ctx.say('deferred  %s: a landing started during the sweep; %s and every worktree after'
-                    ' it were not removed' % (why, name))
-            deferred = True
-            break
-        changed = sweep_status(ctx, path)
-        if changed:
-            ctx.say('skipped   %s: changed since it was checked - %s; git was NOT run'
-                    % (name, changed))
-            counts['skipped'] += 1
-            continue
-        if stale:
-            counts[abandon_marked(ctx, where, entry, mark, name)] += 1
-            continue
-        if not remove.git_remove(ctx, path, entry['path']):
-            counts['failed'] += 1
-            continue
-        counts['removed'] += 1
-        if remove.delete_branch(ctx, entry['branch'], False) != OK:
-            counts['failed'] += 1
-    if marked and not deferred:
-        counts['failed'] += end_marks(ctx, where, marked, entries, apply)
-    ctx.say('summary   %s%s' % (', '.join('%s %d' % kv for kv in counts.items()),
-                                ', stopped by the landing lock' if deferred else ''))
-    return REFUSED if counts['failed'] or deferred else OK
-
-
-def read_marks(ctx):
-    """`(marks file, marks)` for the sweep, or `(file or None, None)` when they cannot be read:
-    said as a failure, and then no marked tree is acted on."""
-    where = None
-    try:
-        where = marks.file_of(ctx)
-        got, why = marks.load(where)
-    except marks.MarksError as e:
-        got, why = None, str(e)
-    if got is None:
-        ctx.say('failed    the stale marks cannot be read (%s): no marked worktree is abandoned;'
-                ' the landed sweep goes on' % why)
-    return where, got
-
-
-def abandon_marked(ctx, where, entry, mark, name):
-    """Abandon the marked tree of `entry` under the marks lock, only while its mark is still
-    `mark`, held to the tip it was checked at; drop the mark once that is done. Returns the count
-    it adds to: abandoned, skipped or failed."""
-    branch = entry['branch']
-    try:
-        with marks.locked(where):
-            now_marks, why = marks.load(where)
-            if now_marks is None:
-                ctx.say('failed    %s: the stale marks cannot be read again (%s); git was NOT run'
-                        % (name, why))
-                return 'failed'
-            if marks.find(now_marks, branch) != mark:
-                ctx.say('skipped   %s: its stale mark changed or was cleared since it was read;'
-                        ' git was NOT run' % name)
-                return 'skipped'
-            status = remove_abandon._abandon(ctx, entry['path'], marks.tag_why(mark), False, None,
-                                     expect=entry['head'])
-            if status != OK:
-                ctx.say('  mark     the stale mark of %s stays' % branch)
-                return 'failed'
-            marks.save(where, [m for m in now_marks if m['branch'] != branch])
-    except marks.MarksError as e:
-        ctx.say('failed    %s: %s' % (name, e))
-        return 'failed'
-    ctx.say('unmarked  %s: abandoned, so its stale mark is dropped' % branch)
-    return 'abandoned'
-
-
-def end_marks(ctx, where, marked, entries, apply):
-    """The last pass over the marks read at the start: a mark whose branch is gone is dropped
-    (`apply`; else `would drop`), and a mark whose branch has no worktree is named for
-    `--unmark-stale`. Returns the failures to count."""
-    on = {e['branch'] for e in entries if e['branch']}
-    gone, failed = [], 0
-    for mark in marked:
-        branch = mark['branch']
-        tip, why = remove_abandon.branch_tip(ctx.main, branch)
-        if tip is None:
-            ctx.say('failed    the stale mark of %s: its branch cannot be read (%s)' % (branch, why))
-            failed += 1
-        elif not tip:
-            gone.append(mark)
-        elif branch not in on:
-            ctx.say('note      the stale mark of %s names no worktree (none is on the branch, and'
-                    ' the sweep abandons only a tree): clear it with `%s %s --unmark-stale`'
-                    % (branch, ctx.s['tool'], branch))
-    if not gone:
-        return failed
-    if not apply:
-        for mark in gone:
-            ctx.say('would     drop the stale mark of %s: the branch is gone' % mark['branch'])
-        return failed
-    try:
-        with marks.locked(where):
-            now_marks, why = marks.load(where)
-            if now_marks is None:
-                ctx.say('failed    the stale marks cannot be read again (%s); no mark was dropped'
-                        % why)
-                return failed + 1
-            drop = [m for m in gone if marks.find(now_marks, m['branch']) == m]
-            if drop:
-                names = {m['branch'] for m in drop}
-                marks.save(where, [m for m in now_marks if m['branch'] not in names])
-    except marks.MarksError as e:
-        ctx.say('failed    the stale marks of gone branches were not dropped: %s' % e)
-        return failed + 1
-    for mark in drop:
-        ctx.say('dropped   the stale mark of %s: the branch is gone' % mark['branch'])
-    return failed

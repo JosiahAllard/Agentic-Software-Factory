@@ -1,6 +1,8 @@
-"""kitlib.worktree.sweep (`worktree_remove.py --sweep-merged [--apply]`): what it sweeps, what it
-skips and why, and every run-wide check failing closed. Throwaway repositories only
-(tests/gitfixture.py); the machine lock is a seam, never the real one.
+"""kitlib.worktree.nightly (`worktree_remove.py --sweep-merged [--apply]`): classify decides and the
+sweep acts on its list - A, E and O through the remove paths `--classify --apply` uses, B, C and L
+never touched - every run-wide check failing closed, and the one exception, the stale-marked
+UNLANDED tree it abandons. Throwaway repositories only (tests/gitfixture.py); the machine lock and
+the process scan are seams, never the real ones.
 """
 import datetime
 import json
@@ -14,18 +16,26 @@ from unittest import mock
 from kitlib import kitroot
 from kitlib.config import user
 from kitlib.git import defaults as gitdefaults
-from kitlib.worktree import sweep
+from kitlib.worktree import nightly, sweep
 from tests import gitfixture
-from tests.worktree.test_worktree_remove import RemoveCase
+from tests.realgit import real_git
+from tests.worktree.test_classify import ClassifyCase
 
 LATER = 3 * 24 * 3600
+REFLOG = 'git reflog: the fake writes no reflog, and classify\'s A reads it'
+FIXTURE_REFLOG = ('A reads the reflog entry a fixture commit() writes, which only real git'
+                  ' writes')
 
 
 def free():
     return [], None
 
 
-class SweepCase(RemoveCase):
+def no_procs():
+    return ([], 0, 1), None
+
+
+class SweepCase(ClassifyCase):
 
     def setUp(self):
         super().setUp()
@@ -33,8 +43,9 @@ class SweepCase(RemoveCase):
         self.addCleanup(gitfixture.rmtree, self.logs)
 
     def sweep(self, apply=False, machine=free, now=None, top=None):
-        got = sweep.sweep(top or self.repo, apply=apply, machine=machine,
-                          now=time.time() + LATER if now is None else now, log_dir=self.logs)
+        got = nightly.sweep(top or self.repo, apply=apply, machine=machine,
+                            now=time.time() + LATER if now is None else now, log_dir=self.logs,
+                            procs=no_procs)
         return got.code, '\n'.join(got.lines)
 
     def landed(self, slug):
@@ -43,6 +54,8 @@ class SweepCase(RemoveCase):
         return path
 
 
+@real_git(REFLOG)
+@gitfixture.real_fixture(FIXTURE_REFLOG)
 class Sweep(SweepCase):
 
     def test_a_dry_run_names_what_it_would_remove_and_removes_nothing(self):
@@ -50,19 +63,21 @@ class Sweep(SweepCase):
         rc, out = self.sweep()
         self.assertEqual(rc, 0, out)
         self.assertIn('sweep     dry run', out)
-        self.assertIn('base      origin/main ', out)
-        self.assertIn('would     remove %s, then git branch -d kit/done' % path, out)
-        self.assertIn('summary   removed 0, would remove 1, skipped 1, failed 0', out)
+        self.assertIn('(fetched)', out)
+        self.assertIn('would     remove %s: A, plain remove' % path, out)
+        self.assertIn('summary   removed 0, would remove 1, skipped 0, failed 0, abandoned 0,'
+                      ' would abandon 0', out)
         self.assertTrue(os.path.isdir(path))
+        self.assertIn('kit/done', self.branches())
         self.assertEqual(os.listdir(self.logs), [])
 
     def test_apply_removes_and_logs(self):
         path = self.landed('done')
         rc, out = self.sweep(apply=True)
         self.assertEqual(rc, 0, out)
-        self.assertIn('removed   %s' % path, out)
-        self.assertIn('deleted   branch kit/done', out)
+        self.assertIn('removed   %s: A, plain remove' % path, out)
         self.assertFalse(os.path.exists(path))
+        self.assertNotIn('kit/done', self.branches())
         log = os.path.join(self.logs, '%s-worktree-sweep.log' % gitdefaults.repo_name(self.repo))
         with open(log, encoding='utf-8') as f:
             text = f.read()
@@ -83,35 +98,65 @@ class Sweep(SweepCase):
         self.assertEqual(rc, 0, out)
         self.assertIn('would     remove %s' % path, out)
 
-    def test_a_fresh_worktree_is_never_swept(self):
+    def test_an_empty_tree_is_kept_when_no_store_is_named(self):
+        """Whether a record claims it cannot be told, so classify keeps it C."""
         path = self.workstream('fresh', commits=0)
         rc, out = self.sweep(apply=True)
         self.assertEqual(rc, 0, out)
-        self.assertIn('no commit of its own has landed', out)
+        self.assertIn('nothing of its own; kept: whether a backlog record claims it is unknown',
+                      out)
         self.assertTrue(os.path.isdir(path))
 
-    def test_unlanded_work_is_skipped(self):
-        path = self.workstream('open')
+    def test_b_c_and_l_trees_are_kept(self):
+        ready = self.workstream('ready')
+        self.green(ready)
+        unlanded = self.workstream('open')
+        dirty = self.landed('d')
+        self.fx.write('wip.txt', 'x\n', root=dirty)
+        locked = self.landed('lk')
+        self.git('worktree', 'lock', '--reason', 'kept', locked)
+        self.addCleanup(self.git, 'worktree', 'unlock', locked, check=False)
         rc, out = self.sweep(apply=True)
         self.assertEqual(rc, 0, out)
-        self.assertIn('UNLANDED: kit/open has 1 commit(s)', out)
-        self.assertTrue(os.path.isdir(path))
+        self.assertIn('classes   A 0, B 1, C 2, E 0, L 1, O 0', out)
+        self.assertIn('landed, not clean', out)
+        self.assertIn('locked with `git worktree lock`: kept', out)
+        self.assertIn('summary   removed 0, would remove 0, skipped 0, failed 0', out)
+        for path in (ready, unlanded, dirty, locked):
+            self.assertTrue(os.path.isdir(path), path)
+        for branch in ('kit/ready', 'kit/open', 'kit/d', 'kit/lk'):
+            self.assertIn(branch, self.branches())
 
-    def test_recent_activity_is_skipped(self):
+    def test_a_landed_tree_on_a_branch_outside_the_worktree_folders_is_skipped(self):
+        root = os.path.join(os.path.realpath(self.fx.base), 'outside')
+        os.makedirs(root, exist_ok=True)
+        path = os.path.join(root, 'out')
+        self.git('worktree', 'add', '-q', '-b', 'kit/out', path)
+        self.fx.write('out.txt', 'work\n', root=path)
+        self.fx.commit('work', 'out.txt', cwd=path)
+        self.land('kit/out')
+        rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('skipped   %s: A, on branch kit/out outside the worktree folders' % path,
+                      out)
+        self.assertTrue(os.path.isdir(path))
+        self.assertIn('kit/out', self.branches())
+
+    def test_recent_activity_is_kept(self):
         path = self.landed('busy')
         rc, out = self.sweep(apply=True, now=time.time())
         self.assertEqual(rc, 0, out)
-        self.assertIn('under the 24 h idle bar', out)
+        self.assertIn('under the 24 h dead bar', out)
         self.assertTrue(os.path.isdir(path))
 
-    def test_a_machine_lock_record_naming_it_is_skipped(self):
+    def test_a_machine_lock_record_naming_it_is_kept(self):
         path = self.landed('gpu')
 
         def machine():
             return [{'repo': 'r', 'slug': 'x', 'id': 7, 'note': 'training in .claude/worktrees/gpu'}], None
         rc, out = self.sweep(apply=True, machine=machine)
         self.assertEqual(rc, 0, out)
-        self.assertIn('machine lock holder: r/x run 7', out)
+        self.assertIn('machine lock: r/x run 7', out)
         self.assertTrue(os.path.isdir(path))
 
     def test_an_unreadable_machine_lock_defers(self):
@@ -119,6 +164,7 @@ class Sweep(SweepCase):
         rc, out = self.sweep(apply=True, machine=lambda: (None, 'tool missing'))
         self.assertEqual(rc, 1, out)
         self.assertIn('deferred  the machine lock cannot be read (tool missing)', out)
+        self.assertNotIn('classify  ', out)
         self.assertTrue(os.path.isdir(path))
 
     def test_a_held_landing_lock_defers_before_anything(self):
@@ -128,7 +174,7 @@ class Sweep(SweepCase):
         rc, out = self.sweep(apply=True)
         self.assertEqual(rc, 1, out)
         self.assertIn('deferred  the landing lock', out)
-        self.assertNotIn('base      ', out)
+        self.assertNotIn('classify  ', out)
         self.assertTrue(os.path.isdir(path))
 
     def test_a_landing_that_starts_mid_sweep_stops_it(self):
@@ -142,8 +188,8 @@ class Sweep(SweepCase):
             return [], None
         rc, out = self.sweep(apply=True, machine=machine)
         self.assertEqual(rc, 1, out)
-        self.assertIn('a landing started during the sweep', out)
-        self.assertIn('stopped by the landing lock', out)
+        self.assertIn('deferred  ', out)
+        self.assertIn(', deferred', out)
         self.assertTrue(os.path.isdir(path))
 
     def test_a_failed_fetch_removes_nothing(self):
@@ -154,53 +200,6 @@ class Sweep(SweepCase):
         self.assertIn('failed    the fetch of origin/main failed', out)
         self.assertTrue(os.path.isdir(path))
 
-    def test_detached_and_locked_are_never_swept(self):
-        det = self.landed('det')
-        self.git('checkout', '-q', '--detach', cwd=det)
-        locked = self.landed('lk')
-        self.git('worktree', 'lock', '--reason', 'kept', locked)
-        rc, out = self.sweep(apply=True)
-        self.assertEqual(rc, 0, out)
-        self.assertIn('detached HEAD: no branch, never swept', out)
-        self.assertIn('locked with `git worktree lock`: kept', out)
-        self.assertTrue(os.path.isdir(det) and os.path.isdir(locked))
-        self.git('worktree', 'unlock', locked)
-
-    def test_dirty_is_skipped(self):
-        path = self.landed('d')
-        self.fx.write('wip.txt', 'x\n', root=path)
-        rc, out = self.sweep(apply=True)
-        self.assertEqual(rc, 0, out)
-        self.assertIn('uncommitted or untracked files (1): ?? wip.txt', out)
-        self.assertTrue(os.path.isdir(path))
-
-    def test_an_ignored_file_written_after_the_sweeps_second_status_read_survives(self):
-        self.fx.write('.gitignore', '*.log\n')
-        self.fx.commit('ignore', '.gitignore')
-        self.fx.git('push', '-q', 'origin', 'main')
-        path = self.landed('late')
-        late = os.path.join(path, 'run.log')
-        real, seen = sweep.sweep_status, []
-
-        def status(ctx, p):
-            got = real(ctx, p)
-            seen.append(p)
-            if len(seen) == 2:      # the read just before git: what comes now, the sweep never saw
-                self.fx.write('run.log', 'mine\n', root=path)
-            return got
-
-        with mock.patch.object(sweep, 'sweep_status', status):
-            rc, out = self.sweep(apply=True)
-        self.assertTrue(os.path.isfile(late), out)
-        self.assertEqual([os.path.normcase(p) for p in seen], [os.path.normcase(path)] * 2, out)
-        self.assertEqual(rc, 1, out)
-        self.assertIn('ignored files that are not build output (1): !! run.log', out)
-        self.assertIn('git was NOT run', out)
-        self.assertNotIn('removed   %s' % path, out)
-        self.assertIn('summary   removed 0, would remove 0, skipped 1, failed 1', out)
-        self.assertIn(os.path.normcase(path), self.registered(), out)
-        self.assertIn('kit/late', self.branches())
-
     def test_it_runs_on_the_main_checkout_only(self):
         path = self.landed('x')
         rc, out = self.sweep(top=path)
@@ -208,28 +207,54 @@ class Sweep(SweepCase):
         self.assertIn('the sweep runs on the main checkout only', out)
 
 
+@real_git('git reflog: the fake writes no reflog, and an empty tree is A only when it is read')
+@gitfixture.real_fixture('an empty tree is A only when its branch reflog, which only real git '
+                         'writes, shows nothing of its own')
+class SweepEmpty(SweepCase):
+
+    CONFIG = {'backlog': {'store': 'main'}}
+
+    def test_an_empty_unclaimed_tree_is_removed(self):
+        path = self.workstream('fresh', commits=0)
+        rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('removed   %s: A, plain remove' % path, out)
+        self.assertFalse(os.path.exists(path))
+        self.assertNotIn('kit/fresh', self.branches())
+
+    def test_an_empty_claimed_tree_is_kept(self):
+        self.record('id: T-001\nstate: pulled\npulled_by: kit/fresh\n')
+        path = self.workstream('fresh', commits=0)
+        rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('nothing of its own; kept: claimed by T-001', out)
+        self.assertTrue(os.path.isdir(path))
+
+
+@real_git(REFLOG)
+@gitfixture.real_fixture(FIXTURE_REFLOG)
 class SweepOpenClaim(SweepCase):
 
     CONFIG = {'backlog': {'store': 'main'}}
 
-    def test_a_pulled_record_on_the_base_is_an_open_claim(self):
+    def test_a_pulled_record_on_the_base_keeps_a_landed_tree(self):
         path = self.workstream('claim')
         self.fx.write('docs/backlog/T-002.md', 'id: T-002\nstate: pulled\npulled_by: kit/claim\n')
         self.fx.commit('claim', 'docs/backlog/T-002.md')
         self.land('kit/claim')
         rc, out = self.sweep(apply=True)
         self.assertEqual(rc, 0, out)
-        self.assertIn('a backlog record is still pulled by kit/claim (an open claim): T-002', out)
+        self.assertIn('landed; kept: claimed by T-002', out)
         self.assertTrue(os.path.isdir(path))
 
-    def test_a_record_pulled_under_another_case_is_an_open_claim(self):
+    def test_a_record_pulled_under_another_case_keeps_it(self):
         path = self.workstream('claim')
         self.fx.write('docs/backlog/T-002.md', 'id: T-002\nstate: pulled\npulled_by: Kit/Claim\n')
         self.fx.commit('claim', 'docs/backlog/T-002.md')
         self.land('kit/claim')
         rc, out = self.sweep(apply=True)
         self.assertEqual(rc, 0, out)
-        self.assertIn('a backlog record is still pulled by kit/claim (an open claim): T-002', out)
+        self.assertIn('landed; kept: claimed by T-002', out)
         self.assertTrue(os.path.isdir(path))
 
     def test_a_done_record_is_no_claim(self):
@@ -294,7 +319,7 @@ class StaleMarks(StaleMarkCase):
         self.assertIn('stale (marked ', message)
         self.assertIn('by coord-test (coordinator)): superseded by kit/other', message)
         self.assertEqual(self.read_marks(), [], out)
-        self.assertIn('UNLANDED: kit/kept has 1 commit(s)', out)
+        self.assertIn('  C  %s  kit/kept' % kept, out)        # classify's C: never touched
         self.assertTrue(os.path.isdir(kept), out)
         self.assertIn('kit/kept', self.branches(), out)
         self.assertEqual(self.git('rev-parse', 'kit/kept'), kept_tip)
@@ -398,23 +423,11 @@ class StaleMarks(StaleMarkCase):
             return [], None
         rc, out = self.sweep(apply=True, machine=machine)
         self.assertEqual(rc, 1, out)
-        self.assertIn('a landing started during the sweep', out)
+        self.assertIn('deferred  ', out)
+        self.assertIn(', deferred', out)
         self.assertTrue(os.path.isdir(path))
         self.assertEqual(self.tag_tip('archive/gone'), '')
         self.assertEqual(self.read_marks(), [mark])
-
-    def test_an_unreadable_marks_file_abandons_nothing_and_the_landed_sweep_goes_on(self):
-        gone = self.workstream('gone')
-        done = self.landed('done')
-        self.write_marks(text='{"version": 1, "marks": [{"branch": "kit/gone"}]}\n')
-        rc, out = self.sweep(apply=True)
-        self.assertEqual(rc, 1, out)
-        self.assertIn('failed    the stale marks cannot be read (', out)
-        self.assertIn('no marked worktree is abandoned; the landed sweep goes on', out)
-        self.assertIn('UNLANDED: kit/gone', out)
-        self.assertTrue(os.path.isdir(gone))
-        self.assertFalse(os.path.exists(done), out)
-        self.assertIn('removed 1', out)
 
     def test_a_mark_changed_after_it_was_read_is_skipped(self):
         path = self.workstream('gone')
@@ -496,6 +509,32 @@ class StaleMarks(StaleMarkCase):
         self.assertIn('the stale mark of kit/gone stays', out)
         self.assertTrue(os.path.isdir(path))
         self.assertEqual(self.tag_tip('archive/gone'), '')
+
+
+@real_git(REFLOG)
+@gitfixture.real_fixture(FIXTURE_REFLOG)
+class StaleMarksLanded(StaleMarkCase):
+
+    def test_an_unreadable_marks_file_abandons_nothing_and_the_landed_sweep_goes_on(self):
+        gone = self.workstream('gone')
+        done = self.landed('done')
+        self.write_marks(text='{"version": 1, "marks": [{"branch": "kit/gone"}]}\n')
+        rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 1, out)
+        self.assertIn('failed    the stale marks cannot be read (', out)
+        self.assertIn('no marked worktree is abandoned', out)
+        self.assertTrue(os.path.isdir(gone))
+        self.assertFalse(os.path.exists(done), out)
+        self.assertIn('removed 1', out)
+
+    def test_a_landed_marked_tree_is_classifys(self):
+        """A mark on a landed tree changes nothing: classify's A removes it plainly, no tag."""
+        path = self.landed('done')
+        self.write_marks(self.record('done', path))
+        rc, out = self.sweep(apply=True)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('removed   %s: A, plain remove' % path, out)
+        self.assertEqual(self.tag_tip('archive/done'), '')
 
 
 class StaleMarkExempt(StaleMarkCase):

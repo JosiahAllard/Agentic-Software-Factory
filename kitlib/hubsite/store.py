@@ -1,5 +1,5 @@
-"""kitlib.hubsite.store: the hub server's store, the one record of hub data (the hub site design,
-section 1 "Hub store format").
+"""kitlib.hubsite.store: the hub server's store, the one record of hub data
+(docs/modules/hub-design.md "State").
 
 Layout under the store folder `root` (the caller resolves it; nothing here reads config):
 

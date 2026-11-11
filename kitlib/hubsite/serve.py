@@ -1,5 +1,5 @@
-"""kitlib.hubsite.serve: the hub server, wired from its parts (the hub site design, sections 2
-and 9).
+"""kitlib.hubsite.serve: the hub server, wired from its parts (docs/modules/hub-design.md
+"Contract" and "Packages and files").
 
   build(settings, sources, log=None) -> Hub     open the store, make the views, the Api and the
                                                 listeners; nothing is started. ServeError.

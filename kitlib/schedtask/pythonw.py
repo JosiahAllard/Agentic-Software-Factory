@@ -1,5 +1,5 @@
-"""The pythonw.exe a scheduled task runs (docs/launcher.md "Autostart", docs/worktree-remove.md
-"The scheduled task", docs/daily-full.md "The schedule").
+"""The pythonw.exe a scheduled task runs (docs/worktree-remove.md "The scheduled task",
+docs/daily-full.md "The schedule").
 
 It is the one in the running interpreter's base install (`sys.base_prefix`), never the one a PATH
 lookup finds: with the Microsoft Store or install-manager alias first on PATH, `Get-Command pythonw`
@@ -35,3 +35,10 @@ def refusal(pythonw, isfile=os.path.isfile):
     if not isfile(pythonw):
         return 'no pythonw.exe at %s' % pythonw
     return None
+
+
+def windowless():
+    """The windowless python of this interpreter's base install (`base_pythonw`), never a venv's or
+    the Store alias; this interpreter when that is not a usable file (`refusal`)."""
+    w = base_pythonw()
+    return sys.executable if refusal(w) else w

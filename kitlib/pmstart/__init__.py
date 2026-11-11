@@ -18,6 +18,7 @@ from kitlib.ledger import files as ledger_files, rulebook
 from kitlib.host import registry
 from kitlib.pmstart import configcheck, consoletasks, fglock
 from kitlib.proc import listing
+from kitlib.schedtask import read as taskread
 
 
 def standing(cfg):
@@ -851,10 +852,10 @@ def agent_temp_sweep_key():
 
 
 def agent_temp_task_exists(name=AGENT_TEMP_TASK):
-    """Whether the scheduled task `name` is registered (kitlib.machinesetup.agenttemp.task_registered,
+    """Whether the scheduled task `name` is registered (kitlib.schedtask.read.task_registered,
     TIMEOUT seconds): False only when schtasks says it does not exist; RuntimeError or OSError when
     schtasks fails another way (access denied, a timeout) or cannot be run."""
-    from kitlib.machinesetup.agenttemp import task_registered
+    from kitlib.schedtask.read import task_registered
     return task_registered(name, listing.TIMEOUT)
 
 
@@ -938,7 +939,7 @@ def worktree_sweep_lines(repos=None, read=None, plugin=None, load_repos=None):
     "Extras"); none when every task is current. A task list that cannot be read is one "could not
     check" line; a repository that cannot be read is its own; repositories that take one task name
     (machine setup registers it for none) are one line naming each. `read`: the task list
-    (consoletasks.read_tasks); `plugin`: the plugin Settings, None or a raising loader checks
+    (kitlib.schedtask.read.read_tasks); `plugin`: the plugin Settings, None or a raising loader checks
     presence only."""
     from kitlib.machinesetup import worktreesweep
     from kitlib.worktree.task import task_name
@@ -946,7 +947,7 @@ def worktree_sweep_lines(repos=None, read=None, plugin=None, load_repos=None):
     if not repos:
         return []
     try:
-        tasks = (read or consoletasks.read_tasks)()
+        tasks = (read or taskread.read_tasks)()
     except Exception as e:      # access denied, a timeout, no schtasks: unknown, never "not registered"
         return ["could not check the worktree sweep tasks: %s: %s" % (type(e).__name__, e)]
     try:
@@ -1060,7 +1061,7 @@ def checklist(cfg, now=None, procs=None, check_only=False, **fakes):
     # again to each check that asks, as its own. A check's own fake replaces the shared reader.
     load_repos = _once(lambda: launcher_repos())
     load_settings = _once(lambda: plugin_settings())
-    load_tasks = _once(lambda: consoletasks.read_tasks())
+    load_tasks = _once(lambda: taskread.read_tasks())
     load_pm_top = _once(lambda: pm_memory_repo(cfg))
     load_watch = _once(lambda: _watch_config())
 

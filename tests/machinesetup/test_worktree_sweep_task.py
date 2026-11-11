@@ -19,6 +19,7 @@ from kitlib import machinesetup as M
 from kitlib import pluginsource, pmstart
 from kitlib.config import user as kuser
 from kitlib.machinesetup import agenttemp, extras, worktreesweep as W
+from kitlib.schedtask import line as L
 from kitlib.worktree import task as T
 from tests import gitfixture
 from tests.home import machine_config, no_machine_owner, temp_home
@@ -41,7 +42,7 @@ def write_json(path, obj):
 
 
 def sweep_task(name, kit, main):
-    """A registered task as consoletasks.parse gives it, running `kit`'s sweep for `main`."""
+    """A registered task as kitlib.schedtask.read.parse gives it, running `kit`'s sweep for `main`."""
     return {'path': '\\' + T.task_name(name),
             'actions': [{'exe': PYW, 'args': T.argument(os.path.join(kit, 'tools', 'worktree_remove.py'), main)}]}
 
@@ -69,7 +70,7 @@ class TaskLine(unittest.TestCase):
 
     def test_a_store_alias_or_a_missing_file_throws_in_powershell(self):
         line = self.line()
-        self.assertIn(T.NOT_THE_STORE_ALIAS, line)
+        self.assertIn(L.NOT_THE_STORE_ALIAS, line)
         self.assertIn(agenttemp.NOT_A_FILE, line)
 
     def test_force_only_when_registering_again(self):
@@ -81,9 +82,9 @@ class TaskLine(unittest.TestCase):
         self.assertEqual(mine, T.command('C:\\repo', 'demo', self.TOOL, PYW))
 
     def test_the_default_pythonw_is_the_base_install_literal(self):
-        from kitlib.launcher import pythonw as P
+        from kitlib.schedtask import pythonw as P
         line = W.task_line('C:\\repo', 'demo', self.TOOL)
-        self.assertIn("$py = %s" % T.quoted(P.base_pythonw()), line)
+        self.assertIn("$py = %s" % L.quoted(P.base_pythonw()), line)
 
 
 class RemovedExport(unittest.TestCase):
@@ -224,7 +225,7 @@ class Step(StepBase):
         self.assertEqual(self.events, [('dry-run', tool, self.main), 'register'])
         self.assertIn('  worktree sweep dry run (nothing removed): would remove C:\\wt\\old  landed', out)
         line = self.regs[0]
-        self.assertIn("-TaskName %s" % T.quoted(self.task), line)
+        self.assertIn("-TaskName %s" % L.quoted(self.task), line)
         self.assertIn(T.argument(tool, self.main), line)
         self.assertNotIn('-Force', line)
         self.assertIn('done: register the scheduled task %s' % self.task, out)
@@ -347,7 +348,7 @@ class Step(StepBase):
         self.assertIn('worktree sweep task same-worktree-sweep skipped: one (%s), two (%s) take that one name'
                       % (os.path.normpath(os.path.realpath(one)), os.path.normpath(os.path.realpath(two))), out)
         self.assertEqual(len(self.regs), 1, out)                        # demo's own task still goes in
-        self.assertIn(T.quoted(self.task), self.regs[0])
+        self.assertIn(L.quoted(self.task), self.regs[0])
 
     def test_two_labels_on_one_repository_get_one_task(self):
         self.config({'demo': self.repo.root, 'again': self.repo.root})

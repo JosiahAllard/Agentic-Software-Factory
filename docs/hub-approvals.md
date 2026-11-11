@@ -2,7 +2,7 @@
 
 ## approvals/A-NNN
 A change an agent asks the owner to approve before it commits it. The rules (signature, expiry, what
-verifies) are `kitlib/hubsite/approvals.py`, "The document"; the routes are `kitlib.hubsite.api`
+verifies) are `kitlib/ownerfiles/approvals.py`, "The document"; the routes are `kitlib.hubsite.api`
 ("Approvals" in its docstring).
 
 | Field | Written by | Meaning |
@@ -92,7 +92,7 @@ The agent's side of an approval is `commit.py --owner-approval hub:A-<n>` (docs/
 approval"): it verifies the approval, writes what the approved change gives on HEAD (the approved
 content where HEAD holds the base's copy, else its clean merge onto a newer HEAD, `approvals.delta_targets`)
 and commits it, then consumes the approval for that commit and verifies it with the commit; `gate land` and the pre-push hook verify it again
-(`kitlib.guard.ownercommits`). A file approval, used or not, holds until it is spent or 30 days after
+(`kitlib.ownerfiles.rules`). A file approval, used or not, holds until it is spent or 30 days after
 the decision (`approvals.APPROVAL_LIFE_S`, through `approvals.approval_end`); an op approval for 24
 hours (`approvals.APPROVED_TTL_S`). Spent: a commit that main as last fetched
 (`refs/remotes/<remote>/<main>`) reaches carries its `Owner-Approval: hub:A-<n>` trailer
@@ -112,16 +112,16 @@ not consumed, once more 4 hours before it expires (docs/hub-push.md "Push notifi
 
 An agent asks for one with `hub.py approvals add --title T --file PATH CONTENT_FILE [--file ...]
 [--checkout DIR] [--repo R] [--head SHA] [--reason TEXT]`, or the MCP tool `hub_approval_request`
-(docs/hub-mcp.md); both build the body with `kitlib.hubapprove` and post it to POST `/approvals`, and
+(docs/hub-mcp.md); both build the body with `kitlib.ownerfiles.request` and post it to POST `/approvals`, and
 neither decides or consumes a request. Each PATH (relative to the repository top, with `/`) gets
 CONTENT_FILE's exact bytes as its content, read as UTF-8 with its line endings kept, so the blob is the
 one `commit.py --owner-approval` writes; the work tree is never read for it, since the consumer needs the
 file still at its base. The base is PATH's blob at `--head` (default: the checkout's HEAD), none for a
 file absent there; `--repo` defaults to the checkout's origin. It refuses before anything is posted, in
-the builder's or `approvals.new_doc`'s words (`kitlib/hubapprove`'s docstring lists them): a checkout that
+the builder's or `approvals.new_doc`'s words (`kitlib/ownerfiles/request.py`'s docstring lists them): a checkout that
 is not a git work tree or has no HEAD or origin it can name, a bad head, no file, a path that is not a
 plain repository path or that an owner approval may not carry (a render source in a kit checkout, a path
-the repository's owner rules do not lock: `hubapprove.owner_paths_error` says where each is committed
+the repository's owner rules do not lock: `kitlib.ownerfiles.request.owner_paths_error` says where each is committed
 instead), a new file the work tree already has, a file at head whose work tree copy git does not hash to
 its base, unreadable, non-UTF-8 or over-`hubvalidate.MAX_CONTENT_BYTES` content, content that is the file at
 head, content git would store as another blob (core.autocrlf or a text, eol or filter attribute changes it

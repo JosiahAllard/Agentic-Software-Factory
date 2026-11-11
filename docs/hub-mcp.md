@@ -81,7 +81,7 @@ the hub checks as a question's `from`. The hub stamps the time; `GET /handoffs` 
 newest record.
 
 `hub_approval_request` asks the owner to approve a change, as `tools/hub.py approvals add` does
-(docs/hub-approvals.md "approvals/A-NNN"): `kitlib.hubapprove.build` makes the body from the git
+(docs/hub-approvals.md "approvals/A-NNN"): `kitlib.ownerfiles.request.build` makes the body from the git
 checkout `checkout`, each file's base its blob at `head` (default: the checkout's HEAD; none for a
 new file) and its content the exact UTF-8 bytes of its `content_file`, and `repo` defaults to the
 checkout's origin. It only adds a request (no destructive hint): it never decides or consumes one,

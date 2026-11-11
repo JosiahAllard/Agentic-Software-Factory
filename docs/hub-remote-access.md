@@ -364,7 +364,7 @@ The PC's browser can be made strong from the Access login (the owner's choice):
   choice). The server makes it at start (`kitlib.hubsite.auth.ensure_approval_key`) and never
   replaces it; a key that cannot be read stops the start and names the file. Without a usable
   key a strong link pairs nothing. The key is meant to sign the owner's approvals
-  (`kitlib/hubsite/approvals.py`).
+  (`kitlib/ownerfiles/approvals.py`).
 
 The routes of role `approver` are POST `/api/v1/approvals/{id}/decide`
 (`kitlib.hubsite.api.ROUTES`), the owner's Approve or Deny of a pending approval, which the server

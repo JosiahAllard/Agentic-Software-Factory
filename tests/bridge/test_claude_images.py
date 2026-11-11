@@ -118,7 +118,8 @@ class ClaudeImagesTests(unittest.TestCase):
                 patch(win,wraps=process.snapshot) as win_listings:
             child.stdin.write(json.dumps(event).encode()+b'\n');child.stdin.flush()
             self.assertEqual(child.stdout.readline(),b'hook-done\r\n')
-        self.assertEqual(listings.call_count+win_listings.call_count,0)
+        self.assertEqual(listings.call_count,0)
+        self.assertEqual(win_listings.call_count,0)
         binding=next(item for item in self.controller.pairs.registered() if item.identity.native_session_id==session)
         self.assertEqual(self.sources.resolve(binding).executable,self.pythonw)
         self.assertEqual(self.sources.sender_mode(binding),'prompting')

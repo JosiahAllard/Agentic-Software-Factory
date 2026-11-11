@@ -77,7 +77,8 @@ class AncestryTests(unittest.TestCase):
         with patch('kitlib.platform.windows.process.snapshot',wraps=process.snapshot) as listings, \
                 patch.object(face,'snapshot',wraps=face.snapshot) as face_listings:
             walked=ancestry.ancestors_of(pid,creation,limit=8)
-        self.assertEqual(listings.call_count+face_listings.call_count,0)
+        self.assertEqual(listings.call_count,0)
+        self.assertEqual(face_listings.call_count,0)
         if expected and walked==expected[:-1] and not _running(*expected[-1]): return walked
         self.assertEqual(walked,expected)
         return walked

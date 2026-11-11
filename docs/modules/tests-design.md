@@ -1,6 +1,6 @@
 # Test tools design
 
-Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/testlist`, `kitlib/ci` and `kitlib/redfirst`. The high-level design is ARCHITECTURE.md ("Testing") and wins on a conflict.
+Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/ci` and `kitlib/redfirst`. The high-level design is ARCHITECTURE.md ("Testing") and wins on a conflict.
 
 ## Contract
 
@@ -10,7 +10,6 @@ Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/testlist`, `kit
 - **Two passes.** Tests run on the fake git; classes marked `real_git` run on real git. The daily run does both.
 - **Each unit runs in its own process** (`pytests`) or a pooled interpreter (`tooldeps.pool`), inside a job, with a unit timeout. A test child starts fenced: no session binding, no real home.
 - **A time budget in a test is a fence, not an assertion on speed** (`kitlib.clock`): its expiry is a visible, normal output, so machine load never decides a verdict.
-- **`testlist`** lists every test name of a tree, so a move that loses a test shows.
 - **`ci.ratchet`** holds the other OS's failing tests to a baseline that only shrinks.
 - **Red first.** `redfirst.py` runs named new tests against the pre-change commit in a throwaway worktree and confirms they fail there. A fix lands with that proof; never an in-place mutant.
 - `pytests` does not import `tooldeps`: the child's audit is handed in by `tools/pytests.py`.
@@ -22,7 +21,6 @@ Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/testlist`, `kit
 | `pytests/runner.py`, `child.py` | The parent and the child of the parallel runner for a repository's tools tests |
 | `tooldeps/deps.py`, `childenv.py`, `testcost.py` | Which tests a change can break; the child's environment; per-day cost |
 | `tooldeps/selftree.py`, `selfrun.py`, `selflist.py`, `pool.py`, `pool_worker.py`, `kitrun.py`, `tiers.py` | The kit's own runner: selection, the worker pool, the two passes |
-| `testlist/` | Test names from result files, and their diff |
 | `ci/ratchet.py` | The ratchet |
 | `redfirst/run.py`, `verdict.py` | The red-first run; its pure parts |
 
@@ -40,7 +38,7 @@ A test for package `x` goes in `tests/x/`. A test that must always run, or a pat
 
 ## Tests
 
-`tests/pytests`, `tests/tooldeps`, `tests/testlist`, `tests/ci`, `tests/redfirst`.
+`tests/pytests`, `tests/tooldeps`, `tests/ci`, `tests/redfirst`.
 
 ## Reference
 

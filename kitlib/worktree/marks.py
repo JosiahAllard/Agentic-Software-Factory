@@ -1,8 +1,8 @@
 """Stale marks: a record that an UNLANDED worktree is stale, made by `--mark-stale` (below), so
 the nightly sweep abandons it under its archive tag (docs/worktree-remove.md "Stale marks").
 tools/worktree_remove.py is the entry point (`<branch> --mark-stale "<why>"`, `<branch>
---unmark-stale`); kitlib.worktree.sweep reads the marks and acts on them; kitlib.worktree.classify
-shows them.
+--unmark-stale`); kitlib.worktree.nightly reads the marks and acts on them (with
+kitlib.worktree.sweep's checks); kitlib.worktree.classify shows them.
 
 The marks file is `<git common dir>/kit-stale-marks.json` (FILE_NAME): one per repository, the same
 from every work tree and every session, never in a work tree (so it leaves no untracked file) and

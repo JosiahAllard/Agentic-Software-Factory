@@ -200,6 +200,37 @@ class Untouched(ApplyCase):
         self.assertIn('next      ', out)
         self.assertEqual(data['applied'], {'removed': 1, 'failed': 0, 'skipped': 0})
 
+    def test_a_claimed_landed_tree_is_c_and_left_on_disk(self):
+        done = self.workstream('done')
+        self.land('kit/done')
+        self.record('id: T-001\nstate: pulled\npulled_by: kit/done\n')
+        rc, out, data = self.run_apply()
+        self.assertEqual(rc, 1, out)
+        row = self.row(data, done)
+        self.assertEqual((row['class'], row['note']), ('C', 'landed; kept: claimed by T-001'), row)
+        self.kept(done)
+        self.assertNotIn('apply', row)
+        self.assertIn('kit/done', self.branches())
+        self.assertIn('next      release T-001 or block it (C)', out)
+
+    def test_a_landed_tree_on_a_branch_outside_the_worktree_folders_is_skipped(self):
+        """remove._remove takes such a tree only from the plain verb by path (`branch_ok`): the
+        plan skips it rather than send it to a refusal it counts as failed."""
+        path = os.path.join(self.temp, 'out')
+        self.git('worktree', 'add', '-q', '-b', 'kit/out', path)
+        self.fx.write('out.txt', 'work\n', root=path)
+        self.fx.commit('work', 'out.txt', cwd=path)
+        self.land('kit/out')
+        rc, out, data = self.run_apply()
+        row = self.row(data, path)
+        self.assertEqual(row['class'], 'A', row)
+        self.assertEqual(row['apply']['result'], 'skipped', row)
+        self.assertIn('A, on branch kit/out outside the worktree folders: only the plain verb by'
+                      ' path takes it', row['apply']['why'])
+        self.kept(path)
+        self.assertIn('kit/out', self.branches())
+        self.assertEqual(data['applied'], {'removed': 0, 'failed': 0, 'skipped': 1})
+
     def test_the_applied_lines_come_before_the_b_c_l_summary(self):
         done = self.workstream('done')
         self.land('kit/done')

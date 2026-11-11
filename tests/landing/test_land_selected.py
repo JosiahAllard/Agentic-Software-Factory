@@ -38,7 +38,7 @@ FULL_GATE = {'steps': [
 HOOKS = 'GATE_CHECKS = {}\n'
 FRESH = 'the merged gate runs fresh (nothing reused)'
 RETIRED = ('landing.shared_paths', 'landing.gate_once')     # schema order
-WARNING = 'WARNING: %s still writes "%s", a retired key: it is ignored; remove it'
+WARNING = 'WARNING: %s still writes "%s", a retired section or key: it is ignored; remove it'
 
 
 def default_gate(case, wt, tip):

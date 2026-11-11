@@ -122,6 +122,13 @@ HAZARD_EXEMPT = {
     ('kitlib/guard/rules_owner.py', '_tool_run', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/commands.py', 'run_dir', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/commands.py', 'bash_start', 'Start-Process'): (1, GUARD_READS),
+    ('kitlib/hubvalidate/todosteps.py', '<module>', 'Start-Process'): (
+        1, 'a regex naming Start-Process for the to-do step check, which reads text and starts '
+           'nothing'),
+    ('tests/hubvalidate/test_todosteps.py',
+     'Check.test_a_tool_name_in_a_quoted_string_is_not_running_the_tool', 'Start-Process'): (
+        5, 'test strings naming Start-Process that the to-do step check must refuse, which are '
+           'only judged and never run'),
     ('kitlib/guard/rules.py', 'shell_writes', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/rules_write.py', 'write_place', 'Start-Process'): (1, GUARD_READS),
     ('kitlib/guard/rules_run.py', 'bare_wrapper', 'Start-Process'): (1, GUARD_READS),

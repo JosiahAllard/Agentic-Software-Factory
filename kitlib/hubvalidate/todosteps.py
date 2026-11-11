@@ -89,11 +89,39 @@ _ABANDON_ROUTE = ('; unlanded work leaves by worktree_remove.py <slug> --abandon
 # session (docs/guard-rules.md "Rules", git-shared-ref)
 _STRAY_REF_ROUTE = ('; a ref outside refs/heads, refs/tags, refs/stash and refs/backlog the '
                     'coordinator deletes itself, in its own repository (git update-ref -d <ref>)')
+
+# the kit tools a to-do may not run; searched outside quoted strings (_without_quoted)
+_KIT_TOOL_RE = re.compile(r'(?i)(?<![\w-])(?:gate|land|new_worktree|worktree_remove|sync_base)'
+                          r'\.py\b')
+_QUOTED_RE = re.compile(r'"[^"]*"|\'[^\']*\'')
+_ENDS_IN_TOOL_RE = re.compile(r'(?i)(?:^|[\\/\s])(?:gate|land|new_worktree|worktree_remove|'
+                              r'sync_base)\.py\Z')
+# what a quoted string follows when it is run as a command: a shell wrapper's payload
+_WRAPPER_RE = re.compile(r'(?i)(?:(?<![\w-])cmd(?:\.exe)?\s+/[ck]|'
+                         r'(?<![\w-])(?:powershell|pwsh)(?:\.exe)?\b.*?\s-(?:command|c)|'
+                         r'(?<![\w-])(?:bash|sh)\s+(?:-\w+\s+)*-c|'
+                         r'(?<![\w-])(?:iex|invoke-expression)\s*\(?|'
+                         r'(?<![\w-])start-process\b.*?\s-argumentlist\s*'
+                         r'(?:(?:"[^"]*"|\'[^\']*\'|[^\s,"\']+)\s*,\s*)*)\s*\Z')
+
+
+def _without_quoted(segment):
+    """The segment with the content of each quoted string blanked, so a kit tool's name inside
+    a string argument is not read as running it. Kept: a string whose content ends in a kit
+    tool's file name (spaces allowed), and a shell wrapper's payload (cmd /c, powershell
+    -Command, bash -c, iex, every string of a Start-Process -ArgumentList list)."""
+    def blank(m):
+        inner = m.group()[1:-1]
+        if _ENDS_IN_TOOL_RE.search(inner) or _WRAPPER_RE.search(segment[:m.start()]):
+            return m.group()
+        return m.group()[0] + ' ' + m.group()[0]
+    return _QUOTED_RE.sub(blank, segment)
+
+
 _COORDINATOR_RES = (
     ('git worktree add/remove', re.compile(_GIT + r'worktree\s+remove\b'), _ABANDON_ROUTE),
     ('git worktree add/remove', re.compile(_GIT + r'worktree\s+(?:add|move|prune)\b'), ''),
-    ('a kit landing, gate or worktree tool',
-     re.compile(r'(?i)(?<![\w-])(?:gate|land|new_worktree|worktree_remove|sync_base)\.py\b'), ''),
+    ('a kit landing, gate or worktree tool', _KIT_TOOL_RE, ''),
     ('a branch or tag delete',
      re.compile(_GIT + r'(?:branch|tag)\b.*?\s(?:-[A-Za-z]*[dD][A-Za-z]*|--delete)(?![\w-])'),
      _ABANDON_ROUTE),
@@ -371,8 +399,9 @@ def check(fields):
                           'change as an {edit: <file>, old, new} step' % where, field)
         if is_command:
             for segment in _SEGMENT_RE.split(text):
+                bare = _without_quoted(segment)
                 for what, r, route in _COORDINATOR_RES:
-                    if r.search(segment):
+                    if r.search(bare if r is _KIT_TOOL_RE else segment):
                         raise Refused('%s is coordinator work (%s): a coordinator does it, not '
                                       'the owner%s' % (where, what, route), field)
 

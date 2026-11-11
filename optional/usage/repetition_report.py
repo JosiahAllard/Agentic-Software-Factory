@@ -33,7 +33,7 @@ REPLACED = {'preflight.py': r'git (status|rev-parse|worktree list|fetch|log)',
             'gate.py': r'gradlew|dotnet (build|test)|pytest|unittest|npm (test|run)|cargo (build|test)|mvn|test\.bat|godot',
             'commit.py': r'git (add|commit)', 'sync_base.py': r'git merge', 'codemap.py': r'\b(grep|rg|find|git grep)\b',
             'doc_index.py': r'\b(sed -n|cat|head|tail)\b.*\.md', 'review_pack.py': r'git (show|diff)',
-            'backlog.py': r'docs/backlog', 'testlist.py': r'test-results|\.trx'}
+            'backlog.py': r'docs/backlog'}
 
 
 def shape(cmd):

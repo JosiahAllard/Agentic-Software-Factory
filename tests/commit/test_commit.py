@@ -2206,6 +2206,62 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
         self.assertEqual(checks.merge_owner_refusal(self.wt, rules), ([], None))
 
 
+@real_git('merge-base --all and a conflict in the owner-only file: as MergeJoinsTwoApprovedChanges')
+class AMergeOfDeletions(JoinCase):
+    """Each side, in an approved commit, deletes a line next to the other's, so CLAUDE.md
+    conflicts; a resolution that only joins both deletions is committed with no new approval
+    (ownerrules.deletion_merge on the staged copy). Any other one is refused."""
+
+    def merge_deletions(self, *ids):
+        self.approve(*ids)
+        tip, main = self.merge(SEVEN.replace('line 3\n', ''), SEVEN.replace('line 4\n', ''))
+        self.assertIn(self.F, self.git('diff', '--name-only', '--diff-filter=U'))
+        return tip, main
+
+    def test_a_resolution_that_only_deletes_is_committed_and_lands(self):
+        tip, main = self.merge_deletions('A-001', 'A-002')
+        both = SEVEN.replace('line 3\n', '').replace('line 4\n', '')
+        self.put(self.F, both)
+        code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, main])
+        self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n', both)
+        rules = C.kconfig.load(self.wt).owner_rules()
+        self.assertEqual(ownerrules.violations(self.wt, rules, 'HEAD', [main]), ([], None))
+
+    def assert_refused(self, tip):
+        code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assertEqual(code, 1, out)
+        self.assertIn('refused: CLAUDE.md is owner-only', out)
+        self.assertEqual(self.head(), tip)
+
+    def test_a_resolution_that_adds_a_line_is_refused(self):
+        tip, _ = self.merge_deletions('A-001', 'A-002')
+        self.put(self.F, SEVEN.replace('line 3\n', '').replace('line 4\n', 'line 4, agent\n'))
+        self.assert_refused(tip)
+
+    def test_an_unapproved_side_is_refused(self):
+        tip, _ = self.merge_deletions('A-002')
+        self.put(self.F, SEVEN.replace('line 3\n', '').replace('line 4\n', ''))
+        self.assert_refused(tip)
+
+    def test_when_what_the_merge_carries_cannot_be_judged_nothing_is_exempt(self):
+        tip, _ = self.merge_deletions('A-001', 'A-002')
+        self.put(self.F, SEVEN.replace('line 3\n', '').replace('line 4\n', ''))
+        real = ownerrules.merge_owned
+
+        def merge_owned(root, rules, staged, *a, **kw):     # only the named owner-only path's ask
+            return (set(), 'merge-tree stubbed to fail') if self.F in staged else real(
+                root, rules, staged, *a, **kw)
+        with mock.patch.object(ownerrules, 'merge_owned', merge_owned):
+            code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assertEqual(code, 1, out)
+        self.assertIn('refused: CLAUDE.md is owner-only', out)
+        self.assertIn('what the merge carries could not be judged: merge-tree stubbed to fail.',
+                      out)
+        self.assertEqual(self.head(), tip)
+
+
 @gitfixture.real_fixture('a committed .gitattributes with merge=union: the fake git refuses the '
                          'attribute')
 @real_git('check-attr and a merge driver: the fake has neither')

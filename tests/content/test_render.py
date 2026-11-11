@@ -411,11 +411,14 @@ class ClaudeRendererTest(unittest.TestCase):
         text = 'x' * (hc.DESCRIPTION_MAX - len(claude_content.TOOLS['dispatch'])) + '{{tool:dispatch}}'
         role = hc.parse_role(BETA.replace(b'"Two: parts"', text.encode('utf-8')))
         got = claude_content.renderer().agent_file(role, ('beta',))
-        self.assertIn(('\ndescription: %sAgent\n' % ('x' * (hc.DESCRIPTION_MAX - 5))).encode('utf-8'), got)
-        with self.assertRaisesRegex(hc.ContentError, r'content/roles/beta\.md: description is \d+ characters once rendered, over 160'):
+        dispatch = claude_content.TOOLS['dispatch']
+        self.assertIn(('\ndescription: %s%s\n' % ('x' * (hc.DESCRIPTION_MAX - len(dispatch)), dispatch)).encode('utf-8'),
+                      got)
+        over_cap = r'content/roles/beta\.md: description is \d+ characters once rendered, over %d' % hc.DESCRIPTION_MAX
+        with self.assertRaisesRegex(hc.ContentError, over_cap):
             codex_content.renderer().agent_file(role, ('beta',))
         over = hc.parse_role(BETA.replace(b'"Two: parts"', b'x' + text.encode('utf-8')))
-        with self.assertRaisesRegex(hc.ContentError, 'over 160'):
+        with self.assertRaisesRegex(hc.ContentError, 'over %d' % hc.DESCRIPTION_MAX):
             claude_content.renderer().agent_file(over, ('beta',))
 
     def test_every_tier_and_capability_has_a_claude_value(self):

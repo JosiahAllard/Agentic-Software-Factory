@@ -41,7 +41,7 @@ import subprocess
 import sys
 import time
 
-from kitlib import pmstart, pmwatch
+from kitlib import kitroot, pmwatch
 from kitlib.config import user as kuser
 from kitlib.hubjobs import _crossover_decide as D
 from kitlib.hubjobs import coord_restart as C
@@ -211,7 +211,7 @@ class CrossoverJob(object):
         self.procs = procs or C.list_processes
         self.child = child or C.run_child
         self.clock = clock or time.time
-        self.kit = kit or pmstart.KIT_ROOT
+        self.kit = kit or kitroot.root()
         self.temp = temp or kuser.agent_temp()
         self._noted = {}                # key: the decision note last logged
 

@@ -408,9 +408,8 @@ def hub_jobs(load=None, make_client=None):
     down, has no token file or no pointer, or answers anything else. Never raises. `load` and
     `make_client` as hub_check."""
     try:
-        from kitlib import pmstart
-        from kitlib.hubclient import client as hubclient
-        port = (load or pmstart.hub_settings)().port
+        from kitlib.hubclient import client as hubclient, settings as hubsettings
+        port = (load or hubsettings.load)().port
         health = (make_client or hubclient.hub_client)(port).get(
             "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         jobs = health.get("jobs") if isinstance(health, dict) else None
@@ -530,17 +529,17 @@ def hub_check(load=None, make_client=None):
     check (ERROR on the third), never a dead watcher. `load` gives the hub Settings and
     `make_client(port)` the client, as kitlib.pmstart.hub_site takes them."""
     def check(last):
-        from kitlib import pmstart
-        from kitlib.hubclient import client as hubclient, codestale, errors
+        from kitlib import kitroot
+        from kitlib.hubclient import client as hubclient, codestale, errors, settings as hubsettings
         down = (errors.NoHubToken, errors.NotRunning, errors.NoHubPointer)
         try:
-            port = (load or pmstart.hub_settings)().port
+            port = (load or hubsettings.load)().port
             health = (make_client or hubclient.hub_client)(port).get(
                 "/health", timeout=hubclient.HUB_SITE_TIMEOUT_S)
         except down:
             return [], None
         text = codestale.notice(health.get("code") if isinstance(health, dict) else None,
-                                pmstart.HUB_TOOL)
+                                kitroot.tool("hub"))
         if text is None:
             return [], None
         return ([] if last else [text]), True
@@ -717,6 +716,7 @@ def preload(modules=()):
     import kitlib.hubclient.client
     import kitlib.hubclient.codestale
     import kitlib.hubclient.errors
+    import kitlib.hubclient.settings        # the HUB check's and hub_jobs' settings read
     import kitlib.pluginsource
     import kitlib.schedtask.read            # kitlib.pluginsource's in-use reads (_processes, _tasks)
     import kitlib.launcher.pipes            # the REMOTE check (rc_check)

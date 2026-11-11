@@ -2035,7 +2035,7 @@ class MachineCase(unittest.TestCase):
         self.assertEqual(src.static_dir, servesources.STATIC_DIR)
         self.assertEqual(os.path.basename(servesources.STATIC_DIR), 'web')
         self.assertEqual(os.path.split(src.agents)[1], 'agents')
-        self.assertEqual(src.skills, os.path.join(servesources.pmstart.KIT_ROOT, 'content', 'skills'))
+        self.assertEqual(src.skills, os.path.join(servesources.kitroot.root(), 'content', 'skills'))
         self.assertIsNone(servesources.machine_sources(self.home, sync=False).sync)
         # the machine lock's door, made now and opened on its first read (none here)
         from kitlib.hubsite import lockdoor

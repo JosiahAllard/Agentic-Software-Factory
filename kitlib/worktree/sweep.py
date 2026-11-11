@@ -152,6 +152,43 @@ def reflog_newest(path, label):
     return ((best, 'an entry of %s' % label), None) if best is not None else (None, None)
 
 
+def newest(root, label, skip=(), drop=()):
+    """`((mtime, path), None)` of the newest entry under `root` (links not followed; names in `skip`
+    at the top left out, and then the top's own mtime too, though the top must still be readable;
+    folders in `drop` at the top neither read nor walked into), or `(None, why)` when it cannot be
+    read in full: never idle."""
+    best, errors, seen = [0.0, None], [], 0
+    top = extended(root)
+    for where, dirs, files in os.walk(top, onerror=errors.append):
+        if where == top:
+            dirs[:] = [d for d in dirs if d not in drop]
+        seen += len(dirs) + len(files)
+        if seen > WALK_MAX:
+            return None, '%s could not be read in full: more than %d entries' % (label, WALK_MAX)
+        for name in dirs + files:
+            if where == top and name in skip:
+                continue
+            full = os.path.join(where, name)
+            try:
+                when = os.lstat(full).st_mtime
+            except OSError as e:
+                errors.append(e)
+                continue
+            if when > best[0]:
+                best[:] = [when, plain(full)]
+        prune(where, dirs)
+    try:
+        when = os.lstat(top).st_mtime
+        if not skip and when > best[0]:
+            best[:] = [when, plain(top)]
+    except OSError as e:
+        errors.append(e)
+    if errors:
+        return None, '%s could not be read in full (%d error(s), first: %s)' % (
+            label, len(errors), errors[0])
+    return (best[0], best[1]), None
+
+
 def last_activity(main, path, branch):
     """`((newest time, what), None)`, or `(None, why)` when it cannot be read in full: the mtime of
     everything in the tree; everything in the worktree's own git dir except `index`, `index.lock`,
@@ -164,47 +201,18 @@ def last_activity(main, path, branch):
         if when > best[0]:
             best[0], best[1] = when, what
 
-    def walk(root, label, skip=(), drop=()):
-        # `drop`: folders at the top neither read nor walked into (`skip` names are still walked).
-        errors = []
-        top = extended(root)
-        seen = 0
-        for where, dirs, files in os.walk(top, onerror=errors.append):
-            if where == top:
-                dirs[:] = [d for d in dirs if d not in drop]
-            seen += len(dirs) + len(files)
-            if seen > WALK_MAX:
-                return '%s could not be read in full: more than %d entries' % (label, WALK_MAX)
-            for name in dirs + files:
-                if where == top and name in skip:
-                    continue
-                full = os.path.join(where, name)
-                try:
-                    see(os.lstat(full).st_mtime, plain(full))
-                except OSError as e:
-                    errors.append(e)
-            prune(where, dirs)
-        try:
-            when = os.lstat(top).st_mtime
-            if not skip:
-                see(when, plain(top))
-        except OSError as e:
-            errors.append(e)
-        if errors:
-            return '%s could not be read in full (%d error(s), first: %s)' % (
-                label, len(errors), errors[0])
-        return None
-
-    why = walk(path, 'the tree')
+    got, why = newest(path, 'the tree')
     if why:
         return None, why
+    see(*got)
     rc, gitdir, err = git(path, 'rev-parse', '--path-format=absolute', '--git-dir')
     if rc != 0 or not gitdir:
         return None, failure(('rev-parse', '--git-dir'), rc, err)
     gitdir = os.path.normpath(gitdir)
-    why = walk(gitdir, 'its git dir', skip=('index', 'index.lock'), drop=('logs',))
+    got, why = newest(gitdir, 'its git dir', skip=('index', 'index.lock'), drop=('logs',))
     if why:
         return None, why
+    see(*got)
     rc, common, err = git(main, 'rev-parse', '--path-format=absolute', '--git-common-dir')
     if rc != 0 or not common:
         return None, failure(('rev-parse', '--git-common-dir'), rc, err)

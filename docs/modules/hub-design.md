@@ -27,7 +27,7 @@ Low-level design of `kitlib/hubvalidate`, `kitlib/hubclient`, `kitlib/hubsite`, 
 | `hubsite/serve*.py`, `control.py`, `selfrestart.py`, `autostart.py` | The server wired from its parts, split by responsibility; stop, restart, the sign-in task |
 | `hubsite/push.py`, `jobs.py`, `derived.py`, `backlog.py`, `recordwrite.py`, `lockdoor.py`, `repoweb.py`, `skilledits.py` | Push, the job runner, views read from other tools' files, the backlog views and writes, the lock door |
 | `hubsite/cli/` | What `tools/hub.py` runs: setup, pages, approvals, checks |
-| `hubjobs/` | One job per file: fill watch, coordinator restart, usage crossover, session watch, store commits, store upkeep, reminders, unblock conditions, plugin refresh |
+| `hubjobs/` | One job per file: fill watch, coordinator restart, usage crossover, session watch, store commits, store upkeep, reminders, unblock conditions, plugin refresh; `_crossover_decide.py` holds the usage crossover's decisions, a `_` part that makers() skips |
 | `hubbacklog/` | The Current backlog and Completed tabs |
 | `hubmcp/` | The hub's API as MCP tools: the agent's reads and writes only |
 | `autotasks/` | `due`, `tick` |

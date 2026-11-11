@@ -7,8 +7,7 @@
   NoHubToken    neither token file (agent or owner) is there to read (client.hub_client)
   NoHubPointer  no PM-repo pointer is set, so there is no token folder (client.hub_client)
 
-kitlib/hubsite/serve.py re-exports ServeError, NotRunning and NoAnswer: the one class, reached by
-either module.
+kitlib/hubsite/serve.py re-exports ServeError: the one class, reached by either module.
 """
 
 REFUSAL_UNKNOWN = 'not the expected answer'   # a refusal's message when the body gives none

@@ -214,7 +214,7 @@ The plain run writes two files and prints their paths, the notes, the counts and
   `<pm_data>/maint-lint/<repo>/result.json`, a stable folder beside the backlog's `audit/` folder
   under the machine config's `pm_data.path`, left untracked like it.
 - `page.html` beside it, or `--out`, from `kitlib/maintlint/page.py`. It passes
-  `kitlib.hubsite.pagecheck.check`: everything is escaped, with no script and no link, and a lone
+  `kitlib.hubvalidate.pagecheck.check`: everything is escaped, with no script and no link, and a lone
   surrogate is dropped. When the page would be over pagecheck's size cap, it shows fewer rows per
   check and fewer notes.
 
@@ -237,7 +237,7 @@ Action Hub (`kitlib/maintlint/publish.py`) as page `maint-lint-<repo>`, one per 
 written over by each run, with `from` `maint-lint` and the agent token; a scheduled run has no hub
 session key and needs none (docs/hub-skill-pages.md "pages/<id> and page_html/<id>"). Over a page
 already there it sends that card's version as `if_version`. The page is judged by
-`kitlib.hubsite.pagecheck.check` before it is sent. It prints `PUBLISHED maint-lint-<repo> v<n>`;
+`kitlib.hubvalidate.pagecheck.check` before it is sent. It prints `PUBLISHED maint-lint-<repo> v<n>`;
 a page that was not sent (the page check refuses it, the hub is not running or cannot be reached,
 the server refuses the write) is one `hub page NOT CHECKED: <why>` note instead, and the exit code
 stays what the findings make it. `--dry-run` never publishes.

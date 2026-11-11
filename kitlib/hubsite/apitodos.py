@@ -4,7 +4,7 @@ import re
 
 from kitlib import hubvalidate
 
-from . import todosteps
+from kitlib.hubvalidate import todosteps
 from .apibase import (
     OWNER, OWNER_FROM, _SURROGATE, _agent_from, _fields, _flag, _invalid, _pin, _text, _typed,
     _via)
@@ -17,7 +17,7 @@ def todos_list(api, req):
 
 
 def todo_steps(b, judge=True):
-    """The fields b of a new to-do with its `steps` (kitlib.hubsite.todosteps) made into text:
+    """The fields b of a new to-do with its `steps` (kitlib.hubvalidate.todosteps) made into text:
     their commands after the given ones, their summary at the end of the detail (or the detail,
     when there is none), and no `steps` field left. Refused (`invalid`, the field named): a
     `commands` that is not a list, a given command holding a lone surrogate, a bad step and, when

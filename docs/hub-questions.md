@@ -38,7 +38,7 @@ shows.
 
 ### A question's class
 A question is asked with `record` (below) or with `class`, never both and never neither (`questions add
---class C`, MCP `hub_ask` `class`; `kitlib.hubsite.api` `QUESTION_CLASSES`): `rule` (a standing rule, a
+--class C`, MCP `hub_ask` `class`; `kitlib.hubvalidate` `QUESTION_CLASSES`): `rule` (a standing rule, a
 delegation run line included), `machine` (this machine), `cross-repo` (work across repositories) or `go`
 (a one-off landing or archive go). Either is refused `invalid`, field `class`, before any backlog is
 read. An edit that unbinds a question (`--no-record`, a null `record`) needs `class` too unless it has

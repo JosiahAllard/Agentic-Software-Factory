@@ -76,7 +76,7 @@ a listener that reads the header records its own `via` then (the local one: `api
 the tunnel listener ever records `tunnel`.
 
 Waits. GET wait and GET lock/wait (api.WAIT_HANDLERS) block in the Api for up to
-api.WAIT_MAX_S. At most max_waits requests may be in them at once on one listener: the next is
+hubvalidate.WAIT_MAX_S. At most max_waits requests may be in them at once on one listener: the next is
 refused at once with 429 `busy` and a Retry-After, and takes no slot. A caller the route refuses
 (an agent on lock/wait) takes no slot either: it gets the Api's 403, never a 429. The counters are guarded by one lock that is held for a few statements and never
 across a wait, a body read or a response.

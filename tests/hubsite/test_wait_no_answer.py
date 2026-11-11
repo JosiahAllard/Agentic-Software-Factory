@@ -10,6 +10,7 @@ import threading
 import unittest
 from unittest import mock
 
+from kitlib import hubvalidate
 from kitlib.hubsite import api, client, httpd, serve
 from tests.hubsite import httpfix
 
@@ -86,7 +87,7 @@ class NoAnswerCase(unittest.TestCase):
         case.setUp()
         self.addCleanup(case.doCleanups)
         self.tokens = case.tokens
-        for target, name, value in ((api, 'WAIT_MAX_S', TURN_S),
+        for target, name, value in ((hubvalidate, 'WAIT_MAX_S', TURN_S),
                                     (client, 'WAIT_MARGIN_S', MARGIN_S)):
             patch = mock.patch.object(target, name, value)
             patch.start()

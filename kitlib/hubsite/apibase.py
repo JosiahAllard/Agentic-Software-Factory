@@ -40,7 +40,8 @@ import datetime
 import math
 import re
 
-from . import pagecheck
+from kitlib import hubvalidate
+from kitlib.hubvalidate import pagecheck
 from .store import HubError
 
 BASE = '/api/v1'
@@ -65,19 +66,17 @@ WRITES_WHY = {
               'the strong owner, or Cloudflare Access)'}
 STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, 'store': 503,
           'unavailable': 503, 'internal': 500}
-WAIT_MAX_S = 55
 FEED_MAX = 200                      # the landing feed events GET snapshot and GET landings give
 LIMIT_DIGITS = 9                    # GET landings `limit`: longer is refused, never a huge int()
 LOCK_POLL_S = 0.5                   # how often GET lock/wait looks at the lock's revision
 LOCK_DAYS_MAX = 366                 # GET lock/stats `days`
 TUNNEL_VIA = 'tunnel'               # the tunnel listener's via (kitlib.hubsite.httpd): a remote view
 ACK_WINDOW_S = 30 * 60              # a creator's time to handle an item handed to it ("Routes")
-REACH_GRACE_S = WAIT_MAX_S + 30     # a key is reachable this long after its last wait ("Routes")
+REACH_GRACE_S = hubvalidate.WAIT_MAX_S + 30   # a key is reachable this long after its last wait ("Routes")
 ROUTE_SLACK_S = 0.01                # a PM wait looks again this long after a route's turn is due
 VIEWS = ('backlog', 'completed', 'notices', 'repos', 'usage', 'agents', 'skills')
 OWNER_FROM = 'you'                  # a to-do's or a story's `from` when the owner wrote it
 AGENT_FROM = 'pm'                   # a to-do's `from` when an agent gives none
-AGENT_STORY_STATUSES = ('review', 'questions', 'added', 'declined')
 DAYS_MAX = 3650
 # what a caller who is not the owner is told in place of the store's own message, by code
 AGENT_SAYS = {'store': 'the hub store is not available: the owner sees why'}
@@ -224,11 +223,11 @@ def _timeout(req):
     """A wait's `timeout` query: seconds, WAIT_MAX_S when not given; not capped here."""
     raw = _q(req, 'timeout')
     try:
-        timeout = float(raw) if raw else float(WAIT_MAX_S)
+        timeout = float(raw) if raw else float(hubvalidate.WAIT_MAX_S)
     except ValueError:
         timeout = float('nan')
     if not math.isfinite(timeout) or timeout < 0:
-        raise _invalid('timeout is a number of seconds from 0 to %d, not %r' % (WAIT_MAX_S, raw),
+        raise _invalid('timeout is a number of seconds from 0 to %d, not %r' % (hubvalidate.WAIT_MAX_S, raw),
                        'timeout')
     return timeout
 

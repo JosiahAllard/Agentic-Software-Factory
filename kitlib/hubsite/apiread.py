@@ -3,10 +3,12 @@ record pages and the owner's record writes, the listings, pending, wait, snapsho
 kitlib.hubsite.api re-exports every name here; its WAIT_HANDLERS names wait."""
 import time
 
+from kitlib import hubvalidate
+
 from . import apilog, schema
 from .apibase import (
     AGENT_FROM, API_VERSION, DAYS_MAX, OWNER, ROUTE_SLACK_S, SEGMENT_SAYS, VIEWS,
-    WAIT_MAX_S, _SEGMENT, _fields, _invalid, _natural, _q, _q_flag, _q_int, _reason, _record_view,
+    _SEGMENT, _fields, _invalid, _natural, _q, _q_flag, _q_int, _reason, _record_view,
     _text, _timeout, _typed)
 from .apifindings import _seen, _unpathed, _unresolved_marks
 from .apiposts import _unpath_act
@@ -158,10 +160,10 @@ def wait(api, req):
         api.listen(req, opened=key)
         try:
             if filtered:
-                ch = _wait_for(api, since, min(timeout, WAIT_MAX_S), mine,
+                ch = _wait_for(api, since, min(timeout, hubvalidate.WAIT_MAX_S), mine,
                                for_key == AGENT_FROM)
             else:
-                ch = api.store.wait(since, min(timeout, WAIT_MAX_S))
+                ch = api.store.wait(since, min(timeout, hubvalidate.WAIT_MAX_S))
         finally:
             api.seen(req, 'waited', closed=key)
             api.listen(req, closed=key)

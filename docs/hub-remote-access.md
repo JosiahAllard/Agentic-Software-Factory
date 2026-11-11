@@ -268,7 +268,7 @@ control, and no step weakens, shares or bypasses Access or pairing: those stay y
 open a public port on the PC for this.
 
 What the code shows: the hub uses no WebSocket. The page loads one snapshot, then repeats one
-long-poll (`GET /wait`, held open up to 55 s, `kitlib.hubsite.api.WAIT_MAX_S`) and reads the
+long-poll (`GET /wait`, held open up to 55 s, `kitlib.hubvalidate.WAIT_MAX_S`) and reads the
 snapshot again after each change, and the tunnel listener is on loopback only. Per Cloudflare's setup (INFERENCE from the repo, not shown by it): the
 laptop talks HTTPS on port 443 to `<hostname>` and to `<team>.cloudflareaccess.com` (the Access
 login), plus your identity provider's sign-in host if step 6.4 uses one.

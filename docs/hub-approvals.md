@@ -123,9 +123,9 @@ is not a git work tree or has no HEAD or origin it can name, a bad head, no file
 plain repository path or that an owner approval may not carry (a render source in a kit checkout, a path
 the repository's owner rules do not lock: `hubapprove.owner_paths_error` says where each is committed
 instead), a new file the work tree already has, a file at head whose work tree copy git does not hash to
-its base, unreadable, non-UTF-8 or over-`approvals.MAX_CONTENT_BYTES` content, content that is the file at
+its base, unreadable, non-UTF-8 or over-`hubvalidate.MAX_CONTENT_BYTES` content, content that is the file at
 head, content git would store as another blob (core.autocrlf or a text, eol or filter attribute changes it
-on staging, which the consumer's staged check refuses), and what `new_doc` refuses (`MAX_FILES`,
+on staging, which the consumer's staged check refuses), and what `new_doc` refuses (`hubvalidate.MAX_FILES`,
 `MAX_PATH`, `MAX_TITLE`, `MAX_REASON`). What the hub refuses comes back as the hub said it (`REFUSED
 <code>: <message>`).
 
@@ -196,7 +196,7 @@ docstring "Hand-offs".
 |---|---|---|
 | (doc id) | server | `C-001`, `C-002`, ...: the document's id, not a field; a higher number is newer |
 | from | agent | the session's key: a launcher session key (sessions.json, read on each add) or `pm`, checked as a question's `from` is |
-| kind | agent | `handoff`, `restart` or `stop` (`api.HANDOFF_KINDS`): the ready reply's word; or `checkin`: a session started by a hand-off has read its note and taken over (the usage crossover stops the old session on it, docs/launcher.md "Usage crossover") |
+| kind | agent | `handoff`, `restart` or `stop` (`hubvalidate.HANDOFF_KINDS`): the ready reply's word; or `checkin`: a session started by a hand-off has read its note and taken over (the usage crossover stops the old session on it, docs/launcher.md "Usage crossover") |
 | state_path | agent | the absolute path of the state note, on one line |
 | at | server | ISO time the hub took it |
 

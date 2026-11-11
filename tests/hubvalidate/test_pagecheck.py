@@ -1,10 +1,10 @@
-"""kitlib.hubsite.pagecheck: what a published page may hold. Each refused sample names the rule it
+"""kitlib.hubvalidate.pagecheck: what a published page may hold. Each refused sample names the rule it
 breaks in the refusal; each kept sample is what a real page uses."""
 import os
 import re
 import unittest
 
-from kitlib.hubsite import pagecheck
+from kitlib.hubvalidate import pagecheck
 
 # (sample, a word the refusal carries)
 REFUSED = (

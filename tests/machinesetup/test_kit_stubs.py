@@ -1,7 +1,7 @@
 """tools/kit_stubs.py memory, and kitlib.machinesetup.outcome.kit_root: the kit its owner command names.
 
 Every case runs against a throwaway repository (tests/gitfixture.py); the fake kits are folders in
-the fixture's temp. Run from an export of the kit (it holds kitlib.pluginsource.MARKER), the kit
+the fixture's temp. Run from an export of the kit (it holds kitlib.pluginsource.layout.MARKER), the kit
 named is KIT_LIVE_ROOT, else the main checkout the export's marker names, never the export a later
 prune may remove.
 """
@@ -12,7 +12,7 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib import pluginsource
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.machinesetup import outcome
 from tests import gitfixture
 
@@ -68,12 +68,12 @@ class KitRoot(Case):
         self.addCleanup(root.stop)
 
     def marker(self, obj):
-        self.put(os.path.join(self.export, pluginsource.MARKER), json.dumps(obj) + '\n')
+        self.put(os.path.join(self.export, plugin_layout.MARKER), json.dumps(obj) + '\n')
 
     def test_a_checkout_names_itself_whatever_the_variable_says(self):
         other = os.path.join(self.tmp, 'kit-other')
         os.makedirs(other)
-        with mock.patch.dict(os.environ, {pluginsource.LIVE_ROOT_ENV: other}):
+        with mock.patch.dict(os.environ, {plugin_layout.LIVE_ROOT_ENV: other}):
             self.assertEqual(outcome.kit_root(), self.export)
 
     def test_an_export_names_the_main_checkout_its_marker_names(self):
@@ -84,7 +84,7 @@ class KitRoot(Case):
         self.marker({'sha': SHA, 'checkout': self.live.replace('\\', '/')})
         other = os.path.join(self.tmp, 'kit-other')
         os.makedirs(other)
-        with mock.patch.dict(os.environ, {pluginsource.LIVE_ROOT_ENV: other}):
+        with mock.patch.dict(os.environ, {plugin_layout.LIVE_ROOT_ENV: other}):
             self.assertEqual(outcome.kit_root(), other)
 
     def test_live_kit_refuses_an_export_whose_marker_names_no_kit_checkout(self):

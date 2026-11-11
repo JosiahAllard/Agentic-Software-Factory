@@ -3,7 +3,7 @@
 it out (host.py plugin_copy, tools/_host.py plugin_copies); kitlib.pluginsource runs it with the
 export folder and never names this host.
 
-  Step(home, environ)              the step kitlib.pluginsource.refresh runs: step(export, out, apply);
+  Step(home, environ)              the step kitlib.pluginsource.refresh.refresh runs: step(export, out, apply);
                                    an install from the export (plugin_install: pm-kit, then the
                                    hooks plugin pm-kit-hooks) when config.toml names
                                    the marketplace pm-kit; the owner's switch steps when it names only
@@ -40,7 +40,7 @@ def codex_home(home=None, environ=None):
 
 
 class Step(object):
-    """Codex's plugin step of kitlib.pluginsource.refresh, for the Codex home codex_home(home,
+    """Codex's plugin step of kitlib.pluginsource.refresh.refresh, for the Codex home codex_home(home,
     environ), fixed when the step is made; `environ` (None: os.environ) is read for the session
     mark and handed to codex.exe. step(export, out, apply): when config.toml names the export's
     marketplace `pm-kit`, Codex installs the export (plugin_install.install); when it names only the

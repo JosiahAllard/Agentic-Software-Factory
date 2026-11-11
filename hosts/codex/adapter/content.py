@@ -17,7 +17,7 @@ so any file left there is stale.
 
 manifests(kit, content) writes the plugin's files, each JSON with indent 2 and a final newline:
 - `hosts/codex/shell/plugin.json`: Codex's plugin manifest, which the plugin export
-  (kitlib.pluginsource.export) writes, version stamped, at `.codex-plugin/plugin.json` of the
+  (kitlib.pluginsource.export.export) writes, version stamped, at `.codex-plugin/plugin.json` of the
   export folder: the plugin root is the whole export, as the default host's is. kit.json's name and version,
   the skills (PLUGIN_SKILLS_REL, the kit's own `content/skills/`) and the MCP servers file (MCP_REL),
   each a path from that root (docs/plugin-source.md "Codex"). No hooks: Codex asks the owner to trust
@@ -345,13 +345,13 @@ def dump(data):
 
 def mcp_rel(platform):
     """The MCP servers file for `platform`: MCP_REL on Windows, the one the plugin reads; beside it
-    `mcp.<platform>.json` elsewhere, which kitlib.pluginsource.export writes in its place."""
+    `mcp.<platform>.json` elsewhere, which kitlib.pluginsource.export.export writes in its place."""
     return MCP_REL if platform == 'windows' else MCP_REL[:-len('.json')] + '.%s.json' % platform
 
 
 def hooks_rel(platform):
     """The hooks plugin's hooks file for `platform`: HOOKS_REL on Windows, the one its plugin.json
-    names; beside it `hooks.<platform>.json` elsewhere, which kitlib.pluginsource.export writes in
+    names; beside it `hooks.<platform>.json` elsewhere, which kitlib.pluginsource.export.export writes in
     its place."""
     return HOOKS_REL if platform == 'windows' else HOOKS_REL[:-len('.json')] + '.%s.json' % platform
 

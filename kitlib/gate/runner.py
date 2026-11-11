@@ -96,8 +96,8 @@ def kit_identity():
     export of pushed main (kitlib.gate.pin), the export's commit, clean: an export holds exactly
     that commit's tracked files. The gate cache (kitlib.gate.reuse) keys steps on reuse.kit_identity instead:
     the kit's file hashes, never its commit."""
-    from kitlib import pluginsource
-    marker = pluginsource.read_marker(S.KIT_ROOT)
+    from kitlib.pluginsource import layout as plugin_layout
+    marker = plugin_layout.read_marker(S.KIT_ROOT)
     if marker is not None and refs.is_sha(marker.get('sha')):
         return {'commit': marker['sha'],
                 'python': os.path.normcase(os.path.abspath(sys.executable)), 'clean': True}

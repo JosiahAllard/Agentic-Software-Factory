@@ -52,7 +52,7 @@
       kitlib.hubsite.tunnel.check. With settings that can serve, one fetch of the team's Access
       keys (kitlib.hubsite.access.probe, its `access keys: ` line). Then one line for each kit
       copy on this machine (kitlib.config.copies: the plugin export folders, the pins and each
-      account folder's install, kitlib.pluginsource.installs): `knows every key`, `would refuse `
+      account folder's install, kitlib.pluginsource.state.installs): `knows every key`, `would refuse `
       and the keys, or `cannot tell: ` and why (an install whose folder is gone names the
       refresh command), checked against the machine config's keys plus `hub`; a copy that
       refuses a key refuses the whole file. Last, `READY: ...` and exit 0, or `NOT READY: ...`
@@ -960,7 +960,7 @@ def _status(a, stop):
 
 def _check():
     """setup --check: reads only. 0 when ready, 1 when not."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout, state as plugin_state
     s = settings.load()
     why = []
     try:
@@ -979,14 +979,14 @@ def _check():
             why.append('the Access keys were not fetched')
     keys = copies.config_keys(user.readable_file(), (settings.KEY,))
     try:
-        root = pluginsource.load().export_dir
-    except pluginsource.RefreshError as e:
+        root = plugin_layout.load().export_dir
+    except plugin_layout.RefreshError as e:
         print('kit copies: cannot look: %s' % e)
         why.append('the kit copies could not be looked at')
     else:
-        report = copies.check(copies.find(root, pluginsource.current_folder(root),
-                                          pluginsource.installs()), keys,
-                              pluginsource.refresh_cmd())
+        report = copies.check(copies.find(root, plugin_layout.current_folder(root),
+                                          plugin_state.installs()), keys,
+                              plugin_layout.refresh_cmd())
         print('kit copies, checked against the keys %s:' % ', '.join(keys))
         for line in report.lines:
             print('  %s' % line)

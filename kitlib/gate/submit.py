@@ -98,7 +98,7 @@ import sys
 import time
 
 from kitlib import gate as G
-from kitlib import pluginsource
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.fs import atomic
 from kitlib.gate import pin
 from kitlib.gate import result, verdicts
@@ -285,7 +285,7 @@ def wait_line(branches, tips, root, kit=None):
     checkout no cleanup removes), or `root` itself when git cannot place it. Every checkout of the
     repository has the one result folder (kitlib.gate.result.result_dir), so any of them reads
     the same record."""
-    kit = kit or pluginsource.live_root()
+    kit = kit or plugin_layout.live_root()
     main = repo.main_checkout_toplevel(root) or root
     return 'SUBMITTED %s tip %s wait: python %s wait-result %s --tip %s --kind land -C %s' % (
         '+'.join(branches), ','.join(tips), _arg(os.path.join(kit, 'tools', 'gate.py')),
@@ -338,7 +338,7 @@ def again_line(tool, args, ids, kit=None):
     <kit>/tools/<tool> <args> --reviewed-by <id> ... --submit`, in the land permission rule's form
     (docs/allow-rules.md: --submit last, nothing after it). Forward slashes in the script's path,
     since the rules deny a backslash; an argument holding a space is double-quoted."""
-    kit = (kit or pluginsource.live_root()).replace('\\', '/').rstrip('/')
+    kit = (kit or plugin_layout.live_root()).replace('\\', '/').rstrip('/')
     words = list(args)
     for i in ids:
         words += [REVIEWED_BY, i]

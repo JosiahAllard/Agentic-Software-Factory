@@ -23,7 +23,7 @@ import os
 import subprocess
 
 from kitlib import platform
-from kitlib import pluginsource
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.host import registry
 from kitlib.hubclient.errors import ServeError
 from kitlib.launcher import window
@@ -98,7 +98,7 @@ def refusals(hub_py, python=None, isfile=os.path.isfile, run=None, environ=None)
         out.append('install it from the main kit checkout, not a worktree: the task would run a '
                    'hub.py that goes when the worktree does (%s)' % hub_py)
     elif os.path.isfile(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(hub_py))),
-                             pluginsource.MARKER)):
+                             plugin_layout.MARKER)):
         out.append('install it from the main kit checkout, not a plugin export folder: an export '
                    "never changes when a branch lands, so the hub's stale-code warning would never "
                    'fire. Run hub.py setup --autostart from the main checkout\'s tools/hub.py (%s)'

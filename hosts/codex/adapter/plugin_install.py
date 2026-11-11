@@ -37,7 +37,7 @@ A running Codex holds its cache, and `codex plugin add` then fails with os error
 codex_running() says so, or when an add fails that way (a name check can miss the desktop app),
 no add runs, the line is DEFERRED (or, for os error 5, a deferral line that keeps the tail of what
 Codex said, since something else, antivirus or a cache ACL, can deny it too) and the export root's
-pending flag (kitlib.pluginsource set_pending, label `codex`) holds that line; the hub's plugin job
+pending flag (kitlib.pluginsource.state set_pending, label `codex`) holds that line; the hub's plugin job
 retries the refresh while it is set, and the session start names it. Every apply clears the flag
 before it decides (plugin_copy.Step, and install itself), so any ending but a deferral in this run
 (current, installed, a FAILED line, a refusal, no Codex set up) leaves none; a marked session's
@@ -59,14 +59,14 @@ HOOKS_KEY = HOOKS_PLUGIN + '@' + MARKET
 HOOKS_DIR = ('hosts', 'codex', 'shell', 'hooks-plugin')
 MANIFEST = ('.codex-plugin', 'plugin.json')
 MARKETPLACE = ('.agents', 'plugins', 'marketplace.json')
-MARKER = '.pm-kit-export'            # kitlib.pluginsource.MARKER: Codex copies it into its cache
+MARKER = '.pm-kit-export'            # kitlib.pluginsource.layout.MARKER: Codex copies it into its cache
 INSTALL_TIMEOUT = 120                # seconds for `codex plugin add`
 _SHA12 = re.compile(r'^[0-9a-f]{12}$')
 _VERSION = re.compile(r'^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$')
 # A cache folder that is a version: digits first (1.0.0, 0.4.0-main.5566), so a stray folder (headers)
 # never makes the cache look stale.
 _VERSION_DIR = re.compile(r'^[0-9]+(\.[0-9]+)*([-+][0-9A-Za-z._+-]{0,60})?$')
-PENDING_LABEL = 'codex'              # the export root's pending flag (kitlib.pluginsource.set_pending)
+PENDING_LABEL = 'codex'              # the export root's pending flag (kitlib.pluginsource.state.set_pending)
 DEFERRED = 'codex: deferred: Codex is running; close it and run plugin_refresh.py --apply'
 _DENIED = '(os error 5)'             # what codex plugin add says when a running Codex holds the cache
 _SAID_TAIL = 200                     # characters of codex's own output a denied add keeps
@@ -83,7 +83,7 @@ class Refused(Exception):
 def read_config(home):
     """config.toml of the Codex home `home` as a dict. Missing when there is none; Refused when it
     is a link or cannot be read as TOML."""
-    from kitlib.pluginsource import _is_link
+    from kitlib.pluginsource.layout import _is_link
     config = os.path.join(os.path.realpath(home), 'config.toml')
     if os.path.lexists(config) and _is_link(config):
         raise Refused('%s is a link: never followed' % config)
@@ -216,7 +216,7 @@ def marketplace(export, out, apply=False):
     `export`) naming that folder, unless it already does; the dry run names the write. True when
     the file names the export afterwards (a dry run: whether it does now). A write that fails is a
     line and False, so nothing is installed from a marketplace naming another folder."""
-    from kitlib.pluginsource import _is_link
+    from kitlib.pluginsource.layout import _is_link
     root, folder = os.path.split(os.path.abspath(export))
     path = os.path.join(root, *MARKETPLACE)
     body = marketplace_body(folder)
@@ -291,13 +291,13 @@ def denied_line(key, said):
 def _pending(export, out, deferred, line=DEFERRED):
     """Set (deferred, holding `line`) or clear the export root's codex pending flag; one that cannot
     be written is a line."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import state as plugin_state
     root = os.path.dirname(os.path.abspath(export))
     try:
         if deferred:
-            pluginsource.set_pending(root, PENDING_LABEL, line)
+            plugin_state.set_pending(root, PENDING_LABEL, line)
         else:
-            pluginsource.clear_pending(root, PENDING_LABEL)
+            plugin_state.clear_pending(root, PENDING_LABEL)
     except OSError as e:
         out('codex: cannot %s the pending flag in %s: %s' % ('set' if deferred else 'clear', root, e))
 

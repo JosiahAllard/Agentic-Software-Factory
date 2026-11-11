@@ -37,7 +37,9 @@ ALLOWED = {
     'kitlib/machinesetup/extras.py':       3,
     'kitlib/machinesetup/plugin.py':       11,
     'kitlib/machinesetup/settings.py':     7,
-    'kitlib/pluginsource/__init__.py':     7,    # pluginsource wave
+    'kitlib/pluginsource/layout.py':       2,    # pluginsource wave
+    'kitlib/pluginsource/refresh.py':      4,
+    'kitlib/pluginsource/state.py':        1,
     'kitlib/pmwatch/__init__.py':          1,    # the usage line's codex account
     'kitlib/scrub/__init__.py':            1,    # a capitalised marker word the scrub allows
 }

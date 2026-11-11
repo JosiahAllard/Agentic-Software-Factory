@@ -385,7 +385,7 @@ the host as heavy.
 12. **Hook interpreter.** Done: hookrun.manifest_command and INTERPRETERS (python3 on Linux, run by
     /bin/sh; a tool event's line exits 2 when python3 fails or is missing, a start event's says
     the kit did not load), each host's `hooks.linux.json`, hosts.json platforms, the plugin export
-    (kitlib.pluginsource.platform_manifests), and hookrun.mcp_interpreter for the MCP servers
+    (kitlib.pluginsource.export.platform_manifests), and hookrun.mcp_interpreter for the MCP servers
     (`.claude-plugin/plugin.linux.json`, Codex's `mcp.linux.json`; tests/content/test_render.py
     ManifestTest). Open proof: the posix-only run of the lines (tests/hookrun/test_hook_linux.py) on a
     Linux machine.

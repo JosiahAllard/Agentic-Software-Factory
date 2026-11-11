@@ -45,25 +45,25 @@ def _safe(what, path):
 
 def derive(checkout, settings=None, toplevel=None):
     """The Target for `checkout` (any worktree of the repository): the current export folder of
-    `settings` (kitlib.pluginsource.load() when None) and the main checkout `toplevel` gives
+    `settings` (kitlib.pluginsource.layout.load() when None) and the main checkout `toplevel` gives
     (kitlib.git.repo.main_checkout_toplevel)."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout
     from kitlib.config.types import ConfigError
     if settings is None:
         try:
-            settings = pluginsource.load()
-        except (pluginsource.RefreshError, ConfigError) as e:
+            settings = plugin_layout.load()
+        except (plugin_layout.RefreshError, ConfigError) as e:
             raise AllowRulesError('the plugin settings: %s' % e)
     root = settings.export_dir
-    folder = pluginsource.current_folder(root)
+    folder = plugin_layout.current_folder(root)
     if not folder or not _FOLDER.match(folder):
         raise AllowRulesError('no current plugin export under %s (%s)' % (
             root, 'marketplace.json names %r, not an export folder' % folder if folder
             else 'no readable marketplace.json'))
     path = os.path.join(root, folder)
-    if pluginsource.read_marker(path) is None:
+    if plugin_layout.read_marker(path) is None:
         raise AllowRulesError('no current plugin export under %s (%s has no %s marker)'
-                              % (root, folder, pluginsource.MARKER))
+                              % (root, folder, plugin_layout.MARKER))
     kit = _slashes(path)
     _safe('the plugin export path', kit)
     if toplevel is None:
@@ -114,9 +114,9 @@ def named_exports(path, root):
 def export_state(root, folder, current):
     """CURRENT for the folder marketplace.json names, GONE when `root`/`folder` holds no export
     marker, else NOT_CURRENT."""
-    from kitlib import pluginsource
+    from kitlib.pluginsource import layout as plugin_layout
     if folder == current:
         return CURRENT
-    if pluginsource.read_marker(os.path.join(root, folder)) is None:
+    if plugin_layout.read_marker(os.path.join(root, folder)) is None:
         return GONE
     return NOT_CURRENT

@@ -27,9 +27,9 @@ account folder's install from it (docs/plugin-source.md).
 
 Every mode first prints a WARNING line for each account folder's known_marketplaces.json
 installLocation, and the managed settings file's extraKnownMarketplaces path, that is not the
-export root (kitlib.pluginsource marketplace_mismatches); it fixes none of them.
+export root (kitlib.pluginsource.state marketplace_mismatches); it fixes none of them.
 
-A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.pluginsource.refresh, prints
+A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.pluginsource.refresh.refresh, prints
 and exits. Exit codes: 0 done, or nothing to do; 1 refused, or a folder's claude command failed; 2 usage.
 """
 import argparse
@@ -38,7 +38,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kitlib import pluginsource                                      # noqa: E402
+from kitlib.pluginsource import (
+    layout as plugin_layout, state as plugin_state, prune as plugin_prune,
+    refresh as plugin_refresh)
 from kitlib.config.types import ConfigError                          # noqa: E402
 from kitlib.launcher import accounts                                # noqa: E402
 
@@ -67,16 +69,16 @@ def main(argv=None):
         print(line, flush=True)
 
     if a.kit is None:
-        a.kit, why = pluginsource.default_kit(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        a.kit, why = plugin_layout.default_kit(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         if why:
             out('REFUSED: %s' % why)
             return 1
     try:
-        s = pluginsource.load(a.home, kit=os.path.abspath(a.kit))
-    except (ConfigError, pluginsource.RefreshError) as e:
+        s = plugin_layout.load(a.home, kit=os.path.abspath(a.kit))
+    except (ConfigError, plugin_layout.RefreshError) as e:
         out('REFUSED: %s' % e)
         return 1
-    folders, bad = pluginsource.pick_folders(accounts.account_folders(a.home), a.folder)
+    folders, bad = plugin_state.pick_folders(accounts.account_folders(a.home), a.folder)
     if bad:
         out('REFUSED: not an account folder on this machine: %s' % ', '.join(bad))
         return 1
@@ -85,10 +87,10 @@ def main(argv=None):
         out('WARNING: %s' % line)
 
     def in_use():
-        return pluginsource.read_in_use(s.export_dir)
+        return plugin_prune.read_in_use(s.export_dir)
     if a.prune_caches:
         return prune_caches(s, folders, in_use, a.apply, out)
-    return pluginsource.refresh(os.path.abspath(a.kit), s, folders, out, apply=a.apply,
+    return plugin_refresh.refresh(os.path.abspath(a.kit), s, folders, out, apply=a.apply,
                                 migrate=a.migrate, runner=accounts.Runner(a.home), in_use=in_use,
                                 copies=[] if a.migrate else plugin_copies(a.home, out))
 
@@ -106,35 +108,35 @@ def plugin_copies(home, out):
 
 
 def marketplace_warnings(export_dir, folders):
-    """pluginsource.marketplace_mismatches over `folders` and the default host's managed settings
+    """pluginsource.state.marketplace_mismatches over `folders` and the default host's managed settings
     file (kitlib.machinesetup.extras Host.managed_path). Reports only; a check that fails is one
     line, never an exit."""
     try:
         from kitlib.machinesetup.extras import Host
-        return pluginsource.marketplace_mismatches(export_dir, folders, managed=Host().managed_path())
+        return plugin_state.marketplace_mismatches(export_dir, folders, managed=Host().managed_path())
     except Exception as e:                       # never stop a refresh over a report
         return ['could not check the pm-kit marketplace paths: %s: %s' % (type(e).__name__, e)]
 
 
 def prune_caches(s, folders, in_use, apply, out):
-    """--prune-caches: the rows of pluginsource.prune_caches, then the counts. With --apply it
+    """--prune-caches: the rows of pluginsource.prune.prune_caches, then the counts. With --apply it
     holds the refresh lock, so no refresh installs while it removes."""
     if not apply:
         out('DRY RUN (nothing removed; --apply removes the versions marked "would remove"):')
-        return _cache_rows(pluginsource.prune_caches(folders, in_use), out)
+        return _cache_rows(plugin_prune.prune_caches(folders, in_use), out)
     try:
         os.makedirs(s.export_dir, exist_ok=True)
     except OSError as e:
         out('REFUSED: cannot make the export root %s: %s' % (s.export_dir, e))
         return 1
-    lock = pluginsource.RefreshLock(s.export_dir)
+    lock = plugin_refresh.RefreshLock(s.export_dir)
     try:
         lock.acquire()
-    except pluginsource.Busy as e:
+    except plugin_refresh.Busy as e:
         out('REFUSED: %s' % e)
         return 1
     try:
-        return _cache_rows(pluginsource.prune_caches(folders, in_use, apply=True), out)
+        return _cache_rows(plugin_prune.prune_caches(folders, in_use, apply=True), out)
     finally:
         lock.release()
 

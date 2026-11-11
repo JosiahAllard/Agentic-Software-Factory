@@ -57,11 +57,11 @@ KIT_TOOLS = os.path.join(KIT_ROOT, 'tools')     # the gate's own runs: an export
 
 
 def kit_live():
-    """The kit checkout a printed command names (kitlib.pluginsource.live_root): when this code
+    """The kit checkout a printed command names (kitlib.pluginsource.layout.live_root): when this code
     runs from a pinned export of pushed main (kitlib.gate.pin), the checkout that started it,
     since a later prune may remove the export."""
-    from kitlib import pluginsource
-    return pluginsource.live_root(KIT_ROOT)
+    from kitlib.pluginsource import layout as plugin_layout
+    return plugin_layout.live_root(KIT_ROOT)
 
 # toolchain: the probe argvs of the step's "toolchain" (kitlib.gate.reuse), placeholders filled
 Step = collections.namedtuple('Step', 'name cmd check cwd passes fails ok_exits cont warn requires '

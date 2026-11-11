@@ -9,7 +9,7 @@ one's kitlib/config/user.py as text: it parses the module-level SCHEMA dict and 
 
   find(root, current, installs)     the copies: every export folder <root>/<sha12>, every pin
                                     <root>/pins/<sha12> (kitlib.gate.pin) and each account's
-                                    install (`installs`, from kitlib.pluginsource.installs), once
+                                    install (`installs`, from kitlib.pluginsource.state.installs), once
                                     each
   check(found, keys, refresh)       one line per copy, and whether every copy in use knows `keys`
 
@@ -160,7 +160,7 @@ def _dirs(top):
 def find(root, current=None, installs=()):
     """The kit copies (Copy: path, role, in_use) under the export root `root` and in `installs`,
     each folder once with its roles joined by ', '. `current`: the export folder name the
-    marketplace names (kitlib.pluginsource.current_folder), or None. `installs`: [(install path,
+    marketplace names (kitlib.pluginsource.layout.current_folder), or None. `installs`: [(install path,
     account folder)], each an account's install (role INSTALL), whether or not the path exists."""
     roles = collections.OrderedDict()           # normcase path -> [path, [roles], in_use]
 

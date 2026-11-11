@@ -9,7 +9,8 @@ import threading
 import unittest
 from unittest import mock
 
-from kitlib import pluginsource as P
+from kitlib.pluginsource import (
+    layout as plugin_layout, state as plugin_state, refresh as plugin_refresh)
 from kitlib.launcher import accounts
 from kitlib.hubsite import jobs, plugin_job
 from tests.pluginsource import Kit
@@ -39,11 +40,11 @@ class Child(object):
         self.entered.set()
         self.release.wait(WAIT_S)
         if self.code == 0:
-            state = P.read_state(self.case.k.root) or {'folders': {}}
+            state = plugin_state.read_state(self.case.k.root) or {'folders': {}}
             state['sha'] = self.case.main()
             for f in self.case.folders:
                 state['folders'].setdefault(f, {'migrated': True})['rc'] = 0
-            P.write_state(self.case.k.root, state)
+            plugin_state.write_state(self.case.k.root, state)
         return self.code, list(self.lines)
 
 
@@ -75,7 +76,7 @@ class JobCase(unittest.TestCase):
         self.child = Child(self)
 
     def settings(self, kit):
-        return P.Settings(self.k.root, self.auto, 'origin')
+        return plugin_layout.Settings(self.k.root, self.auto, 'origin')
 
     def job(self, **kw):
         kw.setdefault('kit', self.k.kit)
@@ -100,7 +101,7 @@ class PluginJobTest(JobCase):
         self.assertEqual(self.child.calls, [(
             [sys.executable, os.path.join(self.k.kit, 'tools', 'plugin_refresh.py'), '--apply'],
             self.k.kit)])
-        with open(os.path.join(self.k.root, P.LOGFILE), encoding='utf-8') as fh:
+        with open(os.path.join(self.k.root, plugin_refresh.LOGFILE), encoding='utf-8') as fh:
             log = fh.read()
         self.assertIn('hub plugin job ', log)
         self.assertIn('done\nhub plugin job: exit 0\n', log)
@@ -108,11 +109,11 @@ class PluginJobTest(JobCase):
         self.assertEqual(len(self.child.calls), 1, 'current: no second refresh')
 
     def test_the_default_folders_are_those_of_the_home_the_child_gets(self):
-        with mock.patch.object(plugin_job.pluginsource, 'account_folders',
+        with mock.patch.object(plugin_job.plugin_state, 'account_folders',
                                return_value=['F']) as af:
             self.assertEqual(plugin_job.PluginJob(home='H').folders(), ['F'])
         af.assert_called_once_with('H')
-        self.assertEqual(P.account_folders(self.k.home),
+        self.assertEqual(plugin_state.account_folders(self.k.home),
                          accounts.account_folders(self.k.home))
 
     def test_a_home_is_passed_to_the_child(self):
@@ -125,7 +126,7 @@ class PluginJobTest(JobCase):
         with self.assertRaises(plugin_job.RefreshFailed) as got:
             self.job()(ctx())
         self.assertIn('exited 1: FAILED: claude plugin update in x', str(got.exception))
-        with open(os.path.join(self.k.root, P.LOGFILE), encoding='utf-8') as fh:
+        with open(os.path.join(self.k.root, plugin_refresh.LOGFILE), encoding='utf-8') as fh:
             self.assertIn('hub plugin job: exit 1', fh.read())
 
     def test_the_default_child_is_windowless_utf8_and_returns_its_code_and_lines(self):
@@ -177,7 +178,7 @@ class PluginJobTest(JobCase):
 
     def test_a_refresh_held_by_another_process_is_not_started(self):
         self.k.seed_migrated(self.folders)
-        held = P.RefreshLock(self.k.root)
+        held = plugin_refresh.RefreshLock(self.k.root)
         held.acquire()
         self.addCleanup(held.release)
         got = self.job()(ctx())
@@ -217,16 +218,16 @@ class PluginJobTest(JobCase):
         job = self.job()
         self.assertIn('no export yet', self.note(job(ctx())))
         os.makedirs(self.k.root, exist_ok=True)
-        P.write_state(self.k.root, {'folders': {}})
+        plugin_state.write_state(self.k.root, {'folders': {}})
         self.assertIn('not migrated in %s' % self.folders[0], self.note(job(ctx())))
         self.assertEqual(self.child.calls, [])
 
     def test_a_folder_whose_last_refresh_failed_is_refreshed_again(self):
         self.k.seed_migrated(self.folders)
         self.job()(ctx())
-        state = P.read_state(self.k.root)
+        state = plugin_state.read_state(self.k.root)
         state['folders'][self.folders[0]]['rc'] = 1
-        P.write_state(self.k.root, state)
+        plugin_state.write_state(self.k.root, state)
         self.assertEqual(self.job()(ctx()), 'refreshed to %s' % self.main()[:12])
         self.assertEqual(len(self.child.calls), 2)
 
@@ -253,7 +254,7 @@ class PluginJobTest(JobCase):
         job = self.job()
         job(ctx())
         line = 'codex: deferred: Codex is running; close it and run plugin_refresh.py --apply'
-        P.set_pending(self.k.root, 'codex', line)
+        plugin_state.set_pending(self.k.root, 'codex', line)
         self.assertEqual(job(ctx()), 'refreshed to %s; %s' % (self.main()[:12], line))
         self.assertEqual(len(self.child.calls), 2, 'a pending copy is refreshed again')
         self.t[0] += plugin_job.EVERY_S
@@ -265,7 +266,7 @@ class PluginJobTest(JobCase):
         real = self.child.__call__
 
         def closed(argv, cwd):                  # Codex closed: the retry's add goes through
-            P.clear_pending(self.k.root, 'codex')
+            plugin_state.clear_pending(self.k.root, 'codex')
             return real(argv, cwd)
         job.child = closed
         self.assertEqual(job(ctx()), 'refreshed to %s' % self.main()[:12])
@@ -275,13 +276,13 @@ class PluginJobTest(JobCase):
     def test_the_session_start_names_a_pending_codex_copy_until_it_clears(self):
         self.k.seed_migrated(self.folders)
         self.job()(ctx())
-        self.assertEqual(P.current_lines(self.k.kit, self.settings(None), folders=self.folders, managed=None), [])
+        self.assertEqual(plugin_state.current_lines(self.k.kit, self.settings(None), folders=self.folders, managed=None), [])
         line = 'codex: deferred: Codex is running; close it and run plugin_refresh.py --apply'
-        P.set_pending(self.k.root, 'codex', line)
-        self.assertEqual(P.current_lines(self.k.kit, self.settings(None), folders=self.folders, managed=None),
+        plugin_state.set_pending(self.k.root, 'codex', line)
+        self.assertEqual(plugin_state.current_lines(self.k.kit, self.settings(None), folders=self.folders, managed=None),
                          ['pm-kit plugin codex copy not refreshed: %s' % line])
-        P.clear_pending(self.k.root, 'codex')
-        self.assertEqual(P.current_lines(self.k.kit, self.settings(None), folders=self.folders, managed=None), [])
+        plugin_state.clear_pending(self.k.root, 'codex')
+        self.assertEqual(plugin_state.current_lines(self.k.kit, self.settings(None), folders=self.folders, managed=None), [])
 
     def test_one_real_failure_counts_once_in_the_runner(self):
         self.k.seed_migrated(self.folders)

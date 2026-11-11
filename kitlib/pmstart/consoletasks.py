@@ -45,13 +45,13 @@ def _norm(path):
 
 def kit_roots(kit=KIT, environ=None):
     """The folders a kit task's action may name, normalised: `kit`; the live kit checkout when
-    `kit` is an export (kitlib.pluginsource.live_root: KIT_LIVE_ROOT, else the main checkout its
+    `kit` is an export (kitlib.pluginsource.layout.live_root: KIT_LIVE_ROOT, else the main checkout its
     marker records when that holds kit.json and a tools folder); and, when `kit`
-    is a plugin export (it holds pluginsource.MARKER), the folder that holds it, so a task line
+    is a plugin export (it holds pluginsource.layout.MARKER), the folder that holds it, so a task line
     naming an export of another version is the kit's too."""
-    from kitlib import pluginsource
-    roots = {_norm(kit), _norm(pluginsource.live_root(kit, environ))}
-    if os.path.isfile(os.path.join(kit, pluginsource.MARKER)):
+    from kitlib.pluginsource import layout as plugin_layout
+    roots = {_norm(kit), _norm(plugin_layout.live_root(kit, environ))}
+    if os.path.isfile(os.path.join(kit, plugin_layout.MARKER)):
         roots.add(_norm(os.path.dirname(os.path.abspath(kit))))
     return roots
 

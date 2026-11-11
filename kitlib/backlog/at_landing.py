@@ -35,7 +35,7 @@ ancestry_refusal moves no ref: it fetches the store's objects with an empty --re
 import os
 
 import kitlib.config as kconfig
-from kitlib import pluginsource
+from kitlib.pluginsource import layout as plugin_layout
 from kitlib.config import pmdata
 from kitlib.git import cmd, refs
 from kitlib.git import repo as gitrepo
@@ -62,9 +62,9 @@ def _one_line(text):
 
 def backlog_py():
     """The kit's tools/backlog.py, in the live kit checkout: KIT_LIVE_ROOT when this code runs
-    from a pinned export of pushed main (kitlib.pluginsource.live_root), which a later prune may
+    from a pinned export of pushed main (kitlib.pluginsource.layout.live_root), which a later prune may
     remove, so a printed command never names it."""
-    return os.path.join(pluginsource.live_root(KIT_ROOT), 'tools', 'backlog.py')
+    return os.path.join(plugin_layout.live_root(KIT_ROOT), 'tools', 'backlog.py')
 
 
 def backlog_command(root, *args):

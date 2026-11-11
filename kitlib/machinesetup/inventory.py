@@ -17,7 +17,8 @@ lines(result) is the plain text; the caller prints it. Nothing here prints or ex
 import os
 import types
 
-from kitlib import pluginsource as ps
+from kitlib.pluginsource import (
+    layout as plugin_layout, state as plugin_state, refresh as plugin_refresh)
 from kitlib.launcher import accounts as laccounts
 from kitlib.launcher import settings as lsettings
 
@@ -108,27 +109,27 @@ def _plugin(folder, state, state_why, export_dir):
     """{'migrated', 'refreshed', 'problems': [text]} for one folder."""
     if state is None:
         return {'migrated': False, 'refreshed': False, 'problems': ['pm-kit plugin state unknown; see the note']}
-    migrated = ps.migrated(state, folder)
-    rec = ps._record(state, folder)
+    migrated = plugin_state.migrated(state, folder)
+    rec = plugin_state._record(state, folder)
     refreshed = migrated and rec.get('rc') == 0
     problems = []
     if not migrated:
-        problems.append('pm-kit plugin not migrated to the export: %s' % ps.migrate_cmd(folder))
+        problems.append('pm-kit plugin not migrated to the export: %s' % plugin_refresh.migrate_cmd(folder))
     elif not refreshed:
-        problems.append('pm-kit plugin not refreshed to the current export: %s' % ps.refresh_cmd())
+        problems.append('pm-kit plugin not refreshed to the current export: %s' % plugin_layout.refresh_cmd())
     if migrated:
-        problems.extend(ps.marketplace_mismatches(export_dir, [folder]))
+        problems.extend(plugin_state.marketplace_mismatches(export_dir, [folder]))
     return {'migrated': migrated, 'refreshed': refreshed, 'problems': problems}
 
 
 def inventory(home, kit, export_dir=None):
     """The drift of each account folder; see the module doc. `export_dir` defaults to the machine's
-    plugin export (kitlib.pluginsource load)."""
+    plugin export (kitlib.pluginsource.layout load)."""
     home = os.path.abspath(home)
     notes = []
     if export_dir is None:
         try:
-            export_dir = ps.load(home, kit=kit).export_dir
+            export_dir = plugin_layout.load(home, kit=kit).export_dir
         except Exception as e:
             notes.append('the plugin export cannot be told (%s)' % e)
     state, state_why = None, None
@@ -136,10 +137,10 @@ def inventory(home, kit, export_dir=None):
         state_why = 'no plugin export known'
     else:
         try:
-            state = ps.read_state(export_dir)
+            state = plugin_state.read_state(export_dir)
             if state is None:
-                state_why = 'pm-kit plugin: no export state at %s yet: %s' % (export_dir, ps.refresh_cmd(True))
-        except ps.StateError as e:
+                state_why = 'pm-kit plugin: no export state at %s yet: %s' % (export_dir, plugin_layout.refresh_cmd(True))
+        except plugin_layout.StateError as e:
             state_why = 'pm-kit plugin: %s' % e
     if state is None:
         notes.append(state_why)
@@ -151,7 +152,7 @@ def inventory(home, kit, export_dir=None):
     if why:
         notes.append(why)
     folders = []
-    for f in ps.account_folders(home):
+    for f in plugin_state.account_folders(home):
         label = labels.get(norm(f))
         unlisted = ls is not None and not label and os.path.basename(f) != lsettings.DEFAULT_FOLDER
         if not label:

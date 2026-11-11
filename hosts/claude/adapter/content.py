@@ -239,14 +239,14 @@ class ClaudeContent:
 
 def manifest_rel(platform):
     """The plugin manifest for `platform`: MANIFEST_REL on Windows, the one Claude Code reads;
-    beside it `plugin.<platform>.json` elsewhere, which kitlib.pluginsource.export writes in its
+    beside it `plugin.<platform>.json` elsewhere, which kitlib.pluginsource.export.export writes in its
     place."""
     return MANIFEST_REL if platform == 'windows' else MANIFEST_REL[:-len('.json')] + '.%s.json' % platform
 
 
 def hooks_rel(platform):
     """The hooks file for `platform`: HOOKS_REL on Windows, the one plugin.json names; beside it
-    `hooks.<platform>.json` elsewhere, which kitlib.pluginsource.export writes in its place."""
+    `hooks.<platform>.json` elsewhere, which kitlib.pluginsource.export.export writes in its place."""
     return HOOKS_REL if platform == 'windows' else HOOKS_REL[:-len('.json')] + '.%s.json' % platform
 
 

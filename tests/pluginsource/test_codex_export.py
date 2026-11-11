@@ -14,7 +14,9 @@ from unittest import mock
 
 from hosts.codex.adapter import plugin_copy as codex
 from hosts.codex.adapter import plugin_install as pi
-from kitlib import pluginsource as P
+from kitlib.pluginsource import (
+    layout as plugin_layout, export as plugin_export, state as plugin_state, prune as plugin_prune,
+    refresh as plugin_refresh)
 from kitlib.launcher import accounts
 from tests import gitfixture
 from tests.pluginsource import FakeProc, Kit
@@ -41,7 +43,7 @@ def read(path):
 class Base(unittest.TestCase):
     def setUp(self):
         self.k = Kit(self)
-        self.s = P.Settings(self.k.root, False, 'origin')
+        self.s = plugin_layout.Settings(self.k.root, False, 'origin')
         self.lines = []
 
     def push(self, files):
@@ -50,7 +52,7 @@ class Base(unittest.TestCase):
             r.write(rel, text)
         r.commit('codex files', *files)
         r.git('push', '-q', 'origin', 'main')
-        return P.remote_main(self.k.kit, 'origin')
+        return plugin_export.remote_main(self.k.kit, 'origin')
 
     def text(self):
         return '\n'.join(self.lines)
@@ -59,7 +61,7 @@ class Base(unittest.TestCase):
 class ExportTest(Base):
     def test_the_codex_manifest_is_placed_at_the_root_and_stamped_like_claudes(self):
         sha = self.push({'hosts/codex/shell/plugin.json': CODEX_MANIFEST})
-        folder, version = P.export(self.k.kit, sha, self.k.root, NOW)
+        folder, version = plugin_export.export(self.k.kit, sha, self.k.root, NOW)
         placed = read(os.path.join(folder, '.codex-plugin', 'plugin.json'))
         self.assertEqual(placed, CODEX_MANIFEST.replace('"0.1.0"', '"%s"' % version))
         with open(os.path.join(folder, '.claude-plugin', 'plugin.json'), encoding='utf-8-sig') as fh:
@@ -69,15 +71,15 @@ class ExportTest(Base):
         self.assertEqual(pi.manifest_version(folder), version)
 
     def test_a_tree_without_the_codex_manifest_exports_without_one(self):
-        sha = P.remote_main(self.k.kit, 'origin')
-        folder, _v = P.export(self.k.kit, sha, self.k.root, NOW)
+        sha = plugin_export.remote_main(self.k.kit, 'origin')
+        folder, _v = plugin_export.export(self.k.kit, sha, self.k.root, NOW)
         self.assertFalse(os.path.exists(os.path.join(folder, '.codex-plugin')))
         self.assertIsNone(pi.manifest_version(folder))
 
     def test_a_codex_manifest_without_one_version_refuses_the_export(self):
         sha = self.push({'hosts/codex/shell/plugin.json': '{"name": "pm-kit", "version": "1", "x": {"version": "2"}}\n'})
-        with self.assertRaises(P.RefreshError) as cm:
-            P.export(self.k.kit, sha, self.k.root, NOW)
+        with self.assertRaises(plugin_layout.RefreshError) as cm:
+            plugin_export.export(self.k.kit, sha, self.k.root, NOW)
         self.assertIn('.codex-plugin/plugin.json holds 2 "version" keys', str(cm.exception))
         self.assertFalse(os.path.exists(os.path.join(self.k.root, sha[:12])))
 
@@ -87,7 +89,7 @@ class HostManifestsTest(unittest.TestCase):
         oids = {'hosts/codex/shell/plugin.json': 'c1', 'hosts/claude/shell/plugin.json': 'k1',
                 '.claude-plugin/plugin.json': 'k0', 'hosts/codex/shell/mcp.json': 'm1',
                 'hosts/codex/shell/sub/plugin.json': 's1'}
-        self.assertEqual(P.host_manifests(oids), {'.codex-plugin/plugin.json': 'c1'})
+        self.assertEqual(plugin_export.host_manifests(oids), {'.codex-plugin/plugin.json': 'c1'})
 
 
 class FakeStep(object):
@@ -109,54 +111,54 @@ class InUseTest(Base):
     def make(self, name, at):
         folder = os.path.join(self.k.root, name)
         os.makedirs(folder)
-        with open(os.path.join(folder, P.MARKER), 'w', encoding='utf-8') as fh:
+        with open(os.path.join(folder, plugin_layout.MARKER), 'w', encoding='utf-8') as fh:
             json.dump({'sha': name + '0' * 28, 'exported_at': at}, fh)
 
     def exports(self):
         names = ['%012x' % i for i in range(1, 6)]
         for i, n in enumerate(names):
             self.make(n, '2026-0%d-01T00:00:00' % (i + 1))
-        P.write_marketplace(self.k.root, names[-1])
+        plugin_export.write_marketplace(self.k.root, names[-1])
         return names
 
     def whole(self):
-        return P.InUse(['c:\\x\\python.exe'], set(), [])
+        return plugin_prune.InUse(['c:\\x\\python.exe'], set(), [])
 
     def test_an_export_a_host_copy_names_is_kept(self):
         names = self.exports()
-        removed, failed = P.prune(self.k.root, now=NOW, out=self.lines.append,
-                                  in_use=P.with_hosts(self.whole, [FakeStep([names[0]])]))
+        removed, failed = plugin_prune.prune(self.k.root, now=NOW, out=self.lines.append,
+                                  in_use=plugin_prune.with_hosts(self.whole, [FakeStep([names[0]])]))
         self.assertEqual((failed, [os.path.basename(r) for r in removed]), ([], [names[1]]))
         self.assertIn('host plugin copy names it: %s' % names[0], self.text())
 
     def test_without_the_host_the_same_export_goes(self):
         names = self.exports()
-        removed, _f = P.prune(self.k.root, now=NOW, in_use=P.with_hosts(self.whole, [lambda f, o, a: None]))
+        removed, _f = plugin_prune.prune(self.k.root, now=NOW, in_use=plugin_prune.with_hosts(self.whole, [lambda f, o, a: None]))
         self.assertEqual(sorted(os.path.basename(r) for r in removed), names[:2])
 
     def test_a_host_read_that_fails_keeps_every_young_export(self):
         names = self.exports()
-        reader = P.with_hosts(self.whole, [FakeStep(fail=OSError('denied'))])
+        reader = plugin_prune.with_hosts(self.whole, [FakeStep(fail=OSError('denied'))])
         u = reader()
         self.assertEqual(u.errors, ['the fakehost plugin copy could not be read (OSError: denied)'])
         march = datetime.datetime(2026, 3, 5)       # the second export was replaced 4 days before
-        removed, _f = P.prune(self.k.root, now=march, out=self.lines.append, in_use=reader)
+        removed, _f = plugin_prune.prune(self.k.root, now=march, out=self.lines.append, in_use=reader)
         self.assertEqual([os.path.basename(r) for r in removed], [names[0]])
         self.assertIn('could not be read whole', self.text())
         self.make('%012x' % 9, '2026-01-15T00:00:00')
-        removed, _f = P.prune(self.k.root, now=march, in_use=P.with_hosts(self.whole, [FakeStep()]))
+        removed, _f = plugin_prune.prune(self.k.root, now=march, in_use=plugin_prune.with_hosts(self.whole, [FakeStep()]))
         self.assertEqual(sorted(os.path.basename(r) for r in removed), ['%012x' % 2, '%012x' % 9])
 
     def test_no_base_reader_still_reads_the_host_and_counts_as_partial(self):
-        u = P.with_hosts(None, [FakeStep(['abcdef012345', 'not-a-sha'])])()
+        u = plugin_prune.with_hosts(None, [FakeStep(['abcdef012345', 'not-a-sha'])])()
         self.assertEqual(u.named, {'abcdef012345'})
         self.assertTrue(u.errors)
-        self.assertIsNone(P.with_hosts(None, [lambda f, o, a: None]))
+        self.assertIsNone(plugin_prune.with_hosts(None, [lambda f, o, a: None]))
 
     def test_a_base_reader_that_raises_is_an_error_not_a_lost_host(self):
         def broken():
             raise RuntimeError('boom')
-        u = P.with_hosts(broken, [FakeStep(['abcdef012345'])])()
+        u = plugin_prune.with_hosts(broken, [FakeStep(['abcdef012345'])])()
         self.assertEqual(u.named, {'abcdef012345'})
         self.assertEqual(u.errors, ['RuntimeError: boom'])
 
@@ -181,7 +183,7 @@ class InstallCase(unittest.TestCase):
         self.stub = os.path.join(self.export, *pi.HOOKS_DIR)
         for rel, text in STUB.items():
             write(os.path.join(self.stub, *rel.split('/')), text)
-        write(os.path.join(self.export, P.MARKER), '{"sha": "%s"}\n' % ('b' * 40))
+        write(os.path.join(self.export, plugin_layout.MARKER), '{"sha": "%s"}\n' % ('b' * 40))
         self.exe = os.path.join(self.base, 'bin', 'codex.exe')
         write(self.exe, 'not a program\n')
         self.env = {'PM_KIT_CODEX_EXE': self.exe, 'PATH': ''}
@@ -200,7 +202,7 @@ class InstallCase(unittest.TestCase):
 
     def cache(self, version, sha='a' * 40):
         folder = os.path.join(self.home, 'plugins', 'cache', 'pm-kit', 'pm-kit', version)
-        write(os.path.join(folder, P.MARKER), '{"sha": "%s"}\n' % sha)
+        write(os.path.join(folder, plugin_layout.MARKER), '{"sha": "%s"}\n' % sha)
         return folder
 
     def hooks_cache(self, files=None, named=True):
@@ -384,7 +386,7 @@ class DeferTest(InstallCase):
         self.assertEqual(self.calls, [])
         self.assertIn('codex: deferred: Codex is running; close it and run plugin_refresh.py --apply', self.lines)
         self.assertNotIn('FAILED', self.text())
-        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+        self.assertEqual(plugin_state.pending(self.root), {'codex': pi.DEFERRED})
 
     def test_os_error_5_from_the_add_is_deferred_not_failed_and_sets_the_flag(self):
         self.cache('1.0.0-main.1')
@@ -399,13 +401,13 @@ class DeferTest(InstallCase):
                 'else holding its cache): Error: failed to back up plugin cache entry: Access is denied. (os error 5); '
                 'close Codex, or fix the cause, and run plugin_refresh.py --apply')
         self.assertIn(line, self.lines)
-        self.assertEqual(P.pending(self.root), {'codex': line})
+        self.assertEqual(plugin_state.pending(self.root), {'codex': line})
 
     def test_os_error_5_keeps_the_tail_of_what_codex_said_on_one_line_and_never_claims_codex_runs(self):
         self.cache('1.0.0-main.1')
         said = ('x' * 500 + '\nline two\r\n' + self.DENIED.decode()).encode()
         self.install(run=lambda argv, env: Done(1, said, b''))
-        flag = P.pending(self.root)['codex']
+        flag = plugin_state.pending(self.root)['codex']
         self.assertNotIn('Codex is running', flag)
         self.assertIn('line two Error: failed to back up plugin cache entry: Access is denied. (os error 5);', flag)
         self.assertNotIn('x' * 200, flag)                         # the tail only
@@ -413,17 +415,17 @@ class DeferTest(InstallCase):
 
     def test_a_failed_add_after_a_deferral_leaves_no_stale_flag(self):
         self.cache('1.0.0-main.1')
-        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        plugin_state.set_pending(self.root, 'codex', pi.DEFERRED)
         self.install(run=self.installs(rc=1))
         self.assertIn('codex: FAILED: codex plugin add pm-kit@pm-kit exited 1', self.text())
-        self.assertEqual(P.pending(self.root), {})
+        self.assertEqual(plugin_state.pending(self.root), {})
 
     def test_a_refused_install_after_a_deferral_leaves_no_stale_flag(self):
-        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        plugin_state.set_pending(self.root, 'codex', pi.DEFERRED)
         self.config(os.path.join(self.base, 'elsewhere'))
         self.install()
         self.assertIn('codex: refused, nothing installed', self.text())
-        self.assertEqual(P.pending(self.root), {})
+        self.assertEqual(plugin_state.pending(self.root), {})
 
     def test_the_first_add_through_then_the_hooks_add_deferred_sets_the_flag(self):
         self.cache('1.0.0-main.1')
@@ -436,21 +438,21 @@ class DeferTest(InstallCase):
         self.assertEqual(self.adds(), ['pm-kit@pm-kit'])
         self.assertIn('codex: installed pm-kit 1.0.0-main.2', self.text())
         self.assertEqual(self.lines[-1], pi.DEFERRED)
-        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+        self.assertEqual(plugin_state.pending(self.root), {'codex': pi.DEFERRED})
 
     def test_codex_stopped_runs_the_adds_and_clears_the_flag(self):
         self.cache('1.0.0-main.1')
-        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        plugin_state.set_pending(self.root, 'codex', pi.DEFERRED)
         self.install(running=lambda: False)
         self.assertEqual(self.adds(), ['pm-kit@pm-kit', 'pm-kit-hooks@pm-kit'])
         self.assertNotIn(pi.DEFERRED, self.lines)
-        self.assertEqual(P.pending(self.root), {})
+        self.assertEqual(plugin_state.pending(self.root), {})
 
     def test_a_dry_run_never_checks_for_codex_nor_touches_the_flag(self):
         self.cache('1.0.0-main.1')
-        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        plugin_state.set_pending(self.root, 'codex', pi.DEFERRED)
         self.install(apply=False, running=lambda: self.fail('a dry run checked for Codex'))
-        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+        self.assertEqual(plugin_state.pending(self.root), {'codex': pi.DEFERRED})
 
     def test_a_running_codex_is_a_process_named_codex_exe_and_no_other(self):
         running = self.real_running
@@ -486,7 +488,7 @@ class CacheInUseTest(InstallCase):
 
     def test_a_marker_that_cannot_be_read_is_an_error(self):
         folder = self.cache('1.0.0-main.1')
-        write(os.path.join(folder, P.MARKER), '{not json')
+        write(os.path.join(folder, plugin_layout.MARKER), '{not json')
         with self.assertRaises(OSError):
             pi.in_use(self.home)
 
@@ -537,29 +539,29 @@ class StepTest(InstallCase):
         self.assertFalse(os.path.exists(os.path.join(self.home, 'plugins')))
 
     def test_a_marked_session_leaves_a_deferral_as_it_is(self):
-        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        plugin_state.set_pending(self.root, 'codex', pi.DEFERRED)
         codex.Step(environ=dict(self.env, CODEX_HOME=self.home, PM_KIT_ROLE='pm'))(self.export, self.lines.append, True)
-        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+        self.assertEqual(plugin_state.pending(self.root), {'codex': pi.DEFERRED})
 
     def test_no_codex_config_after_a_deferral_clears_the_flag(self):
-        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        plugin_state.set_pending(self.root, 'codex', pi.DEFERRED)
         os.remove(os.path.join(self.home, 'config.toml'))
         self.step(apply=True)
         self.assertIn('nothing to refresh', self.text())
-        self.assertEqual(P.pending(self.root), {})
+        self.assertEqual(plugin_state.pending(self.root), {})
 
     def test_no_pm_kit_marketplace_after_a_deferral_clears_the_flag(self):
-        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        plugin_state.set_pending(self.root, 'codex', pi.DEFERRED)
         write(os.path.join(self.home, 'config.toml'), "model = 'x'\n")
         self.step(apply=True)
         self.assertIn('config.toml names no pm-kit marketplace', self.text())
-        self.assertEqual(P.pending(self.root), {})
+        self.assertEqual(plugin_state.pending(self.root), {})
 
     def test_a_dry_run_step_leaves_the_flag(self):
-        P.set_pending(self.root, 'codex', pi.DEFERRED)
+        plugin_state.set_pending(self.root, 'codex', pi.DEFERRED)
         os.remove(os.path.join(self.home, 'config.toml'))
         self.step()
-        self.assertEqual(P.pending(self.root), {'codex': pi.DEFERRED})
+        self.assertEqual(plugin_state.pending(self.root), {'codex': pi.DEFERRED})
 
 
 class MarketplaceTest(InstallCase):
@@ -610,11 +612,11 @@ class RefreshTest(Base):
         for n, month in (('a', 1), ('b', 2), ('c', 3), ('d', 4)):
             folder = os.path.join(self.k.root, n * 12)
             os.makedirs(folder)
-            write(os.path.join(folder, P.MARKER),
+            write(os.path.join(folder, plugin_layout.MARKER),
                   json.dumps({'sha': n * 40, 'exported_at': '2026-0%d-01T00:00:00' % month}))
         old = os.path.join(self.k.root, 'aaaaaaaaaaaa')
         cache = os.path.join(home, 'plugins', 'cache', 'pm-kit', 'pm-kit', '0.1.0-main.1')
-        write(os.path.join(cache, P.MARKER), '{"sha": "%s"}\n' % ('a' * 40))
+        write(os.path.join(cache, plugin_layout.MARKER), '{"sha": "%s"}\n' % ('a' * 40))
         exe = os.path.join(self.k.base, 'codex.exe')
         write(exe, 'x\n')
         calls = []
@@ -629,9 +631,9 @@ class RefreshTest(Base):
         patcher = mock.patch.object(mod, 'codex_running', lambda: False, create=True)
         patcher.start()
         self.addCleanup(patcher.stop)
-        code = P.refresh(self.k.kit, self.s, f, self.lines.append, apply=True, runner=runner, now=NOW,
+        code = plugin_refresh.refresh(self.k.kit, self.s, f, self.lines.append, apply=True, runner=runner, now=NOW,
                          own=(1234, 99), alive=lambda pid, ctime: False, copies=[step],
-                         in_use=lambda: P.InUse(['x'], set(), []))
+                         in_use=lambda: plugin_prune.InUse(['x'], set(), []))
         self.assertEqual(code, 0, self.lines)
         self.assertTrue(os.path.isdir(old), self.lines)            # Codex's cache came from it
         self.assertFalse(os.path.isdir(os.path.join(self.k.root, 'b' * 12)), self.lines)

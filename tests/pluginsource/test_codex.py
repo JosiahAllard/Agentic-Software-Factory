@@ -1,4 +1,4 @@
-"""hosts.codex.adapter.plugin_copy's Step as kitlib.pluginsource.refresh runs it, the step the Codex
+"""hosts.codex.adapter.plugin_copy's Step as kitlib.pluginsource.refresh.refresh runs it, the step the Codex
 adapter hands it through tools/_host.py (docs/plugin-source.md "Host plugin copies"): a Codex home
 that names only the old hand-made pm-kit-local copy gets the switch steps, and that copy is never
 written again. A fake Codex home and marketplace under a temp folder only: no real ~/.codex is read."""
@@ -12,7 +12,7 @@ import unittest
 
 from hosts.codex.adapter import ADAPTER
 from hosts.codex.adapter import plugin_copy as codex
-from kitlib import pluginsource as P
+from kitlib.pluginsource import layout as plugin_layout, refresh as plugin_refresh
 from kitlib.launcher import accounts
 from tests import gitfixture
 from tests.pluginsource import FakeProc, Kit
@@ -67,7 +67,7 @@ class Home(object):
 
 
 class RefreshWiringTest(unittest.TestCase):
-    """pluginsource.refresh with the Codex step in `copies`: a home naming only pm-kit-local gets the
+    """pluginsource.refresh.refresh with the Codex step in `copies`: a home naming only pm-kit-local gets the
     switch steps and its copy is left as it was; a marked session (pm_watch's auto_refresh spawn
     inherits the mark) is skipped; a step that raises is a line, never the exit code."""
 
@@ -78,7 +78,7 @@ class RefreshWiringTest(unittest.TestCase):
             r.write('hosts/codex/shell/' + rel, text)
         r.commit('codex shell', *['hosts/codex/shell/' + rel for rel in NEW])
         r.git('push', '-q', 'origin', 'main')
-        self.s = P.Settings(self.k.root, False, 'origin')
+        self.s = plugin_layout.Settings(self.k.root, False, 'origin')
         self.h = Home(self.k.base)
         self.f = self.k.folders('.claude')
         self.k.seed_migrated(self.f)
@@ -88,7 +88,7 @@ class RefreshWiringTest(unittest.TestCase):
         runner = accounts.Runner(self.k.home, claude='claude.cmd', run_proc=FakeProc())
         if copies is None:
             copies = [codex.Step(environ=dict(environ, CODEX_HOME=self.h.home))]
-        return P.refresh(self.k.kit, self.s, self.f, self.lines.append, apply=apply, runner=runner,
+        return plugin_refresh.refresh(self.k.kit, self.s, self.f, self.lines.append, apply=apply, runner=runner,
                          now=NOW, own=(1234, 99), alive=lambda pid, ctime: False, copies=copies)
 
     def old_copy(self):
@@ -99,7 +99,7 @@ class RefreshWiringTest(unittest.TestCase):
         self.assertEqual(self.refresh(), 0, self.lines)
         self.assertIn(SWITCH, '\n'.join(self.lines))
         self.assertEqual(self.old_copy(), before)
-        self.assertFalse(os.path.exists(os.path.join(self.k.root, P.PIDFILE)))
+        self.assertFalse(os.path.exists(os.path.join(self.k.root, plugin_refresh.PIDFILE)))
 
     def test_a_marked_session_is_skipped_and_the_exit_code_is_the_claude_sides(self):
         before = self.old_copy()
@@ -110,7 +110,7 @@ class RefreshWiringTest(unittest.TestCase):
     def test_the_claude_lines_and_exit_code_are_the_same_with_or_without_codex(self):
         runner = accounts.Runner(self.k.home, claude='claude.cmd', run_proc=FakeProc())
         plain = []
-        code = P.refresh(self.k.kit, self.s, self.f, plain.append, apply=False, runner=runner, now=NOW)
+        code = plugin_refresh.refresh(self.k.kit, self.s, self.f, plain.append, apply=False, runner=runner, now=NOW)
         self.assertEqual(self.refresh(apply=False), code)
         self.assertEqual([l for l in self.lines if not l.startswith('codex:')], plain)
         self.assertFalse([l for l in plain if 'codex' in l])

@@ -85,7 +85,7 @@ class KitCommand(Temp):
         with LINUX, mock.patch.object(kitcommand.worktreesweep, 'tool_root', return_value=ROOT), \
                 mock.patch.object(kitcommand.worktreesweep, 'is_export', return_value=False), \
                 mock.patch.object(kitcommand.gitrepo, 'classify', return_value=place), \
-                mock.patch.object(kitcommand.pluginsource, 'load') as load, \
+                mock.patch.object(kitcommand.plugin_layout, 'load') as load, \
                 mock.patch.object(kitcommand, 'linux_steps') as steps:
             kitcommand.survey(Plan(), ctx)
         load.assert_not_called()

@@ -43,7 +43,7 @@ def model_maps(rs=None):
 
 def plugin_copies(home=None, environ=None, path=None):
     """[step] of each host hosts.json registers whose ADAPTER has the optional
-    plugin_copy(home, environ): the step kitlib.pluginsource.refresh runs as step(export folder,
+    plugin_copy(home, environ): the step kitlib.pluginsource.refresh.refresh runs as step(export folder,
     out, apply) to mirror the export into that host's own plugin copy (docs/plugin-source.md "Host
     plugin copies"). A host without the hook gives none. A registry fault is RegistryError; an
     adapter that will not import is ImportError, said by the caller."""

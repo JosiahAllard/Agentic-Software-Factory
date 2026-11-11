@@ -41,7 +41,7 @@ SKILLS_REL = 'content/skills'
 KIT_REL = 'kit.json'
 ROSTER_REL = 'docs/ROSTER.md'
 SKIP_DIRS = ('__pycache__',)
-# kitlib.pluginsource.MARKER, in every installed plugin export; spelled here, not imported, so the
+# kitlib.pluginsource.layout.MARKER, in every installed plugin export; spelled here, not imported, so the
 # lock tool, which reaches this module, does not reach pluginsource (tests/lock/test_release.py)
 EXPORT_MARKER = '.pm-kit-export'
 # a role's old name -> its name now, for one release (docs/ROSTER.md; the launcher's AGENT_ALIASES)

@@ -221,11 +221,14 @@ def launcher_repos(home=None):
     kitlib.machinesetup.worktreesweep.repo_task gives it; a folder that cannot be read is left out."""
     from kitlib.config import load as load_kit_config
     from kitlib.launcher import settings as launcher
-    from kitlib.worktree.remove import main_checkout
+    from kitlib.git import repo as gitrepo
     out = []
     for label, folder in sorted(launcher.load(home).repos.items()):
         try:
-            main = main_checkout(folder)
+            main = gitrepo.main_checkout_toplevel(folder)
+            if main is None:
+                continue
+            main = os.path.realpath(os.path.abspath(main))
             name = load_kit_config(main).repo.get('name') or os.path.basename(os.path.normpath(main))
         except (RuntimeError, ConfigError, OSError):
             continue

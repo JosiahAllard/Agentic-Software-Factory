@@ -28,7 +28,6 @@ from kitlib.config import ConfigError, load as load_kit_config
 from kitlib.git import repo as gitrepo
 from kitlib.launcher.pythonw import base_pythonw
 from kitlib.proc import spawn
-from kitlib.worktree.remove import main_checkout
 from kitlib.worktree.task import (AT, NOT_THE_STORE_ALIAS, PYTHONW_IS, argument, description, quoted,
                                   task_name)
 
@@ -110,9 +109,11 @@ def dry_run(tool, main, python, timeout=DRY_RUN_TIMEOUT, run=None):
 def repo_task(folder):
     """(main checkout, repo name) for the repository at `folder`: the name is `.kit.json`'s
     repo.name, else the main checkout's folder name (as kitlib.worktree.task.resolve names it).
-    GitReadError (a RuntimeError) when git cannot find the main checkout; ConfigError for a
-    refused .kit.json."""
-    main = main_checkout(folder)
+    RuntimeError when git cannot find the main checkout; ConfigError for a refused .kit.json."""
+    main = gitrepo.main_checkout_toplevel(folder)
+    if main is None:
+        raise RuntimeError('cannot find the main checkout of %s' % folder)
+    main = os.path.realpath(os.path.abspath(main))
     name = load_kit_config(main).repo.get('name') or os.path.basename(os.path.normpath(main))
     return main, name
 

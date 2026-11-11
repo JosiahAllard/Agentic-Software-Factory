@@ -167,7 +167,7 @@ class LiveRoot(unittest.TestCase):
 
     def test_a_marker_checkout_that_is_no_kit_names_the_export(self):
         """A marker checkout without kit.json or a tools folder is not taken: the export names
-        itself, so kitlib.stubs.live_kit still sees the export and refuses it."""
+        itself, so kitlib.machinesetup.outcome.live_kit still sees the export and refuses it."""
         for kw in ({'kit_json': False}, {'tools': False}):
             self.marker(self.main_checkout(**kw))
             self.assertEqual(pluginsource.live_root(self.export, {}), self.export, kw)

@@ -785,9 +785,9 @@ def _same_folder(a, b):
 
 def _pm_memory_folder(top):
     """The memory folder the PM repository's settings name: its autoMemoryDirectory when it is there
-    (the kit's value or one the owner chose), else the kit's value for it (kitlib.stubs.memory.wanted).
+    (the kit's value or one the owner chose), else the kit's value for it (kitlib.machinesetup.memory.wanted).
     Looked up at call time, so a test can replace either reader."""
-    from kitlib.stubs import memory as kmemory
+    from kitlib.machinesetup import memory as kmemory
     m = kmemory.survey(top)
     if m.state in (kmemory.OK, kmemory.OTHER):
         return m.value
@@ -795,13 +795,13 @@ def _pm_memory_folder(top):
 
 
 def memory(cfg, repos=None, check=None, pm_repo=None, folder=None, load_repos=None):
-    """The agent memory folder (kitlib.stubs.memory; docs/pm-start.md): one line per repository in
+    """The agent memory folder (kitlib.machinesetup.memory; docs/pm-start.md): one line per repository in
     launcher.repos, and for the PM's own repository, whose .claude/settings.json has no
     autoMemoryDirectory (an owner step: the command that adds it) or cannot be read; then one line
     when pm_start.memory_dir is not the folder the PM repository's settings name (`folder`, default
     _pm_memory_folder: a value the owner chose is the one compared). None when all match. A folder
     that is not there, or a check that raises, is that repo's own "could not check memory" line."""
-    from kitlib.stubs import memory as kmemory
+    from kitlib.machinesetup import memory as kmemory
     if check is None:
         check = kmemory.problem_line
     folder = folder or _pm_memory_folder
@@ -849,7 +849,7 @@ def allow_rules(cfg, repos=None, pm_repo=None, settings=None, load_repos=None, l
     current export. Nothing is read when there is no repository; a loader (`settings`, default
     plugin_settings) that gives None checks nothing."""
     from kitlib import allowrules, kitroot, pluginsource
-    from kitlib.stubs import memory as kmemory
+    from kitlib.machinesetup import memory as kmemory
     repos = (load_repos or launcher_repos)() if repos is None else repos
     targets = [(name, repos[name]) for name in sorted(repos)]
     top = (pm_repo or pm_memory_repo)(cfg)

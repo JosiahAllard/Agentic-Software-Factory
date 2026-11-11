@@ -1,4 +1,4 @@
-"""kitlib.stubs.memory: the agent memory folder a repository's committed .claude/settings.json
+"""kitlib.machinesetup.memory: the agent memory folder a repository's committed .claude/settings.json
 names (autoMemoryDirectory = <memory root>/<repo>), and its writer (tools/kit_stubs.py memory).
 
 The value is computed from fake paths only (a D:, E: or UNC checkout; no real drive is read). The
@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib.stubs import memory
+from kitlib.machinesetup import memory
 
 
 def fake_top(top):

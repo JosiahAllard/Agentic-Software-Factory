@@ -535,7 +535,7 @@ class EngReviewTest(unittest.TestCase):
 
 class MemoryTest(unittest.TestCase):
     """pmstart.memory: each launcher repo's and the PM repo's autoMemoryDirectory
-    (kitlib.stubs.memory.problem_line), and pm_start.memory_dir against the PM repo's value. Every
+    (kitlib.machinesetup.memory.problem_line), and pm_start.memory_dir against the PM repo's value. Every
     reader is faked; the folders are throwaway ones."""
 
     def setUp(self):
@@ -581,7 +581,7 @@ class MemoryTest(unittest.TestCase):
     def test_memory_dir_is_compared_with_the_folder_the_pm_repos_settings_name(self):
         # The owner chose another folder (the OTHER state): memory_dir naming it is no problem.
         from unittest import mock
-        from kitlib.stubs import memory as kmemory
+        from kitlib.machinesetup import memory as kmemory
         chosen = kmemory.Memory(kmemory.OTHER, "p", "Q:/mine", "X:/Agent-memory/pm", None, None, None, None)
         with mock.patch.object(kmemory, "survey", lambda top, *a, **k: chosen), \
                 mock.patch.object(kmemory, "wanted", lambda top, *a, **k: "X:/Agent-memory/pm"):
@@ -599,7 +599,7 @@ class MemoryTest(unittest.TestCase):
                 raise OSError("disk gone")
             return "memory (%s): add it" % label
         from unittest import mock
-        from kitlib.stubs import memory as kmemory
+        from kitlib.machinesetup import memory as kmemory
         ok = kmemory.Memory(kmemory.OK, "p", "X:/m", "X:/m", None, None, None, None)
         with mock.patch.object(kmemory, "survey", lambda top, *a, **k: ok), \
                 mock.patch.object(kmemory, "wanted", lambda top, *a, **k: "X:/m"):
@@ -616,7 +616,7 @@ class MemoryTest(unittest.TestCase):
         self.assertEqual(top, "T:\pm")
 
     def test_a_pm_repo_that_is_a_linked_worktree_of_another_repo_is_itself(self):
-        from kitlib.stubs import memory as kmemory
+        from kitlib.machinesetup import memory as kmemory
         from tests import gitfixture
         kit = gitfixture.TempRepo()
         self.addCleanup(kit.cleanup)

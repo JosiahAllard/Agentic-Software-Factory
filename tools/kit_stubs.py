@@ -4,7 +4,7 @@
   kit_stubs.py memory [-C DIR] [--apply]
 
 -C names the checkout (default: here). A thin entry point (ARCHITECTURE.md, Layers): it parses,
-calls kitlib.stubs.memory.run (a dry run unless --apply), prints and exits. Exit codes: 0 done or
+calls kitlib.machinesetup.memory.run (a dry run unless --apply), prints and exits. Exit codes: 0 done or
 current; 1 a problem named (a settings file it cannot edit, or a failed write); 2 usage, or the
 kit configuration was refused (a hosts.json it cannot read is one `kit_stubs: ERROR:` line); 130
 Ctrl+C.
@@ -46,7 +46,7 @@ def main(argv=None):
         p.error('-C: %s' % why)
     from kitlib.host import registry
     try:
-        from kitlib.stubs import memory      # its import reads hosts.json (kitlib.machinesetup)
+        from kitlib.machinesetup import memory      # its import reads hosts.json
         outcome = memory.run(top, apply=a.apply)
     except KeyboardInterrupt:
         return 130

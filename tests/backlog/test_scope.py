@@ -322,18 +322,17 @@ class SharedPathWrites(StoreCase):
         self.verb('set', 'MINE', [('scope', ['kit/mine.py', LIST])])
         self.assertEqual(self.get('MINE').all('scope'), ['kit/mine.py', LIST])
 
-    def test_add_found_on_a_branch_that_changed_a_listed_file_is_refused(self):
+    def test_add_found_on_a_branch_that_changed_a_listed_file_warns_and_files(self):
         self.share()
-        for scope in ([LIST], ['docs/**']):
+        for i, scope in enumerate(([LIST], ['docs/**'])):
             with self.subTest(scope=scope):
-                with self.assertRaises(Refusal) as cm:
-                    self.verb('add', 'NEW', 'a defect found while working', scope,
-                              found_on='kit/holder', why_not_folded=ADD_WHY)
-                msg = str(cm.exception)
-                self.assertIn('its scope overlaps the work of kit/holder', msg)
-                self.assertIn('(changed on kit/holder)', msg)
-                self.assertIn('(scope of HOLD, pulled by kit/holder)', msg)
-                self.assertIsNone(self.get('NEW'))
+                change = self.verb('add', 'NEW%d' % i, 'a defect found while working', scope,
+                                   found_on='kit/holder', why_not_folded=ADD_WHY)
+                warning = '\n'.join(x for x in change.lines if x.startswith('WARNING:'))
+                self.assertIn('scope overlaps the work of kit/holder', warning)
+                self.assertIn('(changed on kit/holder)', warning)
+                self.assertIn('(scope of HOLD, pulled by kit/holder)', warning)
+                self.assertIsNotNone(self.get('NEW%d' % i))
 
 
 class SharedPathsCli(unittest.TestCase):

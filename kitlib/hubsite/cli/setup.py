@@ -42,7 +42,7 @@ from kitlib.hubsite import autostart as hub_autostart
 from kitlib.hubsite.cli import common, task
 
 
-def check(say):
+def check(out):
     """setup --check: reads only. 0 when ready, 1 when not."""
     from kitlib.pluginsource import layout as plugin_layout, state as plugin_state
     s = settings.load()
@@ -51,53 +51,53 @@ def check(say):
         tunnel.check(s.access)
     except tunnel.TunnelConfigError as e:
         if e.unset:
-            say('access: not set (hub.access): the tunnel listener stays off')
+            out.line('access: not set (hub.access): the tunnel listener stays off')
         else:
-            say('access: cannot serve: %s' % e)
+            out.line('access: cannot serve: %s' % e)
             why.append('the Access settings cannot serve')
     else:
-        say('access: set')
+        out.line('access: set')
         ok, line = access.probe(s.access.team)
-        say(line)
+        out.line(line)
         if not ok:
             why.append('the Access keys were not fetched')
     keys = copies.config_keys(user.readable_file(), (settings.KEY,))
     try:
         root = plugin_layout.load().export_dir
     except plugin_layout.RefreshError as e:
-        say('kit copies: cannot look: %s' % e)
+        out.line('kit copies: cannot look: %s' % e)
         why.append('the kit copies could not be looked at')
     else:
         report = copies.check(copies.find(root, plugin_layout.current_folder(root),
                                           plugin_state.installs()), keys,
                               plugin_layout.refresh_cmd())
-        say('kit copies, checked against the keys %s:' % ', '.join(keys))
+        out.line('kit copies, checked against the keys %s:' % ', '.join(keys))
         for line in report.lines:
-            say('  %s' % line)
+            out.line('  %s' % line)
         if not report.ready:
             why.append('a kit copy in use would refuse a key or cannot be read')
         if report.stale:
-            say('NOTE: %d export folder(s) not in use would refuse a key or cannot be read: '
+            out.line('NOTE: %d export folder(s) not in use would refuse a key or cannot be read: '
                 'a session started from one before the last refresh still runs it; restart '
                 'such sessions before setting %s' % (report.stale, settings.KEY))
     if why:
-        say('NOT READY: %s' % '; '.join(why))
+        out.line('NOT READY: %s' % '; '.join(why))
         return client.REFUSED
-    say('READY: every kit copy in use knows these keys, and the Access settings serve or are '
+    out.line('READY: every kit copy in use knows these keys, and the Access settings serve or are '
         'not set')
     return 0
 
 
-def setup(a, say, stop=None):
+def setup(a, out, stop=None):
     if a.check:
-        return check(say)
+        return check(out)
     if (a.autostart or a.whatif) and not settings.load().store:
         raise huberrors.ServeError('no store folder is set, so a server started at sign-in would '
                                'fail: set hub.store or pm_data in the machine config; '
                                'nothing registered or written')
     if a.whatif:
         for line in hub_autostart.install(common.TOOL, whatif=True):
-            say(line)
+            out.line(line)
         return 0
     why = hub_autostart.refusals(common.TOOL) if a.autostart else []
     if why:     # before any token file is written
@@ -109,27 +109,27 @@ def setup(a, say, stop=None):
     except OSError as e:
         raise huberrors.ServeError('cannot write the token files in %s: %s' % (folder, e))
     for role in (auth.OWNER, auth.AGENT):
-        say('%s token: %s' % (role, paths[role]))
+        out.line('%s token: %s' % (role, paths[role]))
     if s.store:
-        say('store: %s' % s.store)
+        out.line('store: %s' % s.store)
     else:
-        say('NOTE: no store folder is set: set hub.store or pm_data in the machine config '
+        out.line('NOTE: no store folder is set: set hub.store or pm_data in the machine config '
             '(this tool does not write it), or start with --store PATH')
     if a.autostart:
         if not task.linux():
-            say('start the server detached, once the task is registered: %s' % task.START_TASK)
+            out.line('start the server detached, once the task is registered: %s' % task.START_TASK)
         for line in hub_autostart.install(common.TOOL):
-            say(line)
+            out.line(line)
         if task.linux():
             # said after the install: which job it wrote (systemd service or XDG entry) decides it
             if task.xdg():
-                say('the XDG autostart entry starts the server at your next sign-in to the '
+                out.line('the XDG autostart entry starts the server at your next sign-in to the '
                     'desktop; to start it now: %s' % common.START)
             else:
-                say('start the server detached, once the job is registered: %s'
+                out.line('start the server detached, once the job is registered: %s'
                     % task.start_command())
     else:
-        say('start the server with: %s' % common.START)
+        out.line('start the server with: %s' % common.START)
     return 0
 
 
@@ -141,11 +141,11 @@ def store_root(a):
     return root
 
 
-def validate(a, say, stop=None):
+def validate(a, out, stop=None):
     try:
         findings = storecheck.validate(store_root(a))
     except storecheck.StoreReadError as e:
         raise huberrors.ServeError(str(e))
     for line in storecheck.validate_lines(findings):
-        common.put(say, line)
+        common.put(out, line)
     return 1 if any(f.level == hubvalidate.ERROR for f in findings) else 0

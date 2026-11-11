@@ -18,9 +18,9 @@ OPEN = 'python "%s" open' % TOOL
 REFUSED_ERRORS = (huberrors.ServeError, auth.TokenFileError)
 
 
-def refused(say, port, status, obj):
+def refused(out, port, status, obj):
     err = obj.get('error') if isinstance(obj.get('error'), dict) else {}
-    say(gitsync.scrub('REFUSED: the server on port %d answered %d %s: %s' % (
+    out.line(gitsync.scrub('REFUSED: the server on port %d answered %d %s: %s' % (
         port, status, err.get('code') or '', err.get('message') or 'not the expected answer')),
         err=True)
     return 1
@@ -34,19 +34,19 @@ def owner_token():
     return token
 
 
-def put(say, text):
+def put(out, text):
     """One line to stdout: `text` on one line, with no user or password of a URL, and with a
-    character the console cannot show written as its escape (by `say`)."""
-    say(gitsync.scrub(' '.join(str(text).split())))
+    character the console cannot show written as its escape (by `out.put`)."""
+    out.put(gitsync.scrub(' '.join(str(text).split())))
 
 
-def show(a, say, obj, lines):
+def show(a, out, obj, lines):
     """The answer `obj` of the server: as one JSON line with --json, else `lines`."""
     if getattr(a, 'json', False):
-        say(gitsync.scrub(json.dumps(obj, sort_keys=True)))     # ASCII; a `"` ends a URL's user
+        out.line(gitsync.scrub(json.dumps(obj, sort_keys=True)))  # ASCII; a `"` ends a URL's user
     else:
         for line in lines:
-            put(say, line)
+            put(out, line)
     return client.OK
 
 
@@ -73,23 +73,23 @@ def done_note(d):
     return ' (done: %s)' % why if why else ''
 
 
-def listed(a, say, collection, version=False):
+def listed(a, out, collection, version=False):
     """The lines of a collection. `version`: each line shows its document's version, for the
     collections that have a write which needs it named (--if-version)."""
     got = hub(a).get('/' + collection, query={'status': getattr(a, 'status', None),
                                              'repo': getattr(a, 'repo', None),
                                              'since': getattr(a, 'since', None)})
-    return show(a, say, got, [item(d, version=version) for d in got.get('items') or []])
+    return show(a, out, got, [item(d, version=version) for d in got.get('items') or []])
 
 
-def wrote(a, say, got, line):
+def wrote(a, out, got, line):
     """The answer of a write: its line, then one for each warning the store gave."""
     lines = [line]
     for w in got.get('warnings') or []:
         if isinstance(w, dict):
             lines.append(hubvalidate.format_line(hubvalidate.Finding(
                 *[str(w.get(k) or '') for k in hubvalidate.Finding._fields])))
-    return show(a, say, got, lines)
+    return show(a, out, got, lines)
 
 
 def text_of(path, what):

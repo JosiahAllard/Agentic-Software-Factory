@@ -9,7 +9,7 @@ module, with the shared --port, --json and --if-version rules and the exit codes
 docstring has its verbs); `hub.py <verb> --help` gives each verb's options. The parser is
 tools/_hub_args.py.
 
-A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.hubsite.cli with `say`,
+A thin entry point (ARCHITECTURE.md, Layers): it parses, calls kitlib.hubsite.cli with `OUT`,
 the one writer of its lines, and exits with the code the verb returns. Exit codes: 0 ok;
 1 refused; 2 usage error or a machine config that cannot be read; 3 the server is not running
 (the start command is printed), or `restart` started nothing; 4 a wait, stop or restart ran out
@@ -30,24 +30,50 @@ from kitlib import hubjobs                                         # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
 from kitlib.hubclient import client                                # noqa: E402
 from kitlib.hubclient import errors as huberrors                   # noqa: E402
-from kitlib.hubsite.cli import approvals, asks, common, pages, server, setup   # noqa: E402
+from kitlib.hubsite.cli import approvals, asks, common, pages, server, setup, usage  # noqa: E402
 
 INTERRUPTED = 'interrupted'             # Ctrl+C anywhere else (a verb, or serve before it served)
 
 
-def say(text, err=False):
-    """One line to stdout, or stderr with `err`; a character the console cannot show is written
-    as its escape. A console that was closed while the server served must not change how the
-    server ends: the line is lost, nothing else."""
-    stream = sys.stderr if err else sys.stdout
-    try:
+class Out:
+    """The writer of every line the tool and its verbs print (kitlib/hubsite/cli/__init__.py):
+    each form writes as the verb that uses it always has, a closed console included."""
+
+    @staticmethod
+    def line(text, err=False):
+        """A plain print to stdout, or stderr with `err`."""
+        print(text, file=sys.stderr if err else sys.stdout)
+
+    @staticmethod
+    def put(text):
+        """One line to stdout; a character the console cannot show is written as its escape."""
         try:
-            print(text, file=stream, flush=True)
+            print(text)
         except UnicodeEncodeError:
-            enc = getattr(stream, 'encoding', None) or 'ascii'
-            print(str(text).encode(enc, 'backslashreplace').decode(enc), file=stream, flush=True)
-    except (OSError, ValueError):
-        pass
+            enc = getattr(sys.stdout, 'encoding', None) or 'ascii'
+            print(text.encode(enc, 'backslashreplace').decode(enc))
+
+    @staticmethod
+    def raw(text):
+        """`pages show`'s page to stdout, as written; an unshowable character as its escape."""
+        try:
+            sys.stdout.write(text + '\n')
+        except UnicodeEncodeError:
+            enc = getattr(sys.stdout, 'encoding', None) or 'ascii'
+            sys.stdout.write(text.encode(enc, 'backslashreplace').decode(enc) + '\n')
+
+    @staticmethod
+    def say(text, err=False):
+        """One line of `serve` to the console (stderr with `err`). A console that was closed
+        while the server served must not change how the server ends: the line is lost, nothing
+        else."""
+        try:
+            print(text, file=sys.stderr if err else sys.stdout, flush=True)
+        except (OSError, ValueError):
+            pass
+
+
+OUT = Out()
 
 
 def _adapter_module():
@@ -74,7 +100,7 @@ def main(argv=None, stop=None):
     p = _hub_args.parser()
     a = p.parse_args(argv)
     if not a.verb:
-        p.error(_hub_args.NO_VERB)
+        p.error(usage.NO_VERB)
     if a.verb == 'setup' and a.check and (a.autostart or a.whatif):
         p.error('--check takes no other option: it writes nothing')
     if a.verb == 'setup' and a.whatif and not a.autostart:
@@ -84,26 +110,26 @@ def main(argv=None, stop=None):
     if a.verb == 'wait' and a.except_ids and not a.pending:
         p.error('--except leaves out pending items: give --pending with it')
     try:
-        return VERBS[a.verb](a, say, stop)
+        return VERBS[a.verb](a, OUT, stop)
     except ConfigError as e:
-        say(common.scrub('machine config: %s' % e), err=True)
+        OUT.line(common.scrub('machine config: %s' % e), err=True)
         return client.USAGE
     except huberrors.NotRunning as e:
-        say('%s; start it with: %s' % (e, common.START), err=True)
+        OUT.line('%s; start it with: %s' % (e, common.START), err=True)
         return client.exit_code(e)
     except client.Refused as e:         # the server's own refusal: its code, then its words
         if getattr(a, 'json', False):
-            say(common.scrub(json.dumps(e.body, sort_keys=True)))
-        say(common.scrub('REFUSED %s: %s' % (e.code, ' '.join(e.message.split()))), err=True)
-        if e.field == 'record':         # a --record the hub would not take: the form that it does
-            sys.stderr.write(_hub_args.example_line('hub.py %s %s'
-                                                    % (a.verb, getattr(a, 'sub', None) or '')))
+            OUT.line(common.scrub(json.dumps(e.body, sort_keys=True)))
+        OUT.line(common.scrub('REFUSED %s: %s' % (e.code, ' '.join(e.message.split()))), err=True)
+        example = usage.example_line('hub.py %s %s' % (a.verb, getattr(a, 'sub', None) or ''))
+        if e.field == 'record' and example:     # a --record the hub would not take: its form
+            OUT.line(example.rstrip('\n'), err=True)
         return client.exit_code(e)
     except common.REFUSED_ERRORS as e:
-        say(common.scrub('REFUSED: %s' % e), err=True)
+        OUT.line(common.scrub('REFUSED: %s' % e), err=True)
         return client.REFUSED
     except KeyboardInterrupt:           # not in a server's close: server.serve answers that one
-        say(INTERRUPTED, err=True)
+        OUT.line(INTERRUPTED, err=True)
         return 1
 
 

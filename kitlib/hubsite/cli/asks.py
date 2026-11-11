@@ -144,7 +144,7 @@ def bind_lines(got):
     return lines or ['nothing to bind']
 
 
-def questions(a, say, stop=None):
+def questions(a, out, stop=None):
     hub = common.hub(a)
     if a.sub == 'add':
         context = common.text_of(a.context_file, 'context') if a.context_file else None
@@ -152,28 +152,28 @@ def questions(a, say, stop=None):
             title=a.title, repo=getattr(a, 'repo', None), context=context, options=a.options,
             recommended=a.recommended, refs=a.refs, urgent=a.urgent, story=a.story,
             record=a.record, **{'from': a.who, 'class': a.question_class}))
-        return common.wrote(a, say, got, 'ASKED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'ASKED %s' % got.get('id'))
     if a.sub == 'log':
         body = {'if_version': a.if_version}
         if a.unfiled is not None:
             body['unfiled'] = a.unfiled
         got = hub.post(common.one('questions', a) + '/log', client.AGENT, body)
-        return common.wrote(a, say, got, 'LOGGED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'LOGGED %s' % got.get('id'))
     if a.sub == 'done':
         body = {'why': a.why, 'if_version': a.if_version}
         if a.unfiled is not None:
             body['unfiled'] = a.unfiled     # sent only when asked: an older hub refuses unknown fields
         got = hub.post(common.one('questions', a) + '/done', client.AGENT, body)
-        return common.wrote(a, say, got, 'DONE %s' % got.get('id'))
+        return common.wrote(a, out, got, 'DONE %s' % got.get('id'))
     if a.sub == 'file':
         got = hub.post('/questions/file', client.AGENT, common.body(id=a.id))
         lines = ['FILED %s' % i for i in got.get('filed') or []]
         lines += ['NOT FILED %s: %s (%s)' % (f.get('id'), f.get('message'), f.get('code'))
                   for f in got.get('failed') or [] if isinstance(f, dict)]
-        return common.show(a, say, got, lines or ['nothing to file'])
+        return common.show(a, out, got, lines or ['nothing to file'])
     if a.sub == 'bind':
         got = hub.post('/questions/bind', client.AGENT, {'from': 'pm', 'apply': bool(a.apply)})
-        return common.show(a, say, got, bind_lines(got))
+        return common.show(a, out, got, bind_lines(got))
     if a.sub == 'edit':
         context = common.text_of(a.context_file, 'context') if a.context_file else None
         body = common.body(title=a.title, context=context, options=a.options,
@@ -182,16 +182,16 @@ def questions(a, say, stop=None):
         if a.no_record:
             body['record'] = None
         got = hub.post(common.one('questions', a) + '/edit', client.AGENT, common.edits(a, body))
-        return common.wrote(a, say, got, 'EDITED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'EDITED %s' % got.get('id'))
     if a.sub == 'withdraw':
         got = hub.post(common.one('questions', a) + '/delete', client.AGENT, common.edits(a, {}))
-        return common.wrote(a, say, got, 'WITHDRAWN %s' % got.get('id'))
+        return common.wrote(a, out, got, 'WITHDRAWN %s' % got.get('id'))
     if a.sub == 'show':
-        return question(a, say)
-    return common.listed(a, say, 'questions', version=True)
+        return question(a, out)
+    return common.listed(a, out, 'questions', version=True)
 
 
-def question(a, say):
+def question(a, out):
     """questions show: the one document of `a.id` out of the list of every status."""
     got = common.hub(a).get('/questions', query={'status': 'all'})
     for d in got.get('items') or []:
@@ -200,7 +200,7 @@ def question(a, say):
     else:
         raise huberrors.ServeError('%s is not a question the hub holds' % a.id)
     if getattr(a, 'json', False):
-        return common.show(a, say, d, [])
+        return common.show(a, out, d, [])
     lines = [common.item(d, version=True)]
     for n, o in enumerate(d.get('options') or []):
         if isinstance(o, dict):
@@ -213,10 +213,10 @@ def question(a, say):
         lines.append('answer: %s' % answer.get('label'))
         if answer.get('note'):
             lines.append('note: %s' % answer['note'])
-    return common.show(a, say, d, lines)
+    return common.show(a, out, d, lines)
 
 
-def todo(a, say):
+def todo(a, out):
     """todos show: the one to-do of `a.id` out of the list of every status, with its detail,
     commands and, once done, the owner's note."""
     got = common.hub(a).get('/todos', query={'status': 'all'})
@@ -226,7 +226,7 @@ def todo(a, say):
     else:
         raise huberrors.ServeError('%s is not a to-do the hub holds' % a.id)
     if getattr(a, 'json', False):
-        return common.show(a, say, d, [])
+        return common.show(a, out, d, [])
     lines = [common.item(d, version=True)]
     if d.get('detail'):
         lines.append('detail: %s' % d['detail'].strip())
@@ -234,18 +234,18 @@ def todo(a, say):
         lines.append('command %d: %s' % (n + 1, c))
     if d.get('done_note'):
         lines.append('note: %s' % d['done_note'])
-    return common.show(a, say, d, lines)
+    return common.show(a, out, d, lines)
 
 
-def answer(a, say, stop=None):
+def answer(a, out, stop=None):
     got = common.hub(a).post(common.one('questions', a) + '/answer', client.OWNER, common.body(
         choice=a.choice, note=a.note, if_version=a.if_version))
     answer = got.get('answer') if isinstance(got.get('answer'), dict) else {}
-    return common.wrote(a, say, got, 'ANSWERED %s %s' % (got.get('id'),
+    return common.wrote(a, out, got, 'ANSWERED %s %s' % (got.get('id'),
                                                          answer.get('label') or a.choice))
 
 
-def todos(a, say, stop=None):
+def todos(a, out, stop=None):
     hub = common.hub(a)
     if a.sub == 'add':
         body = common.body(title=a.title, detail=a.detail, commands=a.commands,
@@ -256,97 +256,97 @@ def todos(a, say, stop=None):
         if a.who:
             body['from'] = a.who
         got = hub.post('/todos', client.OWNER if a.owner else client.AGENT, body)
-        return common.wrote(a, say, got, 'ADDED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'ADDED %s' % got.get('id'))
     if a.sub == 'show':
-        return todo(a, say)
+        return todo(a, out)
     if a.sub == 'done':
         body = common.body(if_version=a.if_version, note=a.note)
         body['done'] = not a.undo
         got = hub.post(common.one('todos', a) + '/done', client.OWNER, body)
-        return common.wrote(a, say, got, '%s %s' % ('REOPENED' if a.undo else 'DONE',
+        return common.wrote(a, out, got, '%s %s' % ('REOPENED' if a.undo else 'DONE',
                                                     got.get('id')))
     if a.sub == 'ack':
         got = hub.post(common.one('todos', a) + '/ack', client.AGENT)
-        return common.wrote(a, say, got, 'ACKED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'ACKED %s' % got.get('id'))
     if a.sub == 'edit':
         got = hub.post(common.one('todos', a) + '/edit', client.AGENT, common.edits(a, common.body(
             title=a.title, detail=a.detail, commands=a.commands, repo=a.edit_repo, refs=a.refs)))
-        return common.wrote(a, say, got, 'EDITED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'EDITED %s' % got.get('id'))
     if a.sub == 'withdraw':
         got = hub.post(common.one('todos', a) + '/delete', client.AGENT, common.edits(a, {}))
-        return common.wrote(a, say, got, 'WITHDRAWN %s' % got.get('id'))
-    return common.listed(a, say, 'todos')
+        return common.wrote(a, out, got, 'WITHDRAWN %s' % got.get('id'))
+    return common.listed(a, out, 'todos')
 
 
-def stories(a, say, stop=None):
+def stories(a, out, stop=None):
     hub = common.hub(a)
     if a.sub == 'add':
         got = hub.post('/stories', client.OWNER, common.body(
             repo=a.repo, title=a.title, story=common.text_of(a.story_file, 'story'),
             urgent=a.urgent))
-        return common.wrote(a, say, got, 'SUBMITTED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'SUBMITTED %s' % got.get('id'))
     if a.sub == 'set':
         got = hub.post(common.one('stories', a), client.AGENT, common.body(
             status=a.status, reviewer=a.reviewer, review_note=a.review_note,
             backlog_id=a.backlog_id, closed_note=a.closed_note,
             if_version=a.if_version))
-        return common.wrote(a, say, got, 'SET %s %s' % (got.get('id'), a.status))
+        return common.wrote(a, out, got, 'SET %s %s' % (got.get('id'), a.status))
     if a.sub == 'withdraw':
         got = hub.post(common.one('stories', a) + '/withdraw', client.OWNER)
-        return common.wrote(a, say, got, 'WITHDRAWN %s' % got.get('id'))
-    return common.listed(a, say, 'stories', version=True)
+        return common.wrote(a, out, got, 'WITHDRAWN %s' % got.get('id'))
+    return common.listed(a, out, 'stories', version=True)
 
 
-def to_pm(a, say, stop=None):
+def to_pm(a, out, stop=None):
     hub = common.hub(a)
     if a.sub == 'add':
         got = hub.post('/to_pm', client.OWNER, common.body(
             text=a.text, kind=a.kind, repo=getattr(a, 'repo', None), urgent=a.urgent))
-        return common.wrote(a, say, got, 'QUEUED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'QUEUED %s' % got.get('id'))
     if a.sub == 'send':
         got = hub.post('/to_pm/send', client.OWNER)
         sent = [str(x) for x in got.get('sent') or []]
-        return common.show(a, say, got, ['SENT %s' % (' '.join(sent) or 'nothing')])
+        return common.show(a, out, got, ['SENT %s' % (' '.join(sent) or 'nothing')])
     if a.sub == 'reply':
         got = hub.post(common.one('to_pm', a) + '/reply', client.AGENT, common.body(
             reply=a.reply, if_version=a.if_version))
-        return common.wrote(a, say, got, 'REPLIED %s' % got.get('id'))
-    return common.listed(a, say, 'to_pm')
+        return common.wrote(a, out, got, 'REPLIED %s' % got.get('id'))
+    return common.listed(a, out, 'to_pm')
 
 
-def inbox(a, say, stop=None):
+def inbox(a, out, stop=None):
     hub = common.hub(a)
     if a.sub == 'add':
         got = hub.post('/inbox', client.AGENT, common.body(
             text=a.text, title=a.title, repo=a.repo, ref=a.ref, asked=a.asked, refs=a.refs,
             **{'from': a.who}))
-        return common.wrote(a, say, got, 'POSTED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'POSTED %s' % got.get('id'))
     if a.sub == 'read':
         body = common.body(if_version=a.if_version)
         body['read'] = not a.undo
         got = hub.post(common.one('inbox', a) + '/read', client.OWNER, body)
-        return common.wrote(a, say, got, '%s %s' % ('UNREAD' if a.undo else 'READ', got.get('id')))
+        return common.wrote(a, out, got, '%s %s' % ('UNREAD' if a.undo else 'READ', got.get('id')))
     items = hub.inbox()
-    return common.show(a, say, {'items': items},
+    return common.show(a, out, {'items': items},
                        [common.item(d, 'read' if d.get('read') else 'unread') for d in items])
 
 
-def handoffs(a, say, stop=None):
+def handoffs(a, out, stop=None):
     hub = common.hub(a)
     if a.sub == 'add':
         got = hub.post('/handoffs', client.AGENT, common.body(
             kind=a.kind, state_path=a.state, **{'from': a.who}))
-        return common.wrote(a, say, got, 'RECORDED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'RECORDED %s' % got.get('id'))
     who = getattr(a, 'who', None)
     got = hub.get('/handoffs', query={'from': who} if who else None)
     items = got.get('items') or []
-    return common.show(a, say, {'items': items},
+    return common.show(a, out, {'items': items},
                        ['%s %s from=%s at=%s %s' % (d.get('id'), d.get('kind'), d.get('from'),
                                                     d.get('at'), d.get('state_path'))
                         for d in items])
 
 
-def pending(a, say, stop=None):
+def pending(a, out, stop=None):
     got = common.hub(a).get('/pending', client.ANY, {'for': a.for_key})
     items = got.get('items') or []
     lines = [pending_line(p) for p in items]
@@ -356,7 +356,7 @@ def pending(a, say, stop=None):
         lines = ([pending_line(p) for p in items if not p.get('class')]
                  + ['AUDIT classed answers, no record to file into:']
                  + [pending_line(p) for p in classed])
-    return common.show(a, say, got, lines)
+    return common.show(a, out, got, lines)
 
 
 def pending_line(p):
@@ -376,11 +376,11 @@ def title(p):
     return (p.get('title') or '') + (' (filed)' if p.get('filed') is True else '')
 
 
-def wait(a, say, stop=None):
+def wait(a, out, stop=None):
     got = common.hub(a).wait(a.since, a.timeout, a.pending, a.for_key, a.except_ids)
     if got.get('timed_out'):
         if getattr(a, 'json', False):
-            common.show(a, say, got, [])
+            common.show(a, out, got, [])
         return client.TIMED_OUT
     rev = got.get('revision')
     lines = ['HUB %s %s %s %s %s' % (rev, p.get('kind'), p.get('id'), routed(p),
@@ -391,4 +391,4 @@ def wait(a, say, stop=None):
               for c in got.get('changes') or []]
     if got.get('reset'):
         lines.append('HUB %s reset: the store is behind --since; read it again' % rev)
-    return common.show(a, say, got, lines)
+    return common.show(a, out, got, lines)

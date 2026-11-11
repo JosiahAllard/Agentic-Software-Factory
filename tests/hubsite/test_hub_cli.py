@@ -30,6 +30,7 @@ from kitlib.hubsite.cli import common as cli_common
 from kitlib.hubsite.cli import server as cli_server
 from kitlib.hubsite.cli import setup as cli_setup
 from kitlib.hubsite.cli import task as cli_task
+from kitlib.hubsite.cli import usage as cli_usage
 from kitlib.hubsite import auth, httpd, schema, serve, servesources, serveviews, tunnel
 from kitlib.ownerfiles import approvals
 from kitlib.hubvalidate import todosteps
@@ -138,7 +139,7 @@ class UsageCase(CliCase):
         self.assertIn('USAGE: give a verb: serve, status, setup, open, unpair, stop, restart, '
                       'questions, answer, todos, stories, to-pm, inbox, pages, approvals, '
                       'handoffs, skill-edit, pending, wait or validate\n', err)
-        self.assertEqual(sorted(HUB.VERBS), sorted(HUB._hub_args.VERB_NAMES))     # every verb it has
+        self.assertEqual(sorted(HUB.VERBS), sorted(cli_usage.VERB_NAMES))     # every verb it has
         self.assertEqual(self.run_cli('launch')[0], 2)
         self.assertEqual(self.run_cli('serve', '--bind', '0.0.0.0')[0], 2)
         self.assertEqual(self.run_cli('serve', '--host', '0.0.0.0')[0], 2)
@@ -524,12 +525,23 @@ class ServeCase(CliCase):
             1, '', "REFUSED: the server on port 8790 answered 500 internal: cannot reach '%s'\n"
             % bare))
 
+    def test_a_verb_other_than_serve_raises_on_a_closed_console(self):
+        """Only serve loses a line to a closed console (Out.say); status prints plainly, so its
+        line to a closed stdout raises, as it always has."""
+        answer = (200, {'ok': True})
+        closed = io.StringIO()
+        closed.close()
+        with mock.patch.object(localask, 'ask', lambda *args, **kw: answer):
+            with contextlib.redirect_stdout(closed), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(ValueError):
+                    HUB.main(['status', '--port', '8790'])
+
     def test_the_log_prints_errors_and_notes_and_no_request_line(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            cli_server.log(HUB.say, 'access', 'GET /api/v1/health 200')
-            cli_server.log(HUB.say, 'note', 'closing: the last pass')
-            cli_server.log(HUB.say, 'error', 'closing: it failed')
+            cli_server.log(HUB.OUT, 'access', 'GET /api/v1/health 200')
+            cli_server.log(HUB.OUT, 'note', 'closing: the last pass')
+            cli_server.log(HUB.OUT, 'error', 'closing: it failed')
         self.assertEqual(err.getvalue(), 'NOTE: closing: the last pass\n'
                                          'ERROR: closing: it failed\n')
 
@@ -539,8 +551,8 @@ class ServeCase(CliCase):
                  '  File "x.py", line 1, in route\nRuntimeError: cannot reach \'%s\'' % remote)
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            cli_server.log(HUB.say, 'error', trace)            # a listener's line: httpd does not scrub its own
-            cli_server.log(HUB.say, 'note', 'the remote is %s' % remote)
+            cli_server.log(HUB.OUT, 'error', trace)            # a listener's line: httpd does not scrub its own
+            cli_server.log(HUB.OUT, 'note', 'the remote is %s' % remote)
         text = err.getvalue()
         self.assertEqual(text, 'ERROR: %s\nNOTE: the remote is %s\n' % (
             trace.replace('someone:s3cret@', ''), 'https://git.example.test/team/data.git'))
@@ -622,7 +634,7 @@ class PushCase(CliCase):
 
     def test_without_a_launcher_state_folder_push_is_off_with_one_note(self):
         with contextlib.redirect_stderr(io.StringIO()) as err:
-            self.assertEqual(cli_server.push_delivery(HUB.say, HUB._adapter_module), (None, None))
+            self.assertEqual(cli_server.push_delivery(HUB.OUT, HUB._adapter_module), (None, None))
         self.assertTrue(err.getvalue().startswith('NOTE: push notifications off: LaunchError: '),
                         err.getvalue())
         self.assertIn('launcher.state_dir is not set', err.getvalue())
@@ -632,7 +644,7 @@ class PushCase(CliCase):
         os.makedirs(state)
         self.config({'launcher': {'state_dir': state}})
         with self.host(object()), contextlib.redirect_stderr(io.StringIO()) as err:
-            self.assertEqual(cli_server.push_delivery(HUB.say, HUB._adapter_module), (None, None))
+            self.assertEqual(cli_server.push_delivery(HUB.OUT, HUB._adapter_module), (None, None))
         self.assertEqual(err.getvalue(), 'NOTE: push notifications off: this host has no delivery\n')
 
     def test_serve_passes_the_delivery_and_the_state_folder_and_a_scratch_store_none(self):
@@ -2261,7 +2273,7 @@ class ArgumentCase(CliCase):
                     self.assertIn(cli_common.START, err)
         # each verb of the tool is in that list, but for those that ask no running server
         self.assertEqual(sorted({v[0] for v in self.VERBS}),
-                         sorted(set(HUB._hub_args.VERB_NAMES)
+                         sorted(set(cli_usage.VERB_NAMES)
                                 - {'serve', 'status', 'setup', 'open', 'validate',
                                    'unpair',    # unpair with no server: ClientCase
                                    'stop', 'restart'}))     # with no server: StopRestartCase

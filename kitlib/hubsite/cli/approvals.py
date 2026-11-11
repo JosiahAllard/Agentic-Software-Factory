@@ -48,7 +48,7 @@ from kitlib.hubsite.cli import common
 from kitlib.ownerfiles import approvals as ownerapprovals
 
 
-def approvals(a, say, stop=None):
+def approvals(a, out, stop=None):
     """The requests from GET /snapshot (the api has no route that lists approvals), each with
     its status read now: approvals.status_at applies the expiry, `malformed` for a bad document.
     add posts one request (kitlib.ownerfiles.request): it never decides or consumes one. apply is
@@ -57,15 +57,15 @@ def approvals(a, say, stop=None):
         got = ownerapprovals.apply_approved(common.hub(a), a.id, a.if_version)
         if got.get('applied') is not True:
             raise huberrors.ServeError('UNAPPLIED %s: %s' % (a.id, got.get('why')))
-        return common.wrote(a, say, got, 'APPLIED %s %s' % (a.id, got.get('commit')))
+        return common.wrote(a, out, got, 'APPLIED %s %s' % (a.id, got.get('commit')))
     if a.sub == 'withdraw':
         got = common.hub(a).post(common.one('approvals', a) + '/delete', client.AGENT,
                                  common.edits(a, {}))
-        return common.wrote(a, say, got, 'WITHDRAWN %s' % got.get('id'))
+        return common.wrote(a, out, got, 'WITHDRAWN %s' % got.get('id'))
     if a.sub == 'supersede':
         got = common.hub(a).post(common.one('approvals', a) + '/supersede', client.AGENT,
                                  common.edits(a, {'by': a.by}))
-        return common.wrote(a, say, got, 'SUPERSEDED %s by %s' % (got.get('id'), a.by))
+        return common.wrote(a, out, got, 'SUPERSEDED %s by %s' % (got.get('id'), a.by))
     if a.sub == 'add':
         from kitlib.ownerfiles import request as ownerrequest  # here: 150 ms the other verbs do not pay
         try:
@@ -75,7 +75,7 @@ def approvals(a, say, stop=None):
         except ownerrequest.RequestError as e:
             raise huberrors.ServeError(e.message)
         got = ownerrequest.request(common.hub(a), body)
-        return common.wrote(a, say, got, 'REQUESTED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'REQUESTED %s' % got.get('id'))
     docs = (common.hub(a).get('/snapshot', client.ANY, {'collections': 'approvals'})
             .get('collections') or {}).get('approvals') or {}
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -96,8 +96,8 @@ def approvals(a, say, stop=None):
         lines += ['%s %s -> %s' % (f.get('path'), f.get('base_blob') or 'new',
                                    f.get('blob') or 'deleted')
                   for f in d.get('files') or [] if isinstance(f, dict)]
-        return common.show(a, say, d, lines)
+        return common.show(a, out, d, lines)
     status, repo = getattr(a, 'status', 'all'), getattr(a, 'repo', '').strip().lower()
     items = [d for d in items if status in ('all', d['status'])
              and (not repo or str(d.get('repo') or '').strip().lower() == repo)]
-    return common.show(a, say, {'items': items}, [common.item(d) for d in items])
+    return common.show(a, out, {'items': items}, [common.item(d) for d in items])

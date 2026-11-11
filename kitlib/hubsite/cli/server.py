@@ -103,31 +103,31 @@ PRIORITY_FAILED = ('the hub server could not raise itself to normal priority: it
                    'normal and can starve while runs keep every core busy')
 
 
-def log(say, level, text):
+def log(out, level, text):
     """The server's error and note lines, to stderr; a request line is not printed. Every line
     goes through gitsync.scrub: a listener's error line may quote a remote URL as git gave it."""
     word = LEVELS.get(level)
     if word is None:
         return
-    say('%s: %s' % (word, gitsync.scrub(text)), err=True)   # closed console: a handler goes on
+    out.say('%s: %s' % (word, gitsync.scrub(text)), err=True)   # closed console: a handler goes on
 
 
-def push_delivery(say, adapter_module):
+def push_delivery(out, adapter_module):
     """(delivery, folder) for push notifications (docs/hub-push.md "Push notifications"): the
     host adapter's push() and the launcher's state folder, or (None, None) with one note line
     saying why there are none; any fault is such a note, the hub serves without push
     notifications. `adapter_module`: the tool's import of the host adapter (tools/_host.py). A
     scratch store (`serve --store`) never asks."""
-    return pushdelivery.push_delivery(adapter_module, note=lambda text: log(say, 'note', text))
+    return pushdelivery.push_delivery(adapter_module, note=lambda text: log(out, 'note', text))
 
 
-def serve(a, say, stop=None, *, machine_sources, adapter_module):
+def serve(a, out, stop=None, *, machine_sources, adapter_module):
     """`machine_sources(sync=...)`: the machine's Sources (kitlib.hubjobs, which the tool
     binds); `adapter_module`: as for push_delivery."""
     # First, so every git call it starts runs at normal too: the autostart task's default
     # priority is below normal, and a server below the agents' runs starved under load.
     if process.raise_to_normal() == 'failed':
-        log(say, 'note', PRIORITY_FAILED)
+        log(out, 'note', PRIORITY_FAILED)
     s = settings.load()
     if a.port is not None:
         s = s._replace(port=a.port)
@@ -136,42 +136,42 @@ def serve(a, say, stop=None, *, machine_sources, adapter_module):
         s = s._replace(store=os.path.abspath(a.store), push=False)
     sources = machine_sources(sync=not scratch)
     if not scratch:
-        sources.push, sources.push_dir = push_delivery(say, adapter_module)
-    hub = hubserve.build(s, sources, log=lambda level, text: log(say, level, text))
+        sources.push, sources.push_dir = push_delivery(out, adapter_module)
+    hub = hubserve.build(s, sources, log=lambda level, text: log(out, level, text))
 
     def started(h):
         for note in h.notes:
-            log(say, 'note', note)
-        say('hub serving %s on %s (Ctrl+C stops it); to pair a browser run: %s'
+            log(out, 'note', note)
+        out.say('hub serving %s on %s (Ctrl+C stops it); to pair a browser run: %s'
             % (h.store.root, h.url, common.OPEN))
 
     try:
         clean = hubserve.run(hub, started, stop)
     except KeyboardInterrupt:           # run() lets one through only from the close
-        say(CLOSE_CUT, err=True)
+        out.say(CLOSE_CUT, err=True)
         return 1
     if not clean:
-        say(UNCLEAN, err=True)
+        out.say(UNCLEAN, err=True)
         return 1
-    say(CLOSED)                        # the owner sees that the server ended on purpose
+    out.say(CLOSED)                        # the owner sees that the server ended on purpose
     return 0
 
 
-def status(a, say, stop=None):
+def status(a, out, stop=None):
     port = a.port or settings.load().port
     folder = hubtoken.folder()
     token = (hubtoken.read_token(folder, hubtoken.OWNER)
              or hubtoken.read_token(folder, hubtoken.AGENT))
     status, obj = localask.ask(port, 'GET', HEALTH, token)
     if status != 200 or obj.get('ok') is not True:
-        return common.refused(say, port, status, obj)
-    say('hub server on http://%s:%d' % (httpd.LOOPBACK, port))
+        return common.refused(out, port, status, obj)
+    out.line('hub server on http://%s:%d' % (httpd.LOOPBACK, port))
     for line in servehealth.status_lines(obj):
-        say(line)
+        out.line(line)
     return 0
 
 
-def open_page(a, say, stop=None):
+def open_page(a, out, stop=None):
     port = a.port or settings.load().port
     folder = hubtoken.folder()
     token = hubtoken.read_token(folder, hubtoken.OWNER)
@@ -180,19 +180,19 @@ def open_page(a, say, stop=None):
     status, obj = localask.ask(port, 'POST', httpd.PAIR_ROUTE, token)
     path = obj.get('path')
     if status != 200 or not isinstance(path, str) or not path.startswith('/'):
-        return common.refused(say, port, status, obj)
+        return common.refused(out, port, status, obj)
     url = 'http://%s:%d%s' % (httpd.LOOPBACK, port, path)
     if a.show:
-        say(url)
+        out.line(url)
         return 0
     import webbrowser                       # here: 50 ms the other verbs do not pay
     if not webbrowser.open(url):
         raise huberrors.ServeError('no browser could be opened: use hub.py open --print')
-    say('opened the hub page in the browser')
+    out.line('opened the hub page in the browser')
     return 0
 
 
-def unpair(a, say, stop=None):
+def unpair(a, out, stop=None):
     port = a.port or settings.load().port
     folder = hubtoken.folder()
     token = hubtoken.read_token(folder, hubtoken.OWNER)
@@ -208,7 +208,7 @@ def unpair(a, say, stop=None):
         creds.unpair_all()
         if failed:
             raise huberrors.ServeError(failed[0])
-        say('%s: unpaired every browser in %s, the sessions file the server on that port '
+        out.line('%s: unpaired every browser in %s, the sessions file the server on that port '
             'reads at its start' % (e, creds.path))
         # a server may have bound the port and read the file between the first ask and the write
         try:
@@ -216,60 +216,61 @@ def unpair(a, say, stop=None):
         except huberrors.NotRunning:
             return 0
     if status != 200 or obj.get('ok') is not True:
-        return common.refused(say, port, status, obj)
-    say('unpaired every browser of the hub server on port %d' % port)
+        return common.refused(out, port, status, obj)
+    out.line('unpaired every browser of the hub server on port %d' % port)
     return 0
 
 
-def stopped(say, port, got):
+def stopped(out, port, got):
     if not got.ran:
-        say('nothing to stop: nothing answers on port %d; %s' % (port, control.STILL_CLOSING))
+        out.line('nothing to stop: nothing answers on port %d; %s' % (port, control.STILL_CLOSING))
     elif got.pid is None:
-        say('STOPPED: the hub server on port %d has closed' % port)
+        out.line('STOPPED: the hub server on port %d has closed' % port)
     else:
-        say('STOPPED: the hub server on port %d (pid %d) has closed and its process has ended'
+        out.line('STOPPED: the hub server on port %d (pid %d) has closed and its process has ended'
             % (port, got.pid))
 
 
-def stop(a, say, stop=None):
+def stop(a, out, stop=None):
     port = a.port or settings.load().port
     token = common.owner_token()
     try:
         got = control.stop(port, token, a.timeout)
     except control.Refused as e:
-        return common.refused(say, e.port, e.status, e.answer)
+        return common.refused(out, e.port, e.status, e.answer)
     except control.TimedOut as e:
-        say(gitsync.scrub('TIMED OUT: %s' % e), err=True)
+        out.line(gitsync.scrub('TIMED OUT: %s' % e), err=True)
         return client.TIMED_OUT
-    stopped(say, port, got)
+    stopped(out, port, got)
     return 0
 
 
-def restart(a, say, stop=None):
+def restart(a, out, stop=None):
     new_port = settings.load().port
     port = a.port or new_port
     token = common.owner_token()
     try:
         got = control.restart(port, token, a.timeout, new_port)
     except control.Refused as e:
-        return common.refused(say, e.port, e.status, e.answer)
+        return common.refused(out, e.port, e.status, e.answer)
     except control.StartFailed as e:
         # the stop went through: say so, then why nothing was started and how to start it
-        stopped(say, port, e.stopped)
-        say(gitsync.scrub('%s could not be started: %s' % (
+        stopped(out, port, e.stopped)
+        out.line(gitsync.scrub('%s could not be started: %s' % (
             task.job() if task.linux() else 'the scheduled task', e.reason)), err=True)
-        say(task.task_advice(None), err=True)
+        out.line(task.task_advice(None), err=True)
         return 1
     except control.TimedOut as e:
-        say(gitsync.scrub('TIMED OUT: %s' % e), err=True)
+        out.line(gitsync.scrub('TIMED OUT: %s' % e), err=True)
         if e.phase == control.ANSWER_PHASE:
             # the task was started and its server never answered: why is in its start-up lines
-            say(task.NO_CONSOLE_LINUX if task.linux() else task.NO_CONSOLE, err=True)
+            out.line(task.NO_CONSOLE_LINUX if task.linux() else task.NO_CONSOLE, err=True)
         return client.TIMED_OUT
-    stopped(say, port, got.stopped)
+    stopped(out, port, got.stopped)
     if got.outcome != control.RESTARTED:
-        say(task.not_started(got.outcome))
-        say(task.task_advice(got.outcome))
+        out.line(task.not_started(got.outcome))
+        out.line(task.task_advice(got.outcome))
         return client.NOT_RUNNING
-    say("RESTARTED: the hub server answers on port %d (%s started it)" % (got.port, task.job()))
+    out.line("RESTARTED: the hub server answers on port %d (%s started it)"
+             % (got.port, task.job()))
     return 0

@@ -37,7 +37,7 @@ from kitlib.hubsite.cli import common
 from kitlib.hubvalidate import pagecheck
 
 
-def pages(a, say, stop=None):
+def pages(a, out, stop=None):
     """No delete: deleting a page is the owner's, on the hub page only."""
     hub = common.hub(a)
     if a.sub == 'publish':
@@ -49,12 +49,12 @@ def pages(a, say, stop=None):
             id=a.id, title=a.title, html=html, repo=getattr(a, 'repo', None), summary=a.summary,
             refs=a.refs, kind=a.kind, folder=a.folder, if_version=a.if_version,
             **{'from': a.who}))
-        return common.wrote(a, say, got, 'PUBLISHED %s' % got.get('id'))
+        return common.wrote(a, out, got, 'PUBLISHED %s' % got.get('id'))
     if a.sub == 'place':
         got = hub.post(common.one('pages', a) + '/place', client.AGENT, common.body(
             kind=a.kind, folder=a.folder, repo=getattr(a, 'repo', None),
             if_version=a.if_version))
-        return common.wrote(a, say, got, 'PLACED %s v%s' % (got.get('id'), got.get('version')))
+        return common.wrote(a, out, got, 'PLACED %s v%s' % (got.get('id'), got.get('version')))
     if a.sub == 'show':
         got = hub.page(a.id)
         html = got.get('html') if isinstance(got.get('html'), str) else ''
@@ -64,14 +64,14 @@ def pages(a, say, stop=None):
                     f.write(html)
             except OSError as e:
                 raise huberrors.ServeError('cannot write %s: %s' % (a.out, type(e).__name__))
-            return common.show(a, say, {'ok': True, 'id': got.get('id'),
+            return common.show(a, out, {'ok': True, 'id': got.get('id'),
                                         'version': got.get('version'), 'out': a.out},
                                ['WROTE %s' % a.out])
         if getattr(a, 'json', False):
-            return common.show(a, say, got, [])
-        say(html)           # a character the console cannot show: its escape, by `say`
+            return common.show(a, out, got, [])
+        out.raw(html)           # a character the console cannot show: its escape, by `out.raw`
         return client.OK
-    return common.listed(a, say, 'pages', version=True)
+    return common.listed(a, out, 'pages', version=True)
 
 
 def blob_at(checkout, rev, skill):
@@ -86,7 +86,7 @@ def blob_at(checkout, rev, skill):
     return out
 
 
-def skill_edit(a, say, stop=None):
+def skill_edit(a, out, stop=None):
     """The owner's edits are the owner's (the hub page): an agent shows, commits and reports."""
     hub = common.hub(a)
     if a.sub in ('done', 'fail'):
@@ -99,7 +99,7 @@ def skill_edit(a, say, stop=None):
             if a.at:
                 body['current_blob'] = blob_at(a.checkout, a.at, d.get('skill'))
         got = hub.post(common.one('skill_edits', a) + '/' + a.sub, client.AGENT, body)
-        return common.wrote(a, say, got, '%s %s' % (
+        return common.wrote(a, out, got, '%s %s' % (
             'COMMITTED' if a.sub == 'done' else str(got.get('status') or 'failed').upper(),
             got.get('id')))
     if a.sub == 'show':
@@ -112,13 +112,13 @@ def skill_edit(a, say, stop=None):
                     f.write(text)
             except OSError as e:
                 raise huberrors.ServeError('cannot write %s: %s' % (a.out, type(e).__name__))
-            return common.show(a, say, {'ok': True, 'id': d.get('id'),
+            return common.show(a, out, {'ok': True, 'id': d.get('id'),
                                         'version': d.get('version'), 'out': a.out},
                                ['WROTE %s' % a.out])
-        return common.show(a, say, got, ['%s v%s %s skill %s base %s' % (
+        return common.show(a, out, got, ['%s v%s %s skill %s base %s' % (
             d.get('id'), d.get('version'), d.get('status'), d.get('skill'), d.get('base_blob'))]
             + ['%s: %s' % (k, d[k]) for k in ('branch', 'blob', 'source_blob', 'why') if d.get(k)])
     got = hub.get('/skill_edits', query={'status': getattr(a, 'status', None)})
-    return common.show(a, say, got, ['%s v%s %s skill %s' % (d.get('id'), d.get('version'),
+    return common.show(a, out, got, ['%s v%s %s skill %s' % (d.get('id'), d.get('version'),
                                                              d.get('status'), d.get('skill'))
                                      for d in got.get('items') or []])

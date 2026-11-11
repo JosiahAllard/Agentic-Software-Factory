@@ -1,5 +1,5 @@
 """kitlib.hubsite.cli: the work of each tools/hub.py verb. The tool parses (tools/_hub_args.py),
-calls the verb here with the parsed arguments and `say`, and exits with the code it returns.
+calls the verb here with the parsed arguments and `out`, and exits with the code it returns.
 
   common    what the verbs share: the hub client, the printed line, a write's answer, START
   server    serve, status, open, unpair, stop and restart, and the server's log lines
@@ -9,10 +9,14 @@ calls the verb here with the parsed arguments and `say`, and exits with the code
   pages     pages and skill-edit
   approvals approvals: list, show, add, apply, withdraw and supersede
 
-Each verb is `verb(a, say, stop=None)`: `a` the parsed arguments, `say(text, err=False)` the one
-writer of a line (stdout, or stderr with err=True), `stop` the event that ends a serving server.
-It returns the exit code; the tool maps a refusal it raises to its line and code. Nothing here
-prints or exits itself. Each module's docstring says what its verbs print.
+Each verb is `verb(a, out, stop=None)`: `a` the parsed arguments, `out` the tool's writer of its
+lines, `stop` the event that ends a serving server. `out` has four forms: line(text, err=False)
+a plain print (stdout, or stderr with err=True); put(text) a print whose character the console
+cannot show is written as its escape (common.put, the lines of a verb's answer); raw(text)
+`pages show`'s write of a page; say(text, err=False) serve's form, flushed, which loses the line
+to a closed console and nothing else. It returns the exit code; the tool maps a refusal it
+raises to its line and code. Nothing here prints or exits itself. Each module's docstring
+says what its verbs print.
 
 The verbs of asks, pages and approvals ask the running server through kitlib.hubclient.client
 (common.hub). Each takes --port N

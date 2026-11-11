@@ -36,7 +36,7 @@ def unnamed(templates):
     bad = []
     for p in sorted(templates.rglob("*")):
         rel = p.relative_to(templates).as_posix()
-        if not p.is_file() or rel in done or "templates/" + rel in text:
+        if not p.is_file() or "__pycache__" in p.parts or rel in done or "templates/" + rel in text:
             continue
         inner = rel.split("/", 2)[-1] if rel.startswith("stacks/") else rel
         if inner.startswith(".github/workflows/") and ".github/workflows/{quick,full}.yml" in text:

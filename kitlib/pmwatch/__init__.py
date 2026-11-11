@@ -719,7 +719,7 @@ def preload(modules=()):
     import kitlib.hubclient.codestale
     import kitlib.hubclient.errors
     import kitlib.pluginsource
-    import kitlib.pmstart.consoletasks      # kitlib.pluginsource's in-use reads (_processes, _tasks)
+    import kitlib.schedtask.read            # kitlib.pluginsource's in-use reads (_processes, _tasks)
     import kitlib.launcher.pipes            # the REMOTE check (rc_check)
     import kitlib.launcher.stop
     import kitlib.proc.process

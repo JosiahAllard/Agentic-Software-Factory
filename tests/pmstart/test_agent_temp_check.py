@@ -84,7 +84,7 @@ class AgentTempCheck(unittest.TestCase):
         def fake(name, timeout):
             seen.append((name, timeout))
             raise RuntimeError("schtasks /Query timed out after %s s" % timeout)
-        with mock.patch("kitlib.machinesetup.agenttemp.task_registered", fake), \
+        with mock.patch("kitlib.schedtask.read.task_registered", fake), \
                 mock.patch.object(pmstart, "agent_temp_task_exists", REAL_TASK_EXISTS):
             lines = pmstart.agent_temp_lines(env=lambda: "X:\\t", sweep_key=lambda: {"dir": "X:\\t"})
         self.assertEqual(seen, [("agent-temp-sweep", listing.TIMEOUT)])

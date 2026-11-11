@@ -26,10 +26,10 @@ from kitlib import platform
 from kitlib import pluginsource
 from kitlib.config import ConfigError, load as load_kit_config
 from kitlib.git import repo as gitrepo
-from kitlib.launcher.pythonw import base_pythonw
 from kitlib.proc import spawn
-from kitlib.worktree.task import (AT, NOT_THE_STORE_ALIAS, PYTHONW_IS, argument, description, quoted,
-                                  task_name)
+from kitlib.schedtask.line import NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
+from kitlib.schedtask.pythonw import base_pythonw
+from kitlib.worktree.task import AT, argument, description, task_name
 
 from .agenttemp import NOT_A_FILE
 from .common import Report
@@ -119,7 +119,7 @@ def repo_task(folder):
 
 
 def find(tasks, name):
-    """The task named `name` in the task scheduler's root folder, from consoletasks.parse's list."""
+    """The task named `name` in the task scheduler's root folder, from kitlib.schedtask.read.parse's list."""
     want = name.lower()
     for t in tasks:
         if (t.get('path') or '').lstrip('\\').lower() == want:
@@ -131,7 +131,7 @@ def removed_export(task, export_root):
     """The export folder name (12 hex) a path in `task`'s actions runs from when that folder under
     `export_root` holds no export marker (allowrules.export_state GONE); None when none does."""
     from kitlib import allowrules
-    from kitlib.pmstart.consoletasks import words
+    from kitlib.schedtask.read import words
     top = os.path.normcase(os.path.normpath(export_root)).rstrip(os.sep) + os.sep
     current = pluginsource.current_folder(export_root)
     for a in task.get('actions') or []:

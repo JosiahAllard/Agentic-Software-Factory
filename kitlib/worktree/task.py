@@ -8,11 +8,12 @@ MAIN checkout (a branch worktree's copy is unreviewed and goes away with the bra
 window opens: the task's program is `pythonw.exe` running the carrier beside the tool (`CARRIER`,
 tools/no_window.py), which starts the python.exe beside that pythonw with a hidden console
 (kitlib.proc.spawn.carry). The pythonw is the one in the base install of the python that runs
-this (kitlib.launcher.pythonw.base_pythonw), written into the line as a literal path, never what
+this (kitlib.schedtask.pythonw.base_pythonw), written into the line as a literal path, never what
 `Get-Command pythonw` finds: with an app execution alias first on PATH that is
 `...\\WindowsApps\\pythonw.exe`, not the real install. Nothing is printed or registered when that
 pythonw is under WindowsApps or is not a file (`run`: refused); the line still throws, registering
-nothing, on a WindowsApps path (`NOT_THE_STORE_ALIAS`), so a hand-edited copy is checked too.
+nothing, on a WindowsApps path (kitlib.schedtask.line.NOT_THE_STORE_ALIAS), so a hand-edited copy
+is checked too.
 
 Nothing is registered without `--register --owner-confirmed`; a bare `--register` is refused before
 anything else is read. Agents never type `--owner-confirmed`.
@@ -27,28 +28,15 @@ import os
 from kitlib import platform
 from kitlib.config import ConfigError, load
 from kitlib.git import repo as gitrepo
-from kitlib.launcher.pythonw import base_pythonw, refusal
 from kitlib.proc.spawn import CARRIER      # tools/no_window.py, beside the tool the task runs
+from kitlib.schedtask.line import NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
+from kitlib.schedtask.pythonw import base_pythonw, refusal
 
 from .remove import OK, REFUSED, Outcome, GitReadError, canon, main_checkout
 
 USAGE = 2
 AT = '03:00'
 SWEEP = '--sweep-merged --apply'
-# PowerShell ends a single-quoted string at any of these, not only at ' (its own
-# CodeGeneration.EscapeSingleQuotedStringContent doubles all five).
-SINGLE_QUOTES = ("'", '‘', '’', '‚', '‛')
-# `$py` is the resolved pythonw.exe, a literal (PYTHONW_IS % its quoted path).
-PYTHONW_IS = '$py = %s'
-NOT_THE_STORE_ALIAS = (r"if (-not $py -or $py -match '\\WindowsApps\\') { throw ('pythonw is ' + $py +"
-                       r" ': no pythonw, or the Microsoft Store alias; nothing was registered') }")
-
-
-def quoted(text):
-    """`text` as a PowerShell single-quoted string: every single-quote character doubled."""
-    for q in SINGLE_QUOTES:
-        text = text.replace(q, q + q)
-    return "'" + text + "'"
 
 
 def task_name(name):
@@ -154,7 +142,7 @@ def _linux(main, name, tool, register, jobs):
 def run(argv, runner, root, tool, pythonw=None, jobs=None):
     """The verb. `runner(args) -> exit code` runs PowerShell (tests pass a fake); `root` is the
     default repository (the caller's directory); `tool` the worktree_remove.py the task runs;
-    `pythonw` the task's program (default: kitlib.launcher.pythonw.base_pythonw()). On Linux the
+    `pythonw` the task's program (default: kitlib.schedtask.pythonw.base_pythonw()). On Linux the
     job goes through `jobs` (default kitlib.platform.linux.schedule) and `runner` is not used."""
     got = parse(argv)
     if got is None:

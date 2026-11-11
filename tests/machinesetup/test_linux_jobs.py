@@ -15,6 +15,7 @@ from kitlib.git import repo as gitrepo
 from kitlib.machinesetup import agenttemp, extras, linuxjobs, procwatch, worktreesweep
 from kitlib.machinesetup.common import Plan
 from kitlib.platform.linux import schedule
+from kitlib.schedtask import read as taskread
 from kitlib.worktree import task as wtask
 from tests.platform.test_linux_schedule import FakeSystem, which_none
 
@@ -111,7 +112,7 @@ class AgentTemp(Base):
         agenttemp.task_step(plan, self.ctx())
         self.assertEqual(plan.changes, [])
         with mock.patch.object(schedule, 'exists', return_value=True) as got:
-            self.assertTrue(agenttemp.task_registered(agenttemp.TASK, run='RUN'))
+            self.assertTrue(taskread.task_registered(agenttemp.TASK, run='RUN'))
         got.assert_called_once_with(agenttemp.TASK, run='RUN')
 
     def test_no_sweep_task_is_a_note(self):

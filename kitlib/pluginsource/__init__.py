@@ -730,16 +730,16 @@ class PartialTasks(RuntimeError):
 def _tasks():
     """[the text of every registered scheduled task's definition] from `schtasks /Query /XML ONE`:
     program, arguments and working folder alike. RuntimeError when schtasks fails or times out.
-    Linux: the jobs kitlib.platform.linux.schedule wrote (consoletasks.read_tasks), each one's
+    Linux: the jobs kitlib.platform.linux.schedule wrote (schedtask.read.read_tasks), each one's
     name, program, arguments, argv and working folder. A job whose command did not split (its argv
     empty) runs something unknown: PartialTasks, carrying every job's text (that job's name,
     working folder and file or line) and naming the jobs."""
     import xml.etree.ElementTree as ET
-    from kitlib.pmstart import consoletasks
     from kitlib.proc import spawn
+    from kitlib.schedtask import read as taskread
     if kitplatform.NAME == 'linux':
         out, bad = [], []
-        for t in consoletasks.read_tasks(timeout=LIST_TIMEOUT):
+        for t in taskread.read_tasks(timeout=LIST_TIMEOUT):
             parts = [t.get('path') or '', t.get('workdir') or '']
             if not t.get('argv'):
                 where = t.get('file') or t.get('line') or ''
@@ -760,7 +760,7 @@ def _tasks():
     if r.returncode != 0:
         said = ((r.stdout or b'') + (r.stderr or b'')).decode('oem', errors='replace').strip()
         raise RuntimeError('schtasks /Query /XML exit %d: %s' % (r.returncode, said[:200] or 'no output'))
-    return [' '.join(ET.fromstring(consoletasks.xml_input(r.stdout or b'')).itertext())]
+    return [' '.join(ET.fromstring(taskread.xml_input(r.stdout or b'')).itertext())]
 
 
 def _leases(root):
@@ -1629,12 +1629,12 @@ def current_lines(kit, s, folders=None, managed=_MACHINE):
 def spawn_refresh(kit, root):
     """Start tools/plugin_refresh.py --apply detached and windowless, its output in <root>/refresh.log.
     Linux: in its own session, so a hangup or Ctrl-C that ends pm_watch does not end the refresh."""
-    from kitlib.machinesetup.extras import pythonw
+    from kitlib.schedtask import pythonw
     os.makedirs(root, exist_ok=True)
     linux = kitplatform.NAME == 'linux'
     log = open(os.path.join(root, LOGFILE), 'ab')
     try:
-        subprocess.Popen([pythonw(), os.path.join(kit, 'tools', 'plugin_refresh.py'), '--apply'],
+        subprocess.Popen([pythonw.windowless(), os.path.join(kit, 'tools', 'plugin_refresh.py'), '--apply'],
                          cwd=kit, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                          close_fds=True, creationflags=0 if linux else _DETACHED | _NOWIN,
                          start_new_session=linux)

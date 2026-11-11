@@ -63,7 +63,7 @@ class Step(MS.Base):
             return real_classify(path, *a, **k)
         for target, value in (('kitlib.machinesetup.worktreesweep.tool_root', lambda kit, environ=None: self.kit),
                               ('kitlib.git.repo.classify', classify),
-                              ('kitlib.launcher.pythonw.base_pythonw', lambda base_prefix=None: PYW)):
+                              ('kitlib.schedtask.pythonw.base_pythonw', lambda base_prefix=None: PYW)):
             p = mock.patch(target, value)
             p.start()
             self.addCleanup(p.stop)

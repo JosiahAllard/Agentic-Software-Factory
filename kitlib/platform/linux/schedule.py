@@ -2,7 +2,7 @@
 registers a Task Scheduler task: a systemd user unit when the user's systemd manager answers, else
 a crontab line; a job at sign-in with no systemd is an XDG autostart entry when a desktop session
 exists. Imported only from the Linux branches of the kit's task code (kitlib.launcher.autostart,
-kitlib.hubsite.autostart, kitlib.worktree.task, kitlib.machinesetup, kitlib.pmstart.consoletasks).
+kitlib.hubsite.autostart, kitlib.worktree.task, kitlib.machinesetup, kitlib.schedtask.read).
 
   Job(name, argv, workdir, when, description, limit_min)
       when: ('daily', 'HH:MM') | ('every', minutes) | ('boot',) | ('logon',)
@@ -12,7 +12,7 @@ kitlib.hubsite.autostart, kitlib.worktree.task, kitlib.machinesetup, kitlib.pmst
   describe(job, kind)   the lines saying what install would write, writing nothing
   install(job, kind)    write the job and enable it; the lines saying what was done
   remove(name)          take the job out of every backend; the lines saying what went
-  read_back()           every pm-kit job written, as consoletasks' task dicts (written(): the
+  read_back()           every pm-kit job written, as schedtask.read's task dicts (written(): the
                         files only, no crontab)
   find(name), exists(name), state(name), start(name), linger(), same(task, job)
 
@@ -679,7 +679,7 @@ def _from_autostart(folder):
 
 def read_back(home=None, run=None, which=None):
     """Every pm-kit job written, from every backend: the unit files in the user's unit folder, the
-    marked crontab lines and the autostart entries, each a task dict in consoletasks' form
+    marked crontab lines and the autostart entries, each a task dict in schedtask.read's form
     ({'path': name, 'actions': [{'exe', 'args'}]}) with 'backend', 'argv', 'workdir', 'when' and
     'limit_min' added. ScheduleError when a folder or the crontab cannot be read."""
     tasks = _from_units(unit_dir(home))

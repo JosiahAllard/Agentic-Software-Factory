@@ -9,6 +9,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from kitlib.git import defaults as gitdefaults
+from kitlib.schedtask import line as L
 from kitlib.worktree import task
 from tests import gitfixture
 from tests.worktree.test_worktree_remove import KIT, RemoveCase
@@ -58,7 +59,7 @@ class Task(TaskCase):
                       % gitdefaults.repo_name(self.repo), out)
         self.assertIn('-C "%s" --sweep-merged --apply' % self.repo, out)
         self.assertIn('"%s"' % os.path.normpath(self.tool), out)
-        self.assertIn(task.NOT_THE_STORE_ALIAS, out)
+        self.assertIn(L.NOT_THE_STORE_ALIAS, out)
         self.assertIn('-At 03:00', out)
         self.assertIn('printed   nothing was registered', out)
 
@@ -68,7 +69,7 @@ class Task(TaskCase):
         rc, out, _ = self.run_task()
         self.assertEqual(rc, 0, out)
         line = out.splitlines()[0]
-        self.assertTrue(line.startswith('$py = %s; ' % task.quoted(self.pythonw)), line)
+        self.assertTrue(line.startswith('$py = %s; ' % L.quoted(self.pythonw)), line)
         tool = os.path.normpath(self.tool)
         carrier = os.path.join(os.path.dirname(tool), task.CARRIER)
         self.assertIn("-Execute $py -Argument '\"%s\" python \"%s\" -C \"%s\" --sweep-merged --apply'"
@@ -91,7 +92,7 @@ class Task(TaskCase):
             got = task.run([], Runner(), self.repo, self.tool)
         self.assertEqual(got.code, 0, got.lines)
         line = got.lines[0]
-        self.assertTrue(line.startswith('$py = %s; ' % task.quoted(want)), line)
+        self.assertTrue(line.startswith('$py = %s; ' % L.quoted(want)), line)
 
     def test_a_windows_apps_pythonw_is_refused_before_anything_is_printed(self):
         alias = os.path.join(self.fx.base, 'Microsoft', 'WindowsApps', 'pythonw.exe')
@@ -169,13 +170,6 @@ class Task(TaskCase):
         rc, out, _ = self.run_task()
         self.assertEqual(rc, 0, out)
         self.assertIn("-TaskName 'it''s-worktree-sweep'", out)
-
-
-class Quoting(unittest.TestCase):
-
-    def test_every_single_quote_is_doubled(self):
-        for q in task.SINGLE_QUOTES:
-            self.assertEqual(task.quoted('a%sb' % q), "'a%s%sb'" % (q, q))
 
 
 @mock.patch('kitlib.platform.NAME', 'windows')

@@ -835,7 +835,7 @@ class SpawnRefreshTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, base, True)
         root = os.path.join(base, 'root')
         with mock.patch('kitlib.platform.NAME', name), \
-                mock.patch('kitlib.machinesetup.extras.pythonw', return_value='pythonw'), \
+                mock.patch('kitlib.schedtask.pythonw.windowless', return_value='pythonw'), \
                 mock.patch.object(P.subprocess, 'Popen') as popen:
             P.spawn_refresh('kit', root)
         self.assertEqual(popen.call_count, 1)

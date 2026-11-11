@@ -25,10 +25,10 @@ import subprocess
 from kitlib import platform
 from kitlib import pluginsource
 from kitlib.hubclient.errors import ServeError
-from kitlib.launcher import pythonw as pythonw_mod
 from kitlib.launcher import window
 from kitlib.launcher.autostart import in_worktree
 from kitlib.proc import spawn
+from kitlib.schedtask import pythonw as pythonw_mod
 
 TASK_NAME = 'PM kit hub server'
 VERB = 'serve'

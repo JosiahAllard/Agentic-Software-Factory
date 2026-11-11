@@ -1,11 +1,11 @@
-"""The pythonw.exe a scheduled task runs (kitlib/launcher/pythonw.py): the base install's, never a
+"""The pythonw.exe a scheduled task runs (kitlib/schedtask/pythonw.py): the base install's, never a
 WindowsApps alias. Nothing is registered here."""
 import os
 import sys
 import unittest
 from unittest import mock
 
-from kitlib.launcher import pythonw as P
+from kitlib.schedtask import pythonw as P
 
 SEP = chr(92)
 ALIAS = SEP.join(['C:', 'Users', 'u', 'AppData', 'Local', 'Microsoft', 'WindowsApps', 'pythonw.exe'])
@@ -37,6 +37,19 @@ class Helper(unittest.TestCase):
         self.assertIn(ALIAS, why)
         self.assertIn('no pythonw.exe at', P.refusal(os.path.join(BASE, 'pythonw.exe'), isfile=lambda p: False))
         self.assertIsNone(P.refusal(os.path.join(BASE, 'pythonw.exe'), isfile=lambda p: True))
+
+
+class ShortcutPythonw(unittest.TestCase):
+    def test_the_shortcut_target_is_the_base_install_pythonw_even_from_a_venv(self):
+        with mock.patch.object(sys, 'executable', 'C:\\venv\\Scripts\\python.exe'), \
+                mock.patch.object(P.os.path, 'isfile', return_value=True):
+            self.assertEqual(P.windowless(), P.base_pythonw())
+
+    def test_a_store_alias_base_install_falls_back_to_this_interpreter(self):
+        alias = 'C:\\Store\\WindowsApps\\pythonw.exe'
+        with mock.patch.object(P, 'base_pythonw', return_value=alias), \
+                mock.patch.object(P.os.path, 'isfile', return_value=True):
+            self.assertEqual(P.windowless(), sys.executable)
 
 
 if __name__ == '__main__':

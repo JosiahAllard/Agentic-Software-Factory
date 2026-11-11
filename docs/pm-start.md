@@ -178,7 +178,7 @@ is not registered (machine_setup.py --apply registers it, the owner's act)" when
 `schtasks /Query` (4 second limit) says the task does not exist. A query that fails any other way
 (access denied, the time limit, no `schtasks`) is "could not check the agent temp sweep task
 agent-temp-sweep: ...", after the other two lines, never "not registered"
-(`kitlib.machinesetup.agenttemp.task_registered`). It changes nothing. A failing environment or
+(`kitlib.schedtask.read.task_registered`). It changes nothing. A failing environment or
 config reader is one `could not check agent_temp: ...` line. Code: `kitlib/pmstart` `agent_temp_lines`.
 
 ## C: drive (`cdrive`)
@@ -281,7 +281,7 @@ in the plugin, which every session loads. Exec form, with `<pythonw>` the interp
 `boot/hook.py claude --settings-entry` prints (docs/guard-hooks.md "Go-live"), starts no shell. `pythonw` has no
 console, so each program the checklist starts is started with a console that has no window: git
 (`kitlib.git.cmd`) and the PowerShell that lists processes (`kitlib/proc/listing.py` `list_processes`) through `kitlib.proc.spawn`, `schtasks` with `CREATE_NO_WINDOW`
-in `kitlib.machinesetup.agenttemp.task_registered` (docs/daily-full.md "The schedule"). Put it in the PM
+in `kitlib.schedtask.read.task_registered` (docs/daily-full.md "The schedule"). Put it in the PM
 repo's `.claude/settings.local.json`, which only that checkout loads. `tools/machine_setup.py`
 otherwise reads the account config folders (`~/.claude`, `~/.claude-*`, `default_config_dirs` in
 `kitlib/machinesetup`), never a repository's settings, so this file is edited by hand, except that

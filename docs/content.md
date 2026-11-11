@@ -149,8 +149,9 @@ one tier map),
 `autoCompactWindow` in agent front matter is a ceiling, read in Claude Code 2.1.309's own code (INFERRED, not tried
 live): the CLI's agent schema takes an integer 100000..1000000, a plugin agent keeps it, and a subagent
 runs on its parent's window unless that is larger, when it runs on the agent's; the
-`CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable still beats both. So a 170000 agent under a
-200000 coordinator compacts at 170000, and under a 150000 session at 150000. It owns that folder. It copies no skill: the
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable still beats both. The managed settings set no window, so a subagent with no `compact` is expected to take the window of the session that launched it (the launcher passes `--autocompact`: launcher.md). So a 170000 agent under a
+200000 coordinator would compact at 170000, and under a 150000 session at 150000.
+Known limit: that inheritance is read from the CLI's agent-file schema text ("only lowers the window the subagent would otherwise inherit"), and the Claude Code docs do not state it; it is unproven live. It would show as a worker, strong-worker or senior-worker under a launched coordinator running well past 200000 before it compacts. The fix then is a per-role `compact` for those three roles, the owner's decision. It owns that folder. It copies no skill: the
 plugin manifest's `skills` is `./content/skills/`,
 and `hosts/claude/shell/skills/`, the copy it wrote before, is a retired folder: a file there is stale.
 

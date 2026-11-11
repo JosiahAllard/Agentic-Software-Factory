@@ -123,7 +123,8 @@ def run(settings, host, test=False, dry_run=False, say=None, permission_mode=Non
             log('test session already running')
             return out
         folder = host.home
-        cmd = 'claude --remote-control %s -n %s' % (window.q(TEST_NAME), window.q(TEST_NAME))
+        cmd = 'claude --autocompact %d --remote-control %s -n %s' % (S.PM_AUTOCOMPACT, window.q(TEST_NAME),
+                                                                  window.q(TEST_NAME))
         text = window.script(TEST_NAME, window.PLAIN, folder, cmd, None, host.env('AGENT_TEMP'))
         if dry_run:
             tell('would start %s in %s' % (TEST_NAME, folder))
@@ -212,7 +213,7 @@ def resume_pm(settings, host, cfg, log, dry_run=False, permission_mode=None):
         d = A.launch_dir(settings, str(pm_account))
         config_dir = None if settings.is_default(d) else d
         cmd = window.claude_command('pm-session', PM_PROMPT, S.run_as(PM_AGENT), resume=sid,
-                                    permission_mode=permission_mode)
+                                    autocompact=S.PM_AUTOCOMPACT, permission_mode=permission_mode)
         text = window.script('pm-session', window.PM, folder, cmd, config_dir, host.env('AGENT_TEMP'))
         if dry_run:
             log('would resume pm-session (session %s, account %s) in %s' % (sid, pm_account, folder))

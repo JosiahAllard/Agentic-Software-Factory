@@ -46,7 +46,6 @@
     }
   },
   "outputStyle": "Concise",
-  "autoCompactWindow": 200000,
   "promptSuggestionEnabled": false,
   "theme": "dark",
   "agentPushNotifEnabled": true,

@@ -2,7 +2,7 @@
 writes its log to the stream it is given.
 
 A test module is a `test*.py` of the tools folder (`.kit.json` "repo".tools_dir) that
-kitlib.tooldeps' scan counts as one; a name may also be `module.Class` or `module.Class.test`.
+tool_deps' scan counts as one; a name may also be `module.Class` or `module.Class.test`.
 
 Units. What `python -m unittest discover` did, split up: a unit is one test module, or one
 class-shard of a module in `shards` (whole TestCase classes round-robin, so class and module
@@ -55,7 +55,7 @@ cannot be made, or that stops during the run, leaves the run going unheld, and t
 `pid hold: FAILED ... NOT held` with the reason, at the start and again before the summary. Its
 cost: docs/test-tools.md "The pid shield".
 
-`.kit.json` "tool_tests" keys read here (the section is shared with kitlib.tooldeps; the kit schema,
+`.kit.json` "tool_tests" keys read here (the section is shared with tool_deps; the kit schema,
 kitlib/config/schema.py, checks their types; `settings` adds the checks below):
   shards         {"test_x": 4}        modules split into N class-shards (no `.` in a name)
   serial         ["test_x", "test_y.C"]  units run one at a time after the pool

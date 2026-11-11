@@ -32,7 +32,7 @@ SHORTCUT = 'Machine schedule.lnk'
 LOCK_ENV = 'KIT_MACHINE_LOCK'
 SIDS = ('*S-1-5-18', '*S-1-5-32-544')                               # SYSTEM, Administrators
 GRANT = '(OI)(CI)F'
-_NOWIN = 0x08000000 if sys.platform == 'win32' else 0                # CREATE_NO_WINDOW
+_NOWIN = 0x08000000 if platform.NAME == 'windows' else 0             # CREATE_NO_WINDOW
 AUTO_TASK = 'kit-automatic-tasks'
 AUTO_TOOL = os.path.join('tools', 'auto_tasks.py')
 ENV_FILE = ('.config', 'environment.d', 'pm-kit.conf')             # Linux, under the profile

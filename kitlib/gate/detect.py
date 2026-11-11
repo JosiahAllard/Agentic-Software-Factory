@@ -46,6 +46,7 @@ import json
 import os
 import re
 
+from kitlib import platform
 from kitlib.git import batch, cmd
 
 AUTO = 'auto'
@@ -235,7 +236,7 @@ def _has(read, rel, rx):
 def _shim(name):
     """A package manager's command: npm, pnpm and yarn are .cmd shims on Windows, which
     CreateProcess runs only when named with the extension."""
-    return name + '.cmd' if os.name == 'nt' else name
+    return name + '.cmd' if platform.NAME == 'windows' else name
 
 
 def _is_py_test(p):

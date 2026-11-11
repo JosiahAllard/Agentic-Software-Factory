@@ -170,13 +170,13 @@ class OwnerTest(Case):
 
 
 class PosixCase(Case):
-    """Base of the POSIX checks, run on any platform: os.name is patched to posix, and os.getuid
+    """Base of the POSIX checks, run on any platform: platform.NAME is patched to linux, and os.getuid
     (absent on Windows) and the owner_uid seam are patched where a test needs a uid."""
 
     def posix(self, me, owners=None):
-        """Patch os.name to posix, os.getuid to `me`, and owner_uid to `owners` (path -> result)
+        """Patch platform.NAME to linux, os.getuid to `me`, and owner_uid to `owners` (path -> result)
         where given; every other path keeps its real st_uid."""
-        stack = [mock.patch.object(safepath.os, 'name', 'posix'),
+        stack = [mock.patch.object(safepath.platform, 'NAME', 'linux'),
                  mock.patch.object(safepath.os, 'getuid', lambda: me, create=True)]
         if owners is not None:
             real = safepath.owner_uid

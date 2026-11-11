@@ -46,6 +46,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
+from kitlib import platform
 from kitlib.guard.shell import cmd_unsafe
 
 RED, GREEN, NONE, ERROR = 'RED', 'GREEN', 'NONE', 'ERROR'
@@ -215,7 +216,7 @@ def command(sel, tw, log_dir, n, python=sys.executable, head='.'):
     if sel.kind == 'command':
         return command_argv(sel, tw, log_dir, n, head), tw, {}
     if sel.kind == 'gradle':
-        gradlew = os.path.join(tw, 'gradlew.bat' if os.name == 'nt' else 'gradlew')
+        gradlew = os.path.join(tw, 'gradlew.bat' if platform.NAME == 'windows' else 'gradlew')
         return [gradlew] + gradle_args(sel), tw, {}
     extra = list(sel.runner.get('args') or [])
     if sel.kind == 'dotnet':
@@ -242,7 +243,7 @@ def names_copied(line, copied):
     line starting `e: ` with `<path>:<n>`. A warning never counts; separators compare as `/`;
     case-blind on Windows."""
     text = line.replace('\\', '/')
-    flags = re.I if os.name == 'nt' else 0
+    flags = re.I if platform.NAME == 'windows' else 0
     kotlin = text.lstrip().startswith('e: ')
     for p in copied:
         at = r'(?:^|[/\s])' + re.escape(p.replace('\\', '/'))

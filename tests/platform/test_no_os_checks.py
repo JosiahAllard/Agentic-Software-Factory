@@ -3,10 +3,10 @@ system it runs on, never os.name or sys.platform itself.
 
 The scan reads every kit .py file outside tests/ and kitlib/platform/ (and outside dot-folders
 and __pycache__) and finds each read of os.name or sys.platform, under any alias
-(`import os as _os`, `from sys import platform`). The files still doing so today are ALLOWED:
-each later slice moves its files onto kitlib.platform and takes them off the list, so the list
-only shrinks. A file not on the list that starts asking is a failure, and so is a listed file
-that no longer asks (take it off)."""
+(`import os as _os`, `from sys import platform`). The files still doing so are ALLOWED: none
+in kitlib, only the entry scripts and optional tools outside it that run before or apart from the
+kit. A file not on the list that starts asking is a failure, and so is a listed file that no
+longer asks (take it off)."""
 import ast
 import os
 import unittest
@@ -14,21 +14,6 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 ALLOWED = frozenset({
-    'kitlib/__init__.py',
-    'kitlib/ci/ratchet.py',
-    'kitlib/gate/detect.py',
-    'kitlib/guard/context.py',
-    'kitlib/guard/place.py',
-    'kitlib/guard/rules_run.py',
-    'kitlib/host/hookmain.py',
-    'kitlib/launcher/host.py',
-    'kitlib/ledger/safepath.py',
-    'kitlib/machinesetup/extras.py',
-    'kitlib/pluginsource/__init__.py',
-    'kitlib/pluginsource/claude.py',
-    'kitlib/redfirst/verdict.py',
-    'kitlib/tooldeps/selfrun.py',
-    'kitlib/worktree/scratch.py',
     'optional/procwatch/procwatch.py',
     'optional/usage/_usage.py',
     'optional/usage/agent_costs.py',

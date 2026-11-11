@@ -96,8 +96,8 @@ _RESERVED = frozenset(['CON', 'PRN', 'AUX', 'NUL'] + ['COM%d' % i for i in range
                       + ['LPT%d' % i for i in range(1, 10)])
 _VERSION = re.compile(rb'("version"\s*:\s*")([^"\\]*)(")')
 _BOM = b'\xef\xbb\xbf'
-_NOWIN = 0x08000000 if sys.platform == 'win32' else 0               # CREATE_NO_WINDOW
-_DETACHED = 0x00000008 | 0x00000200 if sys.platform == 'win32' else 0  # DETACHED_PROCESS, NEW_GROUP
+_NOWIN = 0x08000000 if kitplatform.NAME == 'windows' else 0               # CREATE_NO_WINDOW
+_DETACHED = 0x00000008 | 0x00000200 if kitplatform.NAME == 'windows' else 0  # DETACHED_PROCESS, NEW_GROUP
 
 
 class RefreshError(Exception):

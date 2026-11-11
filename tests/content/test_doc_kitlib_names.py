@@ -3,8 +3,9 @@
 leave a doc naming the old place.
 
 A dotted name resolves to a module file, a package, or a symbol defined in its package (a `def`,
-`class` or `NAME =` line in any file under it, or an import in its `__init__.py`). Blind spot, on
-purpose: a stale name that matches a symbol in its package passes (kitlib.proc.win32 today)."""
+`class` or `NAME =` line in any file under it, or an import in its `__init__.py`). Blind spots, on
+purpose: a stale name that matches a symbol elsewhere in its package passes, and nothing after a
+module file is checked (kitlib.lock.api.<stale> passes)."""
 import os
 import re
 import unittest

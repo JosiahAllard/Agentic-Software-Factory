@@ -20,12 +20,11 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 
-from kitlib import machinesetup
+from kitlib import machinesetup, platform
 
 TIMEOUT = 300
-_NOWIN = 0x08000000 if sys.platform == 'win32' else 0      # CREATE_NO_WINDOW
+_NOWIN = 0x08000000 if platform.NAME == 'windows' else 0      # CREATE_NO_WINDOW
 INSTALLED = ('plugins', 'installed_plugins.json')   # Claude Code's install record, in an account folder
 KNOWN_MARKETPLACES = ('plugins', 'known_marketplaces.json')   # its marketplaces, in an account folder
 USER_SCOPE = 'user'

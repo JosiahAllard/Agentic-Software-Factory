@@ -42,7 +42,7 @@ import os
 import subprocess
 import time
 
-from kitlib import kitroot
+from kitlib import kitroot, platform
 from kitlib.config import user as kuser
 from kitlib.git import cmd
 
@@ -563,7 +563,7 @@ def _remove_scratch(ctx, argument, environ):
 # ---- making a scratch tree and removing it after its run ----------------------------------------
 PREFIX = 'redfirst-'
 HOLD_STEP_S = 5
-OWN_CONSOLE = ({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt'
+OWN_CONSOLE = ({'creationflags': subprocess.CREATE_NO_WINDOW} if platform.NAME == 'windows'
                else {'start_new_session': True})
 
 

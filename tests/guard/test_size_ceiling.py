@@ -36,7 +36,7 @@ CEILINGS = {
     'modes.py': 87,
     'ownercommits.py': 402,
     'paths.py': 154,
-    'place.py': 403,
+    'place.py': 404,
     'prepush.py': 552,
     'refusal_log.py': 169,
     'rolepolicy.py': 626,

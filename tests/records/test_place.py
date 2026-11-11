@@ -42,7 +42,7 @@ class LogBase(unittest.TestCase):
         self.notes = []
 
     def base(self, env, cfg=None):
-        with mock.patch.dict(os.environ, env), mock.patch('sys.platform', 'win32'):
+        with mock.patch.dict(os.environ, env):
             return place.log_base(cfg or _Cfg(), self.root, 'demo', self.notes.append)
 
     def test_off_the_shared_temps_drive_the_logs_stay_on_the_checkouts_drive(self):
@@ -58,8 +58,7 @@ class LogBase(unittest.TestCase):
 
     def test_the_fallback_base_is_in_the_shared_temp(self):
         lad = other_letter(DRIVE) + os.sep + 'lad'
-        with mock.patch.dict(os.environ, {'LOCALAPPDATA': lad}), \
-                mock.patch('sys.platform', 'win32'):
+        with mock.patch.dict(os.environ, {'LOCALAPPDATA': lad}):
             self.assertEqual(place.fallback_log_base('demo'),
                              os.path.join(lad, 'Temp', 'demo-gate'))
 

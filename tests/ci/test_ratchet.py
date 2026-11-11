@@ -220,9 +220,9 @@ class Baselines(Tree):
         root = self.tree()
         self.assertEqual(ratchet.default_baseline(root, 'linux'),
                          os.path.join(root, 'tests', 'linux-baseline.txt'))
-        self.assertEqual(ratchet.default_baseline(root, 'win32'),
+        self.assertEqual(ratchet.default_baseline(root, 'windows'),
                          os.path.join(root, 'tests', 'windows-baseline.txt'))
-        self.assertIsNone(ratchet.default_baseline(root, 'darwin'))
+        self.assertIsNone(ratchet.default_baseline(root, 'unsupported'))
 
     def test_the_kit_s_linux_baseline_reads(self):
         path = os.path.join(KIT, 'tests', 'linux-baseline.txt')

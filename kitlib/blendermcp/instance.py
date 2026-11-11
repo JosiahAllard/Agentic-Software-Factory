@@ -3,10 +3,10 @@ started on a port of its own, called through the add-on, watched, and closed.
 
 Open: a free port of PORTS (no live lock entry holds its resource, nothing listens on it and an
 exclusive bind of it works), then a lock booking of kind KIND with gpu_share GPU_SHARE (one gpu
-slot) that holds resource blender-port:<port> for its whole life, then Blender started in that
-run's job (kitlib.lock.run.Slot.start), then a wait until the port listens and every listener on
-it is a process of that job. A booking refused because another bridge took the port first tries
-the next port. Anything that fails after the booking releases it, killing what it started.
+slot) that holds resource blender-port:<port> for its whole life, then Blender started in that run's
+job (kitlib.lock.run_held.Slot.start), then a wait until the port listens and every listener on it
+is a process of that job. A booking refused because another bridge took the port first tries the
+next port. Anything that fails after the booking releases it, killing what it started.
 
 Calls: one at a time per Blender (the add-on serves one), each with a deadline (wire.call). Before
 each call the port's listeners are read again: the add-on binds with SO_REUSEADDR, so on Windows

@@ -90,9 +90,9 @@ from kitlib.pytests import runner as unit_runner
 from kitlib.tooldeps import pool as worker_pool
 from kitlib.tooldeps import testcost
 
-# The variable kitlib.lock.run (CPUMASK_ENV) sets on the command a lock run starts: a hex mask of
-# the logical processors the run holds. Named here, not imported, so this module does not load the
-# lock; tests/tooldeps checks the two names agree.
+# The variable kitlib.lock.run_held (CPUMASK_ENV) sets on the command a lock run starts: a hex
+# mask of the logical processors the run holds. Named here, not imported, so this module does not
+# load the lock; tests/tooldeps checks the two names agree.
 CPUMASK_ENV = 'MACHINE_LOCK_CPUMASK'
 # The variable kitlib.lock.giveback (GIVE_ENV) offers a give back with; units never inherit it.
 GIVE_ENV = 'MACHINE_LOCK_GIVE_BACK'

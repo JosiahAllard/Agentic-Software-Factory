@@ -1,5 +1,5 @@
 """kitlib.lock.background.run_background ends its child's tree (Ctrl+C, a stop whose grace ran
-out) the way a foreground run's kill path does (kitlib.lock.run end_sparing): a build daemon
+out) the way a foreground run's kill path does (kitlib.lock.run_end end_sparing): a build daemon
 that serves a client outside the run's job is left running with its tree, the run's other
 leftovers are ended, and the judgement is in the ended record's `daemons`. A daemon that serves
 only the run's own client is ended, and recorded so. The fake daemon, client and run command are
@@ -16,7 +16,7 @@ from . import test_release_daemons as trd
 
 if os.name == "nt":
     from kitlib.lock import background as bg
-    from kitlib.lock import run as rm
+    from kitlib.lock import run_end
 
 REAL_SLEEP = time.sleep
 LOOP_CAP = 90           # background's one-second loop sleeps a test waits before it gives up
@@ -114,7 +114,7 @@ class BackgroundLeavesASharedDaemon(StoreCase):
         is ended, the shared daemon's spared."""
         c = self.outside_client()
         code = self.run_shared("outside", lambda: self.assertTrue(
-            rm.request_stop(self.store, self.run_id(), "test")), "worker", "plain", "stay")
+            run_end.request_stop(self.store, self.run_id(), "test")), "worker", "plain", "stay")
         daemon, _, plain = self.shared_pids()
         self.assertEqual(self.ended()["how"], "stopped")
         self.assertEqual(code, 1)

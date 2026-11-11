@@ -18,6 +18,7 @@ if os.name == 'nt':
     from kitlib.blendermcp.instance import Bridge, BridgeError
     from kitlib.lock import api
     from kitlib.lock import run as run_mod
+    from kitlib.lock import run_end
     from kitlib.proc import process
 
 FAKE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fakeblender.py')
@@ -245,7 +246,7 @@ class Ending(BridgeCase):
 
     def test_a_stop_the_lock_was_asked_for_ends_blender(self):
         a = self.bridge.open(self.wt)
-        self.assertTrue(run_mod.request_stop(self.store, a['handle'], 'test-owner'))
+        self.assertTrue(run_end.request_stop(self.store, a['handle'], 'test-owner'))
         self.bridge.tick()
         self.assertTrue(self.gone(a['pid']))
         end = self.ended(a['handle'])

@@ -58,7 +58,7 @@ from kitlib.gate import runner as grunner
 from kitlib.git import batch, cmd
 from kitlib.git import refs as gitrefs
 from kitlib.git import repo as gitrepo
-from kitlib.lock import run as lockrun
+from kitlib.lock import run as lockrun, run_wait
 from kitlib.lock.store import (EXIT_BUSY, EXIT_HOLD, EXIT_REQUIRE, EXIT_RESERVED, EXIT_TIMEOUT,
                                EXIT_USAGE, LockError, Store)
 from kitlib.proc.job import Job
@@ -124,7 +124,7 @@ class Interrupts(object):
     lock's queue wait is running, and at most once: it drops to HOLD as it raises. HOLD notes the
     signal for the next safe point; CLEAN counts it and carries on.
 
-    BOOK raises only inside `wait_code` (kitlib.lock.run.acquire): there kitlib.lock.run.book
+    BOOK raises only inside `wait_code` (kitlib.lock.run_wait.acquire): there kitlib.lock.run.book
     removes the run's queue entry and record itself before the interrupt leaves it. Anywhere else
     in book - before the wait, or once the slots are held and the Slot is being made and handed
     back - a raise could drop a Slot nothing would ever release, so the signal is only noted and
@@ -132,7 +132,7 @@ class Interrupts(object):
 
     def __init__(self, wait_code=None):
         self.mode, self.seen, self.during_cleanup, self.old = HOLD, 0, 0, {}
-        self.wait_code = lockrun.acquire.__code__ if wait_code is None else wait_code
+        self.wait_code = run_wait.acquire.__code__ if wait_code is None else wait_code
 
     def handler(self, signum, frame):
         self.seen += 1

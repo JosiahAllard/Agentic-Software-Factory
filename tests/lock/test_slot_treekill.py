@@ -27,6 +27,8 @@ from .helpers import StoreCase, clean_env
 
 if os.name == "nt":
     from kitlib.lock import run as rm
+    from kitlib.lock import run_end
+    from kitlib.lock import run_held
     from kitlib.platform.windows import process, win32
 
 # Level 0 starts level 1, which starts level 2; each writes <level>.pid (whole, by rename) and
@@ -154,7 +156,7 @@ class SlotTreeKill(StoreCase):
             p = launch.start(argv)
             self.addCleanup(self.reap, p)
             handles = self.hold(self.pids(d), launch.pids())
-            self.assertTrue(rm.request_stop(self.store, rid, "test"))
+            self.assertTrue(run_end.request_stop(self.store, rid, "test"))
             self.assertEqual(launch.wait(p), 1)
             self.assert_gone(handles)
         self.assertEqual(self.ended(rid), ("cancelled", 1))
@@ -213,18 +215,18 @@ class SlotTreeKill(StoreCase):
         # The stop and the timeout are both due at the first poll: the stop wins, and the tree
         # is ended once over the wait and the release (end_sparing is the kill path's one call).
         argv, d = self.tree()
-        real, ends = rm.end_sparing, []
+        real, ends = run_end.end_sparing, []
 
         def end_sparing(*args, **kw):
             ends.append(threading.get_ident())
             return real(*args, **kw)
-        with mock.patch.object(rm, "end_sparing", end_sparing):
+        with mock.patch.object(run_held, "end_sparing", end_sparing):
             with self.slot() as launch:
                 rid = launch.id
                 p = launch.start(argv)
                 self.addCleanup(self.reap, p)
                 handles = self.hold(self.pids(d), launch.pids())
-                self.assertTrue(rm.request_stop(self.store, rid, "test"))
+                self.assertTrue(run_end.request_stop(self.store, rid, "test"))
                 self.assertEqual(launch.wait(p, 0), 1)
                 self.assert_gone(handles)
         self.assertEqual(ends, [threading.get_ident()])

@@ -159,7 +159,7 @@ def refuse_cmd_reparse(sel, program, words):
 def runs_in_cmd(program):
     """Whether Windows runs `program` in cmd.exe, which reads its command line again: a .bat or
     .cmd file, a trailing dot or space dropped as Windows drops it (x.bat. starts x.bat, as
-    kitlib.lock.run script_command reads it), or cmd itself (`cmd /c x.bat`)."""
+    kitlib.lock.run_cmdline script_command reads it), or cmd itself (`cmd /c x.bat`)."""
     name = program.replace('\\', '/').rsplit('/', 1)[-1].rstrip(' .').lower()
     return name.endswith(('.bat', '.cmd')) or name in ('cmd', 'cmd.exe')
 

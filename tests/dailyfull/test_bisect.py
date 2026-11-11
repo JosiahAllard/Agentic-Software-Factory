@@ -16,6 +16,7 @@ from kitlib.dailyfull import bisect as B
 from kitlib.dailyfull import file as filing
 from kitlib.gate import hookrev, rerun, runner
 from kitlib.lock import run as lockrun
+from kitlib.lock import run_end
 from kitlib.lock.store import LockError
 from tests import gitfixture
 from tests.gate import fixtures
@@ -362,7 +363,7 @@ class ProbeCannotFinish(ProbeCase):
         def run_class(launcher, *args, **kw):
             for d in self.store.live_runs():
                 if d.get('kind') == 'test':
-                    lockrun.request_stop(self.store, d['id'], 'test')
+                    run_end.request_stop(self.store, d['id'], 'test')
             return real(launcher, *args, **kw)
         return mock.patch.object(rerun, 'run_class', run_class)
 

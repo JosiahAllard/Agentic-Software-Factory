@@ -8,7 +8,7 @@ file), starttime is field 22 of /proc/<pid>/stat, clock ticks since boot. Two bo
 ctime, so a record or token written before a reboot names no live process after it; within a boot
 the order is starttime's. stamp_now() is the same encoding of the clock now (CLOCK_BOOTTIME, the
 clock starttime counts on), so a process created after it never has a ctime below it; one started
-in the stamp's own tick has the stamp's value (a tie errs safe: kitlib.lock.run _end_others ages
+in the stamp's own tick has the stamp's value (a tie errs safe: kitlib.lock.run_end _end_others ages
 only ctimes below the stamp).
 
   identity(pid)       (ctime, exited) of pid, None when no process has it (kitlib.lock.store
@@ -17,7 +17,7 @@ only ctimes below the stamp).
   ancestry, ancestors_of, own_ancestors, descendants, command_line, terminate_verified, kill_tree
                       as kitlib.platform.windows.process documents them
   pidns(pid)          the inode of pid's PID namespace, None when it cannot be read
-  stamp_now()         the seam's stamp (kitlib.lock.run filetime_now on Linux)
+  stamp_now()         the seam's stamp (kitlib.lock.run_end filetime_now on Linux)
   rows()              every process as kitlib.pmstart.list_processes's dicts (Name, CommandLine,
                       ExecutablePath, ProcessId, ParentProcessId, Created), from /proc
                       (docs/linux-support-plan.md section 8, slice 11)

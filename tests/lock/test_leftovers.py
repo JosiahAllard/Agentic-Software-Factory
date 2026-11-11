@@ -1,4 +1,4 @@
-"""kitlib.lock.run move_leftovers: before a run's job is closed without a kill (a run that ended
+"""kitlib.lock.run_end move_leftovers: before a run's job is closed without a kill (a run that ended
 on its own, a kill that spared a build daemon, a background child that exited), what still runs
 in it is moved out of it where the job can do that (a Linux job's leftovers); a move that fails
 is said and never fails the release. Here on Windows: a job object with a leftovers stand-in
@@ -16,6 +16,8 @@ if os.name == "nt":
     from kitlib.lock import background as bg
     from kitlib.lock import jobset
     from kitlib.lock import run as rm
+    from kitlib.lock import run_end
+    from kitlib.lock import run_held
     from kitlib.proc.job import Job, JobError
     from .test_giveback import usable_slots
 
@@ -53,21 +55,21 @@ class Unit(unittest.TestCase):
         self.store = mock.Mock(say=self.said.append)
 
     def test_what_is_moved_is_said_and_returned(self):
-        self.assertEqual(rm.move_leftovers(self.store, "r1", Fake([5, 6])), [5, 6])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", Fake([5, 6])), [5, 6])
         self.assertEqual(self.said, ["run r1: left pid 5, pid 6 running, moved out of its job"])
 
     def test_nothing_left_says_nothing(self):
-        self.assertEqual(rm.move_leftovers(self.store, "r1", Fake()), [])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", Fake()), [])
         self.assertEqual(self.said, [])
 
     def test_the_job_is_unpinned_before_what_runs_on_is_moved(self):
         f = Fake([5])
-        self.assertEqual(rm.move_leftovers(self.store, "r1", f), [5])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", f), [5])
         self.assertEqual(f.log, ["unpin", "leftovers"])
 
     def test_an_unpin_that_fails_is_said_and_the_move_goes_on(self):
         f = Fake([5], unpin_error=OSError("affinity refused"))
-        self.assertEqual(rm.move_leftovers(self.store, "r1", f), [5])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", f), [5])
         self.assertEqual(f.log, ["unpin", "leftovers"])
         self.assertTrue(self.said[0].startswith("WARNING: run r1: its job could not be unpinned "
                                                 "before what it left was moved out: "),
@@ -77,22 +79,22 @@ class Unit(unittest.TestCase):
 
     def test_a_job_that_cannot_move_moves_none(self):
         f = Fake([5], has=False)
-        self.assertEqual(rm.move_leftovers(self.store, "r1", f), [])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", f), [])
         self.assertEqual(f.log, [], "a job that cannot move is not unpinned here either")
-        self.assertEqual(rm.move_leftovers(self.store, "r1", None), [])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", None), [])
         self.assertEqual(self.said, [])
 
     def test_a_closed_job_is_not_asked(self):
         f = Fake([5])
         f.closed = True
-        self.assertEqual(rm.move_leftovers(self.store, "r1", f), [])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", f), [])
         self.assertEqual(f.calls, 0)
         self.assertEqual(f.log, [])
 
     def test_a_failed_move_is_said_and_goes_no_further(self):
         for err in (JobError("pid 5 is still in the job"), OSError("busctl failed")):
             self.said.clear()
-            self.assertEqual(rm.move_leftovers(self.store, "r1", Fake([5], error=err)), [])
+            self.assertEqual(run_end.move_leftovers(self.store, "r1", Fake([5], error=err)), [])
             self.assertEqual(len(self.said), 1)
             self.assertTrue(self.said[0].startswith("WARNING: run r1: what it left could not be "
                                                     "moved out of its job: "), self.said[0])
@@ -100,8 +102,8 @@ class Unit(unittest.TestCase):
 
     def test_a_say_that_fails_is_dropped(self):
         self.store.say = mock.Mock(side_effect=OSError("stderr gone"))
-        self.assertEqual(rm.move_leftovers(self.store, "r1", Fake([5])), [5])
-        self.assertEqual(rm.move_leftovers(self.store, "r1", Fake(error=JobError("x"))), [])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", Fake([5])), [5])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", Fake(error=JobError("x"))), [])
 
 
 ALL = list(range(8))                        # the faked machine's cpus
@@ -138,7 +140,7 @@ class AffinityTiers(unittest.TestCase):
     def test_w2_moved_processes_get_every_cpu_back(self):
         j = self.bare(self.c.WeakJob, spared=set(), token="wtest", _ctime=1)
         j.members = lambda: {p: 1 for p in (5, 6) if p not in j.spared}
-        self.assertEqual(rm.move_leftovers(self.store, "r1", j), [5, 6])
+        self.assertEqual(run_end.move_leftovers(self.store, "r1", j), [5, 6])
         j.end(kill=False)
         self.assertEqual(j.spared, {5, 6})
         self.assertEqual(self.freed(), {5, 6})
@@ -151,7 +153,7 @@ class AffinityTiers(unittest.TestCase):
         j.contains = lambda pid: "in" if pid in held else "out"
         with mock.patch.object(self.c, "_call",
                                side_effect=lambda argv: held.clear() or (True, "")):
-            self.assertEqual(rm.move_leftovers(self.store, "r1", j), [5, 6])
+            self.assertEqual(run_end.move_leftovers(self.store, "r1", j), [5, 6])
             j.end(kill=False)
         self.assertEqual(self.freed(), {5, 6})
 
@@ -186,7 +188,7 @@ class Release(StoreCase):
 
     def book(self, error=None, one_command=False):
         usable_slots(self, 1)
-        for x in (mock.patch.object(rm, "Job", moving_job(self.log, error)),
+        for x in (mock.patch.object(run_held, "Job", moving_job(self.log, error)),
                   mock.patch.object(jobset, "one_command", return_value=one_command)):
             x.start()
             self.addCleanup(x.stop)
@@ -242,7 +244,7 @@ class Release(StoreCase):
     def test_a_kill_that_spared_a_daemon_moves_what_runs_on(self):
         s = self.book()
         p = self.sleeper(s)
-        with mock.patch.object(rm, "end_sparing", return_value=True):
+        with mock.patch.object(run_held, "end_sparing", return_value=True):
             s.end_tree()
         self.assertEqual(s.release(how="cancelled")["how"], "cancelled")
         kinds = [e[0] for e in self.log]

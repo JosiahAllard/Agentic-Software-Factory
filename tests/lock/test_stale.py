@@ -22,6 +22,8 @@ if os.name == "nt":
     from kitlib.lock import api, notice, stale
     from kitlib.lock import holds as hl
     from kitlib.lock import run as rm
+    from kitlib.lock import run_end
+    from kitlib.lock import run_held
     from kitlib.lock import status as st
     from kitlib.lock import store as store_mod
     from kitlib.lock.store import iso, utc_now
@@ -78,7 +80,7 @@ class Base(StoreCase):
         return sorted(os.listdir(self.dir)) if os.path.isdir(self.dir) else []
 
     def reap(self):
-        return stale.reap(self.store, rm.request_stop)
+        return stale.reap(self.store, run_end.request_stop)
 
 
 class NeverReaped(Base):
@@ -129,7 +131,7 @@ class NeverReaped(Base):
 
     def test_a_run_already_asked_to_stop_keeps_that_request(self):
         self.stale_record()
-        self.assertTrue(rm.request_stop(self.store, RID, "the owner", "sess-o"))
+        self.assertTrue(run_end.request_stop(self.store, RID, "the owner", "sess-o"))
         before = self.stop_of()
         self.assertEqual(self.reap(), [])
         self.assertEqual(self.stop_of(), before)
@@ -215,7 +217,7 @@ class Races(Base):
 
     def test_a_record_gone_before_the_stop_writes_nothing(self):
         self.stale_record()
-        real = rm.request_stop
+        real = run_end.request_stop
 
         def gone_first(store, rid, by, session=None, **kw):
             os.remove(store.path("active", rid + ".json"))
@@ -227,7 +229,7 @@ class Races(Base):
 
     def test_an_owner_stop_made_after_the_look_is_kept(self):
         self.stale_record()
-        real = rm.request_stop
+        real = run_end.request_stop
 
         def owner_first(store, rid, by, session=None, **kw):
             self.assertTrue(real(store, rid, "the owner", "sess-o"))
@@ -240,8 +242,9 @@ class Races(Base):
 
     def test_the_locks_stop_never_replaces_one_there(self):
         self.stale_record()
-        self.assertTrue(rm.request_stop(self.store, RID, "the owner", "sess-o"))
-        self.assertFalse(rm.request_stop(self.store, RID, stale.BY, None, why="w", exclusive=True))
+        self.assertTrue(run_end.request_stop(self.store, RID, "the owner", "sess-o"))
+        self.assertFalse(run_end.request_stop(self.store, RID, stale.BY, None, why="w",
+                                              exclusive=True))
         self.assertEqual(self.stop_of()["by"], "the owner")
         left = [n for n in os.listdir(self.store.path("active")) if n.endswith(".tmp")]
         self.assertEqual(left, [])
@@ -250,7 +253,7 @@ class Races(Base):
         other = "r-20261031T000001Z-57a1e1"
         self.stale_record()
         self.stale_record(rid=other)
-        real = rm.request_stop
+        real = run_end.request_stop
 
         def first_fails(store, rid, by, session=None, **kw):
             if rid == RID:
@@ -347,7 +350,7 @@ class Recorded(Base):
         self.addCleanup(p.kill)
         ct = process.proc_ctime(p.pid)
         name = {q: n.lower() for q, _pp, n in process.snapshot()}[p.pid]
-        env = clean_env(**{rm.ORIGIN_ENV: "%d:%d" % (p.pid, ct)})
+        env = clean_env(**{run_held.ORIGIN_ENV: "%d:%d" % (p.pid, ct)})
         with mock.patch.object(store_mod, "agent_hosts", lambda *a: frozenset({name})):
             r = rm.Run(self.store, self.layout(), "kit", "t", "engine-test", None, [], "waiting",
                        detached=True, env=env)

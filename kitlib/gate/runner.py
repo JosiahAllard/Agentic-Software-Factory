@@ -79,7 +79,7 @@ FULL_NEEDED = ('FULL NEEDED: %s; so this tip\'s final gate is gate.py -C %s --fu
                '"The final gate")')
 FULL_UNKNOWN = 'NOTE: cannot tell whether this tip needs a final --full gate: %s'
 PROBE_TIMEOUT = 60      # seconds a `requires` probe argv or a reuse.py toolchain probe may take
-CANCELLED_WAITING = 'was cancelled by stop while it waited'     # kitlib.lock.run's LockError text
+CANCELLED_WAITING = 'was cancelled by stop while it waited'  # kitlib.lock.run_wait's LockError text
 # A console window the gate's run opened (window_results): False, it warns; True, it fails the
 # gate as a `windows` result. The one switch.
 WINDOWS_FAIL = False

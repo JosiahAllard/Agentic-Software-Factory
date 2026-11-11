@@ -13,6 +13,7 @@ from tests.platforms import windows_only
 
 if os.name == "nt":
     from kitlib.lock import run as rm
+    from kitlib.lock import run_held
     from kitlib.lock import store as store_mod
     from kitlib.proc import process
 
@@ -76,7 +77,7 @@ class NestCheck(StoreCase):
         pp, ct = self.parent_or_skip()
         self.live_record(RID, pid=pp, ctime=ct, has={"cpu": 2}, cores=[0, 1])
         s = rm.book("engine-test", "kit", "t", store=self.store,
-                    env=clean_env(**{rm.NEST_ENV: self.value(pp, ct)}))
+                    env=clean_env(**{run_held.NEST_ENV: self.value(pp, ct)}))
         try:
             self.assertTrue(s.nested)
             self.assertEqual(s.id, RID)
@@ -92,7 +93,7 @@ class NestCheck(StoreCase):
         self.live_record(RID, pid=pp, ctime=ct, has={"cpu": 1}, cores=[0])
         with self.assertRaises(rm.LockError) as cm:
             rm.book("engine-test", "kit", "t", store=self.store,
-                    env=clean_env(**{rm.NEST_ENV: self.value(pp, ct)}))
+                    env=clean_env(**{run_held.NEST_ENV: self.value(pp, ct)}))
         self.assertEqual(cm.exception.code, 2)
         self.assertIn("nested run refused", cm.exception.message)
         self.assertIsNone(self.store.read("queue.json"))
@@ -131,7 +132,7 @@ class NestCheck(StoreCase):
         with unopenable(self.store.path("active", RID + ".json")):
             with self.assertRaises(rm.LockError) as cm:
                 rm.book("engine-test", "kit", "t", store=self.store,
-                        env=clean_env(**{rm.NEST_ENV: self.value(pp, ct)}))
+                        env=clean_env(**{run_held.NEST_ENV: self.value(pp, ct)}))
         self.assertIn("could not be read", cm.exception.message)
         self.assertIsNone(self.store.read("queue.json"))        # it never queued for its own
 

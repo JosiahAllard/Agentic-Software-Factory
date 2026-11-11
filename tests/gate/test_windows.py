@@ -1,5 +1,5 @@
 """kitlib.gate.runner and the window monitor: every gate run says `windows opened: N` (and a line per
-window) after its steps, from its lock run's monitor (kitlib.lock.run,
+window) after its steps, from its lock run's monitor (kitlib.lock.run_held,
 kitlib.platform.windows.winwatch). A window warns and does not change the verdict;
 runner.WINDOWS_FAIL is the one switch that makes it fail the gate. The monitor is swapped for a fake
 that reports the windows a test gives it, so no window opens."""
@@ -10,6 +10,7 @@ from kitlib import gate as G
 import kitlib.config as kconfig
 from kitlib.gate import runner
 from kitlib.lock import run as lockrun
+from kitlib.lock import run_held
 from kitlib.platform.windows import winwatch
 from kitlib.records import gate_ok
 from tests.gate import fixtures
@@ -42,7 +43,7 @@ class Windows(fixtures.GateRepoCase):
     def setUp(self):
         super().setUp()
         FakeMonitor.windows_to_report = []
-        patcher = mock.patch.object(lockrun.winwatch, 'Monitor', FakeMonitor)
+        patcher = mock.patch.object(run_held.winwatch, 'Monitor', FakeMonitor)
         patcher.start()
         self.addCleanup(patcher.stop)
         self.said = []
@@ -110,14 +111,14 @@ class Windows(fixtures.GateRepoCase):
         wt, _ = self.branch('feature', {'a.py': 'x = 1\n'})
         cfg = kconfig.load(wt)
         watching = []
-        real_stop = lockrun.Slot.stop_daemons
+        real_stop = run_held.Slot.stop_daemons
 
         def stop_daemons(slot):
             watching.append(slot.watch is not None)
             return real_stop(slot)
         slot = lockrun.book(cfg.section('gate')['kind'], 'repo', 'land',
                             **dict(self.book_kw, gate=True))
-        with slot, mock.patch.object(lockrun.Slot, 'stop_daemons', stop_daemons):
+        with slot, mock.patch.object(run_held.Slot, 'stop_daemons', stop_daemons):
             out = runner.merged_gate(wt, cfg, self.main, book_kw=self.book_kw, log_dir=self.logs,
                                      say=self.said.append, slot=slot)
             self.assertFalse(slot.released)

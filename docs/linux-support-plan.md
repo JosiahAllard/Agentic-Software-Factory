@@ -47,8 +47,8 @@ code without running it on Linux; "unknown" needs a probe on a Linux box.
   only a few unit tests run), so a landing has not run end to end there (slice 9, open proof c).
 - Build-daemon sparing and the TCP connection table: kitlib/proc/tcp.py has only the Windows reader
   (GetExtendedTcpTable) and kitlib/proc/daemons.py is Windows only, so on Linux the end-of-run
-  check (lock/run.py, `daemons.find`) only warns and kills the tree. The planned form reads
-  /proc/net/tcp and tcp6, whose parsers after the table are portable. Open, in no slice.
+  check (lock/run_end.py and run_held.py, `daemons.find`) only warns and kills the tree. The planned
+  form reads /proc/net/tcp and tcp6, whose parsers after the table are portable. Open, in no slice.
 - No CI workflow (slice 17). The ratchet (tools/ci_ratchet.py) is run by hand.
 
 ### 1.3 Shields
@@ -114,13 +114,13 @@ are not obvious from the code:
   is /proc/sys/kernel/random/boot_id read as one 128-bit integer and starttime is field 22 of
   /proc/<pid>/stat. starttime repeats across reboots, so the boot goes into the value, not beside
   it: a record or nest token written before a reboot names no live process after it, and every
-  caller that compares (lock/run.py nest_check and end_sparing, proc/process.py alive,
+  caller that compares (lock/run.py nest_check, lock/run_end.py end_sparing, proc/process.py alive,
   lock/store.py wrapper_state) refuses it with no change to its code. The nest token stays three
   fields (`<run id>:<pid>:<ctime>`, NEST_RE unchanged); Windows's ctime is still the FILETIME. The
-  stamp (lock/run.py filetime_now) returns the same encoding. starttime counts clock ticks, so two
-  processes can share one; a tie errs safe in both ordering uses. No fixed-width use of ctime
-  exists in kitlib, hosts or tools, so a value wider than 64 bits reaches only Python ints, `%d`
-  and JSON.
+  stamp (lock/run_end.py filetime_now) returns the same encoding. starttime counts clock ticks, so
+  two processes can share one; a tie errs safe in both ordering uses. No fixed-width use of ctime
+  exists in kitlib, hosts or tools, so a value wider than 64 bits reaches only Python ints, `%d` and
+  JSON.
 - Named mutexes and RunMutex become fcntl.flock on a lock file opened O_CLOEXEC; the kernel drops
   it when the holder dies, the same "abandoned counts as free" meaning. The treelock takes flock,
   not lockf, because a lockf lock belongs to the process: two descriptors in one process
@@ -353,9 +353,9 @@ the host as heavy.
 6. **Lock hardware.** Done: kitlib/platform/linux/hardware.py, lock/layout.detect_linux; the four
    trees are in tests/lock/linux_trees.py, read through the real reader (fake_hardware is
    unchanged). Open proof: the VM's live /sys run (test_layout_linux.py LiveSys).
-7. **Lock runs and detach.** Done: kitlib/platform/linux/detach.py, lock/run.py Slot give-back and
-   the `leftovers` call sites in Slot.release and end_sparing, gate/submit; tests/lock/
-   test_slot_linux.py, test_detach_linux.py. Its live proofs ran on the VM (section 8.1).
+7. **Lock runs and detach.** Done: kitlib/platform/linux/detach.py, lock/run_held.py Slot give-back
+   and the `leftovers` call sites in Slot.release and run_end.py end_sparing, gate/submit;
+   tests/lock/test_slot_linux.py, test_detach_linux.py. Its live proofs ran on the VM (section 8.1).
    tests/lock/test_leftovers.py is Windows only; the Linux leftovers move is test_slot_linux Live's
    straggler test.
 8. **Guard path semantics.** Done: section 3; READY_PLATFORMS includes linux

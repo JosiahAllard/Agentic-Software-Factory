@@ -16,6 +16,7 @@ if os.name == "nt":
     from kitlib.lock import layout as lay
     from kitlib.lock import queue as qm
     from kitlib.lock import run as rm
+    from kitlib.lock import run_held
     from kitlib.lock import status as st
     from kitlib.lock.store import LockError, iso, utc_now
     from kitlib.proc import process
@@ -221,7 +222,7 @@ class Book(StoreCase):
         with rm.slot("engine-test", "kit", "t", cores=1, within=within, store=self.store,
                      env=clean_env()) as launch:
             self.assertEqual(launch.cores, [last])
-            self.assertEqual(launch.env[rm.CPUSET_ENV], within)
+            self.assertEqual(launch.env[run_held.CPUSET_ENV], within)
             rec = self.store.read("active/%s.json" % launch.id)
             self.assertEqual(rec["within"], within)
             self.assertEqual(rec["within_slots"], {"cpu": [last]})
@@ -316,7 +317,7 @@ class Book(StoreCase):
         if ct is None or (pp, ct) not in anc:
             self.skipTest("this process's parent cannot be read as an ancestor")
         self.live_record(RID, pid=pp, ctime=ct, has={"cpu": 2}, cores=[0, 1])
-        env = clean_env(**{rm.NEST_ENV: "%s:%d:%d" % (RID, pp, ct)})
+        env = clean_env(**{run_held.NEST_ENV: "%s:%d:%d" % (RID, pp, ct)})
         e = self.code(within="8-15", env=env)
         self.assertEqual(e.code, 2)
         self.assertIn("nested", e.message)

@@ -2,7 +2,7 @@
 installer/new-repo.ps1, its PowerShell front end; docs/install.md "Committed setup (--repo)"),
 against a throwaway repository (tests/gitfixture.py), never a real one: its dry run, its writes
 and its refusals. Fake identities only (example.invalid). The wrapper's own part (argument
-passing, the PowerShell location, the console encoding) is tests/stubs/test_new_repo.py, Windows."""
+passing, the PowerShell location, the console encoding) is tests/machinesetup/test_new_repo.py, Windows."""
 import json
 import os
 import re
@@ -368,7 +368,7 @@ class FailedWrites(Base):
 
 
 class Memory(Base):
-    """The repository's .claude/settings.json autoMemoryDirectory (kitlib.stubs.memory). The memory
+    """The repository's .claude/settings.json autoMemoryDirectory (kitlib.machinesetup.memory). The memory
     root is overridden to a folder beside the throwaway repository, so the value never names a real
     drive's root; no memory folder is made."""
 

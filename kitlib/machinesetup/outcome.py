@@ -1,6 +1,6 @@
 """The kit location a printed owner command names, and the outcome type of tools/kit_stubs.py.
 
-tools/kit_stubs.py has one verb, `memory`: kitlib.stubs.memory, the agent memory folder a
+tools/kit_stubs.py has one verb, `memory`: kitlib.machinesetup.memory, the agent memory folder a
 repository names in its .claude/settings.local.json (docs/install.md). Its owner command names the
 kit by kit_root(): the kit this library is in, or the live checkout when it runs from an export
 (KIT_LIVE_ROOT under a pin, else the main checkout the export's marker names; `live_kit`), never

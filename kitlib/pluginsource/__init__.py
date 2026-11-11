@@ -253,7 +253,7 @@ def live_root(kit=None, environ=None):
     """The kit checkout a printed command names. A checkout (`kit`, default: this one, holding no
     MARKER) names itself. An export (it holds MARKER) names KIT_LIVE_ROOT when the variable names
     a folder, else the main checkout its marker records (export_checkout) when that holds kit.json
-    and a tools folder (the test kitlib.stubs.live_kit makes), else itself. A tool pinned to an
+    and a tools folder (the test kitlib.machinesetup.outcome.live_kit makes), else itself. A tool pinned to an
     export of pushed main (kitlib.gate.pin), or run from the plugin's export with no KIT_LIVE_ROOT
     (the session start hook, pm_start), runs from a folder a later prune may remove."""
     kit = kit or kit_root()

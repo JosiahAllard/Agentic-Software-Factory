@@ -826,14 +826,14 @@ class KitTree(unittest.TestCase):
         self.assertEqual(set(self.select(path)), set(self.cfg['always']))
 
     def test_a_leaf_is_selected_without_the_full_suite(self):
-        picked = self.select('kitlib/stubs/__init__.py')
+        picked = self.select('kitlib/machinesetup/outcome.py')
         self.assertIsNot(picked, ALL)
-        self.assertIn('stubs', picked)
+        self.assertIn('machinesetup', picked)
 
     def test_skills_test_sees_every_path_a_skill_can_name(self):
         # tests/skills checks every tools/*.py, kitlib/** and optional/** path a SKILL.md names
         # exists, so a rename or delete of one must run it.
-        for path in ('tools/backlog.py', 'tools/no_such_tool.py', 'kitlib/stubs/__init__.py',
+        for path in ('tools/backlog.py', 'tools/no_such_tool.py', 'kitlib/machinesetup/outcome.py',
                      'optional/comfy/comfy_gen.py'):
             picked = self.select(path)
             self.assertTrue(picked is ALL or 'skills' in picked, path)

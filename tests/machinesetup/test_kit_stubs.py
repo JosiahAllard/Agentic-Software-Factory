@@ -1,4 +1,4 @@
-"""tools/kit_stubs.py memory, and kitlib.stubs.kit_root: the kit its owner command names.
+"""tools/kit_stubs.py memory, and kitlib.machinesetup.outcome.kit_root: the kit its owner command names.
 
 Every case runs against a throwaway repository (tests/gitfixture.py); the fake kits are folders in
 the fixture's temp. Run from an export of the kit (it holds kitlib.pluginsource.MARKER), the kit
@@ -12,10 +12,11 @@ import sys
 import unittest
 from unittest import mock
 
-from kitlib import pluginsource, stubs
+from kitlib import pluginsource
+from kitlib.machinesetup import outcome
 from tests import gitfixture
 
-TOOL = os.path.join(stubs.KIT_ROOT, 'tools', 'kit_stubs.py')
+TOOL = os.path.join(outcome.KIT_ROOT, 'tools', 'kit_stubs.py')
 SHA = '0123456789ab' * 3 + '0123'
 
 
@@ -52,7 +53,7 @@ class Case(unittest.TestCase):
 
 
 class KitRoot(Case):
-    """kit_root() from a checkout and from an export; stubs.KIT_ROOT is patched to the fake kit."""
+    """kit_root() from a checkout and from an export; outcome.KIT_ROOT is patched to the fake kit."""
 
     def setUp(self):
         super().setUp()
@@ -62,7 +63,7 @@ class KitRoot(Case):
             self.put(os.path.join(kit, 'tools', 'cmd_a.py'), "if __name__ == '__main__':\n    pass\n")
             self.put(os.path.join(kit, 'kit.json'), '{}\n')
         os.makedirs(os.path.join(self.live, '.git'))
-        root = mock.patch.object(stubs, 'KIT_ROOT', self.export)
+        root = mock.patch.object(outcome, 'KIT_ROOT', self.export)
         root.start()
         self.addCleanup(root.stop)
 
@@ -73,18 +74,18 @@ class KitRoot(Case):
         other = os.path.join(self.tmp, 'kit-other')
         os.makedirs(other)
         with mock.patch.dict(os.environ, {pluginsource.LIVE_ROOT_ENV: other}):
-            self.assertEqual(stubs.kit_root(), self.export)
+            self.assertEqual(outcome.kit_root(), self.export)
 
     def test_an_export_names_the_main_checkout_its_marker_names(self):
         self.marker({'sha': SHA, 'checkout': self.live.replace('\\', '/')})
-        self.assertEqual(os.path.normpath(stubs.kit_root()), os.path.normpath(self.live))
+        self.assertEqual(os.path.normpath(outcome.kit_root()), os.path.normpath(self.live))
 
     def test_the_variable_wins_over_the_marker(self):
         self.marker({'sha': SHA, 'checkout': self.live.replace('\\', '/')})
         other = os.path.join(self.tmp, 'kit-other')
         os.makedirs(other)
         with mock.patch.dict(os.environ, {pluginsource.LIVE_ROOT_ENV: other}):
-            self.assertEqual(stubs.kit_root(), other)
+            self.assertEqual(outcome.kit_root(), other)
 
     def test_live_kit_refuses_an_export_whose_marker_names_no_kit_checkout(self):
         """No checkout, a folder that is gone, or a git checkout that is not the kit (no kit.json,
@@ -101,21 +102,21 @@ class KitRoot(Case):
                     {'checkout': notools.replace('\\', '/')}):
             self.marker(obj)
             with self.subTest(marker=obj):
-                kit, refusal = stubs.live_kit(self.export)
+                kit, refusal = outcome.live_kit(self.export)
                 self.assertIsNone(kit)
                 self.assertTrue(refusal.startswith(why), refusal)
 
 
 class TheMemoryVerb(Case):
-    """kit_stubs.py memory: the repository's autoMemoryDirectory (kitlib.stubs.memory). No case here
+    """kit_stubs.py memory: the repository's autoMemoryDirectory (kitlib.machinesetup.memory). No case here
     writes the key with --apply into a file that lacks it: that value would name the temp folder's
-    real drive (tests/stubs/test_memory.py writes against a faked main checkout instead)."""
+    real drive (tests/machinesetup/test_memory.py writes against a faked main checkout instead)."""
 
     def settings(self):
         return os.path.join(self.root, '.claude', 'settings.json')
 
     def test_the_dry_run_names_the_value_and_the_command_and_writes_nothing(self):
-        from kitlib.stubs import memory
+        from kitlib.machinesetup import memory
         code, out = self.call([TOOL, 'memory', '-C', self.root], self.tmp)
         self.assertEqual(code, 0, out)
         self.assertIn('would add autoMemoryDirectory = %s' % memory.wanted(self.root), out)
@@ -123,7 +124,7 @@ class TheMemoryVerb(Case):
         self.assertFalse(os.path.exists(os.path.join(self.root, '.claude')))
 
     def test_a_current_value_is_ok_with_apply_and_unchanged(self):
-        from kitlib.stubs import memory
+        from kitlib.machinesetup import memory
         raw = json.dumps({'autoMemoryDirectory': memory.wanted(self.root)})
         self.put(self.settings(), raw)
         code, out = self.call([TOOL, 'memory', '--apply'], self.root)
@@ -131,7 +132,7 @@ class TheMemoryVerb(Case):
         self.assertEqual(self.read(self.settings()), raw)
 
     def test_a_file_it_cannot_edit_exits_1(self):
-        # The local file: --apply writes only there (kitlib.stubs.memory). A shared settings.json
+        # The local file: --apply writes only there (kitlib.machinesetup.memory). A shared settings.json
         # that is not an object is skipped, and on real git the key then lands in the local file.
         local = os.path.join(self.root, '.claude', 'settings.local.json')
         self.put(local, '[1]')

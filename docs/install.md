@@ -162,7 +162,7 @@ Nothing in the kit needs it.
    `"backlog".store` `"ref"`, `"owner".email`, `"owner".agent_emails`), `.gitignore` and
    `.gitattributes`, a starter `docs/INDEX.md`, with
    `--stack` the stack's `tools/gate.json`, and under `memory:` the `autoMemoryDirectory` key
-   (`<the main checkout's drive>/Agent-memory/<repo folder name>`, `kitlib/stubs/memory.py`): added
+   (`<the main checkout's drive>/Agent-memory/<repo folder name>`, `kitlib/machinesetup/memory.py`): added
    to `.claude/settings.local.json` only when neither that file nor `.claude/settings.json` has it,
    kept when either names any absolute folder, refused when the local file is not JSON it can edit or
    the key is not an absolute folder. The key is a machine path, so it goes in the git-ignored local
@@ -314,6 +314,6 @@ It prints the `autoMemoryDirectory` that `.claude/settings.local.json` (git-igno
 a machine path) would get (dry run), and with `--apply` adds it when neither that file nor
 `.claude/settings.json` has the key. Exit 1 when either file cannot be read as a JSON object, 2 on
 usage or a host registry it cannot read. The command it prints names the kit's main checkout, also
-when it runs from the plugin's export (`kitlib.stubs.kit_root`: the checkout the export's marker
-names, docs/plugin-source.md "Layout"). Logic: `kitlib/stubs/memory.py`; docs/pm-start.md "Memory
+when it runs from the plugin's export (`kitlib.machinesetup.outcome.kit_root`: the checkout the export's marker
+names, docs/plugin-source.md "Layout"). Logic: `kitlib/machinesetup/memory.py`; docs/pm-start.md "Memory
 folder (`memory`)".

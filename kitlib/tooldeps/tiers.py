@@ -34,10 +34,10 @@ import threading
 
 PREFIX = 'kit_tests: '
 # The real-git pass runs only these modules (prefixes): the git, worktree and landing tests, and
-# the daily-only tests/stubs/test_new_repo.py, which skips unless the pass is on real git. The
+# the daily-only tests/machinesetup/test_new_repo.py, which skips unless the pass is on real git. The
 # fake pass runs every module.
 REAL_GIT_MODULES = ('tests.git.', 'tests.worktree.', 'tests.gate.test_land',
-                    'tests.stubs.test_new_repo')
+                    'tests.machinesetup.test_new_repo')
 TIERS = (('fake git', '1'), ('real git', '0'))
 INTERRUPTED = 130
 

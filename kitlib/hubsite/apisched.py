@@ -97,10 +97,9 @@ TICK_STALE_S = 40 * 60          # no tick seen for this long: it is not running
 
 def tick_every_s():
     """The kit-automatic-tasks task's interval in seconds, the one machine setup registers
-    (kitlib.machinesetup.extras.AUTO_EVERY_MINUTES). Imported here, not at the top: the
-    machinesetup package costs about three times this module's own import."""
-    from kitlib.machinesetup.extras import AUTO_EVERY_MINUTES
-    return AUTO_EVERY_MINUTES * 60
+    (kitlib.autotasks.AUTO_EVERY_MINUTES)."""
+    from kitlib import autotasks
+    return autotasks.AUTO_EVERY_MINUTES * 60
 
 
 def _aware(text):

@@ -3765,9 +3765,9 @@ class ScheduleTest(ApiCase):
                                                    'every_s': 15 * 60})
         # the period is the one machine setup registers the tick with, not a copy of it; a few
         # missed ticks before it is said not to run
-        from kitlib.machinesetup import extras
-        self.assertEqual(api.tick_every_s(), extras.AUTO_EVERY_MINUTES * 60)
-        with mock.patch.object(extras, 'AUTO_EVERY_MINUTES', 7):
+        from kitlib import autotasks
+        self.assertEqual(api.tick_every_s(), autotasks.AUTO_EVERY_MINUTES * 60)
+        with mock.patch.object(autotasks, 'AUTO_EVERY_MINUTES', 7):
             self.assertEqual(self.ok('GET', '/schedules', OWNER)['tick']['every_s'], 7 * 60)
         self.assertGreater(api.TICK_STALE_S, 2 * api.tick_every_s())
 

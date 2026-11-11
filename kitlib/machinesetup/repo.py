@@ -19,7 +19,7 @@ The target is an existing git checkout, named by its top level. It writes these 
   <target>/tools/gate.json    with a stack: templates/stacks/<stack>/tools/gate.json, only if absent
   <target>/tools/<file>       with a stack: its other tools files, each only if absent
   <target>/<skills>/...       with a stack: its skills (kitlib.stackskill), the kit's path written in
-  <target>/.claude/settings.local.json   its autoMemoryDirectory (kitlib.stubs.memory) when neither
+  <target>/.claude/settings.local.json   its autoMemoryDirectory (kitlib.machinesetup.memory) when neither
                               it nor settings.json has the key: created holding it alone, or the key
                               added and nothing else changed. The key is a machine path, so it goes
                               in the ignored local file, never a tracked one. A key already in
@@ -111,7 +111,7 @@ class RepoContext(object):
         self.pm_data = (pm_data or '').strip()
         self.private_remote = (private_remote or '').strip()
         self.python = python or sys.executable
-        self.memory_root = memory_root      # the memory root; None: kitlib.stubs.memory's default
+        self.memory_root = memory_root      # the memory root; None: kitlib.machinesetup.memory's default
 
 
 def trim_slash(p):
@@ -331,9 +331,9 @@ class Setup(object):
             self.unindexed = [n for n in out.split('\0') if n and n not in named]
 
     def _plan_memory(self):
-        """The autoMemoryDirectory survey (kitlib.stubs.memory); Refused when the settings file is
+        """The autoMemoryDirectory survey (kitlib.machinesetup.memory); Refused when the settings file is
         one it cannot edit."""
-        from kitlib.stubs import memory
+        from . import memory
         self.memory = memory.survey(self.target, override=self.ctx.memory_root)
         self.memory_added = False
         if self.memory.state == memory.BAD:
@@ -404,7 +404,7 @@ class Setup(object):
         return out
 
     def memory_lines(self):
-        from kitlib.stubs import memory
+        from . import memory
         m = self.memory
         if m.state == memory.MISSING:
             return ['would add autoMemoryDirectory = %s to %s' % (m.want, m.path)]
@@ -474,7 +474,7 @@ class Setup(object):
     def write_memory(self):
         """Add the planned autoMemoryDirectory; a refusal (the file changed since the plan, a failed
         write) stops like any failed write, the file left as it was."""
-        from kitlib.stubs import memory
+        from . import memory
         m = self.memory
         if m.state != memory.MISSING:
             return
@@ -568,7 +568,7 @@ class Setup(object):
                'commit .gitignore,',
                '     %s as usual' % usual]
         if self.memory_added:
-            from kitlib.stubs import memory
+            from . import memory
             out.append('     %s (its %s, a machine path) is git-ignored: nothing to commit for it'
                        % (memory.local_rel(), memory.KEY))
         tools = os.path.join(c.kit, 'tools')

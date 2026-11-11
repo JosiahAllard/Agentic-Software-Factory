@@ -128,7 +128,7 @@ Right after `plugin_current`, the `plugin_enabled` check prints one line naming 
 
 After `plugin_enabled`, the `memory` check reads `.claude/settings.local.json`, then `.claude/settings.json`, of each repository in
 `launcher.repos`, and of the PM repository (the work tree holding `sessions_file`: its own toplevel, a linked worktree included, `pm_memory_repo`), through
-`kitlib.stubs.memory.problem_line`. Files without `autoMemoryDirectory` give
+`kitlib.machinesetup.memory.problem_line`. Files without `autoMemoryDirectory` give
 `memory (<repo>): <file> has no autoMemoryDirectory; its memory folder is <folder>. Ask the owner
 (via the hub) to run, in their own PowerShell window: python <kit>/tools/kit_stubs.py memory -C
 <folder> --apply (it writes .claude/settings.local.json, which git ignores; nothing to commit)`: an owner step, since the command

@@ -254,7 +254,7 @@ _apply = apply       # run() takes an `apply` switch
 def owner_command(checkout, kit=None):
     """The command that adds the key to `checkout`'s settings."""
     if kit is None:
-        from kitlib.stubs import kit_root
+        from .outcome import kit_root
         kit = kit_root()
     return 'python "%s" memory -C "%s" --apply' % (os.path.join(kit, 'tools', 'kit_stubs.py'), checkout)
 
@@ -287,10 +287,10 @@ def _unignored(checkout):
 
 
 def run(checkout, apply=False, kit=None, override=None, main_top=None, unignored=None):
-    """kitlib.stubs.Outcome(code, lines) of `kit_stubs.py memory`: 0 when the key is there, added,
+    """kitlib.machinesetup.outcome.Outcome(code, lines) of `kit_stubs.py memory`: 0 when the key is there, added,
     or (dry run) would be added; 1 when the file cannot be edited or the write failed. After a write,
     `unignored(checkout)` (default: git check-ignore) may give a warning line."""
-    from kitlib.stubs import Outcome
+    from .outcome import Outcome
     m = survey(checkout, override, main_top)
     if m.state == BAD:
         return Outcome(1, ['memory: refused: %s' % m.why])

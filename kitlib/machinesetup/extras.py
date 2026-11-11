@@ -20,7 +20,7 @@ try:
 except ImportError:                                                  # not Windows
     winreg = None
 
-from kitlib import platform
+from kitlib import autotasks, platform
 from kitlib.launcher import pythonw as pythonw_mod
 from kitlib.platform.linux import schedule
 from kitlib.worktree.task import CARRIER, NOT_THE_STORE_ALIAS, PYTHONW_IS, quoted
@@ -34,7 +34,6 @@ SIDS = ('*S-1-5-18', '*S-1-5-32-544')                               # SYSTEM, Ad
 GRANT = '(OI)(CI)F'
 _NOWIN = 0x08000000 if sys.platform == 'win32' else 0                # CREATE_NO_WINDOW
 AUTO_TASK = 'kit-automatic-tasks'
-AUTO_EVERY_MINUTES = 15
 AUTO_TOOL = os.path.join('tools', 'auto_tasks.py')
 ENV_FILE = ('.config', 'environment.d', 'pm-kit.conf')             # Linux, under the profile
 DESKTOP_FILE = ('.local', 'share', 'applications', 'pm-kit-machine-schedule.desktop')
@@ -377,7 +376,7 @@ def auto_task_line(root, pythonw=None):
             " -ExecutionTimeLimit (New-TimeSpan -Minutes 10))"
             " -User $env:USERNAME -RunLevel Limited -Description %s"
             % (PYTHONW_IS % quoted(pythonw), NOT_THE_STORE_ALIAS, agenttemp.NOT_A_FILE, quoted(AUTO_TASK),
-               AUTO_EVERY_MINUTES, quoted(auto_argument(root)), quoted(root),
+               autotasks.AUTO_EVERY_MINUTES, quoted(auto_argument(root)), quoted(root),
                quoted('kit automatic tasks: starts what the Action Hub schedules (auto_tasks.py tick)')))
 
 
@@ -396,7 +395,7 @@ def auto_job(root, python=None):
     AUTO_EVERY_MINUTES minutes, ended after 10."""
     root = os.path.normpath(root)
     return schedule.Job(AUTO_TASK, [python or schedule.python(), os.path.join(root, AUTO_TOOL), 'tick'],
-                        root, ('every', AUTO_EVERY_MINUTES),
+                        root, ('every', autotasks.AUTO_EVERY_MINUTES),
                         'kit automatic tasks: starts what the Action Hub schedules', 10)
 
 
@@ -440,7 +439,7 @@ def auto_task_step(plan, ctx):
     line = auto_task_line(root, pythonw)
     plan.add('extras', '%s the scheduled task %s (every %d min, as you, not elevated, no window; starts what '
                        'the Action Hub schedules): %s'
-             % ('update' if have else 'register', AUTO_TASK, AUTO_EVERY_MINUTES, line),
+             % ('update' if have else 'register', AUTO_TASK, autotasks.AUTO_EVERY_MINUTES, line),
              lambda: ctx.host.task_register(line),
              undo='Unregister-ScheduledTask -TaskName "%s" -Confirm:$false' % AUTO_TASK)
 

@@ -24,7 +24,7 @@ Low-level design of `kitlib/pluginsource`, `kitlib/allowrules`, `kitlib/machines
 | `allowrules/` | The rule text and the scan |
 | `machinesetup/__init__.py`, `common.py` | The survey, the plan, the apply |
 | `machinesetup/settings.py`, `plugin.py`, `managed.py`, `pointer.py`, `owner.py`, `machineconfig.py` | Per-account settings; the plugin per account; managed settings; the pointer; the owner's email; machine config keys |
-| `machinesetup/extras.py`, `agenttemp.py`, `worktreesweep.py`, `procwatch.py`, `kitcommand.py`, `links.py`, `inventory.py`, `memory.py` | The extras, one each; the account inventory; a repository's memory folder |
+| `machinesetup/extras.py`, `agenttemp.py`, `worktreesweep.py`, `procwatch.py`, `kitcommand.py`, `links.py`, `inventory.py`, `memory.py`, `outcome.py` | The extras, one each; the account inventory; a repository's memory folder, the kit it names and its outcome type |
 | `machinesetup/repo.py`, `linuxbox.py`, `linuxjobs.py`, `delegation.py` | The committed repo setup; the Linux box checks, jobs and containment delegation |
 | `stackskill/`, `kitcmd/`, `pmdata/init.py` | One job each |
 | `installer/` | `machine-setup.ps1`, `machine-setup.sh`, `new-repo.ps1`: front ends that check arguments and run the tool |

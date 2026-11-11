@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from kitlib import kitroot, pluginsource, pmstart
-from kitlib.stubs import memory as kmemory
+from kitlib.machinesetup import memory as kmemory
 from tests.pmstart import HANDOFF_FAKE, keep_off_hub_site, keep_off_launcher_repos
 
 NOW = datetime.datetime(2026, 10, 6, 9, 0)

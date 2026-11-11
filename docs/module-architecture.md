@@ -445,7 +445,6 @@ None: no module is open to every other.
 | redfirst | gate | build | feature layer uses policy layer: allowed as of 2026-11-06 |
 | redfirst | git | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | redfirst | guard | build | feature layer uses policy layer: allowed as of 2026-11-06 |
-| redfirst | kitlib-root | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | redfirst | lock | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | redfirst | proc | build | feature layer uses foundation layer: allowed as of 2026-11-06 |
 | redfirst | tooldeps | build | feature layer, same-layer use: allowed as of 2026-11-06 |

@@ -13,7 +13,7 @@ import unittest
 from hosts.codex.adapter import ADAPTER
 from hosts.codex.adapter import plugin_copy as codex
 from kitlib import pluginsource as P
-from kitlib.pluginsource import claude
+from kitlib.launcher import accounts
 from tests import gitfixture
 from tests.pluginsource import FakeProc, Kit
 from tests.host.conformance import load_tool
@@ -85,7 +85,7 @@ class RefreshWiringTest(unittest.TestCase):
         self.lines = []
 
     def refresh(self, environ=UNMARKED, apply=True, copies=None):
-        runner = claude.Runner(self.k.home, claude='claude.cmd', run_proc=FakeProc())
+        runner = accounts.Runner(self.k.home, claude='claude.cmd', run_proc=FakeProc())
         if copies is None:
             copies = [codex.Step(environ=dict(environ, CODEX_HOME=self.h.home))]
         return P.refresh(self.k.kit, self.s, self.f, self.lines.append, apply=apply, runner=runner,
@@ -108,7 +108,7 @@ class RefreshWiringTest(unittest.TestCase):
         self.assertIn('codex: skipped: a marked session (pm)', '\n'.join(self.lines))
 
     def test_the_claude_lines_and_exit_code_are_the_same_with_or_without_codex(self):
-        runner = claude.Runner(self.k.home, claude='claude.cmd', run_proc=FakeProc())
+        runner = accounts.Runner(self.k.home, claude='claude.cmd', run_proc=FakeProc())
         plain = []
         code = P.refresh(self.k.kit, self.s, self.f, plain.append, apply=False, runner=runner, now=NOW)
         self.assertEqual(self.refresh(apply=False), code)

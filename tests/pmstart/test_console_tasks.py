@@ -102,10 +102,10 @@ class Judge(unittest.TestCase):
         self.assertEqual(len(judge([t])), 2)
 
     def test_the_names_the_kit_registers(self):
-        from kitlib.launcher import autostart
+        from kitlib.launcher import reboot
         from kitlib.machinesetup import agenttemp
         from kitlib.worktree import task as wtask
-        for name in (autostart.TASK_NAME, agenttemp.TASK, wtask.task_name("r")):
+        for name in (reboot.REBOOT_TASK, agenttemp.TASK, wtask.task_name("r")):
             with self.subTest(name=name):
                 self.assertTrue(ct.is_kit(task("\\" + name, "python.exe"), roots=set()))
 

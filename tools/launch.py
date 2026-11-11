@@ -30,10 +30,15 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib.config.types import ConfigError                       # noqa: E402
-from kitlib.launcher import accounts, autostart, handoff, pushdelivery, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
+from kitlib.launcher import accounts, handoff, pushdelivery, reboot, relaunch, settings as S, start, stop, usage, window  # noqa: E402
 from kitlib.launcher.host import Host                               # noqa: E402
 
 USAGE = 2
+# install-autostart's refusal: the after-reboot task it registered is retired (docs/launcher.md "Autostart").
+AUTOSTART_RETIRED = ("install-autostart is retired: the hub restarts agents (docs/launcher.md \"Hub restart\"), "
+                     "started at sign-in by its own task (hub.py setup --autostart); nothing registered. Remove a "
+                     "task installed before with: Unregister-ScheduledTask -TaskName '%s' -Confirm:$false"
+                     % reboot.REBOOT_TASK)
 HOME_HELP = ("deep-worker and consultant sessions only: one whose folder is a main checkout starts in its home worktree "
              "home-<session name> in the host's worktrees folder instead (docs/launcher.md \"The home worktree\")")
 
@@ -297,7 +302,7 @@ def run(a, settings, host):
                                   None if a.what_if else push_delivery(settings), a.wait, a.what_if,
                                   permission_mode=a.permission_mode)
     if a.cmd == 'install-autostart':
-        return autostart.install(os.path.abspath(__file__), whatif=a.what_if)     # always refuses
+        raise S.LaunchError(AUTOSTART_RETIRED)                                    # always refuses
     raise AssertionError(a.cmd)
 
 

@@ -1,6 +1,6 @@
 """The opt-in scheduled task that starts the hub server at sign-in (hub.py setup --autostart).
 
-The same shape as the launcher's after-reboot task (kitlib.launcher.autostart): it runs as the
+The same shape as the launcher's retired after-reboot task (docs/launcher.md "Autostart"): it runs as the
 signed-in user, not elevated (LogonType Interactive, RunLevel Limited), at logon, so it also fires
 when Windows signs the user in by itself after a restart. Its program is the pythonw.exe beside the
 python that installs it, running the carrier kitlib.proc.spawn.CARRIER (tools/no_window.py beside
@@ -24,10 +24,10 @@ import subprocess
 
 from kitlib import platform
 from kitlib import pluginsource
+from kitlib.host import registry
 from kitlib.hubclient.errors import ServeError
 from kitlib.launcher import pythonw as pythonw_mod
 from kitlib.launcher import window
-from kitlib.launcher.autostart import in_worktree
 from kitlib.proc import spawn
 
 TASK_NAME = 'PM kit hub server'
@@ -36,9 +36,21 @@ TASK_TIMEOUT_S = 60     # one PowerShell call that reads the task's state or sta
 POWERSHELL = ['powershell', '-NoProfile', '-NonInteractive', '-Command']
 ABSENT = 'Absent'       # what task_state's script prints when there is no such task
 LINUX_JOB = 'hub'                # pm-kit-hub.service
+
 # a systemd service's ActiveState in the Task Scheduler's words (kitlib.hubsite.control's states)
 STATES = {'active': 'Running', 'reloading': 'Running', 'deactivating': 'Running',
           'activating': 'Queued'}
+
+
+def in_worktree(path):
+    """True when path lies under a host's agent worktrees folder (hosts.json; .claude/worktrees on
+    Claude): a worktree that is removed after it lands."""
+    parts = [p.lower() for p in os.path.normpath(os.path.abspath(path)).replace('\\', '/').split('/')]
+    for folder in registry.union('worktrees_directory'):
+        want = folder.lower().split('/')
+        if any(parts[i:i + len(want)] == want for i in range(len(parts) - len(want) + 1)):
+            return True
+    return False
 
 
 class AutostartError(ServeError):

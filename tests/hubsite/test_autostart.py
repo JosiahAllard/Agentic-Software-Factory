@@ -125,6 +125,12 @@ class Install(unittest.TestCase):
             self.assertIn('nothing registered', str(cm.exception))
             self.assertEqual(run.calls, [], path)
 
+    def test_a_worktree_path_is_known(self):
+        for path in WORKTREE_HUB:
+            self.assertTrue(autostart.in_worktree(path), path)
+        self.assertFalse(autostart.in_worktree('/kit/tools/hub.py'))
+        self.assertFalse(autostart.in_worktree('/kit/worktrees/.claude/hub.py'))
+
     def test_install_without_pythonw_is_refused_and_runs_nothing(self):
         run = Recorder()
         with self.assertRaises(autostart.AutostartError) as cm:

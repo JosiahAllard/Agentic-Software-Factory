@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 from contextlib import redirect_stderr, redirect_stdout
 
-from kitlib.launcher import autostart, handoff, lookup, reboot, start, state
+from kitlib.launcher import handoff, lookup, reboot, start, state
 from kitlib.launcher.settings import LaunchError
 from tests.home import machine_config
 from tests.launcher.fakes import FakeHost, Home, role_of, session
@@ -37,7 +37,6 @@ class StateFile(unittest.TestCase):
         self.assertFalse(hasattr(state, 'RenameNeeded'))
         self.assertFalse(hasattr(state, 'OLD_COORDINATORS'))
         self.assertFalse(hasattr(lookup, 'legacy_stems'))
-        self.assertFalse(hasattr(autostart, 'OLD_TASK_NAME'))
 
 
 class HandoffStem(unittest.TestCase):

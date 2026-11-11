@@ -5,7 +5,7 @@ import unittest
 
 from kitlib import pluginsource as P
 from kitlib.config import user
-from kitlib.pluginsource import claude
+from kitlib.launcher import accounts
 from tests.home import fence_decoy
 from tests.pluginsource import FakeProc, Kit
 
@@ -16,13 +16,13 @@ class AccountFoldersFenceTest(unittest.TestCase):
         a, b = k.folders('.claude', '.claude-two')
         fence_decoy(self)
         with self.assertRaises(user.HomeFenced):
-            claude.account_folders()
+            accounts.account_folders()
         with self.assertRaises(user.HomeFenced):
-            claude.is_default(a)
+            accounts.is_default(a)
         with self.assertRaises(user.HomeFenced):
-            claude.Runner(claude='claude.cmd', run_proc=FakeProc()).run(['plugin', 'list'], a)
-        self.assertEqual(claude.account_folders(k.home), [a, b])
-        self.assertTrue(claude.is_default(a, k.home))
+            accounts.Runner(claude='claude.cmd', run_proc=FakeProc()).run(['plugin', 'list'], a)
+        self.assertEqual(accounts.account_folders(k.home), [a, b])
+        self.assertTrue(accounts.is_default(a, k.home))
 
 
 class PollFenceTest(unittest.TestCase):

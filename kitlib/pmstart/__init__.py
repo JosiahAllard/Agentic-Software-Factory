@@ -11,11 +11,11 @@ import re
 import subprocess
 import time
 
-from kitlib import kitroot, platform
+from kitlib import kitroot
 from kitlib.config import pm as pmconfig
 from kitlib.config import user as kuser
+from kitlib.launcher import lookup
 from kitlib.ledger import files as ledger_files, rulebook
-from kitlib.host import registry
 from kitlib.pmstart import configcheck, consoletasks, fglock
 from kitlib.proc import listing
 
@@ -417,78 +417,6 @@ def reminders(cfg, today, read=None):
     return out
 
 
-STORE_DIR = chr(92) + "WindowsApps" + chr(92)
-_RC = re.compile(r"""(?:^|\s)--remote-control(?:\s+|=)(?:"([^"]*)"|'([^']*)'|(\S+))""")
-
-
-def session_images(path=None):
-    """The process images a host's launched session runs as (each hosts.json profile's
-    session_process; claude.exe on Claude), matched exactly against a process's Name. On Linux the
-    running platform's process_names over every host (registry.process_names): claude, node, codex."""
-    if platform.NAME == 'linux':
-        return frozenset(registry.process_names(path))
-    return frozenset(registry.union('session_process', path))
-
-
-def rc_name(cmd):
-    """The --remote-control value of a session's command line, or None (kitlib.launcher.lookup uses it too)."""
-    m = _RC.search(cmd or "")
-    return next((g for g in m.groups() if g), None) if m else None
-
-
-def cli_names(path=None):
-    """((cli_program, cli_package), ...) of every host in hosts.json, for runs_cli."""
-    return tuple((p.cli_program, p.cli_package) for p in registry.profiles(path))
-
-
-def _in_package(parts, package):
-    """True when the path parts hold node_modules followed directly by the scoped package's two
-    parts (@scope, name), with the file below them."""
-    seg = package.split("/")
-    return any(parts[i] == "node_modules" and parts[i + 1:i + 1 + len(seg)] == seg
-               for i in range(len(parts) - len(seg) - 1))
-
-
-def runs_cli(cmd, clis):
-    """True when a Linux command line (/proc's arguments joined by spaces) runs one of `clis`,
-    ((program, scoped npm package), ...): its program, or the first word after it that is not an
-    option (node's script), has the program as its last path part or lies in the package
-    directly under a node_modules folder. `node app.js --remote-control x` runs none, nor
-    `node ~/src/claude-code/x.js`."""
-    words = (cmd or "").split()
-    script = next((w for w in words[1:] if not w.startswith("-")), "")
-    for word in words[:1] + [script]:
-        parts = word.split("/")
-        if any(parts[-1] == program or _in_package(parts, package) for program, package in clis):
-            return True
-    return False
-
-
-def linux_clis(path=None):
-    """cli_names() on Linux, for runs_a_cli; None elsewhere (a Windows image is the CLI's own)."""
-    return cli_names(path) if platform.NAME == 'linux' else None
-
-
-def runs_a_cli(row, clis):
-    """A process row runs a host's CLI: always when clis is None (linux_clis off Linux)."""
-    return clis is None or runs_cli(row.get("CommandLine"), clis)
-
-
-def live_session_names(procs):
-    """Remote Control names of launched sessions (session_images); the Store app (under WindowsApps) is not one,
-    nor on Linux a process that runs no host's CLI (runs_cli)."""
-    names = set()
-    images = session_images()
-    clis = linux_clis()
-    for p in procs:
-        if (p.get("Name") in images and p.get("CommandLine")
-                and STORE_DIR not in (p.get("ExecutablePath") or "") and runs_a_cli(p, clis)):
-            n = rc_name(p["CommandLine"])
-            if n:
-                names.add(n)
-    return names
-
-
 def liveness(cfg, procs, read=None, account=None, repos=None, load_repos=None):
     path = cfg.get("sessions_file")
     if not path:
@@ -496,10 +424,10 @@ def liveness(cfg, procs, read=None, account=None, repos=None, load_repos=None):
     if read is None:
         read = pmconfig._read
     sessions = json.loads(read(path))
-    alive = live_session_names(procs)
+    alive = lookup.live_session_names(procs)
     label = None
     out = []
-    for key, e in down_entries(sessions, alive):
+    for key, e in lookup.down_entries(sessions, alive):
         if label is None:     # read once, and only when something is down
             from kitlib.launcher import accounts
             label = (account or current_account)()
@@ -508,16 +436,6 @@ def liveness(cfg, procs, read=None, account=None, repos=None, load_repos=None):
         out.append("coordinator %s (%s) is not running: launch.py start --session %s --account %s"
                    % (key, e["name"], key, label))
     return out + _consultants_missing(sessions, alive, repos, load_repos)
-
-
-def down_entries(sessions, alive):
-    """[(key, entry)] of the sessions.json entries that should run and do not: an object with a
-    name, `autostart` not false, and no live session of exactly that name in `alive` (exact,
-    case-sensitive, as kitlib.launcher.lookup.find_exact). The PM checklist's coordinator lines
-    and the hub's coordinator restart job (kitlib.hubjobs.coord_restart) both read it."""
-    return [(key, e) for key, e in sessions.items()
-            if isinstance(e, dict) and e.get("name") and e.get("autostart") is not False
-            and e["name"] not in alive]
 
 
 def _consultants_missing(sessions, alive, repos=None, load_repos=None):

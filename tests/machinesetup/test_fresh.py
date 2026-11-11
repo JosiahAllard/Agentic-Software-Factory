@@ -1,7 +1,7 @@
 """machine_setup's default mode (docs/machine-setup.md "Default mode"; --fresh is its old name): a
 machine with no older kit clone. Against a fake home, a fake PM repo and a kit that is a temp git repository with a bare
 remote (the plugin is installed from the export of its pushed main, kitlib.pluginsource); the
-Windows side is a FreshHost whose `claude` runner is kitlib.pluginsource.claude.Runner over a fake
+Windows side is a FreshHost whose `claude` runner is kitlib.launcher.accounts.Runner over a fake
 subprocess.run, so no claude process starts. RealRunner runs Host.plugin_runner's real path against
 a fake claude.cmd. One test stats (never reads) the real account settings.json files around a run,
 to show none of this touches them.
@@ -21,7 +21,7 @@ from unittest import mock
 from kitlib import machinesetup as M
 from kitlib import pluginsource
 from kitlib.machinesetup import extras, settings
-from kitlib.pluginsource import claude as pclaude
+from kitlib.launcher import accounts
 from tests import gitfixture
 from tests.home import machine_config, pm_repo, temp_home
 from tests.machinesetup import test_machinesetup as T
@@ -98,7 +98,7 @@ class FreshHost(T.FakeHost):
         self.fake = FakeClaude(home, kit)
 
     def plugin_runner(self, home):
-        return pclaude.Runner(home, claude='claude.cmd' if self.cli else '', run_proc=self.fake)
+        return accounts.Runner(home, claude='claude.cmd' if self.cli else '', run_proc=self.fake)
 
 
 @windows_only('the wrapper and the kit are Windows only')
@@ -423,7 +423,7 @@ class Fresh(FreshBase):
         os.makedirs(backup)
         code, out = self.run_it()
         self.assertEqual(code, M.EXIT_OK, out)
-        self.assertIn('config folders: %s' % ', '.join(pclaude.account_folders(self.home)), out)
+        self.assertIn('config folders: %s' % ', '.join(accounts.account_folders(self.home)), out)
         self.assertIn(backup, out.splitlines()[3])
         self.assertIn('note: config folders: every ~/.claude and ~/.claude-* folder (a backup copy too)', out)
         code, out = self.run_it(config_dirs=[self.c1, self.c2])
@@ -460,12 +460,12 @@ class Fresh(FreshBase):
         self.assertEqual(T.readb(self.s2), self.raw2)
 
     def test_fresh_config_dir_outside_the_refresh_set_is_a_note_not_an_install(self):
-        """A --config-dir folder that is not one of pluginsource.claude.account_folders: neither
+        """A --config-dir folder that is not one of launcher.accounts.account_folders: neither
         tools/plugin_refresh.py nor pm_start would ever update its plugin, so it is not installed;
         the note gives the hand commands and the export is still made for them."""
         other = os.path.join(self.root, 'other-config')
         os.makedirs(other)
-        self.assertNotIn(other, pclaude.account_folders(self.home))
+        self.assertNotIn(other, accounts.account_folders(self.home))
         code, out = self.run_it(apply=True, config_dirs=[self.c1, other])
         self.assertEqual(code, M.EXIT_OK, out)
         self.assertIn('note: %s is outside the plugin refresh set' % other, out)
@@ -684,7 +684,7 @@ class FreshTool(FreshBase):
 
         def stats():
             out = {}
-            for d in M.dedupe([os.path.join(default_home, '.claude')] + M.default_config_dirs(default_home)):
+            for d in accounts.dedupe([os.path.join(default_home, '.claude')] + accounts.default_config_dirs(default_home)):
                 p = os.path.join(d, 'settings.json')
                 try:
                     st = os.stat(p)

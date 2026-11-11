@@ -1,4 +1,4 @@
-"""Where the pm-kit marketplace points, against the export root: kitlib.pluginsource.claude
+"""Where the pm-kit marketplace points, against the export root: kitlib.launcher.accounts
 marketplace_mismatches (each account folder's plugins/known_marketplaces.json installLocation and
 the managed settings file's extraKnownMarketplaces path), tools/plugin_refresh.py
 marketplace_warnings and the session start's pluginsource.current_lines. Every file is in a temp tree; the real home and Program Files are never read."""
@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from kitlib import pluginsource
-from kitlib.pluginsource import claude
+from kitlib.launcher import accounts
 from tests.pluginsource import Kit
 
 
@@ -36,7 +36,7 @@ class MarketplaceCase(unittest.TestCase):
                                'pm-kit': {'source': {'source': 'directory', 'path': location},
                                           'installLocation': location}})
         if text is not None:
-            with open(os.path.join(folder, *claude.KNOWN_MARKETPLACES), 'w', encoding='utf-8') as f:
+            with open(os.path.join(folder, *accounts.KNOWN_MARKETPLACES), 'w', encoding='utf-8') as f:
                 f.write(text)
         return folder
 
@@ -55,37 +55,37 @@ class MismatchTest(MarketplaceCase):
     def test_an_install_location_elsewhere_is_reported(self):
         # red first: no line was printed for this before marketplace_mismatches existed
         good, bad = self.account('a', self.export), self.account('b', self.elsewhere)
-        lines = claude.marketplace_mismatches(self.export, [good, bad])
+        lines = accounts.marketplace_mismatches(self.export, [good, bad])
         self.assertEqual(len(lines), 1, lines)
         self.assertIn('in %s is %s, not the export %s' % (bad, self.elsewhere, self.export), lines[0])
         self.assertIn('installLocation', lines[0])
 
     def test_a_managed_settings_path_elsewhere_is_reported(self):
         m = self.managed(self.elsewhere)
-        lines = claude.marketplace_mismatches(self.export, [self.account('a', self.export)], managed=m)
+        lines = accounts.marketplace_mismatches(self.export, [self.account('a', self.export)], managed=m)
         self.assertEqual(len(lines), 1, lines)
         self.assertIn('in the managed settings is %s, not the export' % self.elsewhere, lines[0])
         self.assertIn('extraKnownMarketplaces', lines[0])
 
     def test_every_path_at_the_export_gives_no_line(self):
         m = self.managed(self.export)
-        self.assertEqual(claude.marketplace_mismatches(self.export, [self.account('a', self.export)],
+        self.assertEqual(accounts.marketplace_mismatches(self.export, [self.account('a', self.export)],
                                                        managed=m), [])
 
     def test_slashes_case_and_a_trailing_separator_do_not_count(self):
         same = self.export.replace('\\', '/').upper() + '/'
         m = self.managed(same)
-        self.assertEqual(claude.marketplace_mismatches(self.export, [self.account('a', same)],
+        self.assertEqual(accounts.marketplace_mismatches(self.export, [self.account('a', same)],
                                                        managed=m), [])
 
     def test_a_missing_file_or_entry_gives_no_line(self):
         none = self.account('none')
         other = self.account('other', text=json.dumps({'other-market': {'installLocation': 'X:\\y'}}))
         m = self.managed(text=json.dumps({'env': {}}))
-        self.assertEqual(claude.marketplace_mismatches(self.export, [none, other], managed=m), [])
+        self.assertEqual(accounts.marketplace_mismatches(self.export, [none, other], managed=m), [])
         gone = os.path.join(self.top, 'no-such', 'managed-settings.json')
-        self.assertEqual(claude.marketplace_mismatches(self.export, [none], managed=gone), [])
-        self.assertEqual(claude.marketplace_mismatches(self.export, [none], managed=None), [])
+        self.assertEqual(accounts.marketplace_mismatches(self.export, [none], managed=gone), [])
+        self.assertEqual(accounts.marketplace_mismatches(self.export, [none], managed=None), [])
 
     def test_a_corrupt_or_odd_file_is_one_could_not_check_line(self):
         cases = ['{not json', '[1, 2]', json.dumps({'pm-kit': 'Q:\\x'}),
@@ -93,26 +93,26 @@ class MismatchTest(MarketplaceCase):
                  json.dumps({'pm-kit': {'source': {}}})]
         for i, text in enumerate(cases):
             acct = self.account('c%d' % i, text=text)
-            lines = claude.marketplace_mismatches(self.export, [acct])
+            lines = accounts.marketplace_mismatches(self.export, [acct])
             self.assertEqual(len(lines), 1, (text, lines))
             self.assertTrue(lines[0].startswith('could not check the pm-kit marketplace path in '),
                             lines)
         m = self.managed(text=json.dumps({'extraKnownMarketplaces': {'pm-kit': {'source': 'dir'}}}))
-        lines = claude.marketplace_mismatches(self.export, [], managed=m)
+        lines = accounts.marketplace_mismatches(self.export, [], managed=m)
         self.assertEqual(len(lines), 1, lines)
         self.assertIn('could not check', lines[0])
 
     def test_pluginsource_re_exports_the_check(self):
         acct, m = self.account('a', self.elsewhere), self.managed(self.elsewhere)
         lines = pluginsource.marketplace_mismatches(self.export, [acct], managed=m)
-        self.assertEqual(lines, claude.marketplace_mismatches(self.export, [acct], managed=m))
+        self.assertEqual(lines, accounts.marketplace_mismatches(self.export, [acct], managed=m))
         self.assertEqual(len(lines), 2, lines)
 
     def test_nothing_is_written(self):
         acct, m = self.account('a', self.elsewhere), self.managed(self.elsewhere)
-        files = [os.path.join(acct, *claude.KNOWN_MARKETPLACES), m]
+        files = [os.path.join(acct, *accounts.KNOWN_MARKETPLACES), m]
         before = [(os.path.getmtime(f), _bytes(f)) for f in files]
-        claude.marketplace_mismatches(self.export, [acct], managed=m)
+        accounts.marketplace_mismatches(self.export, [acct], managed=m)
         self.assertEqual([(os.path.getmtime(f), _bytes(f)) for f in files], before)
 
 
@@ -164,7 +164,7 @@ class StartCheckTest(MarketplaceCase):
     def test_no_folders_given_reads_the_machine_managed_file(self):
         acct, m = self.account('a', self.export), self.managed(self.elsewhere)
         self.current([acct])
-        with mock.patch.object(claude, 'account_folders', return_value=[acct]), \
+        with mock.patch.object(accounts, 'account_folders', return_value=[acct]), \
                 mock.patch('kitlib.machinesetup.extras.Host.managed_path', return_value=m):
             lines = pluginsource.current_lines(self.k.kit, self.s)
         self.assertEqual(len(lines), 1, lines)
@@ -191,10 +191,10 @@ class StartCheckTest(MarketplaceCase):
     def test_a_failing_check_is_one_line_never_a_raise(self):
         acct = self.account('a', self.export)
         self.current([acct])
-        with mock.patch.object(claude, 'marketplace_mismatches', side_effect=RuntimeError('boom')):
+        with mock.patch.object(accounts, 'marketplace_mismatches', side_effect=RuntimeError('boom')):
             lines = pluginsource.current_lines(self.k.kit, self.s, folders=[acct])
         self.assertEqual(lines, ['could not check the pm-kit marketplace paths: RuntimeError: boom'])
-        with mock.patch.object(claude, 'account_folders', return_value=[acct]), \
+        with mock.patch.object(accounts, 'account_folders', return_value=[acct]), \
                 mock.patch('kitlib.machinesetup.extras.Host.managed_path',
                            side_effect=ValueError('no registry')):
             lines = pluginsource.current_lines(self.k.kit, self.s)

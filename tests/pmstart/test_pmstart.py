@@ -297,11 +297,6 @@ class LivenessTest(unittest.TestCase):
     SESS = json.dumps({"_note": "x", "alpha": {"name": "al-a2-n5"},
                        "Beta": {"name": "be-a2"}, "paused": {"name": "p", "autostart": False}})
 
-    def test_rc_name_forms(self):
-        self.assertEqual(pmstart.rc_name('claude --remote-control "a b"'), "a b")
-        self.assertEqual(pmstart.rc_name("claude --remote-control=x1"), "x1")
-        self.assertIsNone(pmstart.rc_name("claude"))
-
     def test_dead_listed_exact_match_store_app_ignored(self):
         procs = [proc("claude.exe", "claude --remote-control al-a2-n5", "C:/bin/claude.exe"),
                  proc("claude.exe", "claude --remote-control be-a2", "C:/X" + chr(92) + "WindowsApps" + chr(92) + "claude.exe")]

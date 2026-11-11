@@ -659,7 +659,7 @@ if __name__ == "__main__":
 
 class LinuxCli(unittest.TestCase):
     """On Linux own_name and others take only a process that runs a host's CLI
-    (pmstart.runs_a_cli): a node with --remote-control that runs anything else is no session."""
+    (lookup.runs_a_cli): a node with --remote-control that runs anything else is no session."""
     def test_own_name_and_others_skip_a_node_that_runs_no_cli(self):
         rc = "node /usr/local/bin/claude --remote-control %s -n x"
         procs = [proc(1, 0, "node", rc % "alpha-coordinator-a2-n6", exe="/usr/bin/node"),

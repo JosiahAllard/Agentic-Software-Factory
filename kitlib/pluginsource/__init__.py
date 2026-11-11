@@ -974,7 +974,7 @@ def prune_caches(folders, in_use, apply=False, now=None):
     """Old versions in each account folder's plugins cache (cache_dir): [(version folder, action,
     why)], action 'kept', 'would' (a dry run), 'removed' or 'failed'. Kept: every version when
     `in_use` (a reader, as for prune) could not read everything, or the account's install record
-    (claude.installed_path) is missing, unreadable or names no install, or a link lies on the way
+    (accounts.installed_path) is missing, unreadable or names no install, or a link lies on the way
     to the cache; the version the install record's installPath names; the newest, and each
     replaced (the next newer version folder's modified time) less than IN_USE_YOUNG_DAYS ago, or
     whose time cannot be read; one a running process or scheduled task names; a link or
@@ -1252,7 +1252,7 @@ def migrate_cmd(folder):
 def refresh(kit, s, folders, out, apply=False, migrate=False, runner=None, now=None, own=None,
             alive=None, in_use=None, copies=None):
     """One refresh (tools/plugin_refresh.py). `folders` are the account folders to run in (all of
-    them, or those --folder named); `runner` is kitlib.pluginsource.claude.Runner (or a test's);
+    them, or those --folder named); `runner` is kitlib.launcher.accounts.Runner (or a test's);
     `in_use` is the prune's reader of what is in use (prune; None: the 7-day rule), with what each
     copy step's in_use() names added (with_hosts). `copies` are
     the hosts' plugin-copy steps (tools/_host.py plugin_copies), each run as step(export folder,
@@ -1525,8 +1525,8 @@ def _old_cache_lines(kit, sha, folders, out):
 # ---------------------------------------------------------------- pm_start and pm_watch
 
 def _host():
-    from kitlib.pluginsource import claude
-    return claude
+    from kitlib.launcher import accounts
+    return accounts
 
 
 def _folders(folders):
@@ -1578,7 +1578,7 @@ def _marketplace_lines(export_dir, folders, managed):
 
 def current_lines(kit, s, folders=None, managed=_MACHINE):
     """pm_start lines: none when the export is at the kit's refs/remotes/<remote>/main, every
-    account folder (`folders`, default claude.account_folders()) is migrated and its last refresh
+    account folder (`folders`, default accounts.account_folders()) is migrated and its last refresh
     succeeded, no host copy step's install is pending (a line each: pending), and the pm-kit
     marketplace points at the export. The refresh checks read the export
     state only: a folder's last refresh result stands in for what it has installed. No export yet,
@@ -1646,7 +1646,7 @@ def poll(kit, s, last, spawn=None, alive=None, folders=None):
     """One pm_watch check. Returns (lines, last): an event line the first time the kit's
     refs/remotes/<remote>/main differs from the exported sha (`last` is the main last reported, so
     the same sha is not reported twice), none when current. No export yet, or an account folder
-    (`folders`, default claude.account_folders()) not migrated: the line names the migrate command
+    (`folders`, default accounts.account_folders()) not migrated: the line names the migrate command
     and auto_refresh starts nothing. Otherwise, with plugin.auto_refresh on, that first time also
     starts a refresh (`spawn(kit, root)`), unless one holds refresh.pid already. No tracking ref:
     nothing. Raises RefreshError when the tracking ref cannot be read and StateError when

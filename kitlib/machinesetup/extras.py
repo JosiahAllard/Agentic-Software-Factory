@@ -282,19 +282,19 @@ class Host(object):
         return cmd.text(r.out or b'').strip() or None
 
     def plugin_runner(self, home, claude=None, timeout=None, environ=None):
-        """The `claude` runner of the plugin step: kitlib.pluginsource.claude.Runner (the claude on
+        """The `claude` runner of the plugin step: kitlib.launcher.accounts.Runner (the claude on
         PATH unless `claude` names one; CLAUDE_CONFIG_DIR set to the folder, removed for ~/.claude,
         by its env_for), with run_tree as its subprocess.run."""
-        from kitlib.pluginsource import claude as pclaude
-        return pclaude.Runner(home, claude=claude, run_proc=run_tree,
-                              timeout=timeout or pclaude.TIMEOUT, environ=environ)
+        from kitlib.launcher import accounts
+        return accounts.Runner(home, claude=claude, run_proc=run_tree,
+                               timeout=timeout or accounts.TIMEOUT, environ=environ)
 
 
 KILL_GRACE = 10
 
 
 def run_tree(cmd, timeout=None, **kw):
-    """subprocess.run for kitlib.pluginsource.claude.Runner, the command's whole process tree in a
+    """subprocess.run for kitlib.launcher.accounts.Runner, the command's whole process tree in a
     job (kitlib.proc.job.Job): past `timeout` the job ends every process in it, then
     subprocess.TimeoutExpired. subprocess.run kills only its direct child, then reads the pipes to
     their end: a claude installed through npm is a .cmd shim, so that child is cmd.exe and node is

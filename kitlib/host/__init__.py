@@ -129,7 +129,7 @@ class HostProfile:
     its sessions own (a child launched on another host never inherits them;
     kitlib.host.sessionmark.child_environment), `cli_program` the name its CLI runs as on Linux and
     `cli_package` its npm package's scoped name (@scope/name), which tell a node process that runs
-    the CLI from any other (kitlib.pmstart.runs_cli; kitlib.launcher.lookup and stop)."""
+    the CLI from any other (kitlib.launcher.lookup.runs_host_cli; lookup.runs_cli and stop)."""
     owner_paths: tuple
     worktrees_directory: str
     state_directory: str

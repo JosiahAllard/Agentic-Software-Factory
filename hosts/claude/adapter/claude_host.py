@@ -15,7 +15,7 @@ import os
 
 # The kit modules of Claude's own that the watcher's checks import late (kitlib.pmwatch.preload):
 # the PLUGIN check's account folder refresh, after the first difference.
-PRELOAD = ("kitlib.pluginsource.claude",)
+PRELOAD = ("kitlib.launcher.accounts",)
 
 TAIL_BYTES = 64 * 1024              # newest_entry reads this much: a limit entry is about 1.5 KB
 # The entry types that are the session's own work. Others (title, prompt and index records) can

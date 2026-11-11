@@ -40,6 +40,7 @@ import os
 import re
 
 from kitlib.host import registry
+from kitlib.launcher import accounts
 
 from .common import MOVED_FROM, SHELL, free_name, kit_file, norm, under
 from . import links
@@ -350,9 +351,8 @@ def repoint_moved(data, ctx):
 def _link_dirs(ctx):
     """The config folders whose `tools` links a settings path may run through: the run's, then
     every one under the home (a status line may name another account's folder)."""
-    from . import default_config_dirs                                # the package imports this module
     out, seen = [], set()
-    for d in list(ctx.config_dirs) + default_config_dirs(ctx.home):
+    for d in list(ctx.config_dirs) + accounts.default_config_dirs(ctx.home):
         if norm(d) not in seen:
             seen.add(norm(d))
             out.append(d)

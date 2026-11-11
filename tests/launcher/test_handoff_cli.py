@@ -10,7 +10,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-from kitlib.launcher import autostart, handoff, reboot
+from kitlib.launcher import handoff, reboot
 from kitlib.launcher import host as hostmod
 from tests.home import machine_config
 from tests.launcher.fakes import FakeHost, Home, role_of, session, windows_text
@@ -102,33 +102,6 @@ class AfterReboot(unittest.TestCase):
         self.assertTrue(any(line.startswith('would start alpha-coord-a1 (alpha)') for line in out))
         self.assertEqual((host.opened, host.slept), ([], []))
         self.assertFalse(os.path.exists(os.path.join(h.state, 'after-reboot.log')))
-
-
-class Autostart(unittest.TestCase):
-    """install-autostart is retired: the hub restarts agents. It registers nothing and runs nothing."""
-
-    def test_install_refuses_and_names_the_task_to_remove(self):
-        for whatif in (False, True):
-            with self.assertRaises(autostart.LaunchError) as cm:
-                autostart.install('/kit/tools/launch.py', whatif=whatif)
-            text = str(cm.exception)
-            self.assertIn('install-autostart is retired', text)
-            self.assertIn('nothing registered', text)
-            self.assertIn("Unregister-ScheduledTask -TaskName 'Claude coordinators after reboot'", text)
-        self.assertFalse(hasattr(autostart, 'task_script'))
-        self.assertFalse(hasattr(autostart, 'linux_install'))
-
-    def test_the_names_a_leftover_task_is_known_by_stay(self):
-        self.assertEqual(autostart.TASK_NAME, 'Claude coordinators after reboot')
-        self.assertEqual(autostart.LINUX_JOB, 'coordinators-after-reboot')
-
-    def test_a_worktree_path_is_known(self):
-        sep = chr(92)
-        for path in ('/kit/.claude/worktrees/x/tools/launch.py',
-                     sep.join(['D:', 'kit', '.Claude', 'Worktrees', 'x', 'tools', 'launch.py'])):
-            self.assertTrue(autostart.in_worktree(path), path)
-        self.assertFalse(autostart.in_worktree('/kit/tools/launch.py'))
-        self.assertFalse(autostart.in_worktree('/kit/worktrees/.claude/launch.py'))
 
 
 class UserEnv(unittest.TestCase):
@@ -246,6 +219,7 @@ class Cli(unittest.TestCase):
                     self.assertEqual(code, 1)
                     self.assertIn('launch.py install-autostart: install-autostart is retired', err)
                     self.assertIn('nothing registered', err)
+                    self.assertIn("Unregister-ScheduledTask -TaskName 'Claude coordinators after reboot'", err)
                     self.assertEqual(out, '')
 
     def test_usage_errors_exit_2(self):

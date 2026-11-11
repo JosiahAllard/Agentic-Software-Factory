@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from kitlib import pluginsource as P
-from kitlib.pluginsource import claude as host
+from kitlib.launcher import accounts
 from kitlib.hubsite import jobs, plugin_job
 from tests.pluginsource import Kit
 
@@ -113,7 +113,7 @@ class PluginJobTest(JobCase):
             self.assertEqual(plugin_job.PluginJob(home='H').folders(), ['F'])
         af.assert_called_once_with('H')
         self.assertEqual(P.account_folders(self.k.home),
-                         host.account_folders(self.k.home))
+                         accounts.account_folders(self.k.home))
 
     def test_a_home_is_passed_to_the_child(self):
         self.assertEqual(plugin_job.refresh_argv('K', 'H')[1:],

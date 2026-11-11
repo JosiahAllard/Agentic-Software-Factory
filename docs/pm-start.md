@@ -122,7 +122,7 @@ Right after `kit_sync`, the `plugin_current` check prints one line when the pm-k
 
 ## Plugin enabled (`plugin_enabled`)
 
-Right after `plugin_current`, the `plugin_enabled` check prints one line naming every account folder (`kitlib.pluginsource.claude.account_folders`) whose `settings.json` has no `enabledPlugins["pm-kit@pm-kit"]`: `pm-kit plugin: not enabled in <folders>: python "<kit>/tools/machine_setup.py" --apply (docs/machine-setup.md "Default mode")`. `false` is the owner's choice and prints nothing; a `settings.json` that is not a JSON object is its own `could not check the pm-kit plugin in <folder>` line; a machine config whose plugin settings cannot be read is the checklist's `could not check plugin_enabled` line. Code: `kitlib/pmstart` `plugin_enabled`.
+Right after `plugin_current`, the `plugin_enabled` check prints one line naming every account folder (`kitlib.launcher.accounts.account_folders`) whose `settings.json` has no `enabledPlugins["pm-kit@pm-kit"]`: `pm-kit plugin: not enabled in <folders>: python "<kit>/tools/machine_setup.py" --apply (docs/machine-setup.md "Default mode")`. `false` is the owner's choice and prints nothing; a `settings.json` that is not a JSON object is its own `could not check the pm-kit plugin in <folder>` line; a machine config whose plugin settings cannot be read is the checklist's `could not check plugin_enabled` line. Code: `kitlib/pmstart` `plugin_enabled`.
 
 ## Memory folder (`memory`)
 
@@ -284,7 +284,7 @@ console, so each program the checklist starts is started with a console that has
 in `kitlib.machinesetup.agenttemp.task_registered` (docs/daily-full.md "The schedule"). Put it in the PM
 repo's `.claude/settings.local.json`, which only that checkout loads. `tools/machine_setup.py`
 otherwise reads the account config folders (`~/.claude`, `~/.claude-*`, `default_config_dirs` in
-`kitlib/machinesetup`), never a repository's settings, so this file is edited by hand, except that
+`kitlib/launcher/accounts.py`), never a repository's settings, so this file is edited by hand, except that
 `machine-setup.ps1 -PmSettings <file>` (its default mode) writes the hook to the one file it names and
 refuses an account's `settings.json` (docs/machine-setup.md "Default mode").
 

@@ -26,7 +26,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 
 from kitlib import platform
-from kitlib.launcher import autostart
+from kitlib.launcher import reboot
 from kitlib.machinesetup import agenttemp
 from kitlib.proc import spawn
 
@@ -44,9 +44,9 @@ OPTION = re.compile(r'^--?[A-Za-z][\w-]*[:=]')     # `-opt:` / `--opt=` before a
 
 
 def kit_names():
-    """The task names the kit registers itself: the launcher's sign-in task and the agent
+    """The task names the kit registers itself: the launcher's retired sign-in task and the agent
     temp sweep. `NAME_SUFFIXES` covers the per-repository ones."""
-    return {autostart.TASK_NAME, agenttemp.TASK}
+    return {reboot.REBOOT_TASK, agenttemp.TASK}
 
 
 def _norm(path):

@@ -1,4 +1,4 @@
-"""Where each account folder loads the kit plugin from: kitlib.pluginsource.claude installed_path
+"""Where each account folder loads the kit plugin from: kitlib.launcher.accounts installed_path
 and installs, read from the account's install record (plugins/installed_plugins.json). Every
 folder is a temp tree; nothing is checked on disk but the record."""
 import json
@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 from kitlib import pluginsource
-from kitlib.pluginsource import claude
+from kitlib.launcher import accounts
 
 
 class InstallsCase(unittest.TestCase):
@@ -22,7 +22,7 @@ class InstallsCase(unittest.TestCase):
         folder = os.path.join(self.top, name)
         os.makedirs(os.path.join(folder, 'plugins'))
         if text is not None or records is not None:
-            with open(os.path.join(folder, *claude.INSTALLED), 'w', encoding='utf-8') as f:
+            with open(os.path.join(folder, *accounts.INSTALLED), 'w', encoding='utf-8') as f:
                 f.write(text if text is not None else json.dumps(
                     {'version': 2, 'plugins': {pluginsource.PLUGIN_ID: records}}))
         return folder
@@ -36,19 +36,19 @@ class InstalledPathTest(InstallsCase):
         acct = self.account('a', [
             {'scope': 'project', 'installPath': self.path('project-copy')},
             {'scope': 'user', 'installPath': self.path('user-copy')}])
-        self.assertEqual(claude.installed_path(acct), self.path('user-copy'))
+        self.assertEqual(accounts.installed_path(acct), self.path('user-copy'))
 
     def test_with_no_user_scope_install_the_first_absolute_path_is_taken(self):
         acct = self.account('a', [
             {'scope': 'local', 'installPath': 'relative'},
             {'scope': 'project', 'installPath': self.path('first')},
             {'scope': 'local', 'installPath': self.path('second')}])
-        self.assertEqual(claude.installed_path(acct), self.path('first'))
+        self.assertEqual(accounts.installed_path(acct), self.path('first'))
 
     def test_a_missing_folder_is_still_named_the_record_is_all_that_is_read(self):
         acct = self.account('a', [{'scope': 'user', 'installPath': self.path('gone')}])
         self.assertFalse(os.path.exists(self.path('gone')))
-        self.assertEqual(claude.installed_path(acct), self.path('gone'))
+        self.assertEqual(accounts.installed_path(acct), self.path('gone'))
 
     def test_no_record_a_bad_record_or_no_kit_install_is_none(self):
         cases = (self.account('none'), self.account('bad', text='{not json'),
@@ -57,7 +57,7 @@ class InstalledPathTest(InstallsCase):
                  self.account('rel', [{'scope': 'user', 'installPath': 'relative'}]),
                  self.account('odd', ['not a record']))
         for acct in cases:
-            self.assertIsNone(claude.installed_path(acct), acct)
+            self.assertIsNone(accounts.installed_path(acct), acct)
 
 
 class InstallsTest(InstallsCase):
@@ -66,7 +66,7 @@ class InstallsTest(InstallsCase):
         none = self.account('none')
         two = self.account('two', [{'scope': 'user', 'installPath': self.path('c2')}])
         want = [(self.path('c1'), one), (self.path('c2'), two)]
-        self.assertEqual(claude.installs([one, none, two]), want)
+        self.assertEqual(accounts.installs([one, none, two]), want)
         self.assertEqual(pluginsource.installs([one, none, two]), want)
 
 

@@ -40,7 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib import pluginsource                                      # noqa: E402
 from kitlib.config.types import ConfigError                          # noqa: E402
-from kitlib.pluginsource import claude                               # noqa: E402
+from kitlib.launcher import accounts                                # noqa: E402
 
 EXIT_USAGE = 2
 
@@ -76,7 +76,7 @@ def main(argv=None):
     except (ConfigError, pluginsource.RefreshError) as e:
         out('REFUSED: %s' % e)
         return 1
-    folders, bad = pluginsource.pick_folders(claude.account_folders(a.home), a.folder)
+    folders, bad = pluginsource.pick_folders(accounts.account_folders(a.home), a.folder)
     if bad:
         out('REFUSED: not an account folder on this machine: %s' % ', '.join(bad))
         return 1
@@ -89,7 +89,7 @@ def main(argv=None):
     if a.prune_caches:
         return prune_caches(s, folders, in_use, a.apply, out)
     return pluginsource.refresh(os.path.abspath(a.kit), s, folders, out, apply=a.apply,
-                                migrate=a.migrate, runner=claude.Runner(a.home), in_use=in_use,
+                                migrate=a.migrate, runner=accounts.Runner(a.home), in_use=in_use,
                                 copies=[] if a.migrate else plugin_copies(a.home, out))
 
 

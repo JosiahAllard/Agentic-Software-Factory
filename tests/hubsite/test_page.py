@@ -14,7 +14,7 @@ import re
 import shutil
 import unittest
 
-from kitlib.hubsite import httpd, lockdoor, serve
+from kitlib.hubsite import httpd, lockdoor, servesources
 from kitlib.hubvalidate import pagecheck
 from kitlib.hubsite.api import BASE
 from kitlib.lock import api as lock_api
@@ -86,8 +86,8 @@ def snapshot(**kw):
 
 class ServedTest(httpfix.ListenerCase):
     def test_the_listener_serves_the_page_at_the_root(self):
-        self.assertEqual(os.path.normcase(os.path.realpath(serve.STATIC_DIR)), os.path.normcase(os.path.realpath(WEB)))
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        self.assertEqual(os.path.normcase(os.path.realpath(servesources.STATIC_DIR)), os.path.normcase(os.path.realpath(WEB)))
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         r = get(lis.port, "/")
         self.assertEqual(r.status, 200)
         self.assertEqual(r.header("Content-Type"), ["text/html; charset=utf-8"])
@@ -99,7 +99,7 @@ class ServedTest(httpfix.ListenerCase):
         self.assertEqual(self.errors(), [])
 
     def test_the_old_lock_page_is_gone_and_answers_not_found_without_a_redirect(self):
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         r = get(lis.port, "/lock.html")
         self.assertEqual(r.status, 404)
         self.assertEqual(r.header("Location"), [])
@@ -108,7 +108,7 @@ class ServedTest(httpfix.ListenerCase):
 
     def test_the_shared_stylesheet_is_served_as_css_and_loads_nothing(self):
         """The page links hub.css (the tokens and shell rules); it is a static file of the page's folder."""
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         r = get(lis.port, "/hub.css")
         self.assertEqual(r.status, 200)
         self.assertEqual(r.header("Content-Type"), ["text/css; charset=utf-8"])
@@ -121,7 +121,7 @@ class ServedTest(httpfix.ListenerCase):
 
     @unittest.skipUnless(NODE, "node is needed to run the page's logic")
     def test_the_page_reads_the_snapshot_the_server_gives(self):
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         title = "<img src=x onerror=1>"
         made = post(lis.port, BASE + "/todos", {"title": title}, token=self.owner)
         self.assertEqual(made.status, 200, made.body)
@@ -138,7 +138,7 @@ class ServedTest(httpfix.ListenerCase):
 
     @unittest.skipUnless(NODE, "node is needed to run the page's logic")
     def test_a_published_page_is_listed_and_its_body_is_read_on_its_own(self):
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         made = post(lis.port, BASE + "/pages", {"id": "plan-1", "title": "The plan", "html": "<p>body-mark</p>"}, token=self.agent)
         self.assertEqual(made.status, 200, made.body)
         snap = get(lis.port, BASE + "/snapshot", token=self.owner)
@@ -155,7 +155,7 @@ class ServedTest(httpfix.ListenerCase):
         self.assertIsNone(pagecheck.check(html))
         sent = json.dumps({"id": "plan-1", "title": "T", "html": html}).encode("utf-8")
         self.assertGreater(len(sent), httpd.MAX_BODY)
-        lis = self.listener(static_dir=serve.STATIC_DIR)
+        lis = self.listener(static_dir=servesources.STATIC_DIR)
         head = httpfix.write_headers(lis.port, self.agent) + [("Content-Length", str(len(sent)))]
         r = httpfix.send(lis.port, "POST", BASE + "/pages", head)     # the length alone refuses it
         self.assertEqual((r.status, r.code()), (413, "invalid"))
@@ -168,7 +168,7 @@ class PlaceTest(httpfix.ListenerCase):
 
     def setUp(self):
         httpfix.ListenerCase.setUp(self)
-        self.lis = self.listener(static_dir=serve.STATIC_DIR)
+        self.lis = self.listener(static_dir=servesources.STATIC_DIR)
 
     def publish(self, **kw):
         body = dict({"id": "plan-1", "title": "The plan", "html": "<p>body-mark</p>"}, **kw)

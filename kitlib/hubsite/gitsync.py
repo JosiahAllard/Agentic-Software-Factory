@@ -82,6 +82,8 @@ What a failure leaves, step by step:
     a caller says a store is meant to stay local.
 
 Every pass ends in the status object (GitSync.status), which the server's /health reads.
+_failure(sync) reads it as (step, reason); scrub(text) takes the `user:password@` part out of
+any URL in git's words before they are shown or logged.
 
 The commit is a plain data commit: the machine's own git identity (no --author, no -c), the fixed
 subject SUBJECT, no body, no agent trailer, limited by pathspec to the store folder, hooks left
@@ -199,6 +201,29 @@ _IDENTITY_KEYS = r'^(user|author|committer)\.(name|email)$'
 # the folder is on disk; branch: the data branch; remote: the remote's name, or None when there
 # is none to push to.
 Plan = collections.namedtuple('Plan', 'root rel branch remote')
+
+# the user and password part of a URL: everything between `://` and the last `@` of its host
+# part. A quote does not end it (a password may hold `'`); a space, `"`, `<` and `>` do. So in
+# `'https://h','x@y'` (a URL with no user part, then other text with an `@` and no space or
+# `/` before it) what stands between is lost: too much is taken out, never a password left
+# in. No rule here tells that text from a password that holds `','`.
+_USERINFO = re.compile(r'(?<=://)[^/?#\s"<>]*@')
+
+
+def scrub(text):
+    """`text` without the `user:password@` part of any URL in it. git's own words may quote a
+    remote URL, and a remote URL may carry a token: nothing shown or logged here keeps one."""
+    return _USERINFO.sub('', str(text))
+
+
+def _failure(sync):
+    """(the step the last pass of the git sync `sync` failed at, git's reason with scrub()
+    applied); ('', '') when it is not failing. Never waits for a pass."""
+    status = sync.status()
+    failed = status.get('failed') or ''
+    if not failed:
+        return '', ''
+    return str(failed), scrub(status.get('detail') or '')
 
 
 class Refused(Exception):

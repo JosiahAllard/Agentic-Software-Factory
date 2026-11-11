@@ -15,7 +15,7 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib.hubsite import access, api, auth, httpd, serve, tunnel
+from kitlib.hubsite import access, api, auth, httpd, serve, servehealth, servesources, serveviews, tunnel
 from kitlib.hubclient import settings as hub_settings
 from kitlib.hubsite import store as hub_store
 from tests.hubsite import access_keys as ak
@@ -139,7 +139,7 @@ class TunnelCase(unittest.TestCase):
         src.setdefault('static_dir', self.web)
         src.setdefault('access_keys', self.keys_for)
         src.setdefault('access_now', lambda: self.now)
-        hub = serve.build(settings or self.settings, serve.Sources(**src), log=self.log)
+        hub = serve.build(settings or self.settings, servesources.Sources(**src), log=self.log)
         self.addCleanup(hub.close)
         self.hub = hub
         self.owner = auth.read_token(self.tokens, auth.OWNER)
@@ -657,7 +657,7 @@ class StartTest(TunnelCase):
                     r = get(self.lport, HEALTH, token)
                     self.assertEqual((r.status, r.json()['tunnel']), (200, NOT_MADE))
                     self.assertNotIn(secret, r.body.decode('utf-8'))
-                    self.assertIn('tunnel: ' + NOT_MADE, serve.status_lines(r.json()))
+                    self.assertIn('tunnel: ' + NOT_MADE, servehealth.status_lines(r.json()))
                 self.assertNoSecret(secret)
                 # the local listener serves as it does with no tunnel
                 r = get(self.lport, '/')
@@ -666,7 +666,7 @@ class StartTest(TunnelCase):
                 self.assertEqual(r.status, 200, r.body)
                 self.assertEqual([text for level, text in self.lines if level == 'error'], [])
                 self.assertIs(hub.close(), True)
-        self.assertEqual(serve.TUNNEL_OFF % serve.TUNNEL_FAILED, NOT_MADE)
+        self.assertEqual(servehealth.TUNNEL_OFF % servehealth.TUNNEL_FAILED, NOT_MADE)
 
     def test_both_listeners_bind_loopback_only(self):
         hub = self.build()
@@ -723,7 +723,7 @@ class StartTest(TunnelCase):
             self.refused('POST', TODOS, token=ak.token(ak.KEY_B, head=ak.header(ak.KEY_A)),
                          obj={'title': 'never written'})
         self.assertIn('tunnel: ' + BOUND,
-                      serve.status_lines(get(self.lport, HEALTH, self.owner).json()))
+                      servehealth.status_lines(get(self.lport, HEALTH, self.owner).json()))
 
     def test_the_agent_is_told_why_it_is_off_in_fixed_words(self):
         self.build(self.settings._replace(access=self.access._replace(team='')))
@@ -809,7 +809,7 @@ class FetchFailureTest(TunnelCase):
         for token in (self.owner, self.agent):
             r = get(self.lport, HEALTH, token)
             self.assertEqual((r.status, r.json()['tunnel']), (200, phrase))
-            self.assertIn('tunnel: ' + phrase, serve.status_lines(r.json()))
+            self.assertIn('tunnel: ' + phrase, servehealth.status_lines(r.json()))
             text = r.body.decode('utf-8')
             for word in (PUBLIC, 'network is down', 'OSError', 'Traceback'):
                 self.assertNotIn(word, text)
@@ -918,7 +918,7 @@ class KeysSaidTest(TunnelCase):
         self.assertEqual(self.through(), BOUND)
         self.assertEqual(self.ask('GET', HEALTH, token=self.good).json(), {
             'ok': True, 'version': 'v1', 'store': 'ok', 'git': 'off', 'tunnel': BOUND})
-        self.assertEqual((serve.TUNNEL_BOUND, serve.TUNNEL_BOUND_WHY % 'keys-fetch'),
+        self.assertEqual((servehealth.TUNNEL_BOUND, servehealth.TUNNEL_BOUND_WHY % 'keys-fetch'),
                          (BOUND, BOUND_FETCH))
         self.source.said = True
         self.assertEqual((self.local(), self.through()), ('on', 'on'))
@@ -1014,7 +1014,7 @@ class TunnelHealthTest(TunnelCase):
         self.assertEqual(r.json(), {'ok': True, 'version': 'v1', 'store': 'ok', 'git': 'off',
                                     'tunnel': 'on'})
         self.assertEqual(get(self.lport, HEALTH, self.owner).json()['git'],
-                         {'running': False, 'off': serve.SYNC_OFF})
+                         {'running': False, 'off': serveviews.SYNC_OFF})
 
     def test_a_health_that_cannot_be_answered_says_so_in_fixed_words(self):
         secret = 'cannot read X:\\made-up\\store'
@@ -1026,7 +1026,7 @@ class TunnelHealthTest(TunnelCase):
                 return self.answer
 
         stand_in = Api()
-        route = serve.health_route(stand_in, None, 'on', fixed=True)
+        route = servehealth.health_route(stand_in, None, 'on', fixed=True)
         request = httpd.Request('GET', HEALTH, None, '127.0.0.1', 0)
         request.role = auth.OWNER
         for answer, status, code in (
@@ -1064,7 +1064,7 @@ class TunnelHealthTest(TunnelCase):
         for fixed in (False, True):
             with self.subTest(fixed=fixed):
                 stand_in = Api()
-                route = serve.health_route(stand_in, None, 'on', fixed=fixed)
+                route = servehealth.health_route(stand_in, None, 'on', fixed=fixed)
                 request = httpd.Request('GET', HEALTH, None, '127.0.0.1', 0)
                 request.role = auth.OWNER
                 route(request)

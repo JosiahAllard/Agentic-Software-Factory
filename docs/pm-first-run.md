@@ -66,7 +66,7 @@ home folder, all absolute. A hand step changes the owner's own settings: give it
    `launcher.state_dir` (docs/launcher.md "State files"): start it from
    `docs/launcher.sessions.example.json`, or from `{}` until step 11. Put that folder inside the PM
    repository (the hub server's backlog view finds the repository from the sessions file's folder,
-   `kitlib.hubsite.serve` `_repo_pairs`, and fails outside a git repo). Fill `pm_start` in the user config with their paths, and
+   `kitlib.hubsite.servesources` `_repo_pairs`, and fails outside a git repo). Fill `pm_start` in the user config with their paths, and
    `pm_watch_cmd` (docs/pm-start.md "Config"); set `pm_watch.sessions_file` to the same file
    (docs/pm-watch.md "Config"); `pm_watch.py` exits 2 without the machine config's `launcher` key.
    Then, as a hand step, the owner adds the SessionStart hook from docs/pm-start.md to the

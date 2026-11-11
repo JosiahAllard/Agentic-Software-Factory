@@ -33,6 +33,10 @@
   jobs     the timed jobs' runner (the jobs: hubjobs): thread, cadence, failures in health
   plugin_job the timed job that refreshes the pm-kit plugin export when kit main moves
   serve    the server: the store, the api, the views and the listeners, started and closed
+  servesources the server's sources: the machine config's folders, sessions, sync and jobs
+  serveviews the Api's views over the sources: backlog, completed, repos, usage, agents, skills
+  servehealth GET health's fixed and owner answers, and the status lines hub.py status prints
+  serverepos the kit checkout and repository names the skill and agent pages are given
   landings the landing feed's events, built after a landing and posted best-effort to the hub
   storecheck the store folder's findings as on disk, read only, no lock (hub.py validate)
   autostart the opt-in scheduled task that starts the server at sign-in (hub.py setup --autostart)

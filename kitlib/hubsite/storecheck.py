@@ -87,12 +87,13 @@ def check(docs, known_repos=()):
 
 
 def machine_known_repos(home=None):
-    """The callable the live server hands its store (serve.machine_sources(...).known_repos): the
-    PM's configured repo names, asked only when a document has a repo tag. () when the machine
-    config cannot be used or names no sessions file, as the server then has none either."""
-    from . import serve                     # here: serve is not needed by the other verbs
+    """The callable the live server hands its store
+    (servesources.machine_sources(...).known_repos): the PM's configured repo names, asked only
+    when a document has a repo tag. () when the machine config cannot be used or names no
+    sessions file, as the server then has none either."""
+    from . import servesources              # here: servesources is not needed by the other verbs
     try:
-        found = serve.machine_sources(home, sync=False).known_repos
+        found = servesources.machine_sources(home, sync=False).known_repos
     except ConfigError:
         return ()
     return found if found is not None else ()

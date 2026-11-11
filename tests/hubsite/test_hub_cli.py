@@ -22,7 +22,7 @@ from kitlib.hubclient import settings as hub_settings
 from kitlib.hubclient import token as hubtoken
 from kitlib.hubclient import errors as huberrors
 from kitlib.hubclient import localask
-from kitlib.hubsite import auth, httpd, schema, serve, tunnel
+from kitlib.hubsite import auth, httpd, schema, serve, servesources, serveviews, tunnel
 from kitlib.ownerfiles import approvals
 from kitlib.hubvalidate import todosteps
 from kitlib.hubsite.store import Store, StoreBusy
@@ -109,7 +109,7 @@ class CliCase(unittest.TestCase):
         """A started hub on a free port (or `port`), with the temp home's token files unless
         given others. Only a hub given its port keeps a sessions file (serve.build)."""
         cfg = hub_settings.settings(None)._replace(port=port, store=self.store_dir)
-        hub = serve.build(cfg, serve.Sources(tokens=tokens or self.tokens,
+        hub = serve.build(cfg, servesources.Sources(tokens=tokens or self.tokens,
                                              static_dir=os.path.join(self.home, 'web')))
         self.addCleanup(hub.close)
         self.assertTrue(hub.start())
@@ -258,7 +258,7 @@ class ServeCase(CliCase):
         self.assertIsNone(sources.sync)
         self.assertIsNone(hub.sync)
         self.assertEqual(syncs, [])
-        self.assertEqual(hub.views.health()['git'], {'running': False, 'off': serve.SYNC_OFF})
+        self.assertEqual(hub.views.health()['git'], {'running': False, 'off': serveviews.SYNC_OFF})
         self.assertFalse(os.path.exists(live), 'the configured store was opened')
         self.assertFalse(os.path.exists(os.path.join(self.store_dir, '.git')))
 
@@ -870,7 +870,7 @@ class ClientCase(CliCase):
         self.assertEqual(lines[0], 'hub server on http://127.0.0.1:%d' % hub.port)
         self.assertEqual(lines[1], 'revision %d' % hub.store.revision)
         self.assertIn('store %s' % os.path.abspath(self.store_dir), lines)
-        self.assertIn('git: ' + serve.SYNC_OFF, lines)
+        self.assertIn('git: ' + serveviews.SYNC_OFF, lines)
 
     def test_status_says_in_one_line_why_the_tunnel_listener_is_off(self):
         hub = self.server()             # no hub.access in the settings: the tunnel is off
@@ -1022,7 +1022,7 @@ class StopRestartCase(CliCase):
         """A hub that serve.run serves on a thread, as `hub.py serve` does: the hub and the
         thread. Its port is a free one."""
         cfg = hub_settings.settings(None)._replace(port=0, store=self.store_dir)
-        hub = serve.build(cfg, serve.Sources(tokens=self.tokens,
+        hub = serve.build(cfg, servesources.Sources(tokens=self.tokens,
                                              static_dir=os.path.join(self.home, 'web')))
         up, stop = threading.Event(), threading.Event()
         runner = threading.Thread(target=serve.run, args=(hub, lambda h: up.set(), stop),

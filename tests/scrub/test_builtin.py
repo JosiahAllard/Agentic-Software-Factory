@@ -28,6 +28,7 @@ ID_SHAPE_FOLDERS = (
     ('tests/hubclient/*', "tests of the hub's client, moved out of tests/hubsite: question ids are its data"),
     ('tests/hubmcp/*', "tests of the hub's MCP tools: question ids are its data"),
     ('tests/hubvalidate/*', 'tests of the hub id validator, which checks the id shape'),
+    ('tests/ownerfiles/test_approvals_delta.py', 'a test that a hub question id is not an approval id'),
     ('tests/guard/test_rules_hub*.py', "tests of the guard's hub rules, which match the id shape"),
     ('tools/hub.py', "the hub CLI's help and examples show question ids"),
     ('docs/hub-pm.md', "the hub's doc: question ids are its data"),

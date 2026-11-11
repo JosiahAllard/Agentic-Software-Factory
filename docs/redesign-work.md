@@ -191,7 +191,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 - Serves: "Layers" (services: `pluginsource`), "Dependency rules" 7; docs/modules/install-design.md.
 - Files: `kitlib/pluginsource/__init__.py` (1,681 lines).
 - Change: split into `layout.py`, `export.py`, `state.py`, `refresh.py`, `prune.py`; its imports of `machinesetup` and `pmstart` are gone through W-005, W-006 and W-019.
-- Done when: `grep -rnE "machinesetup|pmstart" kitlib/pluginsource --include=*.py` prints nothing; no file in `kitlib/pluginsource/` is over 1,500 lines; `tests/pluginsource` passes with test names unchanged.
+- Done when: `grep -rnE "machinesetup|pmstart" kitlib/pluginsource --include=*.py` prints nothing; no .py file in `kitlib/pluginsource/` is over 1,500 lines; `tests/pluginsource` passes with test names unchanged.
 - Risk and tier: Medium. strong-worker. After: W-005, W-006, W-019.
 
 ### Work
@@ -221,7 +221,7 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 - Serves: "Dependency rules" 7; docs/modules/landing-design.md "Packages and files".
 - Files: `kitlib/landing/land.py` (a path that exists only after W-023 moves `kitlib/gate/land.py` there; 3,438 lines today in `kitlib/gate/land.py`).
 - Change: `lander.py` (the order of steps), `checks.py`, `merge.py`, `mergedgate.py`, `push.py`, `after.py`.
-- Done when: no file in `kitlib/landing/` is over 1,500 lines; `tests/landing` passes with test names unchanged.
+- Done when: no .py file in `kitlib/landing/` is over 1,500 lines; `tests/landing` passes with test names unchanged.
 - Risk and tier: High, behaviour-neutral. senior-worker. After: W-023.
 
 **W-025 A landing runs only what its work touches**
@@ -236,13 +236,13 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 - Serves: "Dependency rules" 7; docs/modules/backlog-design.md "Packages and files".
 - Files: `kitlib/backlog/plan.py` (3,064 lines), `kitlib/backlog/store.py` (1,658).
 - Change: plans by family (add and set, pull and release, block, close, narrowing); the store by backend and by read and write.
-- Done when: no file in `kitlib/backlog/` is over 1,500 lines; `tests/backlog` passes with test names unchanged.
+- Done when: no .py file in `kitlib/backlog/` is over 1,500 lines; `tests/backlog` passes with test names unchanged.
 - Risk and tier: High path, behaviour-neutral. strong-worker, fresh reviewer. After: W-021.
 
 **W-027 `commit` is split by responsibility**
 - Serves: "Dependency rules" 7; docs/modules/commit-design.md.
 - Files: `kitlib/commit/__init__.py` (1,554 lines): `run.py`, `checks.py`, `merge.py`, `message.py`.
-- Done when: no file in `kitlib/commit/` is over 1,500 lines; `tests/commit` passes with test names unchanged.
+- Done when: no .py file in `kitlib/commit/` is over 1,500 lines; `tests/commit` passes with test names unchanged.
 - Risk and tier: High path, behaviour-neutral. strong-worker, fresh reviewer. After: W-011, W-015.
 
 **W-028 A delegated run's app checks are handed in**
@@ -270,21 +270,21 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 **W-031 `guard/commands.py` is split by tool family**
 - Serves: "Dependency rules" 7; docs/modules/guard-design.md.
 - Files: `kitlib/guard/commands.py` (1,736 lines).
-- Done when: no file in `kitlib/guard/` is over 1,500 lines; guard decisions over `tests/guard` identical; test names unchanged.
+- Done when: no .py file in `kitlib/guard/` is over 1,500 lines; guard decisions over `tests/guard` identical; test names unchanged.
 - Risk and tier: High, behaviour-neutral. strong-worker, fresh reviewer.
 - Owner: guard.
 
 **W-032 The hub server is handed its jobs**
 - Serves: "Dependency rules" 3; docs/modules/hub-design.md.
-- Files: `kitlib/hubsite/serve.py:232`, `kitlib/hubsite/selfrestart.py:192` (import `hubjobs`), `kitlib/hubjobs/__init__.py` (discovery), `tools/hub.py` (`serve`).
+- Files: `kitlib/hubsite/serve.py`, `kitlib/hubsite/selfrestart.py` (import `hubjobs`), `kitlib/hubjobs/__init__.py` (discovery), `tools/hub.py` (`serve`).
 - Done when: `grep -rnE "import hubjobs|kitlib\.hubjobs|from \.\.hubjobs" kitlib/hubsite` prints nothing; `tests/hubsite`, `tests/hubjobs` pass.
 - Risk and tier: Medium. strong-worker.
 
 **W-033 `tools/hub.py` holds no logic**
 - Serves: "Layers" (entry points parse, call, print, exit); docs/modules/hub-design.md (`hubsite/cli/`).
-- Files: `tools/hub.py` (1,797 lines: setup, skill edits, approvals, checks, pages, stop and restart).
+- Files: `tools/hub.py` (1,797 lines: setup, skill edits, approvals, checks, pages, stop and restart); new `tools/_hub_args.py` (the argparse surface).
 - Change: each verb's work moves to `kitlib/hubsite/cli/`; the tool parses, calls and prints.
-- Done when: new test `tests/hubsite/test_hub_tool_thin.py` passes (it fails when `tools/hub.py` is over 500 lines or imports a `kitlib.hubsite` module that reads or writes the store).
+- Done when: new test `tests/hubsite/test_hub_tool_thin.py` passes (it fails when `tools/hub.py` is over 500 lines, or when `tools/hub.py` or `tools/_hub_args.py` imports a `kitlib.hubsite` module other than `kitlib.hubsite.cli`).
 - Risk and tier: Medium. strong-worker. After: W-014, W-015, W-032.
 
 **W-034 `hubsite/serve.py` and `hubjobs/usage_crossover.py` are split by responsibility**
@@ -295,9 +295,9 @@ Files that more than one item touches within a phase (the reason for the lanes; 
 
 **W-035 The session starts keep only their checks**
 - Serves: docs/modules/sessions-design.md.
-- Files: `kitlib/pmwatch/__init__.py:411,531,678,720` (imports `pmstart`), `:532,717-718` (imports `hubsite`); `kitlib/hubsite/{derived.py:23,push.py:413,serve.py:232}`, `kitlib/hubjobs/{coord_restart.py:94,reminders.py:45,usage_crossover.py:176}` (import `pmstart`).
+- Files: `kitlib/pmwatch/__init__.py:411,531,678,720` (imports `pmstart`), `:532,717-718` (imports `hubsite`); `kitlib/hubsite/{derived.py,push.py}` and the serve modules (`serve.py` and the files W-034 split from it), `kitlib/hubjobs/{coord_restart.py:94,reminders.py:45,usage_crossover.py:176}` (import `pmstart`).
 - Change: after W-006, W-009, W-014 and W-019 nothing but the session starts reads `pmstart`; `KIT_ROOT` readers use `kitroot.root()`.
-- Done when: `grep -rnE "kitlib\.pmstart|import pmstart|from \.\.pmstart" kitlib --include=*.py` prints only lines in `kitlib/pmstart/`, `kitlib/coordinatorstart/`, `kitlib/hoststart/`; `tests/pmstart`, `tests/pmwatch` pass.
+- Done when: `grep -rnE "^\s*(from|import) .*pmstart" kitlib --include=*.py` (imports only) prints only lines in `kitlib/pmstart/`, `kitlib/coordinatorstart/`, `kitlib/hoststart/`; `tests/pmstart`, `tests/pmwatch` pass.
 - Risk and tier: Medium. strong-worker. After: W-006, W-009, W-014, W-019.
 
 **W-036 `machinesetup` takes `stubs`; `autotasks` owns its cadence**

@@ -116,9 +116,9 @@ class HostNames(unittest.TestCase):
 
     def test_the_scan_counts_code_and_skips_prose(self):
         source = ('"""Claude docstring."""\n# claude comment\n'
-                  'import kitlib.pluginsource.claude\nX = "CLAUDE_X"\n'
+                  'import kitlib.example.claude\nX = "CLAUDE_X"\n'
                   'def codex_f(claude=1):\n    """codex docstring."""\n    return y.claude_z\n')
-        self.assertEqual([t for _, t in occurrences(source)].count('kitlib.pluginsource.claude'), 1)
+        self.assertEqual([t for _, t in occurrences(source)].count('kitlib.example.claude'), 1)
         self.assertEqual(len(occurrences(source)), 5)
 
 

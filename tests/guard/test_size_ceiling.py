@@ -18,7 +18,7 @@ import unittest
 GUARD = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                      'kitlib', 'guard')
 SLACK_PERCENT = 5
-TOTAL_CEILING = 18864
+TOTAL_CEILING = 18600
 CEILINGS = {
     '__init__.py': 21,
     'backlogrole.py': 1167,

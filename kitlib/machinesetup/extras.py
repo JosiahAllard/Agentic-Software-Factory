@@ -22,6 +22,7 @@ except ImportError:                                                  # not Windo
 
 from kitlib import autotasks, platform
 from kitlib.platform.linux import schedule
+from kitlib.proc.job import no_window_flags
 from kitlib.proc.spawn import CARRIER
 from kitlib.schedtask import host as schedhost
 from kitlib.schedtask import pythonw as pythonw_mod
@@ -34,7 +35,6 @@ SHORTCUT = 'Machine schedule.lnk'
 LOCK_ENV = 'KIT_MACHINE_LOCK'
 SIDS = ('*S-1-5-18', '*S-1-5-32-544')                               # SYSTEM, Administrators
 GRANT = '(OI)(CI)F'
-_NOWIN = 0x08000000 if platform.NAME == 'windows' else 0             # CREATE_NO_WINDOW
 AUTO_TASK = 'kit-automatic-tasks'
 AUTO_TOOL = os.path.join('tools', 'auto_tasks.py')
 ENV_FILE = ('.config', 'environment.d', 'pm-kit.conf')             # Linux, under the profile
@@ -126,7 +126,7 @@ class Host(schedhost.Host):
                  % tuple(_ps_quote(x) for x in (path, target, args, workdir, description)))
 
     def icacls(self, args):
-        r = subprocess.run(['icacls'] + list(args), capture_output=True, text=True, creationflags=_NOWIN)
+        r = subprocess.run(['icacls'] + list(args), capture_output=True, text=True, creationflags=no_window_flags(0))
         if r.returncode != 0:
             raise RuntimeError('icacls exit %d: %s' % (r.returncode, (r.stdout + r.stderr).strip()))
         return r.stdout
@@ -204,7 +204,7 @@ class Host(schedhost.Host):
         `boot/hook.py <host> --settings-entry`, run by this interpreter."""
         from kitlib.host import registry
         r = subprocess.run([sys.executable, kit_file(kit, 'boot/hook.py'), registry.default(),
-                            '--settings-entry'], capture_output=True, text=True, creationflags=_NOWIN)
+                            '--settings-entry'], capture_output=True, text=True, creationflags=no_window_flags(0))
         if r.returncode != 0:
             raise RuntimeError('boot/hook.py --settings-entry exit %d: %s' % (r.returncode, r.stderr.strip()))
         entry = json.loads(r.stdout)

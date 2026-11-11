@@ -849,9 +849,9 @@ class SpawnRefreshTest(unittest.TestCase):
         self.assertIs(kw.get('start_new_session'), True)
         self.assertEqual(kw.get('creationflags'), 0)
 
-    def test_windows_starts_it_detached_and_windowless(self):
+    def test_windows_starts_it_detached(self):
         kw = self.spawned('windows')
-        self.assertEqual(kw.get('creationflags'), plugin_refresh._DETACHED | plugin_refresh._NOWIN)
+        self.assertEqual(kw.get('creationflags'), plugin_refresh._DETACHED)
         self.assertIs(kw.get('start_new_session'), False)
 
 

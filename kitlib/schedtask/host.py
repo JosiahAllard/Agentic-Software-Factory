@@ -5,9 +5,9 @@ the rest of what that feature asks of the machine.
 """
 import subprocess
 
-from . import read
+from kitlib.proc.job import no_window_flags
 
-_NOWIN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+from . import read
 
 
 class Host(object):
@@ -16,7 +16,7 @@ class Host(object):
 
     def _ps(self, script):
         r = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
-                           capture_output=True, text=True, creationflags=_NOWIN)
+                           capture_output=True, text=True, creationflags=no_window_flags(0))
         if r.returncode != 0:
             raise RuntimeError('powershell exit %d: %s' % (r.returncode, (r.stderr or r.stdout).strip()))
         return r.stdout

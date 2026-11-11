@@ -54,8 +54,12 @@ class MergedSteps(fixtures.GateRepoCase):
         cfg = kconfig.load_at(wt, self.main)
         with mock.patch.object(runner.S, 'select', return_value=([], None)):
             info, why = runner.merged_steps(wt, cfg, self.main, tree=wt)
+            full_info, full_why = runner.merged_steps(wt, cfg, self.main, tree=wt, full=True)
+        # a merge selects by its diff (one changed path here); only a full one names every step
         self.assertIsNone(info)
-        self.assertEqual(why, runner.NO_STEP_FULL)
+        self.assertEqual(why, runner.NO_STEP % 1)
+        self.assertIsNone(full_info)
+        self.assertEqual(full_why, runner.NO_STEP_FULL)
 
 
 if __name__ == '__main__':

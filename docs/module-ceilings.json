@@ -52,7 +52,7 @@
  "pmstart-build-pmwatch": 4,
  "pmwatch-build-hubsite": 3,
  "pytests-tree-root": 3,
- "records-build-gate": 1,
+ "records-build-gate": 0,
  "stubs-build-machinesetup": 1,
  "tooldeps-build-pytests": 3,
  "worktree-build-backlog": 6,

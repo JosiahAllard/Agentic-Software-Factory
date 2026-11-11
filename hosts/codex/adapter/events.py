@@ -79,7 +79,7 @@ def absolute(path):
 
 def cmd_c(text):
     """cmd.exe `text` as a PowerShell `cmd /c '<text>'` call: one single-quoted literal (each ' doubled)
-    that the guard's PowerShell reading passes whole to its cmd.exe dialect (kitlib.guard.commands
+    that the guard's PowerShell reading passes whole to its cmd.exe dialect (kitlib.guard.commands_nested
     reads `cmd /c` text as sh.CMD), so no PowerShell comment (#, <#), quote or operator in the text
     hides what cmd.exe runs."""
     return "cmd /c '%s'" % text.replace("'", "''")

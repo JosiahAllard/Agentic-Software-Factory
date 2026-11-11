@@ -27,7 +27,7 @@ Low-level design of `kitlib/host`, `kitlib/attribution`, the host folders `hosts
 | `hosts/<name>/shell/` | Rendered agents and manifests, hook registration; never edited by hand |
 | `boot/hook.py`, `boot/kitboot.py` | The hook entry; the boot check |
 
-The hook runner and the kit header are `kitlib/hookrun` (docs/modules/guard-design.md): they need the guard, so they sit above it.
+The hook runner and the kit header are `kitlib/hookrun` (docs/modules/guard-design.md): they need the guard, so they sit in the guard's layer (ARCHITECTURE.md "Layers").
 
 ## State
 

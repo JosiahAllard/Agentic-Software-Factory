@@ -747,7 +747,7 @@ class GradleStep(RerunCase):
         out = self.rerun(wt)
         self.assertEqual(out.code, G.OK, out.lines + out.said)
         self.assertTrue(out.lines[0].startswith('RERUN FLAKE'), out.lines)
-        self.assertIn(' add FLAKE-FOOTEST ', out.lines[-1])
+        self.assertIn(' add FLAKE-%s ' % GRADLE_ID.split('.')[-2].upper(), out.lines[-1])
         self.assertIn('--scope mod ', out.lines[-1])
         self.assertTrue(any(s.startswith('PASS  pkg.FooTest at the tip, from the gradle reports')
                             for s in out.said), out.said)

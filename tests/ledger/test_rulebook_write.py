@@ -12,7 +12,7 @@ from kitlib.ledger import rulebook, vcs, write
 from kitlib.ledger.errors import Refused, Usage
 from tests.gitfixture import TempRepo, fixture_env
 from tests.home import machine_config
-from tests.ledger.test_rulebook import ALL, KIT, R1, R2, R3, TOOL, Base, log_text, rid
+from tests.ledger.test_rulebook import ALL, KIT, R1, R2, R3, TOOL, Base, big, log_text, rid
 
 MODEL = 'Test Model 1'
 WHEN = '2026-10-07 09:00Z'
@@ -47,6 +47,11 @@ class ConflictsTest(unittest.TestCase):
         ])
         self.assertEqual(got.hits[-1].words, ('refusal', 'report', 'verbatim'))
         self.assertGreater(got.hits[-1].score, 0)
+
+    def test_a_topic_matches_a_heading_by_its_key(self):
+        books = parsed(('kit', KIT.replace('## Machine', '## owner-files').replace('machine.lock', 'owner.lock')))
+        got = rulebook.conflicts(books, 'kit', 'Owner_files', 'owner.new', 'Zzz.')
+        self.assertIn(('same topic', 'owner.lock'), [(h.kind, h.rule.key) for h in got.hits])
 
     def test_topic_slug_and_word_ranking(self):
         got = rulebook.conflicts(self.books, 'kit', 'Hardware', 'machine.gpu',
@@ -107,6 +112,38 @@ class SetDropTest(unittest.TestCase):
         book, _ = rulebook.set_rule(self.kit, 'docs.cite', 'Docs', 'New heading.', (R3,))
         self.assertEqual(rulebook.render(book).splitlines()[-2:], ['## Docs', '- docs.cite: New heading. (from %s)' % R3])
 
+    def test_a_heading_matches_by_its_key_and_is_respelled_whole(self):
+        split = rulebook.parse(KIT + f'\n## owner-files\n- owner.a: A. (from {R1})\n- owner.b: B. (from {R1})\n'
+                               f'\n## Docs\n- docs.cite: Cite. (from {R1})\n'
+                               f'\n## Owner files\n- owner.c: C. (from {R1})\n', 'kit')[0]
+        book, old = rulebook.set_rule(split, 'owner.d', 'Owner Files', 'D.', (R3,))
+        self.assertIsNone(old)
+        self.assertEqual([(r.key, r.topic) for r in book.rules[3:]], [
+            ('owner.a', 'Owner Files'), ('owner.b', 'Owner Files'), ('owner.c', 'Owner Files'),
+            ('owner.d', 'Owner Files'), ('docs.cite', 'Docs')])
+        text = rulebook.render(book)
+        self.assertEqual(text.count('## Owner Files'), 1)
+        self.assertNotIn('owner-files', text)
+        self.assertEqual(rulebook.check({'kit': rulebook.parse(text, 'kit')[0]}, {R1, R2, R3}).errors, [])
+        # A replaced rule under the matched heading stays in its place; the heading is respelled.
+        book, old = rulebook.set_rule(split, 'owner.b', 'Owner files', 'B2.', (R3,))
+        self.assertEqual(old.key, 'owner.b')
+        self.assertEqual([(r.key, r.topic, r.text) for r in book.rules[3:6]], [
+            ('owner.a', 'Owner files', 'A.'), ('owner.b', 'Owner files', 'B2.'), ('owner.c', 'Owner files', 'C.')])
+        # A rule moved from another heading joins the end of the matched one.
+        book, _ = rulebook.set_rule(split, 'machine.lock', 'Owner_files', 'Moved.', (R3,))
+        self.assertEqual([r.key for r in book.rules], ['landing.batch', 'landing.alone', 'owner.a', 'owner.b',
+                                                       'owner.c', 'machine.lock', 'docs.cite'])
+        self.assertEqual({r.topic for r in book.rules if r.key.startswith(('owner', 'machine'))}, {'Owner_files'})
+
+    def test_a_lower_case_topic_is_refused(self):
+        for topic in ('landing', 'owner files', 'élan'):
+            with self.assertRaises(ValueError) as e:
+                rulebook.set_rule(self.kit, 'landing.batch', topic, 'x', (R3,))
+            self.assertIn('lower-case', str(e.exception))
+        book, _ = rulebook.set_rule(self.kit, 'landing.batch', '3D art', 'x', (R3,))
+        self.assertEqual(book.rules[-1].topic, '3D art')
+
     def test_bad_input_and_drop(self):
         for key, topic, text in (('Bad', 'T', 'x'), ('a.b', ' ', 'x'), ('a.b', 'T', '  ')):
             with self.assertRaises(ValueError):
@@ -156,7 +193,65 @@ class WriteTest(WriteBase):
         rule = next(r for r in kit.rules if r.key == 'landing.fast')
         self.assertEqual((rule.topic, rule.text, rule.sources), ('Landing', 'Small branches land fast.', (rid(4),)))
         self.assertEqual(rulebook.applied({'kit': kit}, [self.read(self.log)]), [])
-        self.assertIn('kit.md has 4 rules, over its budget of 2', ' '.join(got.warnings))
+        self.assertEqual(got.warnings, [])
+        self.assertNotIn('Budget', self.read(self.kit_path()))
+
+    def test_a_set_that_grows_a_book_over_the_cap_is_refused_and_nothing_written(self):
+        self.book('kit', big('kit'))
+        log, kit = self.read(self.log), self.read(self.kit_path())
+        with self.assertRaises(Refused) as e:
+            self.set()
+        self.assertIn('kit.md would be', str(e.exception))
+        self.assertIn('over its cap of 16384', str(e.exception))
+        self.assertIn('rule-drop', str(e.exception))
+        self.assertEqual((self.read(self.log), self.read(self.kit_path())), (log, kit))
+        # A replace that grows the rule is refused too.
+        with self.assertRaises(Refused):
+            self.set(key='landing.r1', text='Word 1. ' * 41)
+        self.assertEqual((self.read(self.log), self.read(self.kit_path())), (log, kit))
+
+    def test_a_set_is_refused_from_under_the_cap_to_one_byte_over_and_taken_on_it(self):
+        self.book('kit', big('kit', count=40))
+        old = rulebook.parse(self.read(self.kit_path()), 'kit')[0]
+        self.assertLess(rulebook.size(old), rulebook.MAX_BYTES)
+
+        def text_for(size):
+            # The rendered size is linear in the text: calibrate with one byte, then pad.
+            one = rulebook.size(rulebook.set_rule(old, 'landing.fast', 'Landing', 'x', (rid(4),))[0])
+            return 'x' * (1 + size - one)
+
+        log, kit = self.read(self.log), self.read(self.kit_path())
+        with self.assertRaises(Refused) as e:
+            self.set(text=text_for(rulebook.MAX_BYTES + 1))
+        self.assertIn('over its cap of 16384', str(e.exception))
+        self.assertEqual((self.read(self.log), self.read(self.kit_path())), (log, kit))
+        self.set(text=text_for(rulebook.MAX_BYTES))
+        self.assertEqual(rulebook.size(write.load_books(self.rules)['kit']), rulebook.MAX_BYTES)
+
+    def test_an_over_cap_book_takes_a_set_no_larger_and_a_drop(self):
+        self.book('kit', big('kit'))
+        before = rulebook.size(write.load_books(self.rules)['kit'])
+        self.set(key='landing.r1', text='Word 9. ' * 40, decides='Same size.')
+        self.assertEqual(rulebook.size(write.load_books(self.rules)['kit']), before)
+        self.set(key='landing.r2', text='Shorter.', decides='Shorter.')
+        write.add(self.log, 'kit', 'selected', 'q', 'a', 'dropped landing.r3: trim', 's', when=WHEN,
+                  rule=write.RuleChange(self.rules, 'dropped', 'landing.r3'))
+        kit = write.load_books(self.rules)['kit']
+        self.assertTrue(rulebook.over_cap(kit))
+        self.assertLess(rulebook.size(kit), before)
+
+    def test_writes_are_still_taken_beside_a_repeated_heading(self):
+        self.book('kit', KIT.replace('Alpha_Checkout', 'kit')
+                  + f'\n## landing\n- landing.late: Late. (from {R1})\n')
+        errors = rulebook.check(write.load_books(self.rules), {R1, R2, R3}).errors
+        self.assertEqual(len(errors), 2)
+        write.add(self.log, 'kit', 'selected', 'q', 'a', 'dropped landing.batch: obsolete', 's', when=WHEN,
+                  rule=write.RuleChange(self.rules, 'dropped', 'landing.batch'))
+        self.assertNotIn('landing.batch', self.read(self.kit_path()))
+        self.set(key='landing.fast', topic='Landing')
+        kit = write.load_books(self.rules)['kit']
+        self.assertEqual({r.topic for r in kit.rules if r.key.startswith('landing')}, {'Landing'})
+        self.assertEqual(rulebook.check(write.load_books(self.rules), {rid(n) for n in range(1, 7)}).errors, [])
 
     def test_missing_or_stale_checked_is_refused_and_nothing_written(self):
         log, kit = self.read(self.log), self.read(self.kit_path())
@@ -196,13 +291,14 @@ class WriteTest(WriteBase):
 
     def test_header_makes_a_new_book(self):
         write.add(self.log, 'beta', 'selected', 'q', 'a', 'rulebook beta.md header', 's', when=WHEN,
-                  rule=write.RuleChange(self.rules, 'header', repos=['Beta_Checkout'], budget=10))
+                  rule=write.RuleChange(self.rules, 'header', repos=['Beta_Checkout'], title='Beta'))
         beta, errs = rulebook.parse(self.read(os.path.join(self.rules, 'beta.md')), 'beta')
         self.assertEqual(errs, [])
-        self.assertEqual((beta.repos, beta.budget, beta.rules), (('Beta_Checkout',), 10, ()))
+        self.assertEqual((beta.repos, beta.title, beta.rules), (('Beta_Checkout',), 'Beta', ()))
         with self.assertRaises(Usage):
             write.add(self.log, 'gamma', 'selected', 'q', 'a', 'd', 's', when=WHEN,
-                      rule=write.RuleChange(self.rules, 'header', budget=10))
+                      rule=write.RuleChange(self.rules, 'header', title='Gamma'))
+        self.assertNotIn('budget', write.RuleChange._fields)
 
     def test_the_lock_is_held_across_both_writes(self):
         real, seen = write.write_atomic, []
@@ -243,9 +339,9 @@ class WriteTest(WriteBase):
             real(path, text)
         with mock.patch.object(write, 'write_atomic', crash):
             with self.assertRaises(OSError):
-                write.add(self.log, 'kit', 'selected', 'q', 'a', 'rulebook kit.md header: Budget 12', 's',
-                          when=WHEN, rule=write.RuleChange(self.rules, 'header', budget=12))
-        self.assertNotIn('Budget: 12', self.read(self.kit_path()))
+                write.add(self.log, 'kit', 'selected', 'q', 'a', 'rulebook kit.md header: title Kit 12', 's',
+                          when=WHEN, rule=write.RuleChange(self.rules, 'header', title='Kit 12'))
+        self.assertNotIn('# Kit 12', self.read(self.kit_path()))
         r = self.run_tool('check')
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn('FAIL logged rule change not applied: %s sets the header of kit.md, which is not '
@@ -327,8 +423,8 @@ class WriteTest(WriteBase):
             return got
         log = self.read(self.log)
         with mock.patch.object(write, 'rule_target', reroute), self.assertRaises(Refused) as e:
-            write.add(self.log, 'kit', 'selected', 'q', 'a', 'rulebook header: Budget 10', 's', when=WHEN,
-                      rule=write.RuleChange(self.rules, 'header', budget=10))
+            write.add(self.log, 'kit', 'selected', 'q', 'a', 'rulebook header: title Kit', 's', when=WHEN,
+                      rule=write.RuleChange(self.rules, 'header', title='Kit'))
         self.assertIn('changed from kit.md to beta.md while waiting for its lock', str(e.exception))
         self.assertEqual(self.read(self.log), log)
 
@@ -410,7 +506,7 @@ class CliTest(WriteBase):
                             '--rule', 'landing.fast', '--topic', 'Landing', '--checked', checked)
         self.assertEqual(add.returncode, 0, add.stderr)
         self.assertEqual(add.stdout.split(), [rid(4)])
-        self.assertIn('over its budget', add.stderr)
+        self.assertEqual(add.stderr, '')
         self.assertIn('- landing.fast: Small branches land fast. (from %s)' % rid(4), self.read(self.kit_path()))
         self.assertEqual(self.run_tool('check').returncode, 0)
 
@@ -472,15 +568,19 @@ class CliTest(WriteBase):
         self.assertIn('Q: Drop rule landing.alone from kit.md?', entry)
         self.assertIn('Decides: dropped landing.alone: it is obsolete [rule kit.md landing.alone dropped]', entry)
         self.assertNotIn('landing.alone', self.read(self.kit_path()))
-        r = self.run_tool('rule-set', '--repo', 'kit', '--budget', '12', '--prov', 'selected',
-                          '--why', 'room', '--source', 's')
+        r = self.run_tool('rule-set', '--repo', 'kit', '--book-title', 'Kit book', '--prov', 'selected',
+                          '--why', 'rename', '--source', 's')
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn('Budget: 12', self.read(self.kit_path()))
+        self.assertIn('# Kit book\n', self.read(self.kit_path()))
         kit = rulebook.parse(self.read(self.kit_path()), 'kit')[0]
         self.assertIn('[rulebook kit.md header %s]' % rulebook.header_digest(kit),
                       write.show(self.read(self.log), rid(5)))
         self.assertEqual(self.run_tool('rule-set', '--repo', 'kit', '--prov', 'selected', '--why', 'x',
                                        '--source', 's').returncode, 2)
+        r = self.run_tool('rule-set', '--repo', 'kit', '--budget', '12', '--prov', 'selected', '--why', 'x',
+                          '--source', 's')
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn('--budget', r.stderr)
         self.assertEqual(self.run_tool('check').returncode, 0)
 
 

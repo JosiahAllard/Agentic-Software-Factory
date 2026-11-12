@@ -21,7 +21,7 @@ R-nnnn ledger: read by show, grep, list and check, never written. Without `ledge
       and the `checked:` hash add --rule needs.
   ledger.py rule-drop KEY --repo REPO --prov PROV --why WHY --source S [--q Q] [--a A] [commit flags]
       drop rule KEY from REPO's rulebook, with a log entry `dropped KEY: WHY`.
-  ledger.py rule-set --repo REPO (--repos A,B | --budget N | --book-title T) --prov PROV --why WHY
+  ledger.py rule-set --repo REPO (--repos A,B | --book-title T) --prov PROV --why WHY
                 --source S [--q Q] [--a A] [commit flags]
       set REPO's rulebook header (made when absent; it then needs --repos), with a log entry.
   ledger.py retire ID --class spent|superseded|duplicate --why WHY [--by ID] [--ruling ID]
@@ -34,7 +34,8 @@ R-nnnn ledger: read by show, grep, list and check, never written. Without `ledge
       validate every ledger file and check each only grew since REV (default <repo.remote>/<main
       branch> of the file's repository; origin unless set), that the standing digest cites
       only live entries, and the rulebooks (format, sources in the log, each logged rule change
-      applied; overrides and a book over its budget are notes, not failures).
+      applied, one heading per topic; overrides and a book over its byte cap are notes, not
+      failures).
   ledger.py list --prov PROV --since YYYY-MM-DD [--repo REPO]
       one line per ruling of that provenance dated on or after the day: `<id> | date | Decides`.
       `--prov delegated` feeds the PM's daily digest of delegated engineering rulings.
@@ -107,9 +108,8 @@ def parser():
     rd.add_argument('key')
     entry_flags(rd)
     commit_flags(rd)
-    rs = sub.add_parser('rule-set', help="set a rulebook's header (Repos, Budget, title), with a log entry")
+    rs = sub.add_parser('rule-set', help="set a rulebook's header (Repos, title), with a log entry")
     rs.add_argument('--repos', help='the checkout folder names, comma-separated')
-    rs.add_argument('--budget', type=int, help='the soft limit on its rules')
     rs.add_argument('--book-title', help="the rulebook's `#` title")
     entry_flags(rs)
     commit_flags(rs)
@@ -254,10 +254,8 @@ def do_rule_drop(a, found, repos):
 
 
 def do_rule_set(a, found, repos):
-    if a.repos is None and a.budget is None and a.book_title is None:
-        raise Usage('rule-set needs --repos, --budget or --book-title')
-    if a.budget is not None and a.budget < 1:
-        raise Usage('--budget needs a positive number')
+    if a.repos is None and a.book_title is None:
+        raise Usage('rule-set needs --repos or --book-title')
     names = None
     if a.repos is not None:
         names = [r.strip() for r in a.repos.split(',') if r.strip()]
@@ -269,13 +267,11 @@ def do_rule_set(a, found, repos):
     parts = []
     if names is not None:
         parts.append('Repos %s' % ', '.join(names))
-    if a.budget is not None:
-        parts.append('Budget %d' % a.budget)
     if a.book_title is not None:
         parts.append('title %s' % ' '.join(a.book_title.split()))
     what = '; '.join(parts)
     why = ' '.join(a.why.split())
-    rule = write.RuleChange(found.rules, 'header', repos=names, budget=a.budget, title=a.book_title)
+    rule = write.RuleChange(found.rules, 'header', repos=names, title=a.book_title)
     return write_entry(a, found, repos, a.q or 'Set the header of %s: %s?' % (rulebook.file_name(name), what),
                        a.a or why, 'rulebook %s header: %s: %s' % (rulebook.file_name(name), what, why),
                        rule=rule)

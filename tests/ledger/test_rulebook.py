@@ -23,7 +23,6 @@ R1, R2, R3, R99 = (rid(n) for n in (1, 2, 3, 99))
 
 KIT = f'''# Kit rules
 Repos: Alpha_Checkout
-Budget: 2
 
 ## Landing
 - landing.batch: Landers batch up to three branches. (from {R1}, {R2})
@@ -41,6 +40,12 @@ Repos: all
 '''
 
 
+def big(repos='Alpha_Checkout', count=60, source=R1):
+    """A rulebook text over rulebook.MAX_BYTES: `count` rules of about 300 bytes each."""
+    return '# Big rules\nRepos: %s\n\n## Landing\n' % repos + ''.join(
+        '- landing.r%d: %s (from %s)\n' % (n, 'Word %d. ' % n * 40, source) for n in range(count))
+
+
 def log_text(count=3):
     return '# Ledger\n\n' + ''.join(
         fmt.render(rid(n), WHEN, 'all', 'selected', 'q', 'a', 'Rule %d.' % n, 's', '-')
@@ -54,7 +59,6 @@ class ParseTest(unittest.TestCase):
         self.assertEqual(errs, [])
         self.assertEqual(book.title, 'Kit rules')
         self.assertEqual(book.repos, ('Alpha_Checkout',))
-        self.assertEqual(book.budget, 2)
         self.assertEqual([r.key for r in book.rules], ['landing.batch', 'landing.alone', 'machine.lock'])
         self.assertEqual(book.rules[0].sources, (rid(1), rid(2)))
         self.assertEqual(book.rules[2].topic, 'Machine')
@@ -65,10 +69,36 @@ class ParseTest(unittest.TestCase):
         self.assertEqual([r[:4] for r in again.rules], [r[:4] for r in book.rules])
         self.assertEqual(again[:4], book[:4])
 
-    def test_default_budget(self):
-        book, errs = rulebook.parse(ALL, 'all')
+    def test_a_legacy_budget_line_is_read_and_dropped_on_render(self):
+        legacy = KIT.replace('Repos: Alpha_Checkout\n', 'Repos: Alpha_Checkout\nBudget: 2\n')
+        for value in ('2', 'many', '²', '0'):
+            book, errs = rulebook.parse(legacy.replace('Budget: 2', 'Budget: ' + value), 'kit')
+            self.assertEqual(errs, [], value)
+            self.assertEqual(rulebook.render(book), KIT)
+
+    def test_size_and_the_cap(self):
+        book, _ = rulebook.parse(KIT, 'kit')
+        self.assertEqual(rulebook.size(book), len(KIT.encode('utf-8')))
+        self.assertFalse(rulebook.over_cap(book))
+        large, errs = rulebook.parse(big(), 'kit')
         self.assertEqual(errs, [])
-        self.assertEqual(book.budget, rulebook.DEFAULT_BUDGET)
+        self.assertGreater(rulebook.size(large), rulebook.MAX_BYTES)
+        self.assertTrue(rulebook.over_cap(large))
+        self.assertEqual(rulebook.MAX_BYTES, 16384)
+        exact = book._replace(title=book.title + 'x' * (rulebook.MAX_BYTES - rulebook.size(book)))
+        self.assertEqual(rulebook.size(exact), rulebook.MAX_BYTES)
+        self.assertFalse(rulebook.over_cap(exact))
+        self.assertTrue(rulebook.over_cap(exact._replace(title=exact.title + 'x')))
+
+    def test_the_size_counts_utf8_bytes(self):
+        book, _ = rulebook.parse(KIT.replace('Kit rules', 'Kit rules é'), 'kit')
+        self.assertEqual(rulebook.size(book), len(KIT.encode('utf-8')) + 3)
+
+    def test_heading_key(self):
+        for a, b in (('Owner files', 'owner-files'), ('Art', 'art'), ('User_data', 'user data'),
+                     ('Design  decisions', 'design-decisions'), ('Owner -_ files', 'owner files')):
+            self.assertEqual(rulebook.heading_key(a), rulebook.heading_key(b), (a, b))
+        self.assertNotEqual(rulebook.heading_key('Owner files'), rulebook.heading_key('Ownerfiles'))
 
     def test_duplicate_key(self):
         _, errs = rulebook.parse(KIT + f'- machine.lock: Again. (from {R1})\n', 'kit')
@@ -94,19 +124,10 @@ class ParseTest(unittest.TestCase):
     def test_header_problems(self):
         _, errs = rulebook.parse(f'# T\n\n## A\n- a.b: x (from {R1})\n', 'kit')
         self.assertEqual(errs, ['kit.md: no `Repos:` header line'])
-        _, errs = rulebook.parse('# T\nRepos: x\nBudget: many\n', 'kit')
-        self.assertIn('Budget needs a positive number', errs[0])
         _, errs = rulebook.parse(f'# T\nRepos: x\n- a.b: x (from {R1})\n', 'kit')
         self.assertIn('before any `## topic` heading', errs[0])
         _, errs = rulebook.parse('# T\nRepos: x\n## A\nRepos: y\n', 'kit')
         self.assertIn('unknown line', errs[0])
-
-    def test_a_budget_of_non_ascii_digits_is_an_error_not_a_traceback(self):
-        for value in ('²', '٣', '0', '-3', '4.5'):
-            book, errs = rulebook.parse('# T\nRepos: x\nBudget: %s\n' % value, 'kit')
-            self.assertEqual(len(errs), 1, value)
-            self.assertIn('Budget needs a positive number', errs[0])
-            self.assertEqual(book.budget, rulebook.DEFAULT_BUDGET)
 
     def test_trailing_whitespace_after_the_sources_is_tolerated(self):
         book, errs = rulebook.parse(f'# T\nRepos: x\n## A\n- a.b: x (from {R1}, {R2})  \t\n', 'kit')
@@ -135,12 +156,35 @@ class CheckTest(unittest.TestCase):
     def ids(self, count):
         return {rid(n) for n in range(1, count + 1)}
 
-    def test_clean_books_list_the_override_and_the_budget(self):
+    def test_clean_books_list_the_override(self):
         got = rulebook.check(self.books(), self.ids(3))
         self.assertEqual(got.errors, [])
-        self.assertEqual(sorted(got.notes), sorted([
-            'kit.md:10: rule machine.lock overrides the shared rule',
-            'kit.md: 3 rules, over its budget of 2']))
+        self.assertEqual(got.notes, ['kit.md:9: rule machine.lock overrides the shared rule'])
+
+    def test_a_book_over_the_cap_is_a_note(self):
+        books = self.books()
+        books['kit'] = rulebook.parse(big(), 'kit')[0]
+        got = rulebook.check(books, self.ids(3))
+        self.assertEqual(got.errors, [])
+        self.assertEqual(got.notes, ['kit.md: %d bytes, over its cap of 16384'
+                                     % rulebook.size(books['kit'])])
+
+    def test_a_repeated_or_lower_case_heading_is_an_error_with_no_line_number(self):
+        books = self.books()
+        books['kit'] = rulebook.parse(KIT + f'\n## landing\n- landing.late: Late. (from {R1})\n'
+                                      f'\n## owner-files\n- owner.a: A. (from {R1})\n'
+                                      f'\n## Owner files\n- owner.b: B. (from {R1})\n', 'kit')[0]
+        got = rulebook.check(books, self.ids(3))
+        self.assertEqual(got.errors, [
+            "kit.md: heading 'landing' repeats heading 'Landing' (one heading per topic)",
+            "kit.md: heading 'landing' starts with a lower-case letter",
+            "kit.md: heading 'owner-files' starts with a lower-case letter",
+            "kit.md: heading 'Owner files' repeats heading 'owner-files' (one heading per topic)"])
+        self.assertFalse([e for e in got.errors if any(c.isdigit() for c in e)])
+        split = rulebook.parse(KIT + f'\n## Landing\n- landing.late: Late. (from {R1})\n', 'kit')[0]
+        got = rulebook.check(dict(books, kit=split), self.ids(3))
+        self.assertEqual(got.errors, ["kit.md: heading 'Landing' repeats heading 'Landing' "
+                                      "(one heading per topic)"])
 
     def test_two_books_claiming_one_repo_is_an_error(self):
         books = self.books()
@@ -151,7 +195,7 @@ class CheckTest(unittest.TestCase):
 
     def test_a_cited_id_missing_from_the_log(self):
         got = rulebook.check(self.books(), self.ids(2))
-        self.assertEqual(got.errors, [f'kit.md:10: rule machine.lock cites {R3}, which is not in the log'])
+        self.assertEqual(got.errors, [f'kit.md:9: rule machine.lock cites {R3}, which is not in the log'])
 
 
 class ForRepoTest(unittest.TestCase):
@@ -189,7 +233,10 @@ class ForRepoTest(unittest.TestCase):
         kit_lines, _ = rulebook.lines(*views[1], sources=True)
         self.assertIn(f'- machine.lock: Heavy runs take the machine lock. [overrides shared] (from {R3})',
                       kit_lines)
-        self.assertEqual(kit_lines[0], '# kit (3 rules, over its budget of 2)')
+        self.assertEqual(kit_lines[0], '# kit (3 rules)')
+        large = rulebook.parse(big(), 'kit')[0]
+        self.assertEqual(rulebook.lines(large, set())[0][0], '# kit (60 rules, %d bytes, over its cap '
+                         'of 16384)' % rulebook.size(large))
 
     def test_topic_filter(self):
         kit, _ = rulebook.parse(KIT, 'kit')
@@ -266,8 +313,8 @@ class CliTest(Base):
         self.assertEqual(lines[0], '# shared (2 rules)')
         self.assertIn('- process.refusal: A refusal is final; report it verbatim.', lines)
         self.assertNotIn('- machine.lock: Heavy runs wait in the queue.', lines)
-        self.assertIn('# kit (3 rules, over its budget of 2)', lines)
-        self.assertLess(lines.index('# shared (2 rules)'), lines.index('# kit (3 rules, over its budget of 2)'))
+        self.assertIn('# kit (3 rules)', lines)
+        self.assertLess(lines.index('# shared (2 rules)'), lines.index('# kit (3 rules)'))
         self.assertNotIn('(from', r.stdout)
 
     def test_sources_and_topic(self):
@@ -305,7 +352,7 @@ class CliTest(Base):
     def test_check_passes_with_notes(self):
         r = self.run_tool('check', '--base', 'HEAD')
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn('note: kit.md:10: rule machine.lock overrides the shared rule', r.stdout)
+        self.assertIn('note: kit.md:9: rule machine.lock overrides the shared rule', r.stdout)
         self.assertIn('rulebooks: 5 rules in 2 files', r.stdout)
 
     def test_a_retired_id_may_be_cited_and_a_missing_one_may_not(self):
@@ -317,7 +364,7 @@ class CliTest(Base):
         self.put(self.log, log_text(2))
         r = self.run_tool('check', '--base', 'none')
         self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn('FAIL kit.md:10: rule machine.lock cites %s, which is not in the log' % R3, r.stdout)
+        self.assertIn('FAIL kit.md:9: rule machine.lock cites %s, which is not in the log' % R3, r.stdout)
 
     def test_check_fails_on_a_bad_rulebook(self):
         self.book('pm', f'# T\nRepos: p\n## A\n- a.b: no source\n- a.c: x (from {R99})\njunk\n')

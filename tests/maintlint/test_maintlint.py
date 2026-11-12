@@ -312,7 +312,7 @@ class LedgerCounts(unittest.TestCase):
             fh.write('# Standing rulings\n\n- %s: an old rule.\n- %s: a live rule.\n'
                      % (rid(2), rid(3)))
         got, notes = ledger.counts(user_config=lambda home: {'ledger_path': path})
-        self.assertEqual(got, {'stale_cites': 1, 'rules': {}, 'over_budget': [],
+        self.assertEqual(got, {'stale_cites': 1, 'rules': {}, 'over_cap': [],
                                'conflict_pairs': 0, 'overrides': 0})
         self.assertEqual(notes, [])
         res = {'repo': 'x', 'counts': {}, 'ledger': got, 'notes': notes, 'findings': []}
@@ -325,7 +325,7 @@ class LedgerCounts(unittest.TestCase):
                          (None, ['ledger NOT CHECKED: the machine config names no ledger']))
 
     def test_stale_cites_above_0_is_a_finding_for_the_pm_with_numbers_only(self):
-        got = ledger.findings({'stale_cites': 2, 'rules': {}, 'over_budget': [],
+        got = ledger.findings({'stale_cites': 2, 'rules': {}, 'over_cap': [],
                                'conflict_pairs': 0, 'overrides': 0})
         self.assertEqual([(f.check, f.key) for f in got], [('ledger-stale-cites', 'stale_cites')])
         self.assertIn('2 citation(s)', got[0].text)
@@ -335,7 +335,7 @@ class LedgerCounts(unittest.TestCase):
 
     def test_no_count_above_0_and_an_unchecked_ledger_are_no_finding(self):
         self.assertEqual(ledger.findings({'stale_cites': 0, 'rules': {'kit': 4},
-                                          'over_budget': [], 'conflict_pairs': 0,
+                                          'over_cap': [], 'conflict_pairs': 0,
                                           'overrides': 1}), [])
         self.assertEqual(ledger.findings(None), [])
 

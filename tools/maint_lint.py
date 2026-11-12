@@ -50,10 +50,10 @@ def _counts(res):
     out = ['%-20s %d' % (c, n) for c, n in res['counts'].items() if n]
     led = res.get('ledger')
     out.append('ledger: %s' % ('NOT CHECKED' if led is None else
-                               'stale_cites %d, rules %d in %d file(s), over budget %d, '
+                               'stale_cites %d, rules %d in %d file(s), over cap %d, '
                                'conflict pairs %d, overrides %d'
                                % (led['stale_cites'], sum(led['rules'].values()),
-                                  len(led['rules']), len(led['over_budget']),
+                                  len(led['rules']), len(led['over_cap']),
                                   led['conflict_pairs'], led['overrides'])))
     if res.get('module_scope') is not None:
         out.append(scopelog.line(res['module_scope']))

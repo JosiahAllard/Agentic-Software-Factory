@@ -211,10 +211,10 @@ def add(path, repo, prov, q, a, decides, source, supersedes='-', when=None, repo
 
 # A rulebook change paired with a log entry (docs/ledger.md "Rulebooks"). folder: the rules folder
 # (kitlib.ledger.files `Files.rules`). op: 'set' (key, topic, text, checked: the hash `conflicts`
-# printed), 'dropped' (key) or 'header' (repos, budget, title; the book is made when absent).
+# printed), 'dropped' (key) or 'header' (repos, title; the book is made when absent).
 # book: a rulebook name (`all` or an existing one) that replaces rulebook.target's choice for the log repo.
-RuleChange = collections.namedtuple('RuleChange', 'folder op key topic text checked repos budget title book',
-                                    defaults=(None,) * 8)
+RuleChange = collections.namedtuple('RuleChange', 'folder op key topic text checked repos title book',
+                                    defaults=(None,) * 7)
 
 
 def load_books(folder):
@@ -255,14 +255,18 @@ def _rule_change(rule, repo, rid, decides, warnings):
             raise Refused('--checked %s is stale: %s or the rule changed since it was printed; %s; '
                           'nothing was written' % (rule.checked.strip(), ' or '.join(
                               rulebook.file_name(n) for n in rulebook.scope(books, name)), fix))
+        old = book or rulebook.new_book(name, (repo,))
         try:
-            book, _ = rulebook.set_rule(book or rulebook.new_book(name, (repo,)), rule.key,
-                                        rule.topic, text, (rid,))
+            book, _ = rulebook.set_rule(old, rule.key, rule.topic, text, (rid,))
         except ValueError as e:
             raise Usage(str(e))
-        if len(book.rules) > book.budget:
-            warnings.append('%s has %d rules, over its budget of %d: drop or merge some'
-                            % (rulebook.file_name(name), len(book.rules), book.budget))
+        # The cap tightens only: a set that leaves the book over it and larger is refused; one no
+        # larger (and every drop) passes, so an over-cap book can still be trimmed.
+        if rulebook.over_cap(book) and rulebook.size(book) > rulebook.size(old):
+            raise Refused('%s would be %d bytes, over its cap of %d (now %d); drop or shorten rules '
+                          'with ledger.py rule-drop first; nothing was written'
+                          % (rulebook.file_name(name), rulebook.size(book), rulebook.MAX_BYTES,
+                             rulebook.size(old)))
     elif rule.op == 'dropped':
         try:
             book, _ = rulebook.drop_rule(book or rulebook.new_book(name, (repo,)), rule.key)
@@ -272,7 +276,7 @@ def _rule_change(rule, repo, rid, decides, warnings):
         if book is None and not rule.repos:
             raise Usage('%s does not exist yet: give it --repos' % rulebook.file_name(name))
         book = rulebook.set_header(book or rulebook.new_book(name, rule.repos), rule.repos,
-                                   rule.budget, rule.title)
+                                   rule.title)
     else:
         raise Usage('unknown rule change %r' % (rule.op,))
     head = rulebook.header_digest(book) if rule.op == 'header' else None

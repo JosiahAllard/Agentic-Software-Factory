@@ -138,7 +138,7 @@ repository's, or not fetched), counted.
 - `stale_cites`: STANDING digest citations of a retired or absent entry;
 - `rules`: the rules of each rulebook file (`rules/<name>.md` beside the log,
   `kitlib/ledger/rulebook.py`; docs/ledger.md "Rulebooks"), by file name;
-- `over_budget`: the files with more rules than their `Budget:` (default 40);
+- `over_cap`: the files over the size cap, `rulebook.MAX_BYTES` (16384 bytes, `rulebook.over_cap`);
 - `conflict_pairs`: pairs of rules, each counted once, that `rulebook.conflicts` finds sharing
   content words (a rule is read against its own book and the shared one; rules under the same
   heading are not counted);
@@ -146,10 +146,10 @@ repository's, or not fetched), counted.
 
 The counts are read through `rulebook.load` and `rulebook.conflicts`, not parsed again; a rulebook
 that does not parse is a note, and no rulebook folder gives zeros.
-Each of `stale_cites`, `over_budget` and `conflict_pairs` above 0 is also a finding for the PM,
+Each of `stale_cites`, `over_cap` and `conflict_pairs` above 0 is also a finding for the PM,
 whose ledger it is: `ledger-stale-cites` (fix: `ledger.py check`, which names each citation, then
-re-point or drop the digest line), `ledger-over-budget` (fix: `ledger.py rules --all`, then
-`rule-drop` or `rule-set --budget`) and `ledger-rule-conflicts` (fix: `ledger.py conflicts`, which
+re-point or drop the digest line), `ledger-over-cap` (fix: `ledger.py rules --all`, then
+`rule-drop`, or a shorter rule with `add --rule`) and `ledger-rule-conflicts` (fix: `ledger.py conflicts`, which
 shows what a rule is set against). Overrides are information only. The text carries numbers and
 file names only.
 

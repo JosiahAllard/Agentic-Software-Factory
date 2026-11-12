@@ -469,6 +469,9 @@ class LeasedWriterDeliveryTests(unittest.TestCase):
         self.unconfirmed_after_write(change)
 
 
+HOOK=b'{"timestamp":"2026-10-12T12:00:01Z","type":"event_msg","payload":{"type":"token_count","hook":"fold-hook"}}\n'
+
+
 class RolloutAppendDuringLiveCheckTests(unittest.TestCase):
     """A chat appending to its rollout while a live check reads it is not a dead chat."""
     write=DirectRuntimeDeliveryTests.write
@@ -482,8 +485,9 @@ class RolloutAppendDuringLiveCheckTests(unittest.TestCase):
     def appending(self,times):
         from optional.bridge.hosts.codex import context as context_module
         real=context_module.JsonLineDecoder
-        marker=self.recipient.identity.native_session_id.encode()
-        path,appended=self.target_path,[]
+        # A resumed read parses only what was appended since the last: the line it parses is the hook.
+        marker,path,appended=b'fold-hook',self.target_path,[]
+        with path.open('ab') as stream: stream.write(HOOK)
         class Appending(real):
             def feed(decoder,line):
                 if marker in line and len(appended)<times:
@@ -521,14 +525,13 @@ class RolloutAppendDuringLiveCheckTests(unittest.TestCase):
 
     def partial_line(self,complete_on):
         # The chat is mid-append: the rollout ends without a newline. complete_on: the read
-        # (counted by the recipient's session record) during which the line is finished.
+        # (counted by the hook line) during which the line is finished.
         from optional.bridge.hosts.codex import context as context_module
         from unittest.mock import patch
         real=context_module.JsonLineDecoder
-        marker=self.recipient.identity.native_session_id.encode()
-        path,reads=self.target_path,[]
+        marker,path,reads=b'fold-hook',self.target_path,[]
         with path.open('ab') as stream:
-            stream.write(b'{"timestamp":"2026-10-12T12:00:02Z","type":"response_item","payload":{')
+            stream.write(HOOK+b'{"timestamp":"2026-10-12T12:00:02Z","type":"response_item","payload":{')
         class Completing(real):
             def feed(decoder,line):
                 if marker in line:

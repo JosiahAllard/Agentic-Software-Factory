@@ -6,6 +6,7 @@ identity/active-turn/permission facts; it does not authenticate arbitrary caller
 that can invoke Python or manufacture metadata. Current login and frontend IPC
 verification are separate deployment requirements. No native state is modified.
 """
+from collections import OrderedDict, namedtuple
 from contextlib import contextmanager
 import ctypes
 from ctypes import wintypes as w
@@ -29,6 +30,8 @@ MAX_ENTRIES, MAX_DIRECTORIES = 100000, 4096
 MAX_ROLLOUT_BYTES = 256*1024*1024
 MAX_AUTHORITY_BYTES = 128*1024
 RECORD_TRIES = 3
+ANCHOR_BYTES = 4096  # the tail of a rollout that a resumed read re-checks before trusting what it read earlier
+MAX_FOLDS = 128
 MAX_INDEX_BYTES = 4*1024*1024  # session_index.jsonl, read for chat titles (display only)
 # A read that overlapped an append: the file changed, or it ended mid-line.
 RETRIED_READS = ('native-rollout-changed', 'native-rollout-incomplete')
@@ -41,6 +44,11 @@ STARTED = frozenset(('task_started','turn_started'))
 PROMPTING = frozenset(('on-request','on-failure','untrusted'))
 get_pid = bind(K,'GetProcessId',[w.HANDLE],w.DWORD)
 wait = bind(K,'WaitForSingleObject',[w.HANDLE,w.DWORD],w.DWORD)
+
+
+# What one complete read of a rollout holds, and where it ended: the file's identity, the offset of
+# the first byte not read, a hash of the ANCHOR_BYTES before it, and the folded records.
+Fold=namedtuple('Fold','identity offset anchor session context lifecycle contexts')
 
 
 class ContextError(ValueError):
@@ -194,6 +202,7 @@ class CodexObserver:
                 raise ContextError('invalid-native-host')
             self.pid,self.creation=host_pid,host_creation
             self._scoped=threading.local()
+            self._folds=OrderedDict()
             self.user=process_sids(os.getpid())[0]
             self._handle=open_process(0x00101000,False,self.pid)
             if not self._handle: raise ContextError('native-host-unavailable')
@@ -261,41 +270,75 @@ class CodexObserver:
     def _records(self, path, *, contexts=None):
         """The rollout's authority records, once per scope() and else read fresh.
         contexts, when given, collects (turn_id, sha) of every turn_context in order.
+        The session and context dicts are shared with the cache: callers only read them.
         """
         memo=getattr(self._scoped,'memo',None)
         held=memo['reads'].get(path) if memo is not None else None
         if held is None:
-            seen=[] if memo is not None or contexts is not None else None
-            held=(*self._read_whole(path,seen),tuple(seen or ()))
+            held=self._read_whole(path)
             if memo is not None: memo['reads'][path]=held
-        if contexts is not None: contexts.extend(held[3])
-        return held[:3]
+        if contexts is not None: contexts.extend(held.contexts)
+        return held.session,held.context,held.lifecycle
 
-    def _read_whole(self, path, contexts):
-        """The rollout's authority records, read whole while the file stands still.
+    def _read_whole(self, path):
+        """The rollout's authority records, read from where the last read ended while the file stands still.
+
+        A rollout only grows, and what it holds folds in order (the one session record, the last
+        turn_context, the last lifecycle event, every turn_context), so a read resumes from the
+        end of the last complete read, kept in self._folds, and parses only the lines appended
+        since. It starts again from byte 0 when the file was replaced or shrank, when the last
+        ANCHOR_BYTES before that end changed, or when the appended lines are refused (the full
+        read then raises what it always raised). The residual: the prefix is trusted by that
+        anchor, so an in-place edit earlier than the last ANCHOR_BYTES, one that keeps the size,
+        is not seen. Every observer reader runs under the runtime's RLock, so self._folds needs
+        no lock of its own.
 
         A running chat appends to its rollout, so a read that overlaps an append (the
         file changed, or it ended mid-line) is retried, at most RECORD_TRIES times in
         all; a file that does so on every try is refused as before. Failing one read must not drop a live chat.
+        A read stores its end only once it is complete and successful.
         """
+        prior=self._folds.get(path)
         for attempt in range(RECORD_TRIES):
-            if contexts is not None:
-                contexts.clear()
             try:
-                return self._read_records(path,contexts)
+                fold=self._resume(path,prior)
             except ContextError as error:
                 if error.code not in RETRIED_READS or attempt==RECORD_TRIES-1:
                     raise
+                continue
+            self._folds[path]=fold
+            self._folds.move_to_end(path)
+            while len(self._folds)>MAX_FOLDS: self._folds.popitem(last=False)
+            return fold
 
-    def _read_records(self, path, contexts):
+    def _resume(self, path, prior):
+        try:
+            return self._read_records(path,prior)
+        except Exception as error:
+            if prior is None or isinstance(error,ContextError) and error.code in RETRIED_READS: raise
+            self._folds.pop(path,None)
+            return self._read_records(path,None)
+
+    def _read_records(self, path, prior):
         before=_regular(path)
         if not 0<before.st_size<=MAX_ROLLOUT_BYTES: raise ContextError('native-rollout-size-limit')
+        identity=(before.st_dev,before.st_ino,_version(before)[4])
+        if prior is not None and (prior.identity!=identity or before.st_size<prior.offset): prior=None
         session=context=lifecycle=None
+        contexts=[]
         with path.open('rb') as stream:
             opened=os.fstat(stream.fileno())
             if _version(opened)!=_version(before):
                 raise ContextError('native-rollout-changed')
             consumed=0
+            if prior is not None:
+                low=max(0,prior.offset-ANCHOR_BYTES)
+                stream.seek(low)
+                if hashlib.sha256(stream.read(prior.offset-low)).digest()==prior.anchor:
+                    consumed=prior.offset
+                    session,context,lifecycle,contexts=prior.session,prior.context,prior.lifecycle,list(prior.contexts)
+                else:
+                    stream.seek(0)
             while True:
                 line=stream.readline(MAX_AUTHORITY_BYTES+1)
                 if not line: break
@@ -330,13 +373,16 @@ class CodexObserver:
                     session=payload
                 elif kind=='turn_context':
                     context=payload
-                    if contexts is not None: contexts.append((payload.get('turn_id'),_sha(payload)))
+                    contexts.append((payload.get('turn_id'),_sha(payload)))
                 elif kind=='event_msg' and payload.get('type') in LIFECYCLE: lifecycle=payload
+            low=max(0,consumed-ANCHOR_BYTES)
+            stream.seek(low)
+            anchor=hashlib.sha256(stream.read(consumed-low)).digest()
             after=os.fstat(stream.fileno())
             if (_version(after)!=_version(before) or after.st_ctime_ns!=opened.st_ctime_ns
                     or _version(_regular(path))!=_version(before)):
                 raise ContextError('native-rollout-changed')
-        return session,context,lifecycle
+        return Fold(identity,consumed,anchor,session,context,lifecycle,tuple(contexts))
 
     def _observe(self, host_metadata, *, active, record_hashes=None):
         try:

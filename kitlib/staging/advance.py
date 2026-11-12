@@ -28,8 +28,9 @@ The landing lock (kitlib.records.landing.LandingLock, with this process's pid) i
 the push to the end, so no landing is mid-merge while the main checkout's main moves. take()
 refuses at once while anyone holds it, so it is polled every LOCK_POLL_S up to `lock_wait_s`;
 a holder kitlib.proc says is gone is broken (break_lock, which refuses while a merge is in
-progress), except a stuck landing's (phase STUCK): that one is cleared by hand only, as the
-lander's own rule says (kitlib.landing.lander held_by), so the attempt stays at its phase. The caller has released its machine-lock slot before advance is called: the gate's
+progress), except a stuck landing's (kitlib.records.landing.is_stuck): that one is cleared by
+hand only, as the lander's own rule says (kitlib.landing.lander held_by), so the attempt stays at
+its phase. The caller has released its machine-lock slot before advance is called: the gate's
 slot is never held while waiting on a landing.
 
 Git reads go through the caller's `git(cwd, *args)` (kitlib.dailyfull.git). Nothing here prints.
@@ -47,8 +48,9 @@ LOCK_POLL_S = 5
 REFUSED_MARK = 'pre-push: refused'      # the kit pre-push hook's refusal (kitlib.guard.prepush)
 # Its refusals that say only that the hook could not read what it judges by (a remote list, git's
 # ancestry, an object list): a failed push, tried again, never a refused hold.
+# TODO(KIT-STAGING-BRANCH): import kitlib.guard.prepush.TRANSIENT_PREFIX (kit/staging-on-gaps)
+# once that lands, in place of this local string.
 TRANSIENT = REFUSED_MARK + ', cannot '
-STUCK = 'stuck'             # a landing that stopped half-way (kitlib.records.landing PHASES)
 
 
 def _quiet(_line):
@@ -205,7 +207,7 @@ class Mover(object):
                 return True
             except LL.Busy as e:
                 rec = e.record or {}
-                if rec.get('phase') == STUCK:
+                if LL.is_stuck(rec):
                     lines.append('promote: WAITING at %s - the landing lock is held by a stuck '
                                  'landing (%s), which is cleared by hand only, as its STUCK '
                                  'report says; the next run tries again' % (a.phase,

@@ -354,7 +354,22 @@ class BreakTest(LockCase):
         self.assertFalse(self.lock(is_alive=DEAD).break_lock(holder_gone=True)[0])
 
 
+class IsStuckTest(unittest.TestCase):
+
+    def test_only_a_record_at_phase_stuck_is_stuck(self):
+        self.assertTrue(landing.is_stuck({'token': 't', 'phase': 'stuck'}))
+        for rec in (None, {}, {'phase': 'gate'}, {'phase': 'push'}, {'phase': 'undo'}):
+            self.assertFalse(landing.is_stuck(rec), rec)
+
+
 class GateRefusalTest(LockCase):
+
+    def test_gate_refusal_asks_is_stuck(self):
+        lk = self.lock()
+        lk.take(['kit/a'])
+        self.assertIsNone(lk.gate_refusal())
+        with mock.patch.object(landing, 'is_stuck', return_value=True):
+            self.assertIn('stuck', lk.gate_refusal())
 
     def test_a_merged_gate_needs_the_lock_held_with_origin_unmoved(self):
         lk = self.lock()

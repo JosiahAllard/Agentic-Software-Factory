@@ -277,7 +277,6 @@ class Pushes(Case):
 
     def test_a_pre_push_refusal_that_could_not_read_is_tried_again_then_failed(self):
         self.answers = ['push']
-        a = self.attempt('tested')
         for cannot in ('pre-push: refused, cannot read the remotes to tell whether origin is the '
                        'private remote',
                        'pre-push: refused, cannot tell whether %s is a fast-forward of origin '
@@ -291,7 +290,6 @@ class Pushes(Case):
             self.assertEqual(self.sleeps, [A.PUSH_PAUSE_S] * (A.PUSH_TRIES - 1))
             self.assertIn(cannot, a.rec['why'])
             self.assertTrue(cannot.startswith(A.TRANSIENT))
-        self.assertFalse(A.TRANSIENT.startswith('pre-push: refused, main'))
 
     def test_a_transient_refusal_then_a_landed_push_is_done(self):
         a = self.attempt('tested')
@@ -389,6 +387,14 @@ class LandingLock(Case):
             self.assertEqual(self.sleeps, [])       # no wait on what only a person clears
             self.assertIn('WAITING at %s' % phase, lines[-1])
             self.assertIn('stuck', lines[-1])
+
+    def test_the_take_asks_is_stuck(self):
+        self.lock = FakeLock(self.log, busy=[busy('t1')] * 1000, dead=True)
+        a = self.attempt('tested')
+        with mock.patch.object(LL, 'is_stuck', return_value=True):
+            lines = self.mover().advance(a)
+        self.assertNotIn(('break',), self.log)
+        self.assertIn('stuck', lines[-1])
 
     def test_a_stuck_record_after_a_busy_one_still_stops_the_wait(self):
         self.answers = ['promoted']

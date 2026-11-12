@@ -119,6 +119,13 @@ def describe(record):
                (record.get('origin_at_take') or '?')[:10]))
 
 
+def is_stuck(record):
+    """True when `record` (a lock record, or None) is a landing that stopped half-way (phase
+    stuck): cleared by hand only, never broken or waited out by a run (the lander's held_by, the
+    merged gate's gate_refusal, the staging promotion's take)."""
+    return bool(record) and record.get('phase') == 'stuck'
+
+
 def _held_open(what, e):
     """The LockError of a replace or remove still refused (PermissionError `e`) after its tries."""
     return LockError('%s failed %d times (%s): the lock file is held open by another process; '
@@ -370,7 +377,7 @@ class LandingLock(object):
             return 'the landing lock cannot be read (%s)' % e
         if rec is None:
             return 'nobody holds the landing lock: take it before a merged-tree gate'
-        if rec.get('phase') == 'stuck':
+        if is_stuck(rec):
             return 'the landing lock is stuck (a landing stopped half-way): %s' % describe(rec)
         origin = self._ref('refs/remotes/%s/%s' % (self.remote, self.base))
         if not origin or origin != rec.get('origin_at_take'):

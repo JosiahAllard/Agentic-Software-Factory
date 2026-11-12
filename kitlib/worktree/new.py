@@ -247,11 +247,6 @@ def create(root, branch, existing=False, base=None, wait=True, say=None, sleep=t
     if (commit or approval is not None) and (existing or (approval is not None and base)):
         return Outcome(REFUSED, ['refused   a base commit or --approval starts a NEW branch, '
                                  'and --approval takes no --base; nothing was created.'])
-    work_base = kconfig.work_base(cfg)
-    base = branch_name(base, remote) if base else work_base
-    # A staging work base has no local copy that a landing keeps (a landing never writes one;
-    # docs/gate-landing.md "Staging branch"): the pushed <remote>/<staging> is the one start.
-    pushed_only = kconfig.staging_on(cfg) and base == work_base
     # The kit's own tools, named in the hints below: a repository holds no copy of them.
     check = kitroot.command('worktree_remove', main) + ' --check'
     slug = branch.split('/', 1)[1]
@@ -315,6 +310,16 @@ def create(root, branch, existing=False, base=None, wait=True, say=None, sleep=t
     rc, _, err = git(main, 'fetch', remote, timeout=FETCH_TIMEOUT)
     if rc != 0:
         return refuse('fetch failed: %s' % (err or 'exit %s' % rc))
+    try:            # the staging setting is main's as just fetched, never the main checkout's
+        kconfig.overlay_fetched_staging(cfg, main)
+    except ConfigError as e:
+        return Outcome(CONFIG, out + ['new_worktree: refused: kit configuration: %s; nothing was '
+                                      'created.' % e])
+    work_base = kconfig.work_base(cfg)
+    base = branch_name(base, remote) if base else work_base
+    # A staging work base has no local copy that a landing keeps (a landing never writes one;
+    # docs/gate-landing.md "Staging branch"): the pushed <remote>/<staging> is the one start.
+    pushed_only = kconfig.staging_on(cfg) and base == work_base
     pushed = '%s/%s' % (remote, base)
     if pushed_only:
         return _from_pushed(main, cfg, path, branch, existing, pushed, out, prep, refuse)

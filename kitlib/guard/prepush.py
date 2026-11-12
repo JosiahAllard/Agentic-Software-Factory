@@ -19,6 +19,11 @@ lander):
   says. A remote main this clone lacks cannot be an ancestor of the pushed commit, so git
   cannot tell: refused too (fail closed). Git passes such a ref to the hook only when the push is
   forced (--force, a + refspec, --force-with-lease);
+- then, with a staging branch (read as for guarded_mains: <remote>/<main> as fetched), a push to
+  the main branch itself, whatever push_block says, needs a tested record of the pushed commit
+  (tested_record; kitlib.records.gate_ok verify_tested): a daily full record, or a promotion
+  record (of any mode it ran in) made on the main the push replaces (docs/gate-records.md
+  "Tested records"). A push to the staging branch is not asked;
 - then, when the repository sets repo.push_block, the pushed commit needs a gate-OK record, read by
   kitlib.records.gate_ok.verify_record: it must name a config_rev in the pushed commit's history and
   hash the gate config that commit holds. With a dev_drive only the record folder counts and a
@@ -459,6 +464,38 @@ def verify_record(root, sha):
         return None, 'cannot read gate-OK records: %s: %s' % (type(e).__name__, e)
 
 
+def tested_record(root, sha, remote_sha):
+    """With a staging branch, the record a push of `sha` to main needs (kitlib.records.gate_ok
+    verify_tested): a daily full record of `sha`, else a promotion record of `sha` made on
+    `remote_sha`, the main it replaces. `(record, None)` or `(None, why)`; any failure is a
+    refusal, as verify_record's."""
+    try:
+        from kitlib.records import gate_ok
+        rec, why = gate_ok.verify_tested(root, sha, 'daily')
+        if rec is not None:
+            return rec, None
+        made, made_why = gate_ok.verify_tested(root, sha, 'promotion')
+        if made is not None:
+            if made.get('base') == remote_sha:
+                return made, None
+            made_why = 'the promotion record for %s was made on main %s, not %s' % (
+                sha[:12], (made.get('base') or 'none')[:12], remote_sha[:12])
+        return None, '%s; %s' % (why, made_why)
+    except Exception as e:
+        return None, 'cannot read tested records: %s: %s' % (type(e).__name__, e)
+
+
+def tested_refusal(cfg, sha, remote_sha, why):
+    """The refusal of a push to main of `sha`, replacing `remote_sha`, with no tested record
+    (tested_record's `why`)."""
+    staging = kconfig.work_base(cfg)
+    return ('pre-push: refused, %s has no daily full record, and no promotion record made on '
+            'main %s (%s). With the staging branch %s, main moves only to a commit a green daily '
+            'full run passed or a promotion tested on the main it replaces. Instead: land onto '
+            '%s/%s, and let the daily full run promote it (docs/daily-full.md "Promotion").'
+            % (sha[:12], (remote_sha or '?')[:12], why, staging, cfg.remote, staging))
+
+
 def _exclude(root, cfg, remote_sha, remote):
     """The commits a push to main does not add: the remote main it replaces when this clone has it,
     else <remote>/<main> as last fetched, else none (every commit is judged). Never other
@@ -502,8 +539,9 @@ def not_fast_forward(root, local_sha, remote_sha, main):
             'push again; never force-push %s.' % (local_sha[:12], main, remote_sha[:12], main, main))
 
 
-def check(root, lines, gate_ok=None, remote='origin', url=None):
+def check(root, lines, gate_ok=None, remote='origin', url=None, tested=None):
     gate_ok = gate_ok or verify_record
+    tested = tested or tested_record
     why = leak_refusal(root, lines, remote, url) or secrets_refusal(root, lines, remote)
     if why:
         return False, why
@@ -527,6 +565,10 @@ def check(root, lines, gate_ok=None, remote='origin', url=None):
         why = not_fast_forward(root, local_sha, remote_sha, main)
         if why:
             return False, why
+        if cfg is not None and kconfig.staging_on(cfg) and main == cfg.main_branch:
+            rec, why = tested(root, local_sha, remote_sha)
+            if rec is None:
+                return False, tested_refusal(cfg, local_sha, remote_sha, why)
         if cfg is None or not cfg.push_block:
             continue
         rec, why = gate_ok(root, local_sha)

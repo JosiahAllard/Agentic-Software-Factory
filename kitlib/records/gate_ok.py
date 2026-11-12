@@ -15,6 +15,13 @@ there is no record folder (no dev_drive): it is then the one record written (wri
 read (read). With a dev_drive it is neither written nor read. It stays for load nodes set up
 without a dev_drive (docs/load-nodes.md "Gating a branch on a node").
 
+Tested records (KINDS: "daily", "promotion") are this same record, each kind in a folder of its
+own beside kit-gate-ok (`<dev_drive>/pm-kit/<KINDS[kind]>/<repo key>/`, the .git copy
+`<git common dir>/<KINDS[kind]>/`). A daily record is always a --full pass; a promotion's mode is
+what it ran ("select" unless its config escalation ran it in full). record_tested_pass writes one,
+verify_tested reads it. The folder functions, read, write and verify take `kind`; None is the
+gate-OK record.
+
 The record (SCHEMA 1), every key always present:
 
   schema        1
@@ -85,6 +92,15 @@ from kitlib.git import cmd, refs, repo
 from kitlib.records import place
 
 DIR_NAME = 'kit-gate-ok'
+# The tested records (record_tested_pass, verify_tested): the gate-OK record's format, in a folder
+# of their own per kind beside kit-gate-ok, so a later branch gate of the same commit never
+# replaces one. Fixed: a kind is one of these, never a folder name a caller makes up. "daily": a
+# green daily full run of the commit (kitlib.dailyfull); "promotion": a passing gate of a commit
+# made to promote the staging branch onto main, its `base` the main it was made on. With a staging
+# branch, the pre-push hook lets main move only to a commit with one of them (docs/gate-records.md
+# "Tested records").
+KINDS = {'daily': 'kit-daily-full', 'promotion': 'kit-promotion'}
+LABELS = {None: 'gate-OK', 'daily': 'daily full', 'promotion': 'promotion'}
 SCHEMA = 1
 VERDICT = 'OK'
 KEYS = ('schema', 'verdict', 'commit', 'tree', 'base', 'gate_config', 'kit', 'author', 'repo',
@@ -128,27 +144,40 @@ def _common(root):
     return common
 
 
-def machine_dir():
-    """`<dev_drive>/pm-kit/kit-gate-ok`: the folder every repository's record folder is in
-    (place.kit_folder). NoRecordFolder when there is no dev_drive."""
+def dir_name(kind=None):
+    """The folder name of a record `kind`: None, the gate-OK record's (DIR_NAME), or one of KINDS.
+    RecordError for any other kind."""
+    if kind is None:
+        return DIR_NAME
+    if kind not in KINDS:
+        raise RecordError('no record kind %r: the kinds are %s' % (kind, ', '.join(sorted(KINDS))))
+    return KINDS[kind]
+
+
+def machine_dir(kind=None):
+    """`<dev_drive>/pm-kit/kit-gate-ok` (or the `kind`'s folder, dir_name): the folder every
+    repository's record folder is in (place.kit_folder). NoRecordFolder when there is no
+    dev_drive."""
+    name = dir_name(kind)
     try:
-        return place.kit_folder(DIR_NAME, 'gate-OK folder')
+        return place.kit_folder(name, '%s folder' % LABELS[kind])
     except place.NoKitFolder as e:
         raise NoRecordFolder(str(e))
 
 
-def record_dir(root):
+def record_dir(root, kind=None):
     """The record folder of the repository `root` is in: `<dev_drive>/pm-kit/kit-gate-ok/<repo
-    key>` (place.repo_key: one for every worktree of a repository). RecordError when
-    it cannot be worked out (no git common dir; NoRecordFolder: no dev_drive)."""
+    key>` (place.repo_key: one for every worktree of a repository; the `kind`'s folder for a
+    tested record). RecordError when it cannot be worked out (no git common dir; NoRecordFolder:
+    no dev_drive)."""
     common = _common(root)
-    return os.path.join(machine_dir(), place.repo_key(common))
+    return os.path.join(machine_dir(kind), place.repo_key(common))
 
 
-def legacy_dir(root):
-    """The old record folder, `<git common dir>/kit-gate-ok`: written and read only when there is
-    no record folder (no dev_drive; write, read)."""
-    return os.path.join(_common(root), DIR_NAME)
+def legacy_dir(root, kind=None):
+    """The old record folder, `<git common dir>/kit-gate-ok` (or the `kind`'s): written and read
+    only when there is no record folder (no dev_drive; write, read)."""
+    return os.path.join(_common(root), dir_name(kind))
 
 
 def _name(commit):
@@ -157,12 +186,12 @@ def _name(commit):
     return commit + '.json'
 
 
-def record_path(root, commit):
-    return os.path.join(record_dir(root), _name(commit))
+def record_path(root, commit, kind=None):
+    return os.path.join(record_dir(root, kind), _name(commit))
 
 
-def legacy_path(root, commit):
-    return os.path.join(legacy_dir(root), _name(commit))
+def legacy_path(root, commit, kind=None):
+    return os.path.join(legacy_dir(root, kind), _name(commit))
 
 
 def is_record_name(name):
@@ -281,16 +310,35 @@ def gate_config_at(root, rev):
     return gate_config(kconfig.load_at(root, rev))
 
 
-def verify_record(root, commit):
+def verify_record(root, commit, kind=None):
     """verify() with the gate config read from the record's own `config_rev` (the commit
     whose `.kit.json` the gate ran with): `(record, None)` or `(None, why)`. A record's .git copy
-    counts only when there is no record folder (no dev_drive; read)."""
+    counts only when there is no record folder (no dev_drive; read). `kind`: the tested record's
+    folder (KINDS) instead of the gate-OK record's."""
     def config_at(rev):
         try:
             return gate_config_at(root, rev)
         except ConfigError as e:
             raise RecordError('the gate config at %s: %s' % (rev[:10], e))
-    return verify(root, commit, config_at=config_at)
+    return verify(root, commit, config_at=config_at, kind=kind)
+
+
+def verify_tested(root, commit, kind):
+    """`(record, None)` when `commit` has a tested record of `kind` (one of KINDS) that
+    verify_record takes, else `(None, why)`. A daily record must be a --full pass (full_of, mode
+    "full"); a promotion record must have a known mode (mode_of: "full", "select" or "docs", what
+    the promotion's selection ran). The caller checks anything more the kind needs (a promotion's
+    `base`)."""
+    if kind not in KINDS:
+        return None, 'no record kind %r: the kinds are %s' % (kind, ', '.join(sorted(KINDS)))
+    rec, why = verify_record(root, commit, kind)
+    if rec is None:
+        return None, why
+    if kind == 'daily' and (not full_of(rec) or mode_of(rec) != 'full'):
+        return None, 'the %s record for %s is not from a --full run' % (LABELS[kind], rec['commit'])
+    if mode_of(rec) is None:
+        return None, 'the %s record for %s names no mode it ran in' % (LABELS[kind], rec['commit'])
+    return rec, None
 
 
 def _input_keys(keys):
@@ -369,14 +417,14 @@ def build(root, rev, gate_config, kit, repo_name, started_utc, steps, base=None,
     return rec
 
 
-def write(root, record):
+def write(root, record, kind=None):
     """Write `record` (from build()) to the record folder, atomically; returns its path.
     RecordError when the write fails. NoRecordFolder, with the .git copy (legacy_path) written
-    instead, when there is no record folder (no dev_drive)."""
+    instead, when there is no record folder (no dev_drive). `kind`: a tested record's folder."""
     commit = record.get('commit')
-    old = legacy_path(root, commit)
+    old = legacy_path(root, commit, kind)
     try:
-        path = record_path(root, commit)
+        path = record_path(root, commit, kind)
     except NoRecordFolder:
         # Kept for load nodes set up without a dev_drive (docs/load-nodes.md).
         _write_file(old, record)
@@ -414,6 +462,25 @@ def record_pass(root, rev, gate_config, kit, repo_name, started_utc, steps, base
     return write(root, rec), rec
 
 
+def record_tested_pass(root, rev, kind, gate_config, kit, repo_name, started_utc, steps,
+                       base=None, config_rev=None, source=None, full=True, mode=None):
+    """A tested record (KINDS) of `rev`: build(), then write() to the kind's folder:
+    `(path, record)`. `full` / `mode` as build(): what the run selected. A daily record is a
+    --full run (full false is RecordError); a promotion is "select" (full=False) unless its config
+    escalation ran it in full. `config_rev`: the commit whose `.kit.json` the run's gate came from
+    (`rev` itself for a run of `rev`); verify_tested checks the hash against it. A promotion
+    record's `base` is the main commit it was made on (40 hex). RecordError for another kind;
+    NoRecordFolder as write()."""
+    if kind not in KINDS:
+        raise RecordError('no tested record kind %r: the kinds are %s'
+                          % (kind, ', '.join(sorted(KINDS))))
+    if kind == 'daily' and full is not True:
+        raise RecordError('a daily record is a --full run: full must be True')
+    rec = build(root, rev, gate_config, kit, repo_name, started_utc, steps, base,
+                config_rev=config_rev, source=source, full=full, mode=mode)
+    return write(root, rec, kind), rec
+
+
 def _load(path):
     """`(record, None)`, `(None, 'none')` when there is no file, or `(None, why)`."""
     try:
@@ -430,16 +497,16 @@ def _load(path):
     return rec, None
 
 
-def read(root, commit):
+def read(root, commit, kind=None):
     """`(record, None)`, `(None, 'none')` when there is no record, or `(None, why)` when the file
     is there and cannot be read as one. The record folder's file; only when there is no record
-    folder (no dev_drive), the .git copy (legacy_path)."""
+    folder (no dev_drive), the .git copy (legacy_path). `kind`: a tested record's folder."""
     try:
-        old = legacy_path(root, commit)
+        old = legacy_path(root, commit, kind)
     except RecordError as e:
         return None, str(e)
     try:
-        return _load(record_path(root, commit))
+        return _load(record_path(root, commit, kind))
     except NoRecordFolder:
         # Kept for load nodes set up without a dev_drive (docs/load-nodes.md).
         return _load(old)
@@ -447,20 +514,21 @@ def read(root, commit):
         return None, str(e)
 
 
-def verify(root, commit, gate_config=None, config_at=None):
+def verify(root, commit, gate_config=None, config_at=None, kind=None):
     """`(record, None)` when `commit` has a gate-OK record git still agrees with, else
     `(None, why)`. `gate_config` given: the record's hash must be that config's. `config_at` given
     (a callable: full hash -> the gate config that commit holds; it may raise RecordError): the
     record's `config_rev` must be a full hash in `commit`'s history and the record's hash must be
-    config_at(config_rev)'s."""
+    config_at(config_rev)'s. `kind`: a tested record's folder (KINDS) instead."""
     if not refs.is_sha(commit):
         resolved, why = refs.resolve(commit, root) if isinstance(commit, str) else (None, None)
         if not resolved:
             return None, 'cannot resolve %r: %s' % (commit, why)
         commit = resolved
-    rec, why = read(root, commit)
+    rec, why = read(root, commit, kind)
     if rec is None:
-        return None, ('no gate-OK record for %s' % commit) if why == 'none' else why
+        return None, ('no %s record for %s' % (LABELS.get(kind, kind), commit)) if why == 'none' \
+            else why
     why = _check(root, commit, rec, gate_config, config_at)
     return (None, why) if why is not None else (rec, None)
 

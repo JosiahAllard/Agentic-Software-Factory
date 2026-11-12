@@ -1,15 +1,26 @@
 """The pre-push guard and a staging branch (docs/gate-landing.md "Staging branch"): the staging
 branch is held as main (no delete, no forced push), and its setting is read from <remote>/<main>
-as last fetched, so a staging tip whose .kit.json drops the section cannot drop its own guard."""
+as last fetched, so a staging tip whose .kit.json drops the section cannot drop its own guard.
+A push to main itself then needs a tested record (kitlib.records.gate_ok KINDS: a daily full
+record, or a promotion record made on the main it replaces; docs/gate-records.md "Tested
+records")."""
 import json
+import os
 
 from kitlib.guard import prepush
+from kitlib.records import gate_ok
 from tests.guard import prepush_case as pc
+from tests.realgit import real_git
 
 ZERO = '0' * 40
+STAGING_ON = {'repo': {'name': 'kit-test', 'push_block': False}, 'staging': {'branch': 'staging'}}
+STEPS = [{'name': 'unit', 'result': 'pass', 'seconds': 1.0}]
+STARTED = '2026-11-12T10:00:00Z'
 
 
-class StagingGuard(pc.PrePushCase):
+class StagingRepo(pc.PrePushCase):
+    """The helpers; no tests of its own, so a subclass does not run them again."""
+
     def on_main(self, kit):
         self.repo.write('.kit.json', json.dumps(kit))
         sha = self.repo.commit('kit config', '.kit.json')
@@ -28,6 +39,8 @@ class StagingGuard(pc.PrePushCase):
     def check(self, line):
         return prepush.check(self.repo.root, [line], gate_ok=lambda r, s: (None, 'none'))
 
+
+class StagingGuard(StagingRepo):
     def test_deleting_the_staging_branch_is_refused(self):
         tip = self.on_main({'repo': {'name': 'kit-test', 'push_block': False},
                             'staging': {'branch': 'staging'}})
@@ -55,6 +68,159 @@ class StagingGuard(pc.PrePushCase):
         tip = self.on_main({'repo': {'name': 'kit-test', 'push_block': False}})
         self.assertEqual(self.check('(delete) %s refs/heads/staging %s' % (ZERO, tip)),
                          (True, None))
+
+
+class LandedOnStaging(StagingRepo):
+    """Staging on, and a commit landed on origin/staging that main has not reached. Helpers only."""
+
+    def setUp(self):
+        StagingRepo.setUp(self)
+        self.main = self.on_main(STAGING_ON)
+        self.repo.git('checkout', '-q', '--detach', 'origin/staging')
+        self.repo.write('f.txt', 'landed\n')
+        self.tip = self.repo.commit('landed on staging', 'f.txt')   # not yet on main
+        self.repo.git('push', '-q', 'origin', '%s:refs/heads/staging' % self.tip)
+        self.repo.git('checkout', '-q', 'main')
+
+    def record(self, rev, kind, base=None, full=True, forged=False):
+        """A tested record of `kind` for `rev`, as the daily run or a promotion writes it.
+        `forged`: built and written past record_tested_pass, which refuses a daily non-full one."""
+        cfg = gate_ok.gate_config_at(self.repo.root, rev)
+        if not forged:
+            return gate_ok.record_tested_pass(self.repo.root, rev, kind, cfg, pc.KIT, 'kit-test',
+                                              STARTED, STEPS, base=base, config_rev=rev, full=full)
+        rec = gate_ok.build(self.repo.root, rev, cfg, pc.KIT, 'kit-test', STARTED, STEPS,
+                            base=base, config_rev=rev, full=full)
+        return gate_ok.write(self.repo.root, rec, kind), rec
+
+    def to_main(self, sha=None):
+        sha = sha or self.tip
+        return prepush.check(self.repo.root, ['refs/heads/main %s refs/heads/main %s'
+                                              % (sha, self.main)],
+                             gate_ok=lambda r, s: (None, 'none'))
+
+
+class TestedRecordGuard(LandedOnStaging):
+    """With staging on, main moves only to a commit with a tested record."""
+
+    def test_a_push_to_main_with_no_tested_record_is_refused(self):
+        ok, msg = self.to_main()
+        self.assertFalse(ok)
+        self.assertIn('%s has no daily full record, and no promotion record made on main %s'
+                      % (self.tip[:12], self.main[:12]), msg)
+        self.assertIn('no daily full record for %s' % self.tip, msg)
+        self.assertIn('no promotion record for %s' % self.tip, msg)
+        self.assertIn('Instead: land onto origin/staging', msg)
+        self.assertNotIn('promote.py', msg)
+
+    def test_a_daily_full_record_lets_main_move(self):
+        path, rec = self.record(self.tip, 'daily')
+        self.assertIn(os.sep + 'kit-daily-full' + os.sep, path)
+        self.assertEqual((rec['full'], rec['mode']), (True, 'full'))
+        self.assertEqual(self.to_main(), (True, None))
+
+    def test_a_branch_gate_record_is_not_a_tested_record(self):
+        self.passed(self.tip)                       # the gate-OK record: a fast-tier gate's
+        ok, msg = self.to_main()
+        self.assertFalse(ok)
+        self.assertIn('no daily full record', msg)
+
+    def test_a_daily_record_from_a_run_without_full_is_refused(self):
+        with self.assertRaises(gate_ok.RecordError):
+            self.record(self.tip, 'daily', full=False)
+        self.record(self.tip, 'daily', full=False, forged=True)
+        ok, msg = self.to_main()
+        self.assertFalse(ok)
+        self.assertIn('the daily full record for %s is not from a --full run' % self.tip, msg)
+
+    def test_a_promotion_record_counts_only_on_the_main_it_was_made_on(self):
+        self.record(self.tip, 'promotion', base=self.with_kit)     # made on an older main
+        ok, msg = self.to_main()
+        self.assertFalse(ok)
+        self.assertIn('was made on main', msg)
+        self.record(self.tip, 'promotion', base=self.main)
+        self.assertEqual(self.to_main(), (True, None))
+
+    def test_a_select_promotion_record_is_written_as_select_and_counts(self):
+        path, rec = self.record(self.tip, 'promotion', base=self.main, full=False)
+        self.assertIn(os.sep + 'kit-promotion' + os.sep, path)
+        self.assertEqual((rec['full'], rec['mode'], rec['base']), (False, 'select', self.main))
+        self.assertEqual(self.to_main(), (True, None))
+
+    def test_a_promotion_record_with_no_known_mode_is_refused(self):
+        _path, rec = self.record(self.tip, 'promotion', base=self.main, full=False, forged=True)
+        rec['mode'] = 'full'                         # disagrees with full: mode_of reads None
+        with open(gate_ok.record_path(self.repo.root, self.tip, 'promotion'), 'w',
+                  encoding='utf-8', newline='\n') as f:
+            json.dump(rec, f)
+        ok, msg = self.to_main()
+        self.assertFalse(ok)
+        self.assertIn('names no mode it ran in', msg)
+
+    def test_a_push_to_the_staging_branch_needs_no_tested_record(self):
+        line = 'refs/heads/staging %s refs/heads/staging %s' % (self.tip, self.main)
+        self.assertEqual(prepush.check(self.repo.root, [line], gate_ok=lambda r, s: (None, 'none')),
+                         (True, None))
+
+
+@real_git('git push runs the real pre-push hook (core.hooksPath)')
+class TestedRecordHook(LandedOnStaging):
+    """The rule through the installed hook."""
+
+    def test_the_hook_refuses_and_then_passes_a_promotion_push(self):
+        rc, err = self.push('origin', '%s:refs/heads/main' % self.tip)
+        self.assertNotEqual(rc, 0, err)
+        self.assertIn('has no daily full record, and no promotion record', err)
+        self.assertEqual(self.remote_main(), self.main)
+        self.record(self.tip, 'daily')
+        rc, err = self.push('origin', '%s:refs/heads/main' % self.tip)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(self.remote_main(), self.tip)
+
+
+class StagingOffNeedsNoTestedRecord(StagingRepo):
+    def test_a_push_to_main_without_staging_is_as_before(self):
+        kit = {'repo': {'name': 'kit-test', 'push_block': False}}
+        base = self.on_main(kit)
+        self.repo.write('m.txt', 'm\n')
+        sha = self.repo.commit('on main', 'm.txt')
+        line = 'refs/heads/main %s refs/heads/main %s' % (sha, base)
+        asked = []
+        self.assertEqual(prepush.check(self.repo.root, [line], gate_ok=lambda r, s: (None, 'none'),
+                                       tested=lambda *a: asked.append(a) or (None, 'none')),
+                         (True, None))
+        self.assertEqual(asked, [])
+
+
+class TestedRecordFolders(pc.PrePushCase):
+    """kitlib.records.gate_ok's tested records: the gate-OK format, a folder per kind."""
+
+    def test_each_kind_has_its_own_folder_and_none_counts_for_another(self):
+        sha = self.with_kit
+        cfg = gate_ok.gate_config_at(self.repo.root, sha)
+        daily, _ = gate_ok.record_tested_pass(self.repo.root, sha, 'daily', cfg, pc.KIT,
+                                              'kit-test', STARTED, STEPS, config_rev=sha)
+        self.assertEqual(daily, gate_ok.record_path(self.repo.root, sha, 'daily'))
+        self.assertEqual(os.path.basename(os.path.dirname(os.path.dirname(daily))),
+                         'kit-daily-full')
+        self.assertIsNotNone(gate_ok.verify_tested(self.repo.root, sha, 'daily')[0])
+        self.assertIsNone(gate_ok.verify_record(self.repo.root, sha)[0])     # not a gate-OK one
+        self.assertIsNone(gate_ok.verify_tested(self.repo.root, sha, 'promotion')[0])
+        self.passed(sha)
+        self.assertNotEqual(gate_ok.record_path(self.repo.root, sha), daily)
+        self.assertIsNotNone(gate_ok.verify_tested(self.repo.root, sha, 'daily')[0])   # kept
+
+    def test_a_kind_is_one_of_the_fixed_kinds(self):
+        sha = self.with_kit
+        cfg = gate_ok.gate_config_at(self.repo.root, sha)
+        for kind in (None, 'kit-gate-ok', '../x'):
+            with self.assertRaises(gate_ok.RecordError):
+                gate_ok.record_tested_pass(self.repo.root, sha, kind, cfg, pc.KIT, 'kit-test',
+                                           STARTED, STEPS, config_rev=sha)
+            self.assertIsNone(gate_ok.verify_tested(self.repo.root, sha, kind)[0])
+        with self.assertRaises(gate_ok.RecordError):
+            gate_ok.record_dir(self.repo.root, 'nightly')
+        self.assertEqual(gate_ok.KINDS, {'daily': 'kit-daily-full', 'promotion': 'kit-promotion'})
 
 
 if __name__ == '__main__':

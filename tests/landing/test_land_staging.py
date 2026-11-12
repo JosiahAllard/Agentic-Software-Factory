@@ -2,15 +2,19 @@
 branch"): it merges onto <remote>/<staging> and pushes there; the main branch, on the remote and in
 the main checkout, is never moved (fix 1: no local fast-forward of main); the staging setting is
 read from <remote>/<main> (fix 2: Merge.follow through kitlib.config.load_at(staging_from=)).
-Then readers of the work base: the landing lock and the gate's default base."""
+Then readers of the work base: the landing lock and the gate's default base. A STUCK landing
+onto staging prints steps that never move main and the break step's real refusal (MERGE_HEAD)."""
 import json
 import unittest
+from unittest import mock
 
 import kitlib.config as kconfig
 from kitlib import gate as G
 from kitlib.gate import runner
+from kitlib.git import refs
 from kitlib.records import landing
 from tests.landing.test_land import BRANCH, LandCase
+from tests.landing.test_stuck import _Stuck, commands, joined
 
 STAGING = 'staging'
 
@@ -132,6 +136,60 @@ class WorkBaseReaders(StagingCase):
         ref, _note = runner.default_base(self.cfg(), self.repo.root)
         self.assertEqual(ref, 'refs/remotes/origin/%s' % STAGING)
 
+
+def staging_only(fake):
+    """A `refs.ls_remote` side effect answering `fake` for the staging branch alone."""
+    real = refs.ls_remote
+
+    def ls_remote(remote, ref, cwd, **kw):
+        full = ref if ref.startswith('refs/') else 'refs/heads/%s' % ref
+        return fake if full == 'refs/heads/%s' % STAGING else real(remote, ref, cwd, **kw)
+    return ls_remote
+
+
+class StuckOnStaging(_Stuck, StagingCase):
+    def land_unreadable(self, tip, tracking_set=True):
+        """The landing with ls-remote of staging failing after the push. `tracking_set` False: the
+        push left the tracking ref where it was, so this checkout cannot tell it landed."""
+        fake = staging_only((None, 'network down'))
+
+        def ls_remote(remote, ref, cwd, **kw):
+            if not tracking_set and ref.endswith('/' + STAGING):
+                self.repo.git('update-ref', 'refs/remotes/origin/%s' % STAGING, self.main)
+            return fake(remote, ref, cwd, **kw)
+        with mock.patch.object(refs, 'ls_remote', side_effect=ls_remote):
+            out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.STUCK, out.lines)
+        text = joined(out)
+        self.assertIn('may have landed', text)
+        self.assertNotIn('--ff-only', text)            # main is never brought to the staging tip
+        self.assertNotIn('differs from', text)         # break_lock asks only about MERGE_HEAD
+        self.assertIn('or while a merge is in progress in the main checkout (MERGE_HEAD)', text)
+        return out, text, commands(out)
+
+    def assert_cleared(self, out, cmds):
+        self.sh(cmds[0])
+        self.assertEqual(self.sh(cmds[1]), out.merge)  # it landed on staging
+        self.assert_broken(self.sh(cmds[-1]))
+        self.assertEqual(self.main_now(), self.main)
+        self.assertEqual(self.remote_main(), self.main)
+        self.assertEqual(self.remote_staging(), out.merge)
+
+    def test_a_push_the_tracking_ref_shows_clears_without_moving_main(self):
+        _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        out, _text, cmds = self.land_unreadable(tip)
+        self.assertEqual(len(cmds), 3, cmds)           # fetch, check, break
+        self.assert_cleared(out, cmds)
+
+    def test_a_push_that_may_have_landed_never_moves_main(self):
+        _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        out, text, cmds = self.land_unreadable(tip, tracking_set=False)
+        self.assertIn('the landing is done: nothing in the main checkout is to be moved (a '
+                      'landing onto the staging branch %s never moves main; only a promotion '
+                      'does); go to the last step' % STAGING, text)
+        self.assertIn('the merge is landed: nothing in the main checkout is to be moved', text)
+        self.assertEqual(len(cmds), 4, cmds)           # fetch, check, branch -r, break
+        self.assert_cleared(out, cmds)
 
 if __name__ == '__main__':
     unittest.main()

@@ -5,33 +5,32 @@ description: Use when you price a backlog record (PM or coordinator) - the check
 
 # Backlog pricing
 
-Price with `python <kit>/tools/backlog.py -C <worktree> set <ID> --priority <n> --priority-by <who>` (skill backlog-ops, step 8). A coordinator sets a first price of 2-5 on an unpriced record (`--priority-by agent`); never over a PM or owner price, never 1.
+`python <kit>/tools/backlog.py -C <worktree> set <ID> --priority <n> --priority-by <who>` (skill backlog-ops, step 8). Coordinator: first price 2-5 on unpriced (`--priority-by agent`); never over PM/owner price, never 1.
 
 ## A. Before pricing: close or narrow
 
-Check the record against the code and the docs. Close or narrow it when it is:
+Check against code, docs; close or narrow when:
 
-- already done (`close`, naming what did it) or no longer applies (`retire`, citing the check);
-- a duplicate;
-- a nitpick (wording, a rename, one doc line, a test name or strength, a tidy-up);
-- overengineering (a hypothetical or unobserved case, hardening against deliberate misuse or evasion, or machinery beyond the observed problem);
-- dropped by the owner;
-- citing no observed failure, concrete defect, cleanup (file:line) or owner request.
+- done (`close`, naming what did it) or obsolete (`retire`, citing check);
+- duplicate;
+- nitpick or overengineering (skill backlog-ops, step 2, "The bar");
+- owner-dropped;
+- no observed failure, concrete defect, cleanup (file:line) or owner request.
 
-Narrow it rather than close it when only part of it fails.
+Part fails: narrow, not close.
 
 ## B. What each priority means
 
-- p1: the owner or the PM.
-- p2: blocks a p1, a red gate, or a live failure in the focus area.
-- p3: a real defect or an owner feature that blocks nothing.
+- p1: owner or PM.
+- p2: blocks a p1, red gate, live failure in focus area.
+- p3: real defect or owner feature blocking nothing.
 - p4: cleanup, docs, dead code, tooling comfort.
 - p5: nice-to-have; never closed for sitting at p5.
 
-Ties: the focus area first, then the smaller item. Never raise a record because it is easy.
+Ties: focus area, then smaller. Never raise for ease.
 
 ## C. Who closes what
 
-- A coordinator retires an unpriced record that fails A, citing the check (`retire <ID> --why "<check>"`; one already done is closed with `close`, not retired).
-- An owner- or PM-priced record that fails A goes to the PM, who decides; a coordinator never retires it.
-- A speed record closes only with before and after seconds from the next daily or full run (an agent's own local timing is not enough), and only after every lever it names but does not take is filed as its own record.
+- Coordinator retires unpriced record failing A, citing check (`retire <ID> --why "<check>"`; done: `close`, not retire).
+- Owner/PM-priced failing A: PM decides, never coordinator.
+- Speed record closes only with before/after seconds from next daily or full run (local agent timing not enough), every named untaken lever filed as own record.

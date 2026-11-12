@@ -7,23 +7,23 @@ description: Use when your brief says to load it - investigating code, infrastru
 
 Dispatch: analyst (the read type), never a worker type; reads only what the brief names, plus the repo's instructions and the docs they or the repo profile point to.
 
-Not a tour of what sounds plausible: a short answer, or a few options that fit this project's constraints, each checked against the code, config or logs that would carry it, with the reason it might fail beside the reason it might work. A chosen option goes to a worker, or to docs-writer with skill `specialty-docs`.
+No tour: short answer or few constraint-fitting options, each checked against carrying code, config, logs; failure reason beside success reason. Chosen option: worker, or docs-writer with skill `specialty-docs`.
 
-1. Inputs: the question, narrow enough to answer ("why does the gate re-run unchanged steps", "which callers break if this signature changes", "three ways to add an export format that reuse the existing parser", not "look at the gate"); the settled constraints; what to read, and options already rejected. Missing the constraints: ask your caller.
-2. Find docs with `python <kit>/tools/doc_index.py -C <worktree> --find <topic>` and read the one section named; never the index whole.
-3. Read the seam before proposing through it: name the function, tool, config key or registry an option touches and what it already does. Trace callers and failure paths, not only the happy path. Say whether it is additive or changes shared logic, and which existing piece it reuses or removes.
-4. Audits: state the claim, the check that would falsify it, the command or path:line you used, and the result. A count names what was counted and what was excluded. Before judging items one by one, check the mechanism that produces them: when the design breeds the items, the design is the finding.
-5. Prior art: name the tool or game and what it does; cite only sources you read. Range, then cut: a few options that differ in kind, not three flavours of one idea; say what you cut and why, one line each.
-6. Argue against your favourite: each option gets its strongest objection - wrong for this codebase, machinery beyond the observed problem, a copy of something that exists, regression risk, cost, an ordering or networking problem, or (a design concept) unwanted, unfun or unbalanced for its users.
-7. Label evidence (`../specialty-docs/doc-writing.md`, "Findings and doc edits"): "the code does X" (cited) and "I expect Y" (a playtest or run settles it) differ; a recalled fact is marked recalled; a preference is never a finding.
-8. Where an option forks, propose a default and label it one; never invent questions for the owner.
-9. The report is your text reply. Long working notes go to a file in your scratch folder, outside the checkout, and the report names its absolute path. A page for the owner: skill `hub-ops`, step 4.
+1. Inputs: narrow question ("which callers break if this signature changes", not "look at the gate"); settled constraints; reading; rejected options. No constraints: ask caller.
+2. Docs: `python <kit>/tools/doc_index.py -C <worktree> --find <topic>`, one section; never whole index.
+3. Seam first: function, tool, config key, registry touched, current behaviour; callers, failure paths, not just happy path; additive or shared logic; reused or removed piece.
+4. Audits: claim, falsifying check, command or path:line, result. Counts say what counted, excluded. Producing mechanism before items: design breeding items is the finding.
+5. Prior art: tool/game, what it does; read sources only. Range, then cut: kinds, not flavours; one-line why per cut.
+6. Against your favourite: each option's strongest objection (wrong fit, excess machinery, existing copy, regression, cost; concept: unfun, unbalanced).
+7. Label evidence (`../specialty-docs/doc-writing.md`, "Findings and doc edits"): "the code does X" (cited) vs "I expect Y" (run settles); recalled marked; preference never a finding.
+8. Fork: labelled proposed default; never invent owner questions.
+9. Long notes: scratch file outside checkout, absolute path in report. Owner page: skill `hub-ops`, step 4.
 
 ## Never
 
-- Edit, create or delete anything in the repository; run builds, tests or the game.
+- Edit, create, delete in repo; run builds, tests, game.
 - Decide what gets built.
 
 ## Report
 
-Lead with the answer. Per option, in order of your recommendation: a one-line pitch; what it changes, concretely; the seams and whether it is additive or needs shared-logic changes; size (S/M/L) and the riskiest part; its strongest objection; what would have to be true for it to work, phrased as something a test, run or playtest could settle. Then what you cut; prior art with sources; open forks with proposed defaults. No preamble.
+Answer first. Per option, by recommendation: pitch; concrete change; seams, additive/shared; size (S/M/L), riskiest part; strongest objection; what must be true, settleable by test/run/playtest. Then cuts; prior art, sources; forks with defaults.

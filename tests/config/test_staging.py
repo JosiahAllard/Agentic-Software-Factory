@@ -52,8 +52,8 @@ class WorkBase(unittest.TestCase):
     def test_commit_settings_carry_the_work_base(self):
         on = load({'staging': {'branch': 'stg'}})
         off = load({})
-        self.assertEqual(policy.commit_settings(on)['work_base'], 'stg')
-        self.assertEqual(policy.commit_settings(off)['work_base'], 'main')
+        self.assertEqual(policy.commit_settings(on).get('work_base'), 'stg')
+        self.assertEqual(policy.commit_settings(off).get('work_base'), 'main')
         self.assertEqual(policy.commit_settings(on)['main_branch'], 'main')
 
 

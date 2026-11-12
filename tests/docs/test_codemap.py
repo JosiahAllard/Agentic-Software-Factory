@@ -172,10 +172,6 @@ class Symbol(unittest.TestCase):
     def test_a_missing_symbol_says_so_and_exits_1(self):
         self.assertEqual(self.sym('nope'), (1, ['codemap: symbol nope not found']))
 
-
-if __name__ == '__main__':
-    unittest.main()
-
     def test_a_name_only_in_a_string_or_comment_gives_no_hit(self):
         self.repo.write('tools/c.py', '# ghost\nX = "def ghost(): pass"\n')
         self.repo.commit('c', 'tools/c.py')
@@ -188,3 +184,7 @@ if __name__ == '__main__':
             warnings.simplefilter('always')
             rc, got = self.sym('later')
         self.assertEqual((rc, [str(x.message) for x in w]), (0, []))
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -55,7 +55,9 @@ LOCK_PATHS = ("tools/machine_lock.py", "kitlib/__init__.py", "kitlib/lock/", "ki
               # kitlib/lock/layout.py reads Linux hardware through the Linux backend and its seam
               "kitlib/platform/api.py", "kitlib/platform/linux/",
               # machine_lock.py run may send the run to a load node (kitlib.loadnode.dispatch)
-              "kitlib/loadnode/")
+              "kitlib/loadnode/",
+              # kitlib/loadnode/ names the kit root through it
+              "kitlib/kitroot.py")
 
 MISSING = "store folder (missing)"
 

@@ -16,6 +16,7 @@ import os
 import re
 import sys
 
+from kitlib import kitroot
 from kitlib.host import agentname
 from kitlib import content as kcontent
 from kitlib.config import user as kuser
@@ -76,7 +77,7 @@ CONSULTANT_AUTOCOMPACT = (100000, 500000)
 CONSULTANT_DEFAULT_AUTOCOMPACT = 350000
 # a sessions.json entry of that agent, bare or with the kit plugin's prefix (kitlib.host.agentname)
 ROLE_AUTOCOMPACT = {'consultant': CONSULTANT_DEFAULT_AUTOCOMPACT, 'deep-worker': DEEP_AUTOCOMPACT}
-KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT = kitroot.root()
 # the kit plugin's agents, read from the role files (content/roles/*.md, kitlib.content.roster; rendered as
 # hosts/claude/shell/agents/*.md): a bare one of these is started with the plugin's prefix, any other name as given
 KIT_AGENTS = tuple(r.name for r in kcontent.roster(KIT))
@@ -145,7 +146,7 @@ def consultant_repo(folder):
 
 def cli(*args):
     """A launch.py command line for the owner or the PM to run."""
-    kit = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    kit = kitroot.root()
     return 'python "%s" %s' % (os.path.join(kit, 'tools', 'launch.py'), ' '.join(args))
 
 

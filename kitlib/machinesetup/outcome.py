@@ -9,7 +9,9 @@ an export a later prune may remove.
 import collections
 import os
 
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from kitlib import kitroot
+
+KIT_ROOT = kitroot.root()
 
 Outcome = collections.namedtuple('Outcome', 'code lines')
 

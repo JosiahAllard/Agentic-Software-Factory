@@ -101,11 +101,17 @@ class NoOsChecks(unittest.TestCase):
     def test_the_scan_sees_each_spelling(self):
         for text in ('import os\nos.name', 'import sys\nif sys.platform == "x": pass',
                      'import os as _os\n_os.name', 'from sys import platform',
-                     'from os import name as n', 'import sys as s\ns.platform.startswith("l")'):
+                     'from os import name as n', 'import sys as s\ns.platform.startswith("l")',
+                     'import os\nhasattr(os, "getuid")', 'import os as _os\nhasattr(_os, "geteuid")',
+                     'try:\n    import fcntl\nexcept ImportError:\n    pass',
+                     'try:\n    import msvcrt\nexcept (ModuleNotFoundError, OSError):\n    pass'):
             with self.subTest(text=text):
                 self.assertTrue(os_checks(ast.parse(text)))
         for text in ('import os\nos.path.basename("x")', 'name = 1\nname.name',
-                     'import platform\nplatform.system()', 'x.platform', 'from os import path'):
+                     'import platform\nplatform.system()', 'x.platform', 'from os import path',
+                     'import os\nhasattr(os, "path")', 'import msvcrt',
+                     'try:\n    import json\nexcept ImportError:\n    pass',
+                     'try:\n    import fcntl\nexcept OSError:\n    pass'):
             with self.subTest(text=text):
                 self.assertEqual(os_checks(ast.parse(text)), [])
 

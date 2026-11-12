@@ -283,13 +283,13 @@ grant a lease or deliver is unchanged). Tests: tests/bridge/test_window_ux.py.
   waiting for their chats (each direction once) and says to have each chat make a bridge call,
   then Refresh; the connections come back by themselves, and leases must be granted again. A
   Connect or Stop on a chat that left the list says the chat is no longer listed and how to bring
-  it back; one on a chat that does not answer says it is between turns or closed. Only a refusal
+  it back; a Connect on a chat that does not answer says it is between turns or closed. Only a refusal
   raised before anything is written says "Nothing was changed" (ui/window.py `BEFORE_WRITE`).
   A Stop whose PM-route cleanup fails after the owner's row is written says the connection is
   stopped but a PM connection may not be (`owner-change-partly-done`); any other failure says what
   changed is not known and to click Refresh.
-- **Limits.** Stop on your own connection needs both chats listed and answering (the owner's
-  change is checked like a Connect); a PM row's Stop does not. The waiting count cannot tell the
+- **Limits.** Stop on your own connection needs both chats listed, whether or not answering; a
+  PM row's Stop does not need them listed. The waiting count cannot tell the
   host of a chat that is not listed, so it may count a remembered Codex-to-Codex row written
   before the host-pair rule. A Codex index past 4 MiB gives no name, and two chats may share a
   name (the short label is not shown then). No Codex-to-Codex feature is built (owner ruling).
@@ -491,7 +491,7 @@ else "unnamed chat" and 8 characters of the id; marks a chat that fails its live
 answering"; lists each connection with who made it and the lease it goes through, and each lease
 with who granted it; and says how to bring a chat back (a bridge call, then Refresh), including
 after a restart, when it counts the remembered connections waiting for their chats. Limits:
-- Stop on the owner's own connection still needs both chats listed and answering.
+- Stop on the owner's own connection needs both chats listed, whether or not answering.
 - A chat that runs without calling the bridge is still not seen; the window says so.
 - The Codex name is read from a file the Codex app writes; its format is observed, not documented.
 

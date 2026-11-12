@@ -386,8 +386,9 @@ class PairingStore:
                 raise PairingError('chat-not-observed')
             if sender_id == recipient_id:
                 raise PairingError('same-chat-selection')
-            for peer in (sender, recipient):
-                self._observed(peer)
+            if enabled:  # a disconnect grants nothing, so a chat between turns or closed can be stopped
+                for peer in (sender, recipient):
+                    self._observed(peer)
             return ChatSelection(sender.reference, recipient.reference, enabled, bidirectional)
 
     def _selection_peers(self, selection):
@@ -395,8 +396,9 @@ class PairingStore:
         peers = (by_ref.get(selection.sender_ref), by_ref.get(selection.recipient_ref))
         if any(peer is None for peer in peers):
             raise PairingError('selection-chat-changed')
-        for peer in peers:
-            self._observed(peer)
+        if selection.enabled:  # as in propose: only a connect needs both chats live
+            for peer in peers:
+                self._observed(peer)
         return peers
 
     def owner_select(self, selection, proof):

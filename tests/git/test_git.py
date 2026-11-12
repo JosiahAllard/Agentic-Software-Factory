@@ -482,7 +482,8 @@ class ANoIsConfirmed(RepoFixture):
                 ((128, b'', b'fatal: boom'), None, 'fatal: boom'),
                 ((0, b'', b''), None, 'not one or two commits'),
                 ((0, b'abc\n', b''), None, 'not one or two commits'),
-                # the ancestor's hash as a substring of a line is not the ancestor among them
+                # a line holding the ancestor's hash plus more is not a commit: the shape check
+                # refuses it before any membership test
                 ((0, ('%sx\n' % self.feature).encode(), b''), None, 'not one or two commits'),
                 # rev-parse killed: no answer, no longer "does not name a commit" (refs.resolve)
                 (only_d, (1, b'', b''), 'rev-parse --verify %s^{commit} exited 1 and printed '

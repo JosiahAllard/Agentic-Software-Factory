@@ -247,7 +247,7 @@ class Files(Tree):
 
     def test_a_record_that_is_not_a_tagged_path_is_no_answer(self):
         self.write({'go.mod': 'module x\n'})
-        for out in ('tests/test_a.py\0', 'H\0', 'H \0', 'x a.py\0', 'H\ta.py\0',
+        for out in ('tests/test_a.py\0', 'H\0', 'H \0', 'x a.py\0', 'K a.py\0', 'H\ta.py\0',
                     '? new.py\0Ha.py\0'):
             with self.subTest(out=out):
                 with mock.patch.object(detect.cmd, 'run_text', return_value=(out, None)):

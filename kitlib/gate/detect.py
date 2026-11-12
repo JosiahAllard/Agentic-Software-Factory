@@ -54,7 +54,7 @@ SOURCES = (AUTO, CONFIG)
 STACKS = ('python', 'node', 'rust', 'go', 'dotnet')
 PRUNE = frozenset(['.git', 'node_modules', '.venv', 'venv', '__pycache__', 'target', 'bin', 'obj',
                    'dist', 'build', '.tox', '.mypy_cache', '.pytest_cache', '.ruff_cache'])
-LS_FILES_TAGS = 'HSMRCK?U'   # `git ls-files -t`'s status tags (git-ls-files(1)); `?` is untracked
+LS_FILES_TAGS = 'HSM?'       # `ls-files -t --cached --others` tags: tracked H, S, M; untracked ?
 MAX_READ = 50              # test files read for an `import pytest`
 NO_REUSE = ['-nodeReuse:false', '-p:UseSharedCompilation=false']
 NPM_PLACEHOLDER = re.compile(r'no test specified')

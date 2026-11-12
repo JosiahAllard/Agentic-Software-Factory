@@ -144,7 +144,13 @@ nominates no channel, and the other halves keep working.
   5 seconds. The sender and task root are never tool arguments.
 - **Durable outbox** (`core/outbox.py`, `core/dispatch.py`). Admission persists the whole body
   before any send. The operation id is deduplicated against its full original context. Dispatch
-  re-attests both live bindings and the route, then writes inside a fenced transaction. A failure
+  re-attests both live bindings and the route, then writes inside a fenced transaction. A chat
+  failing its live check keeps the message queued for a later pass, and its expiry still applies; a
+  route turned off refuses it (`chat-route-revoked`), a chat observed with a different binding
+  refuses it (`chat-binding-changed`), and a chat no longer listed refuses it
+  (`chat-not-observed`). A pending reply return follows the same rules and expires the same way
+  without a live check. A state file left empty by a failed first creation is created again on
+  the next start. A failure
   after the write, or a malformed receipt, becomes `unknown`. A refusal before the write keeps
   the adapter's code as its reason when the code is an identifier, and `native-before-write`
   otherwise. `unknown`, `held` and dispatched operations are never resent. After a restart, work

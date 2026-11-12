@@ -85,12 +85,35 @@ class Controller:
         if type(binding) is not ChatBinding or not callable(verify):
             raise DeliveryError('invalid-native-enrollment')
         if verify(binding) is not True: raise DeliveryError('native-enrollment-unverified')
+        session=binding.identity.session_id
+        # The store lock first, as pairs.observe -> _live takes it: a full list is pruned
+        # only between whole enrollments, never of a peer listed here but not yet observed.
+        with self.pairs.held():
+            with self._lock: full=len(self._peers)>=128 and session not in self._peers
+            if full: self._make_room()
+            with self._lock:
+                if len(self._peers)>=128 and session not in self._peers:
+                    raise DeliveryError('native-enrollment-capacity')
+                self._peers[session]=(binding,verify,dict(description) if type(description) is dict else {})
+            return self.pairs.observe(binding)
+
+    def _make_room(self):
+        """Drop the peers the store no longer lists (withdrawn) or whose process is gone (its
+        check fails now), as PairingStore._make_room does. Runs under the store lock."""
+        listed={peer.identity.session_id for peer in self.pairs.registered()}
+        with self._lock: peers=tuple(self._peers.items())
+        gone=[]
+        for session,record in peers:
+            if session in listed:
+                try:
+                    if record[1](record[0]) is True: continue
+                except Exception: pass
+            gone.append((session,record))
         with self._lock:
-            if len(self._peers)>=128 and binding.identity.session_id not in self._peers:
-                raise DeliveryError('native-enrollment-capacity')
-            self._peers[binding.identity.session_id]=(binding,verify,
-                dict(description) if type(description) is dict else {})
-        return self.pairs.observe(binding)
+            for session,record in gone:
+                if self._peers.get(session) is record:
+                    del self._peers[session]
+                    self._launched.pop(session,None)
 
     def adapter(self,adapter, *, peer=None):
         """Install controller-owned adapter code; ordinary MCP tools cannot call this.
@@ -159,6 +182,7 @@ class Controller:
                 or continue_check is not None and not callable(continue_check)):
             raise DeliveryError('invalid-pending-limit')
         self.core.promote_replies(limit)
+        self._require()  # Promotion keeps going past an error; lost leadership still stops here.
         pending=self.outbox.pending(MAX_PENDING)  # Bounded IDs only, no bodies.
         with self._lock: cursor=self._pending_cursor
         start=pending.index(cursor)+1 if cursor in pending else 0

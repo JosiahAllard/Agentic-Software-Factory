@@ -14,15 +14,18 @@ Each probe switches the daily worktree to the commit (the caller holds the tree'
 throughout) and plans that commit's own gate (`plan`, daily argv). Then it runs one of two ways,
 logging to `<log dir>/bisect-<n>-<sha10>`:
 
-- Failing tests only, when every red step's log at S names its failing tests and nothing in it
-  is uncovered (kitlib.gate.rerun cover_step: kit_tests and unittest logs). In one machine-lock
-  slot of that commit's gate kind (rerun.run_classes, the targeted rerun's) it runs `setup` when
-  the gate has one, then each failing class with `python -m unittest -v <class>`, in the mode it
-  failed in, for at most rerun.class_timeout seconds. The probe is red when one of S's failing
-  ids, or a fixture of its class or module, fails or errors again, or when the class cannot be
-  loaded though the tree defines it. A test the commit does not have counts as green (judge).
+- Failing tests only, when every red step's log at S names its failing unittest tests and
+  nothing in it is uncovered (kitlib.gate.rerun cover_step: kit_tests and unittest logs). In one
+  machine-lock slot of that commit's gate kind (rerun.run_classes, the targeted rerun's) it runs
+  `setup` when the gate has one, then each failing class with `python -m unittest -v <class>`, in
+  the mode it failed in, for at most rerun.class_timeout seconds. The probe is red when one of
+  S's failing ids, or a fixture of its class or module, fails or errors again, or when the class
+  cannot be loaded though the tree defines it. A test the commit does not have counts as green
+  (judge).
 - The whole red steps otherwise (and setup), through kitlib.gate.runner.gated, in a slot of the
-  run's own kind. Red when a red step FAILs, green when every red step it has passed or warned.
+  run's own kind: for a log that does not parse, an uncovered failure, or a gradle or dotnet step
+  (its failures carry a `runner`). Red when a red step FAILs, green when every red step it has
+  passed or warned.
 
 When the failing tests pass alone at S, one whole-step probe runs at S before a flake is said; if
 that is red, the rest of the search runs whole steps (`mode` says so). A commit whose gate lacks a
@@ -39,6 +42,7 @@ import re
 from kitlib.config import load as load_config
 from kitlib.config.types import ConfigError
 from kitlib.gate import detect
+from kitlib.gate import reports
 from kitlib.gate import rerun
 from kitlib.gate import runner
 from kitlib.gate import steps as S
@@ -86,11 +90,15 @@ def targets(red, steps):
     for n in red:
         if n not in by:
             return None, WHOLE + '%s has no step entry' % n
-        entry = rerun.cover_step(dict(by[n]), '')
+        # No tree and no start: a gradle step's reports are not read, so it is uncovered.
+        entry = rerun.cover_step(dict(by[n]), '', None, None)
         why = entry.get('uncovered') or (
             [] if entry.get('failures') else ['%s: no failing test parsed' % n])
         if why:
             return None, WHOLE + why[0]
+        runners = sorted({f['runner'] for f in entry['failures'] if f.get('runner')})
+        if runners:
+            return None, WHOLE + '%s: a %s step is probed whole' % (n, '/'.join(runners))
         covers[n] = entry
     return covers, 'tests: %d class(es)' % len(rerun.classes_of({'steps': list(covers.values())}))
 
@@ -197,7 +205,7 @@ class Prober(object):
         by = {s.name: s for s in chosen}
         runs = []                           # (red step name, class entry)
         for n in names:
-            rel = rerun.cwd_rel(self.wt, by[n].cwd)
+            rel = reports.inside(self.wt, by[n].cwd or self.wt)
             if rel is None:
                 return None, [], 'red step %s at %s runs outside the tree' % (n, sha[:10])
             entry = dict(self.covers[n],

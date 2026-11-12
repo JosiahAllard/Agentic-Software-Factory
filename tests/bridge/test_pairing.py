@@ -28,6 +28,14 @@ class FirstCreationTests(unittest.TestCase):
         from optional.bridge.core.outbox import Outbox
         return ((PairingStore, self.root / 'pairing.sqlite'), (Outbox, self.root / 'outbox.sqlite'))
 
+    def reopen(self, store, path, **options):
+        """Open and close `store` on `path`; a refusal to open is this test's failure."""
+        try:
+            with closing(store(path, **options)):
+                pass
+        except (ValueError, OSError) as error:
+            self.fail('a later open of the empty file was refused: %s' % error)
+
     def test_a_failed_protect_on_first_creation_is_redone_by_the_next_open(self):
         for store, path in self.stores():
             with self.subTest(store=store.__name__):
@@ -37,11 +45,9 @@ class FirstCreationTests(unittest.TestCase):
                     store(path, prepare_new_file=refuse)
                 self.assertEqual(path.stat().st_size, 0)
                 protected = []
-                with closing(store(path, prepare_new_file=protected.append)):
-                    pass
+                self.reopen(store, path, prepare_new_file=protected.append)
                 self.assertEqual(protected, [path])
-                with closing(store(path)):  # Created whole: it opens as existing state.
-                    pass
+                self.reopen(store, path)  # Created whole: it opens as existing state.
 
     def test_a_schema_statement_failing_mid_script_leaves_the_file_empty(self):
         from unittest.mock import patch
@@ -56,10 +62,8 @@ class FirstCreationTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         store(path)
                 self.assertEqual(path.stat().st_size, 0)
-                with closing(store(path)):
-                    pass
-                with closing(store(path)):
-                    pass
+                self.reopen(store, path)
+                self.reopen(store, path)
 
 
 class PairingTests(unittest.TestCase):

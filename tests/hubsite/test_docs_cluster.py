@@ -45,6 +45,20 @@ class DocsClusterTest(unittest.TestCase):
         self.assertEqual(got["kind"]["kept"], '["alpha","plan"]')
         self.assertEqual(got["kind"]["cells"], ["2026-10 \u00b7 2 docs"])
 
+    def test_a_cell_too_short_for_two_lines_is_one_line_with_the_count_beside_its_label(self):
+        pages = {"big-%d" % i: card("Big %d" % i, "big", "plan", "2026-10-01T00:00:00Z") for i in range(8)}
+        pages.update({"s-%d" % i: card("Small %d" % i, "s%d" % i, "plan", "2026-10-02T00:00:00Z") for i in range(5)})
+        got = dom(SEE + MAP + """
+            await start();
+            return $$("#list .cmap .cell").map(c => [c.getAttribute("title"), c.textContent, c.children.length]);
+        """, snap(pages), hash="#docs")
+        by = {t.split(" · ")[0]: (text, n) for t, text, n in got}
+        self.assertEqual(by["big"], ("big8", 2))                  # a tall cell: the label, and the count under it
+        short = [v for k, v in by.items() if k != "big" and v[1] == 1]
+        self.assertTrue(short, "one of the small cells should be a single line")
+        for text, _ in short:
+            self.assertRegex(text, r"^s\d · 1$")
+
     def test_a_tree_click_redraws_the_map_and_a_repo_with_one_kind_shows_that_kind(self):
         got = dom(SEE + MAP + """
             await start();

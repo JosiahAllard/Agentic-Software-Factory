@@ -55,12 +55,21 @@ class Render(unittest.TestCase):
                          dict({n: 'mcp__plugin_pm-kit_%s' % n for n in claude_content.MCP_SERVERS},
                               suno='mcp__suno'))
 
-    def test_synced_skills_are_hidden_and_sync_is_left_on(self):
+    def test_the_owners_skills_are_hidden_sync_left_on_and_artifact_kept(self):
         got = claude_content.session_settings(types.SimpleNamespace(roles=[]))
         self.assertNotIn('syncClaudeAiSkills', got)        # false would move the account's synced skills away
-        self.assertIn('anthropic-skills:docx', claude_content.SYNCED_SKILLS)
-        for name in claude_content.SYNCED_SKILLS + claude_content.HIDDEN_SKILLS:
-            self.assertEqual(got['skillOverrides'][name], 'user-invocable-only', name)
+        bundled = ('claude-api', 'claude-in-chrome', 'code-review', 'dataviz', 'fewer-permission-prompts',
+                   'init', 'keybindings-help', 'loop', 'plugin-authoring', 'run', 'schedule',
+                   'security-review', 'simplify', 'update-config', 'workflow-authoring')
+        synced = ['anthropic-skills:' + n for n in (
+            'artifact-emulator', 'built-in-browser', 'chrome-browser', 'computer-use', 'deep-research',
+            'docs', 'docx', 'google-workspace', 'import-memory', 'morning', 'pdf', 'pptx', 'skill-creator',
+            'xlsx')]
+        self.assertEqual(got['skillOverrides'], {n: 'user-invocable-only' for n in list(bundled) + synced})
+        for kept in ('artifact-design', 'artifact-diagramming', 'artifact-capabilities'):
+            self.assertNotIn(kept, got['skillOverrides'])
+        self.assertNotIn('Artifact', claude_content.SESSION_CUT)
+        self.assertNotIn('Artifact', got['permissions']['deny'])
 
     def test_every_server_the_cut_denies_is_one_mcp_can_take_back(self):
         servers = [e for e in claude_content.SESSION_CUT if e.startswith('mcp__')]

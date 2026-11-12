@@ -78,14 +78,20 @@ MCP_SERVERS = {'machine-lock': {'command': 'python', 'args': [PLUGIN_ROOT + '/mc
                'blender': {'command': 'python', 'args': [PLUGIN_ROOT + '/mcp/blender_server.py']}}
 
 
+def _plugin_deny(server):
+    """The permissions.deny entry of the kit's MCP server `server`: the plugin's tools are
+    mcp__plugin_<plugin>_<server>__<tool>, so the bare mcp__plugin_<plugin>_<server> covers them all."""
+    return 'mcp__plugin_%s_%s' % (agentname.PREFIX.rstrip(':'), server)
+
+
 # What every launched session starts with (session_settings; the owner's answers, 2026-11-12).
-# SESSION_CUT: the tools and MCP servers it starts without, each a permissions.deny entry, a bare
-# tool name or an mcp__<server> name; every mcp__ entry is one mcp_deny_names() gives, so
-# `launch.py --mcp <server>` can take it back. Artifact stays.
-SESSION_CUT = ('NotebookEdit', 'ReportFindings', 'ScheduleWakeup', 'SendFeedback', 'Workflow',
-               'mcp__plugin_pm-kit_blender', 'mcp__suno')
-# The owner's user-scope MCP servers (not the kit's) that --mcp can turn on: {server: deny entry}.
+# USER_MCP: the owner's user-scope MCP servers (not the kit's) that --mcp can turn on: {server: deny entry}.
 USER_MCP = {'suno': 'mcp__suno'}
+# SESSION_CUT: the tools and MCP servers it starts without, each a permissions.deny entry, a bare
+# tool name or an MCP server's entry from _plugin_deny or USER_MCP, so mcp_deny_names() gives it
+# and `launch.py --mcp <server>` can take it back. Artifact stays.
+SESSION_CUT = ('NotebookEdit', 'ReportFindings', 'ScheduleWakeup', 'SendFeedback', 'Workflow',
+               _plugin_deny('blender'), USER_MCP['suno'])
 # The bundled skills hidden from the model (still /name to the owner). Not artifact-design,
 # artifact-diagramming or artifact-capabilities: the Artifact tool, kept, says to load them.
 HIDDEN_SKILLS = ('claude-api', 'claude-in-chrome', 'code-review', 'dataviz', 'fewer-permission-prompts',
@@ -107,11 +113,9 @@ def _json(data):
 
 
 def mcp_deny_names():
-    """{server: its permissions.deny entry} of each MCP_SERVERS server and USER_MCP server: the
-    plugin's tools are mcp__plugin_<plugin>_<server>__<tool>, so the bare mcp__plugin_<plugin>_<server>
-    covers them all; a user-scope server's are mcp__<server>__<tool>."""
-    plugin = agentname.PREFIX.rstrip(':')
-    names = {name: 'mcp__plugin_%s_%s' % (plugin, name) for name in sorted(MCP_SERVERS)}
+    """{server: its permissions.deny entry} of each MCP_SERVERS server (_plugin_deny) and each
+    USER_MCP server (a user-scope server's tools are mcp__<server>__<tool>)."""
+    names = {name: _plugin_deny(name) for name in sorted(MCP_SERVERS)}
     names.update(USER_MCP)
     return names
 

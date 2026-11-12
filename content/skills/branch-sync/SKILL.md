@@ -5,24 +5,24 @@ description: Use when the coordinator says the main branch moved and your branch
 
 # Bringing a branch up to date
 
-The coordinator names a commit hash. You merge that hash, and nothing else, with step 3's command, your worktree and that hash filled in: no `git fetch`, `git status` or `git merge` first (the tool fetches and checks the tree itself; the guard refuses a plain merge). Run each command as one plain call, never wrapped in a directory change, a process launcher or a nested shell call: the kit's tool (`<kit>/tools/...`) with `-C <worktree>` naming your worktree.
+Merge only the coordinator's hash, by step 3's command: no `git fetch`, `git status`, `git merge` first (tool fetches, checks; guard refuses plain merge). Each command one plain call (no `cd`, launcher, nested shell): kit tool (`<kit>/tools/...`) with `-C <worktree>`.
 
-1. Commit work in progress by explicit path first (`python <kit>/tools/commit.py -C <worktree> -m "<subject>" --model "<model name>" <path> ...`): the tracked tree must be clean.
-2. Untracked generated files the base now tracks make git refuse the merge: delete only those the repo profile's "Branches and worktrees" section names, nothing else.
-3. Merge: `python <kit>/tools/sync_base.py -C <worktree> <hash> --model "<model name>"`. It fetches, refuses a hash not on the fetched remote main (do not substitute another, and never redo the merge another way: commit.py refuses a merge of such a hash too; stop and tell the coordinator), merges exactly that hash, checks a clean merge for regrowth and adds the commit trailer when it makes a merge commit (a fast-forward makes no commit and adds none).
-4. Regrowth reported (a file the base shrank came back big, a stale branch reinstating deleted text): `git checkout <hash> -- <path>`, re-apply only your own change, commit it.
-5. Conflicts (the merge is left in progress) in files you changed: resolve on your branch with your file-edit tool, one command per call, never a scratch script that rewrites a tracked file.
-6. Conflicts in files you did not touch, or text you did not write: `git merge --abort` and tell the coordinator.
-7. Docs and backlog-record conflicts: never keep both sides blindly; a union resurrects rows the base retired. Run `git diff <hash> -- <file>` and justify every printed line, deletions and additions; if you cannot, stop.
-8. Finish a conflicted merge with `python <kit>/tools/commit.py -C <worktree> -m "<subject>" --model "<model name>" <resolved path> ...` (the repo's `"commit".merge_fold` lets the merge's own staged files through; the tool adds the trailer).
-9. After a sync the verdict is carried or renewed first (skill land-branch); the one gate on the merged tree runs when the coordinator asks: `python <kit>/tools/gate.py -C <worktree>` with the flags `<kit>/docs/gate-run.md` "The final gate" gives (landing refuses a tip without the right record). Name the string that proves the merge is in the build.
-10. Report the branch ready again, with the hash you merged and the touched-test results, plus the gate's verdict line only when the coordinator asked for the gate.
+1. Commit WIP by path (`python <kit>/tools/commit.py -C <worktree> -m "<subject>" --model "<model name>" <path> ...`): tracked tree clean.
+2. Untracked generated files the base now tracks block merge: delete only those the profile's "Branches and worktrees" names.
+3. Merge: `python <kit>/tools/sync_base.py -C <worktree> <hash> --model "<model name>"`. Fetches; refuses hash not on fetched remote main (never substitute or redo another way, commit.py refuses too: stop, tell coordinator); merges exactly it; checks regrowth; trailer on merge commit (fast-forward: none).
+4. Regrowth (shrunk file back big, stale branch restoring deleted text): `git checkout <hash> -- <path>`, re-apply own change, commit.
+5. Conflicts (merge in progress) in your files: file-edit tool on branch, one command per call, no scratch script rewriting tracked files.
+6. Conflicts not yours: `git merge --abort`, tell coordinator.
+7. Docs, backlog conflicts: never both sides blindly (union resurrects retired rows). `git diff <hash> -- <file>`, justify every added and deleted line; cannot: stop.
+8. Finish: `python <kit>/tools/commit.py -C <worktree> -m "<subject>" --model "<model name>" <resolved path> ...` (repo's `"commit".merge_fold` passes merge's staged files; tool adds trailer).
+9. After sync: verdict carried or renewed (skill land-branch); gate on merged tree when asked: `python <kit>/tools/gate.py -C <worktree>`, flags per `<kit>/docs/gate-run.md` "The final gate" (landing refuses tip without right record). Name string proving merge built.
+10. Report ready: merged hash, touched-test results; gate verdict line only if asked.
 
 ## Never
 
-- Rebase, merge local `main` or `origin/...` by name, force-push, reset or rewrite history. You do not push.
-- `git commit --no-edit` (the safety check refuses it), or a commit identity the tool did not write.
-- Resolve a conflict in someone else's change.
-- Redo a refused sync or a guard or hook block on a merge another way (`git merge --no-commit` then commit.py, another tool, another form): stop and report the exact command and message to the coordinator.
+- Rebase, merge local `main` or `origin/...` by name, force-push, reset, rewrite history; push.
+- `git commit --no-edit` (refused); non-tool commit identity.
+- Resolve others' conflicts.
+- Redo refused sync, guard/hook merge block another way (`git merge --no-commit` then commit.py, other tool, form): stop, report exact command, message to coordinator.
 
-Details: `<kit>/docs/sync-base.md`; the repo profile, "Branches and worktrees".
+Details: `<kit>/docs/sync-base.md`.

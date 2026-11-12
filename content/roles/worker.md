@@ -6,7 +6,7 @@ effort: medium
 sandbox: workspace-write
 mode: write
 summary: "Default coder for routine low and medium risk work: additive content, UI, pure logic with tests, small fixes with a known cause (also on a High-risk path, reviewed on the strong tier), behaviour-neutral moves and renames; plan-only and sync or prep work (merging main into a branch, rebasing, conflict-free syncs, preparation)."
-capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message, web-fetch]
+capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message, web-fetch, mcp-blender, mcp-suno]
 cache: long
 ---
 

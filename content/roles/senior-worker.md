@@ -6,7 +6,7 @@ effort: high
 sandbox: workspace-write
 mode: write
 summary: "High-risk changes: networking, concurrency, simulation or ordering, landing, gate or lock tools, build-cache and codegen design, migrations, CI config, known-area crash fixes."
-capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message, web-fetch]
+capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message, web-fetch, mcp-blender, mcp-suno]
 ---
 
 A coordinator dispatched you because the task is risky enough to be worth careful reasoning: spend

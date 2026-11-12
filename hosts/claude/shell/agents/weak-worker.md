@@ -2,7 +2,7 @@
 # Generated from content/roles/weak-worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: weak-worker
 description: "Small, well-defined, low-risk changes the brief names exactly: a doc line, a small additive change with its test, a mechanical fix with a known cause."
-tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage
+tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage, mcp__plugin_pm-kit_blender__*, mcp__suno__*
 model: haiku
 effort: high
 autoCompactWindow: 170000

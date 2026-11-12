@@ -2,7 +2,7 @@
 # Generated from content/roles/senior-worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: senior-worker
 description: "High-risk builds and designs: networking, concurrency, ordering, migrations, CI config, landing, gate or lock tools, build-cache or codegen design, crash fixes."
-tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage, WebFetch
+tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage, WebFetch, mcp__plugin_pm-kit_blender__*, mcp__suno__*
 model: opus
 effort: high
 ---

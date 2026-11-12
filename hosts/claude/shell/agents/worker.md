@@ -2,7 +2,7 @@
 # Generated from content/roles/worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: worker
 description: "Default coder for routine low- and medium-risk work: additive content, UI, pure logic with tests, small known-cause fixes, moves, plan-only and sync work."
-tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage, WebFetch
+tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage, WebFetch, mcp__plugin_pm-kit_blender__*, mcp__suno__*
 model: sonnet
 effort: medium
 experimental:

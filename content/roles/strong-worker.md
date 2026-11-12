@@ -6,7 +6,7 @@ effort: medium
 sandbox: workspace-write
 mode: write
 summary: "High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring. Not plan-only or sync/prep work (worker)."
-capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message, web-fetch]
+capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message, web-fetch, mcp-blender, mcp-suno]
 cache: long
 ---
 

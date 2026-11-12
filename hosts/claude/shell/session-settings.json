@@ -1,6 +1,9 @@
 {
   "disableClaudeAiConnectors": true,
   "skillOverrides": {
+    "artifact-capabilities": "user-invocable-only",
+    "artifact-design": "user-invocable-only",
+    "artifact-diagramming": "user-invocable-only",
     "claude-api": "user-invocable-only",
     "claude-in-chrome": "user-invocable-only",
     "code-review": "user-invocable-only",
@@ -33,6 +36,7 @@
   },
   "permissions": {
     "deny": [
+      "Artifact",
       "NotebookEdit",
       "ReportFindings",
       "ScheduleWakeup",

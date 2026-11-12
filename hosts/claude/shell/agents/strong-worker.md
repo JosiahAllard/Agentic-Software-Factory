@@ -2,7 +2,7 @@
 # Generated from content/roles/strong-worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: strong-worker
 description: "Default coder for High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring."
-tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage, WebFetch
+tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage, WebFetch, mcp__plugin_pm-kit_blender__*, mcp__suno__*
 model: opus
 effort: medium
 experimental:

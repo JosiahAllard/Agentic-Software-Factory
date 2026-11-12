@@ -7,7 +7,7 @@ compact: 170000
 sandbox: workspace-write
 mode: write
 summary: "Small, well-defined, low-risk changes the brief sizes by listing them (named files, named edits, a few files): doc lines, small additive changes with their test. Escalates to worker when the task is bigger or less clear than briefed."
-capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message]
+capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message, mcp-blender, mcp-suno]
 cache: long
 ---
 

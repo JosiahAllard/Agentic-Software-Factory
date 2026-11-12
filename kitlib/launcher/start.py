@@ -249,7 +249,7 @@ def start(settings, host, repo=None, repo_path=None, account=None, org=None, pro
         if add_dir:
             prompt += HOME_NOTE % (start_in, add_dir)
             folder = start_in
-    settings_path, settings_data = _session_settings(host, mcp, name, out)
+    settings_path, settings_data = _session_settings(host, mcp, name, out, role)
     command = window.claude_command(name, prompt, run_as(agent), model, effort, autocompact, add_dir=add_dir,
                                    remote_control=remote_control, permission_mode=permission_mode,
                                    settings=settings_path)
@@ -347,10 +347,15 @@ def entry_start_args(settings, key, entry, account, prompt, predecessor=None, na
     return args
 
 
-def _session_settings(host, mcp, name, out):
-    """(the --settings file, the JSON start writes there or None) for a session `name`: none when
-    the host has no session_spec (a refusal when `mcp` asks for servers) or the rendered file is
-    missing (said in `out`)."""
+def _session_settings(host, mcp, name, out, role=None):
+    """(the --settings file, the JSON start writes there or None) for a session `name`: none for a
+    PM (`role` window.PM: like its relaunch and after-reboot starts, it keeps every tool; `mcp` is
+    refused), when the host has no session_spec (a refusal when `mcp` asks for servers) or the
+    rendered file is missing (said in `out`)."""
+    if role == window.PM:
+        if mcp:
+            raise LaunchError('--mcp is not for the PM: it starts with no session settings, so every MCP server is on.')
+        return None, None
     spec = host.session_spec
     if spec is None:
         if mcp:

@@ -793,8 +793,8 @@ class DotnetStep(RerunCase):
         wt, tip = self.work('once')
         self.red(wt)
         step = self.loaded(tip)[0][0]['steps'][0]
-        self.assertEqual(([f['id'] for f in step['failures']], step['failures'][0]['scope'],
-                          step['uncovered']), ([DOTNET_ID], 'proj', []))
+        self.assertEqual(([(f['id'], f['scope']) for f in step['failures']], step['uncovered']),
+                         ([(DOTNET_ID, 'proj')], []))
         out = self.rerun(wt)
         self.assertEqual(out.code, G.OK, out.lines + out.said)
         self.assertIn('--scope proj ', out.lines[-1])

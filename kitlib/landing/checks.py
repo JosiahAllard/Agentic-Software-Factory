@@ -172,7 +172,7 @@ class Checks(object):
             landed, why = refs.is_ancestor(t, self.expect_main, self.root)
             if landed is not False:
                 return why or '%s (%s) is already in %s: nothing to land' % (
-                    b, t[:10], self.cfg.main_branch)
+                    b, t[:10], self.base_branch)
         for (b, t), (b2, t2) in itertools.permutations(self.pairs, 2):
             inside, why = refs.is_ancestor(t, t2, self.root)
             if inside is not False:
@@ -320,7 +320,7 @@ class Checks(object):
                 'neither `gate.py --full` nor the merged gate would run anything (both refuse: '
                 'no gate step selected); no branch can land until %s gives the gate a step that '
                 'is not manual and that no other step\'s skip_if_selected names'
-                % (self.expect_main[:10], self.cfg.main_branch))
+                % (self.expect_main[:10], self.base_branch))
 
     def gate_advice(self, branch, tip):
         """What gates `branch`'s tip: `gate that tip first: <gate_command>`. When
@@ -335,7 +335,7 @@ class Checks(object):
             if rec is not None and 'full' not in rec:
                 return ('merge %s/%s (%s) into %s first (a branch\'s own gate.py from before '
                         'records said `full` never writes it), then gate the merge and land '
-                        'that tip: %s' % (self.cfg.remote, self.cfg.main_branch,
+                        'that tip: %s' % (self.cfg.remote, self.base_branch,
                                           self.expect_main[:10], branch, command))
         return 'gate that tip first: %s' % command
 
@@ -377,7 +377,7 @@ class Checks(object):
         globs, why = self.strict_globs()
         if globs is None:
             return None, 'cannot read the strict paths from %s at %s: %s' % (
-                self.cfg.main_branch, self.expect_main[:10], why)
+                self.base_branch, self.expect_main[:10], why)
         hits = {}
         for b, t in self.pairs:
             mb, why = refs.merge_base(self.expect_main, t, self.root)
@@ -511,7 +511,7 @@ class Checks(object):
             if facts is None:
                 return ('the verdict was given at %s and carried to %s, but the carry does not '
                         'hold against %s %s: %s; review and queue the tip'
-                        % (reviewed[:10], t[:10], self.cfg.main_branch, self.expect_main[:10], why))
+                        % (reviewed[:10], t[:10], self.base_branch, self.expect_main[:10], why))
         why = verdicts.tier_why(entry, strict, verdicts.tier_models)
         if why:
             return why

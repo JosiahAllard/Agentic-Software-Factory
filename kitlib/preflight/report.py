@@ -6,6 +6,7 @@ count of 0 or an `(equal)`: a measurement nobody took is never printed as a resu
 import os
 import sys
 
+import kitlib.config as kconfig
 from kitlib import verdict
 from kitlib.docs import callers as doc_callers
 from kitlib.git import cmd, refs, repo, stray
@@ -115,7 +116,7 @@ def report(top, cfg, kit_root, base=None, fetch=False, lock_reader=lockline.read
     gone = '' if os.path.isfile(os.path.join(top, index)) else ' (none: the doc index is opt-in)'
     out.append('index     docs: %s%s | a doc section: %s -C %s --section "<title>"'
                % (index, gone, nextblock.command(tools, 'doc_index'), here))
-    out.extend(nextblock.lines(top, tools, branch, base, cfg.main_branch, behind, dirty or [],
+    out.extend(nextblock.lines(top, tools, branch, base, kconfig.work_base(cfg), behind, dirty or [],
                                in_main))
     out.append('lock      %s' % lockline.line_for(kit_root, lock_reader))
     return out

@@ -37,6 +37,7 @@ import os
 
 from kitlib import kitroot
 from kitlib import pieces
+import kitlib.config as kconfig
 from kitlib.config import ConfigError, load
 from kitlib.git import cmd, refs, repo
 from kitlib.host.registry import RegistryError
@@ -174,8 +175,8 @@ def settings(main, cfg):
     build = list(wr.get('build_output') or [])
     dirs, dirs_error = piece_dirs(cfg, [b for b in build if isinstance(b, dict)])
     return {
-        'base': cfg.main_branch, 'remote': cfg.remote,
-        'upstream': '%s/%s' % (cfg.remote, cfg.main_branch),
+        'base': kconfig.work_base(cfg), 'main': cfg.main_branch, 'remote': cfg.remote,
+        'upstream': '%s/%s' % (cfg.remote, kconfig.work_base(cfg)),
         'worktrees_dir': os.path.normpath(cfg.repo['worktrees_dir']),
         'worktrees_dirs': list(host_folders(cfg)),
         'tool': kitroot.command('worktree_remove', main),     # the kit's own tool (no repository copy)
@@ -262,7 +263,8 @@ def registered(main, listing=None):
 
 
 def merge_base_ref(s):
-    """`refs/remotes/<remote>/<main_branch>`: only the PUSHED base counts."""
+    """`refs/remotes/<remote>/<base>` (the work base, kitlib.config.work_base): only the PUSHED
+    base counts."""
     return 'refs/remotes/%s/%s' % (s['remote'], s['base'])
 
 
@@ -582,7 +584,7 @@ def outside_target(ctx, path, branch_ok=False):
                 ' verb named by its path removes one whose branch has landed); %s'
                 % (path, entry['branch'], home_of(ctx), nothing))
         return REFUSED
-    if entry['branch'] and same_name(entry['branch'], ctx.s['base']):
+    if entry['branch'] and is_base(entry['branch'], ctx.s):
         ctx.say('refused   %s is on the main branch %s: this tool never removes a tree on it nor'
                 ' deletes it; %s' % (path, entry['branch'], nothing))
         return REFUSED
@@ -744,6 +746,12 @@ def dirty_refusal(ctx, path, what, rerun):
                 '  rerun    %s' % rerun)
         return REFUSED
     return None
+
+
+def is_base(branch, s):
+    """`branch` is the base (s['base']) or the main branch (s['main']; a staging work base leaves
+    the main branch protected too), by same_name."""
+    return any(same_name(branch, b) for b in (s['base'], s.get('main', s['base'])))
 
 
 def same_name(a, b):

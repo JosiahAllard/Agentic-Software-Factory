@@ -39,6 +39,7 @@ import json
 import os
 
 from kitlib.config import ConfigError, load as load_config
+import kitlib.config as kconfig
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
 
@@ -213,13 +214,13 @@ def _git_lines(root, args, what):
 
 
 def default_base(root, cfg=None):
-    """`(rev, note)`: the main branch's name (`.kit.json` "repo".main_branch when written, else
-    main if that branch exists, else master) measured by the shared rule kitlib.git.refs.
+    """`(rev, note)`: the work base's name (`.kit.json` "staging".branch when written, else
+    "repo".main_branch when written, else main if that branch exists, else master) measured by the shared rule kitlib.git.refs.
     default_base (docs/gate-run.md "Default base"): its `<remote>/` tracking ref when that resolves.
     `note` says when the local branch differs from the one measured against."""
     cfg = cfg if cfg is not None else load_config(root)
-    if 'main_branch' in cfg.raw('repo'):
-        name = cfg.main_branch
+    if cfg.raw('staging').get('branch') or 'main_branch' in cfg.raw('repo'):
+        name = kconfig.work_base(cfg)
     else:
         # known=True: a git ended from outside is no answer, never "no
         # main", which measured against master.

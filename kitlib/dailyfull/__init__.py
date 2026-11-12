@@ -21,6 +21,7 @@ import os
 
 from kitlib import gate as G
 from kitlib.config import load as load_config
+import kitlib.config as kconfig
 from kitlib.config.types import ConfigError
 from kitlib.dailyfull import bisect as B
 from kitlib.dailyfull import file as filing
@@ -58,7 +59,7 @@ def settings(cfg, main):
     """The run's resolved settings: enabled, ref, worktree (absolute), kind, max_wait,
     stale_hours, out (the results folder)."""
     s = dict(cfg.section('daily_full'))
-    s['ref'] = s.get('ref') or '%s/%s' % (cfg.remote, cfg.main_branch)
+    s['ref'] = s.get('ref') or '%s/%s' % (cfg.remote, kconfig.work_base(cfg))
     s['worktree'] = os.path.normpath(os.path.join(
         main, s.get('worktree') or os.path.join(cfg.repo['worktrees_dir'], SLUG)))
     s['out'] = os.path.join(place.log_base(cfg, main, place.repo_name(cfg, main),

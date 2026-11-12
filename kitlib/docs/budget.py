@@ -192,7 +192,7 @@ def _check(root, out, base, head, worktree, report, failures):
         disk = config.load(root)
         base_note = None
         if not base:
-            base, base_note = gitrefs.default_base(root, disk.remote, disk.main_branch)
+            base, base_note = gitrefs.default_base(root, disk.remote, config.work_base(disk))
         cfg = section_of(disk)
     except config.ConfigError as e:
         stop('doc_budget: refused: kit configuration: %s' % e)

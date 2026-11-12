@@ -13,7 +13,8 @@ PM kit's tools/sync_base.py; docs/sync-base.md).
   ("Claude " is added unless the name already starts with it). resolve_model() reads the flag,
   else the CLAUDE_AGENT_MODEL environment variable (a per-session fallback for the model name, not
   a root or config override); neither is a usage error in the entry point.
-- The base defaults to `.kit.json` "repo".main_branch; the remote is "repo".remote.
+- The base defaults to the work base (kitlib.config.work_base: `.kit.json` "staging".branch when
+  set, else "repo".main_branch); the remote is "repo".remote.
 - Fetches <remote> <base> first, then refuses unless <target> is on the FETCHED
   refs/remotes/<remote>/<base> (refusal-log P27): a commit on local <base> alone is one the
   remote may never get (someone's unpushed commit, a local <base> ahead of the remote; a
@@ -60,6 +61,7 @@ from kitlib import attribution
 from kitlib import kitroot
 
 from kitlib.commit import checks as kcommit       # on_main: the one base rule, commit.py's too
+import kitlib.config as kconfig
 from kitlib.config import ConfigError, commit_settings, load as load_config
 from kitlib.git import checkout as gitcheckout
 from kitlib.git import cmd as gitcmd
@@ -260,7 +262,7 @@ def owner_refusal(top, cfg, full):
         bad, why = None, 'kit configuration: %s' % e
     else:
         bad, why = kcommit.merge_owner_refusal(
-            top, rules, kcommit.landed_main(top, cfg.remote, cfg.main_branch), fold=fold)
+            top, rules, kcommit.landed_main(top, cfg.remote, kconfig.work_base(cfg)), fold=fold)
         if bad and not why and not fold:
             why = ('.kit.json "commit".merge_fold is off, so a merge never carries the join of '
                    "both sides' changes to an owner-only path")
@@ -306,7 +308,7 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
         rule_pointer = cfg.section('checkout_guard').get('rule_pointer')
     except ConfigError as e:
         return done(USAGE, '%s: refused: kit configuration: %s' % (TOOL, e))
-    base = base if base is not None else cfg.main_branch
+    base = base if base is not None else kconfig.work_base(cfg)
     remote = cfg.remote
     upstream = '%s/%s' % (remote, base)
     refusal = gitcheckout.main_refusal(top, 'a merge', 'sync_base.py', rule_pointer)
@@ -390,7 +392,7 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
         if why:
             lines.append('WARNING: the base this merge came from could not be recorded for '
                          'commit.py (%s); it will judge the merge against %s/%s.'
-                         % (why, remote, cfg.main_branch))
+                         % (why, remote, kconfig.work_base(cfg)))
         return done(FAILED, conflict_advice(base, full, model, arm_merge_msg(top, model, provider), provider))
     # GOTCHA: this asked `rev-parse --verify --quiet MERGE_HEAD`, whose
     # "no MERGE_HEAD" is exit 1 with no output, a killed git's shape (gitrefs.KILLED_SHAPE): a kill

@@ -96,7 +96,7 @@ class Push(object):
         outside, refs.KILLED_SHAPE; a stray warning; a bare `failed to push some refs`) or exit
         128 (git died: a connection dropped after the upload may still be applied on the
         remote)."""
-        main_b, remote = self.cfg.main_branch, self.cfg.remote
+        main_b, remote = self.base_branch, self.cfg.remote
         try:
             path = self.write_record(started, results)
         except gate_ok.RecordError as e:
@@ -174,9 +174,13 @@ class Push(object):
         an ancestor of the merge, and no local change or untracked file on a path the merge
         changes (a local edit elsewhere is carried). Else nothing in the main checkout moves, and
         a WARNING says why and how to bring it there. [] or [WARNING lines]; never raises git's
-        failures."""
+        failures. A landing onto a staging branch moves nothing in the main checkout: its main is
+        not the base, and the promotion is its only writer (docs/gate-landing.md "Staging
+        branch")."""
         self.synced = True
-        main_b, remote = self.cfg.main_branch, self.cfg.remote
+        if self.staging:
+            return []
+        main_b, remote = self.base_branch, self.cfg.remote
         g = 'git -C "%s"' % self.root
         ff = '%s merge --ff-only %s/%s' % (g, remote, main_b)
         main = self.ref(self.main_ref)
@@ -230,7 +234,7 @@ class Push(object):
         merge may be on the remote). Phase pushed or landed: landed (landed_anyway). An Outcome
         saying what happened."""
         what = 'Ctrl+C' if isinstance(e, KeyboardInterrupt) else '%s: %s' % (type(e).__name__, e)
-        main_b, base = self.cfg.main_branch, self.expect_main
+        main_b, base = self.base_branch, self.expect_main
         try:
             if self.phase == 'before':
                 self.release()
@@ -272,14 +276,14 @@ class Push(object):
             except BaseException as e:  # noqa: BLE001 - landed: the main checkout is only behind
                 lines.append('WARNING: bringing the main checkout to the merge stopped (%s); '
                              'fast-forward it with: git -C "%s" merge --ff-only %s/%s' % (
-                                 _what(e), self.root, self.cfg.remote, self.cfg.main_branch))
+                                 _what(e), self.root, self.cfg.remote, self.base_branch))
         if at == self.merge:
             how = 'pushed and verified on %s' % self.cfg.remote
         else:
             how = 'already on %s: %s/%s %s has it' % (self.cfg.remote, self.cfg.remote,
-                                                     self.cfg.main_branch, at[:10])
+                                                     self.base_branch, at[:10])
         lines.extend(self.scope_notes)
-        lines.append('LANDED %s on %s at %s (%s)' % (self.branch, self.cfg.main_branch,
+        lines.append('LANDED %s on %s at %s (%s)' % (self.branch, self.base_branch,
                                                      self.merge, how))
         lines.extend(self.scope_warnings)
         lines.append('WARNING: %s after the verified push; the landing stands' % what)
@@ -363,8 +367,9 @@ class Push(object):
 
     def break_command(self):
         return ('python -c "import sys; sys.path.insert(0, r\'%s\'); from kitlib.records.landing '
-                'import LandingLock as L; print(L(r\'%s\', \'%s\', \'%s\')'
-                '.break_lock())"' % (S.kit_live(), self.root, self.cfg.main_branch, self.cfg.remote))
+                'import LandingLock as L; print(L(r\'%s\', \'%s\', \'%s\'%s)'
+                '.break_lock())"' % (S.kit_live(), self.root, self.checkout_branch, self.cfg.remote,
+                                     ', base=\'%s\'' % self.base_branch if self.staging else ''))
 
     def stuck(self, why):
         state = 'the landing lock could not be marked stuck'
@@ -376,7 +381,7 @@ class Push(object):
             state = '%s: %s' % (state, e)
         lines = ['STUCK: landing %s stopped in phase %s: %s' % (self.branch, self.phase, why)]
         if self.cfg is None or self.lock is None:
-            main_b = self.cfg.main_branch if self.cfg else 'main'
+            main_b = self.base_branch if self.cfg else 'main'
             remote = self.cfg.remote if self.cfg else 'origin'
             lines.append('%s. Check %s against %s/%s (git log --first-parent), finish by hand, '
                          'then break the lock.' % (state, main_b, remote, main_b))
@@ -387,15 +392,15 @@ class Push(object):
         except Exception as e:      # the report must not fail
             left = None
             lines.append('left: unknown (%s: %s); check %s against %s/%s by hand' % (
-                type(e).__name__, e, self.cfg.main_branch, self.cfg.remote, self.cfg.main_branch))
+                type(e).__name__, e, self.base_branch, self.cfg.remote, self.base_branch))
         if left is not None:
             lines.append(self.left_line(left))
             steps = self.clear_steps(left)
         else:
             steps = []
         steps.append(('break the landing lock (it refuses while the holder is alive, or while %s '
-                      'differs from %s/%s)' % (self.cfg.main_branch, self.cfg.remote,
-                                               self.cfg.main_branch), [self.break_command()]))
+                      'differs from %s/%s)' % (self.base_branch, self.cfg.remote,
+                                               self.base_branch), [self.break_command()]))
         for n, (text, commands) in enumerate(steps, 1):
             lines.append('%d. %s' % (n, text))
             lines.extend(STEP_CMD + c for c in commands)
@@ -408,7 +413,7 @@ class Push(object):
         current, _ = refs.current_branch(self.root)
         main = self.ref(self.main_ref)
         tracked, untracked = self.tracked_and_untracked()
-        pushed, pushed_why = refs.ls_remote(self.cfg.remote, 'refs/heads/%s' % self.cfg.main_branch,
+        pushed, pushed_why = refs.ls_remote(self.cfg.remote, 'refs/heads/%s' % self.base_branch,
                                             self.root)
         extra = []
         if main and main != self.expect_main:
@@ -420,12 +425,12 @@ class Push(object):
                 'extra': extra}
 
     def left_line(self, left):
-        main_b, remote = self.cfg.main_branch, self.cfg.remote
+        main_b, remote = self.base_branch, self.cfg.remote
         tracked = left['tracked']
         return ('left: HEAD on %s; %s at %s, %s/%s at %s (tracking ref %s; base %s, merge '
                 '%s); tracked changes: %s; untracked: %s' % (
-                    left['current'] or 'no branch (detached)', main_b, (left['main'] or '?')[:10],
-                    remote, main_b,
+                    left['current'] or 'no branch (detached)', self.checkout_branch,
+                    (left['main'] or '?')[:10], remote, main_b,
                     'unreadable' if left['pushed'] is None else (left['pushed'] or 'absent')[:10],
                     (left['tracking'] or '?')[:10], self.base_text(),
                     (self.merge or 'none')[:10],
@@ -446,7 +451,7 @@ class Push(object):
         push landed. When the remote's main (or, when ls-remote cannot read it, the tracking ref)
         holds the merge: on_origin_steps (bring the main checkout there); when it may hold it and
         git cannot tell: check_first."""
-        main_b, remote = self.cfg.main_branch, self.cfg.remote
+        main_b, remote = self.base_branch, self.cfg.remote
         g = 'git -C "%s"' % self.root
         tracking = 'refs/remotes/%s/%s' % (remote, main_b)
         upstream = '%s/%s' % (remote, main_b)
@@ -497,7 +502,7 @@ class Push(object):
         """clear_steps when git cannot tell whether the remote's main (`pushed`, or the tracking
         ref when ls-remote could not be read) holds the merge: one step that finds out. Nothing is
         to be undone either way: the main checkout was never merged into."""
-        main_b, remote = self.cfg.main_branch, self.cfg.remote
+        main_b, remote = self.base_branch, self.cfg.remote
         g = 'git -C "%s"' % self.root
         upstream = '%s/%s' % (remote, main_b)
         return ('%s is at %s, which this checkout cannot place against the merge %s, so whether '
@@ -520,7 +525,7 @@ class Push(object):
         without a passing merged gate is taken back (a revert by hand, never run here). Commits
         on the remote's main on top of the landing are named, with the full gate to run in a new
         worktree (tools/new_worktree.py), never in the main checkout."""
-        main_b, remote = self.cfg.main_branch, self.cfg.remote
+        main_b, remote = self.base_branch, self.cfg.remote
         g = 'git -C "%s"' % self.root
         upstream = '%s/%s' % (remote, main_b)
         steps = []
@@ -560,11 +565,12 @@ class Push(object):
                               os.path.join(S.kit_live(), 'tools', 'new_worktree.py'), self.root,
                               gate_py, wt),
                           []))
-        if left['current'] != main_b:
+        here = self.checkout_branch
+        if left['current'] != here:
             steps.append(('HEAD is on %s, not %s: switch back to %s first%s' % (
-                left['current'] or 'no branch (detached)', main_b, main_b,
+                left['current'] or 'no branch (detached)', here, here,
                 '; keep or drop its tracked changes first' if left['tracked'] else ''),
-                ['%s switch %s' % (g, main_b)]))
+                ['%s switch %s' % (g, here)]))
         if left['tracked']:
             steps.append(('keep or drop the tracked changes by hand (%s): the merge is landed, '
                           'and the next landing refuses a checkout that is not clean'
@@ -573,7 +579,7 @@ class Push(object):
             steps.append(('move or delete the untracked file(s) by hand (%s): the next landing '
                           'refuses a checkout that is not clean' % ', '.join(
                               left['untracked'][:10]), []))
-        main = left['main']
+        main = None if self.staging else left['main']  # a staging landing never moves main
         if main and main != pushed:
             behind, _ = refs.is_ancestor(main, pushed, self.root)
             if behind:

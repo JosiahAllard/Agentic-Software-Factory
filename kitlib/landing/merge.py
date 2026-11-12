@@ -44,17 +44,19 @@ class Merge(object):
     """Lander's merge onto the base in the landing tree (this module's docstring)."""
 
     def onto_origin(self):
-        """Step 5, after the fetch: the base becomes <remote>/<main> as fetched. A local main only
-        behind it is fast-forwarded (HEAD on main, a clean checkout, no merge in progress); then,
-        when the base is not the commit the config was read at, follow() reads the base's config.
-        With --expect-main given and not the base, it says so and goes on. None, or why not
-        (REFUSED, nothing merged): main with commits the remote lacks, or one that cannot be
-        fast-forwarded, or a config at the base that cannot take this landing."""
-        main_b, remote = self.cfg.main_branch, self.cfg.remote
+        """Step 5, after the fetch: the base becomes <remote>/<base> as fetched (the work base:
+        <remote>/<main>, or the staging branch when one is set). A local main only behind it is
+        fast-forwarded (HEAD on main, a clean checkout, no merge in progress), never onto a
+        staging branch: there the main checkout's main is not the base, and a landing never moves
+        it; then, when the base is not the commit the config was read at, follow() reads the
+        base's config. With --expect-main given and not the base, it says so and goes on. None, or
+        why not (REFUSED, nothing merged): main with commits the remote lacks, or one that cannot
+        be fast-forwarded, or a config at the base that cannot take this landing."""
+        main_b, remote = self.base_branch, self.cfg.remote
         main, origin = self.ref(self.main_ref), self.ref(self.origin_ref)
         if not origin:
             return 'there is no %s/%s after the fetch' % (remote, main_b)
-        if main != origin:
+        if main != origin and not self.staging:
             behind, why = refs.is_ancestor(main, origin, self.root) if main else (None, 'no %s'
                                                                                     % main_b)
             if behind is None:
@@ -81,7 +83,7 @@ class Merge(object):
         """The local main only behind <remote>/<main>: `git merge --ff-only` it there. None, or
         why not: HEAD not on main, a checkout that is not clean, a merge in progress, or a
         fast-forward git refuses or that does not land main at <remote>/<main>."""
-        main_b, remote = self.cfg.main_branch, self.cfg.remote
+        main_b, remote = self.checkout_branch, self.cfg.remote
         behind = '%s (%s) is behind %s/%s (%s)' % (main_b, main[:10], remote, main_b, origin[:10])
         current, why = refs.current_branch(self.root)
         if current != main_b:
@@ -106,15 +108,21 @@ class Merge(object):
         return None
 
     def follow(self, base):
-        """The base <remote>/<main> is not the commit the config was read at: read the config at
-        `base`. None when it names the same main branch and remote and still takes this landing
+        """The base <remote>/<base> is not the commit the config was read at: read the config at
+        `base`, its "staging" section from <remote>/<main> as fetched (kitlib.config.load_at
+        staging_from: the base's gate and owner rules, main's staging setting). None when it names
+        the same main branch, remote and work base and still takes this landing
         (config_refusal); then self.expect_main and self.cfg are the base's, so the locked checks,
         the landing tree, the merged gate and the records all use it. Else why not (REFUSED,
         nothing merged; self.cfg and self.expect_main unchanged)."""
-        was, main_b, remote = self.expect_main, self.cfg.main_branch, self.cfg.remote
+        was, remote = self.expect_main, self.cfg.remote
+        main_b, staged = self.checkout_branch, self.base_branch
+        # An unresolved <remote>/<main> is passed by name: git show refuses it (fail closed)
+        tracking = self.ref(self.main_tracking()) or self.main_tracking()
         try:
-            cfg = kconfig.load_at(self.root, base)
+            cfg = kconfig.load_at(self.root, base, staging_from=tracking)
             same = (cfg.main_branch, cfg.remote) == (main_b, remote)
+            moved = kconfig.work_base(cfg) != staged
         except ConfigError as e:
             return 'main moved on from %s to %s, and the config there: %s' % (
                 was[:10], base[:10], e)
@@ -122,6 +130,10 @@ class Merge(object):
             return ('main moved on from %s to %s, and the config there names another main '
                     'branch or remote than this landing holds: land again (the next landing '
                     'reads the config at %s)' % (was[:10], base[:10], base[:10]))
+        if moved:
+            return ('main moved on from %s to %s, and %s/%s now names another staging branch '
+                    'than this landing holds (%s, not %s): land again' % (
+                        was[:10], base[:10], remote, main_b, kconfig.work_base(cfg), staged))
         old = self.cfg
         self.cfg, self.expect_main = cfg, base
         why = self.config_refusal()
@@ -134,15 +146,15 @@ class Merge(object):
     def behind_hint(self, main, origin):
         """'; <main> is only behind ...: fast-forward it with: <command>' when the local main is
         an ancestor of the tracking ref (nothing unpushed, main just not caught up), else ''."""
-        if not main or not origin or main == origin:
+        if not main or not origin or main == origin or self.staging:
             return ''
         behind, _ = refs.is_ancestor(main, origin, self.root)
         if behind is not True:
             return ''
         return ('; %s is only behind %s/%s, with nothing unpushed: fast-forward it with: '
                 'git -C "%s" merge --ff-only %s/%s' % (
-                    self.cfg.main_branch, self.cfg.remote, self.cfg.main_branch, self.root,
-                    self.cfg.remote, self.cfg.main_branch))
+                    self.base_branch, self.cfg.remote, self.base_branch, self.root,
+                    self.cfg.remote, self.base_branch))
 
     def tree_path(self):
         """Where the landing tree is: Lander(tree=), else <main checkout>/<worktrees_dir>/_landing
@@ -250,7 +262,7 @@ class Merge(object):
         that is not the merge asked for. Main is never moved."""
         self.lock.set_phase(self.token, 'merge')
         self.phase = 'merge'
-        main_b, base = self.cfg.main_branch, self.expect_main
+        main_b, base = self.base_branch, self.expect_main
         for b, t in self.pairs:
             prev = self.merges[-1] if self.merges else base
             title = 'Merge %s%s' % (b, ': %s' % self.summary if self.summary else '')
@@ -341,5 +353,5 @@ class Merge(object):
                 return G.Outcome(G.FAILED, [
                     'NOT LANDED: the landing tree could not be put back at the base once %s was '
                     'dropped from the batch: %s; nothing was pushed, and the landing did not move '
-                    '%s from the base %s' % (b, why, self.cfg.main_branch, self.expect_main[:10])],
+                    '%s from the base %s' % (b, why, self.base_branch, self.expect_main[:10])],
                     undone=True)

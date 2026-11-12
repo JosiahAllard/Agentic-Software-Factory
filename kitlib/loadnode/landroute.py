@@ -28,6 +28,7 @@ import collections
 import os
 import threading
 
+import kitlib.config as kconfig
 from kitlib.loadnode import box, dispatch, job, landgate, registry, remote, route
 
 LAND_VERBS = (box.LAND_VERB,)    # route.node_fits: the verbs a land job needs the node to serve
@@ -270,7 +271,7 @@ def run_on_node(node, root, merge, base, cfg, repo, slug, full=False, docs=False
                                        kit_hash=kit_hash)
         except (job.RecordRefused, OSError, ValueError) as e:
             raise Fallback(str(e))
-    land = {'base': base, 'remote': cfg.remote, 'main': cfg.main_branch, 'full': bool(full),
+    land = {'base': base, 'remote': cfg.remote, 'main': kconfig.work_base(cfg), 'full': bool(full),
             'docs': bool(docs), 'kit_files': kit_hash}
     if make_job is None:
         def make_job(link):

@@ -50,6 +50,7 @@ import time
 
 from kitlib.config import heavy_match, heavy_programs
 from kitlib.config import load as load_config
+import kitlib.config as kconfig
 from kitlib.config import schema
 from kitlib.config.types import ConfigError
 from kitlib.config.types import check as check_type
@@ -404,7 +405,7 @@ def prepare(where, tests, also=(), base=None, head='HEAD', log_dir=None):
     except ConfigError as e:
         raise V.Usage('refused: kit configuration: %s' % e)
     section = cfg.section('redfirst')
-    upstream = 'refs/remotes/%s/%s' % (cfg.remote, cfg.main_branch)
+    upstream = 'refs/remotes/%s/%s' % (cfg.remote, kconfig.work_base(cfg))
     head = rev(top, head)
     if base:
         base = rev(top, base)

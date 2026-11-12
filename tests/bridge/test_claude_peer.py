@@ -1,4 +1,5 @@
 """Observed Claude peer framing against real owned pipes, not live model chats."""
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -14,8 +15,8 @@ from tests.bridge import pipes
 import uuid
 
 from hosts.claude.adapter import peer as claude_peer
-
-from optional.bridge.hosts.claude.peer import ClaudePeerAdapter, ClaudePeerEndpoint, native_message_id, peer_address
+from optional.bridge.hosts.claude.peer import (MAX_PENDING, ClaudePeerAdapter, ClaudePeerEndpoint,
+                                               native_message_id, peer_address)
 from optional.bridge.hosts.claude.sessions import ClaudeDirectory, NativeSessionError
 from optional.bridge.core.contracts import SessionIdentity, WorkspaceIdentity
 from optional.bridge.core.dispatch import CoreBroker
@@ -289,20 +290,80 @@ class ClaudePeerTests(unittest.TestCase):
                     self.assertNotIsInstance(raised.exception.__cause__,(DeliveryError,type(None)))
                 self.assertEqual(list(self.own_registry.iterdir()),[])
 
-    def test_shared_core_records_one_native_write_unknown_hold_then_root_refusal(self):
+    def shared_core(self, stack):
         # Host authority ports are explicit test fixtures; native transport and
         # durable policy/receipt storage are the actual implementations.
-        with PairingStore(self.root/'pairings.sqlite',live_check=lambda binding:True,
-                owner_check=lambda selection,proof:proof == b'test-owner') as pairs:
-            pairs.observe(self.message.sender)
-            pairs.observe(self.recipient)
-            pairs.owner_select(pairs.propose('sender','recipient'),b'test-owner')
-            with Outbox(self.root/'outbox.sqlite',leadership_check=lambda:True) as outbox:
-                outbox.claim()
-                core=CoreBroker(pairs,outbox,{'claude-peer':self.adapter},
-                    authorize=lambda intent,proof:SenderAuthority(self.message.sender,'test-root')
-                        if proof == b'test-source' else None,
-                    dispatch_check=lambda message:True)
+        pairs = stack.enter_context(PairingStore(self.root/'pairings.sqlite',live_check=lambda binding:True,
+            owner_check=lambda selection,proof:proof == b'test-owner'))
+        pairs.observe(self.message.sender)
+        pairs.observe(self.recipient)
+        pairs.owner_select(pairs.propose('sender','recipient'),b'test-owner')
+        outbox = stack.enter_context(Outbox(self.root/'outbox.sqlite',leadership_check=lambda:True))
+        outbox.claim()
+        core = CoreBroker(pairs,outbox,{'claude-peer':self.adapter},
+            authorize=lambda intent,proof:SenderAuthority(self.message.sender,'test-root')
+                if proof == b'test-source' else None,
+            dispatch_check=lambda message:True)
+        return core, outbox
+
+    def reopen_endpoint(self, is_live):
+        self.endpoint.close()
+        self.endpoint = self.adapter.endpoint = ClaudePeerEndpoint(
+            self.own_registry,self.root,self.directory,is_live=is_live)
+
+    def numbered(self, index, expires_at=None):
+        return OutboundMessage('test-op-%s' % index,'test-root',chat('sender'),self.recipient,
+                               'hello %s' % index,expires_at)
+
+    def written(self, message):
+        with self.assertRaisesRegex(DeliveryError,'native-outcome-unconfirmed'):
+            self.adapter.send(message)
+
+    def test_an_answered_send_frees_its_expectation_so_600_sends_of_a_run_are_written(self):
+        # The common case: a written send with no status frame, made terminal in the broker by
+        # the recipient's reply. Before the broker port, send 513 was refused (peer-pending-capacity).
+        from optional.bridge.hosts.claude.assembly import broker_liveness   # the service's own port
+        with ExitStack() as stack:
+            core, outbox = self.shared_core(stack)
+            self.reopen_endpoint(broker_liveness(outbox))
+            with mock.patch.object(claude_peer,'write_once',return_value=claude_peer.push.WRITTEN):
+                for index in range(600):
+                    operation = 'test-op-%d' % index
+                    core.admit(operation,self.recipient,'hello %d' % index,b'test-source')
+                    receipt = core.dispatch_once(operation)
+                    self.assertEqual((receipt.state,receipt.reason),
+                                     ('unknown','native-outcome-uncertain:native-outcome-unconfirmed'),index+1)
+                    outbox.recipient_reply(operation,'test reply')
+
+    def test_an_entry_the_broker_holds_open_is_never_dropped_and_send_513_is_refused(self):
+        self.reopen_endpoint(lambda operation: True)
+        with mock.patch.object(claude_peer,'write_once',return_value=claude_peer.push.WRITTEN):
+            for index in range(MAX_PENDING):
+                self.written(self.numbered(index))
+            with self.assertRaisesRegex(BeforeWriteError,'peer-pending-capacity'):
+                self.adapter.send(self.numbered(MAX_PENDING))
+            with self.assertRaisesRegex(DeliveryError,'native-operation-already-attempted'):
+                self.adapter.send(self.numbered(0))   # the first entry is still held
+
+    def test_a_returned_final_status_or_a_passed_expiry_frees_an_entry_at_the_cap(self):
+        self.dispatch()
+        self.assertEqual(self.status('expired').state,'expired')   # final, and handed out
+        with mock.patch.object(claude_peer,'write_once',return_value=claude_peer.push.WRITTEN):
+            for index in range(MAX_PENDING-2):
+                self.written(self.numbered(index))
+            expiry = time.time()+1
+            self.written(self.numbered('expiring',expiry))
+            self.written(self.numbered('frees-the-returned-one'))
+            with self.assertRaisesRegex(BeforeWriteError,'peer-pending-capacity'):
+                self.adapter.send(self.numbered('refused-while-all-live'))
+            time.sleep(max(0,expiry-time.time())+.05)
+            self.written(self.numbered('frees-the-expired-one'))
+            with self.assertRaisesRegex(BeforeWriteError,'peer-pending-capacity'):
+                self.adapter.send(self.numbered('refused-again'))
+
+    def test_shared_core_records_one_native_write_unknown_hold_then_root_refusal(self):
+        with ExitStack() as stack:
+                core, outbox = self.shared_core(stack)
                 core.admit('test-op',self.recipient,self.message.text,b'test-source')
                 core.admit('queued-sibling',self.recipient,'later same-root work',b'test-source')
                 thread=self.listen()

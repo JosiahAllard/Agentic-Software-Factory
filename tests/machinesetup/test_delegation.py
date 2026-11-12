@@ -75,6 +75,10 @@ class Delegation(unittest.TestCase):
         self.root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.root, True)
         self.host = Host()
+        # Host.write asks os.geteuid on linux; Windows has none: give it a non-root one.
+        patch = mock.patch.object(os, 'geteuid', create=True, return_value=1000)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def ctx(self, **kw):
         kw.setdefault('me', 0)
@@ -181,6 +185,10 @@ class BootHook(unittest.TestCase):
         self.root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.root, True)
         self.host = Host()
+        # Host.write asks os.geteuid on linux; Windows has none: give it a non-root one.
+        patch = mock.patch.object(os, 'geteuid', create=True, return_value=1000)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def ctx(self, paths=OPENRC, **kw):
         kw.setdefault('me', 0)

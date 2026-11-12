@@ -23,8 +23,13 @@ ALLOWED = frozenset({
 })
 
 
+POSIX_ONLY = ('getuid', 'geteuid')       # hasattr(os, NAME) tells the OS apart
+LOCK_MODULES = ('msvcrt', 'fcntl')       # a try-import of one tells the OS apart
+
+
 def os_checks(tree):
-    """The line numbers in `tree` that read os.name or sys.platform."""
+    """The line numbers in `tree` that read os.name or sys.platform, test hasattr(os, 'getuid')
+    or 'geteuid', or try to import msvcrt or fcntl and handle ImportError."""
     names = {'os': {'os'}, 'sys': {'sys'}}
     lines = []
     for node in ast.walk(tree):
@@ -40,7 +45,26 @@ def os_checks(tree):
             if ((node.value.id in names['os'] and node.attr == 'name')
                     or (node.value.id in names['sys'] and node.attr == 'platform')):
                 lines.append(node.lineno)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == 'hasattr' and len(node.args) == 2
+                and isinstance(node.args[0], ast.Name) and node.args[0].id in names['os']
+                and isinstance(node.args[1], ast.Constant)
+                and node.args[1].value in POSIX_ONLY):
+            lines.append(node.lineno)
+        elif isinstance(node, ast.Try) and any(_missing_module(h) for h in node.handlers):
+            if any(isinstance(n, (ast.Import, ast.ImportFrom))
+                   and (n.module if isinstance(n, ast.ImportFrom) else n.names[0].name)
+                   in LOCK_MODULES for stmt in node.body for n in ast.walk(stmt)):
+                lines.append(node.lineno)
     return sorted(lines)
+
+
+def _missing_module(handler):
+    """True for an `except ImportError` or `except ModuleNotFoundError` handler."""
+    types = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+    return any(isinstance(t, ast.Name) and t.id in ('ImportError', 'ModuleNotFoundError')
+               for t in types)
 
 
 def kit_sources(root=ROOT):

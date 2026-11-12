@@ -13,6 +13,7 @@ a pipe, NUL; PowerShell 5.1's `>` writes the file itself, through a pipe) claims
 import ctypes
 from ctypes import wintypes
 
+import kitlib.platform
 from kitlib.platform.dll import LazyDLL
 
 FILE_TYPE_DISK = 1
@@ -85,7 +86,9 @@ def claim(stream):
     another gate holds is (None, the REFUSED lines, None); a disk file is (Claim, None, None); no
     file descriptor, or not a disk file, is (None, None, None); a lock Windows refuses for another
     reason is (None, None, a WARNING line), and the gate runs (fail open). Windows only: msvcrt is
-    imported here, so the module imports on any platform."""
+    imported here, so the module imports on any platform; off Windows it claims nothing."""
+    if kitlib.platform.NAME != 'windows':
+        return None, None, None
     import msvcrt
     try:
         handle = msvcrt.get_osfhandle(stream.fileno())

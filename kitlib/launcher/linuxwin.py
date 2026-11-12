@@ -36,6 +36,7 @@ import os
 import re
 import subprocess
 
+import kitlib.platform
 from kitlib.host import sessionmark
 from kitlib.launcher import window
 from kitlib.launcher.settings import LaunchError
@@ -117,7 +118,7 @@ def argv(text):
 
 def anchor_socket():
     """The path of the kit's tmux server's socket (`tmux -L pm-kit`), None off POSIX."""
-    if not hasattr(os, 'getuid'):
+    if kitlib.platform.NAME != 'linux':
         return None
     return os.path.join(os.environ.get('TMUX_TMPDIR') or '/tmp', 'tmux-%d' % os.getuid(), ANCHOR)
 

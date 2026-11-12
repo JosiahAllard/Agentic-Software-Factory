@@ -14,6 +14,7 @@ from unittest import mock
 from kitlib import dailyfull as D
 from kitlib import gate as G
 from kitlib.config import load as load_config
+from kitlib.dailyfull import promote as P
 from kitlib.gate import runner
 from kitlib.git import cmd as gitcmd
 from kitlib.lock import store as lockstore
@@ -375,6 +376,195 @@ class Entry(Case):
             self.assertEqual(tool.main(['--help']), G.USAGE)
 
 
+class StagingOffIsToday(Case):
+    """Staging off at <remote>/<main>: the run is today's, whatever its working tree says or when
+    that ref cannot be read (promote.staging_read fails closed)."""
+
+    def plain(self, o, stamp='20261008-040000'):
+        self.assertEqual(o.code, G.OK, o.lines)
+        self.assertTrue(o.lines[0].startswith('daily: GREEN at'), o.lines)
+        self.assertEqual(len(o.lines), 2, o.lines)
+        r = self.result(stamp)
+        self.assertNotIn('promotion', r)
+        self.assertEqual(r['sha'], self.remote_main())
+
+    def failing(self, *prefix):
+        def git(cwd, *args):
+            if args[:len(prefix)] == prefix:
+                return 1, '', 'refused by the test'
+            return D.git(cwd, *args)
+        return git
+
+    def test_a_remote_main_that_cannot_be_read_runs_as_today(self):
+        git = self.failing('rev-parse', '--verify', '-q')
+        self.plain(D.run(self.main_dir, self.cfg(), out=self.out, stamp='20261008-040000',
+                         book_kw=self.book_kw, git=git))
+
+    def test_a_show_that_fails_runs_as_today(self):
+        git = self.failing('show')
+        self.plain(D.run(self.main_dir, self.cfg(), out=self.out, stamp='20261008-040000',
+                         book_kw=self.book_kw, git=git))
+
+    def test_staging_on_only_in_the_working_tree_tests_main_and_promotes_nothing(self):
+        self.repo.write('.kit.json', json.dumps({'gate': self.GATE, 'daily_full': {
+            'enabled': True, 'kind': 'engine-test'}, 'staging': {'branch': 'staging'}}) + '\n')
+        self.repo.commit('staging here only', '.kit.json')
+        before = self.remote_main()
+        self.plain(self.run_daily())
+        self.assertEqual(self.remote_main(), before)
+
+    def test_if_due_needs_staging_on_and_records_nothing(self):
+        o = D.run(self.main_dir, self.cfg(), out=self.out, stamp='20261008-040000',
+                  book_kw=self.book_kw, if_due=True)
+        self.assertEqual(o.code, G.USAGE, o.lines)
+        self.assertIn('--if-due', o.lines[0])
+        self.assertFalse(os.path.exists(os.path.join(self.out, '20261008-040000')))
+
+
+class StagingRunCase(Case):
+    KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test'}, 'staging': {'branch': 'staging'}}
+
+    def setUp(self):
+        Case.setUp(self)
+        self.repo.git('push', '-q', 'origin', 'main:refs/heads/staging')
+        self.stg = self.repo.worktree('stg')
+        self.repo.git('reset', '-q', '--hard', 'origin/staging', cwd=self.stg)
+        self.n = 0
+
+    def land(self, files=None):
+        self.n += 1
+        files = files or {'landed-%d.txt' % self.n: 'x\n'}
+        for rel, text in files.items():
+            self.repo.write(rel, text, root=self.stg)
+        sha = self.repo.commit('landed %d' % self.n, *files, cwd=self.stg)
+        self.repo.git('push', '-q', 'origin', 'HEAD:refs/heads/staging', cwd=self.stg)
+        return sha
+
+    def staging_tip(self):
+        return self.repo.git('--git-dir', self.repo.remote, 'rev-parse', 'staging', cwd=self.repo.base)
+
+    def if_due(self, stamp='20261008-040000'):
+        return D.run(self.main_dir, self.cfg(), out=self.out, stamp=stamp,
+                     book_kw=dict(self.book_kw, no_wait=True), if_due=True)
+
+
+class Promotes(StagingRunCase):
+    def test_green_promotes_exactly_the_tested_commit(self):
+        tested = self.land()
+        o = self.run_daily()
+        self.assertEqual(o.code, G.OK, o.lines)
+        r = self.result()
+        self.assertEqual(r['sha'], tested)
+        self.assertEqual(r['promotion']['status'], 'promoted')
+        self.assertEqual(self.remote_main(), tested)
+        self.assertTrue(any(l.startswith('daily: PROMOTED main') for l in o.lines), o.lines)
+
+    def test_the_unchanged_skip_promotes_what_an_earlier_run_could_not(self):
+        tested = self.land()
+        before = self.remote_main()
+        with mock.patch.object(P, '_push', return_value=(1, '! [rejected] (test)')):
+            o = self.run_daily('20261008-040000')
+        self.assertEqual(o.code, G.REFUSED, o.lines)
+        self.assertEqual(self.result('20261008-040000')['promotion']['status'], 'not-promoted')
+        self.assertEqual(self.remote_main(), before)
+        o = self.run_daily('20261009-040000')
+        self.assertEqual(o.code, G.OK, o.lines)
+        self.assertIn('SKIPPED (unchanged)', o.lines[0])
+        self.assertEqual(self.result('20261009-040000')['promotion']['status'], 'promoted')
+        self.assertEqual(self.remote_main(), tested)
+
+    def test_if_due_not_due_creates_no_folder(self):
+        self.land()
+        o = self.if_due()
+        self.assertEqual(o.code, G.OK, o.lines)
+        self.assertIn('daily: NOT DUE (1 untested', o.lines[0])
+        self.assertFalse(os.path.exists(os.path.join(self.out, '20261008-040000')))
+
+    def test_if_due_runs_and_promotes_once_due(self):
+        for _ in range(P.DUE_COUNT):
+            tip = self.land()
+        o = self.if_due()
+        self.assertEqual(o.code, G.OK, o.lines)
+        self.assertEqual(self.remote_main(), tip)
+
+    def test_a_busy_if_due_leaves_nothing_behind(self):
+        for _ in range(P.DUE_COUNT):
+            self.land()
+        refused = G.Outcome(lockstore.EXIT_BUSY, ['NOT RUN: the machine lock refused: busy'])
+        with mock.patch.object(runner, 'gated', return_value=(None, refused)):
+            o = self.if_due()
+        self.assertEqual(o.code, G.OK, o.lines)
+        self.assertIn('nothing recorded', o.lines[0])
+        self.assertFalse(os.path.exists(os.path.join(self.out, '20261008-040000')))
+        self.assertEqual(D.results(self.out), [])
+
+    def test_a_busy_if_due_that_left_a_file_is_recorded(self):
+        for _ in range(P.DUE_COUNT):
+            self.land()
+        refused = G.Outcome(lockstore.EXIT_BUSY, ['NOT RUN: the machine lock refused: busy'])
+
+        def gated(*a, **k):
+            with open(os.path.join(a[8], 'left.txt'), 'w') as f:
+                f.write('x')
+            return None, refused
+        with mock.patch.object(runner, 'gated', side_effect=gated):
+            o = self.if_due()
+        self.assertEqual(o.code, G.OK, o.lines)
+        self.assertEqual((self.result()['verdict'], self.result()['cause']), ('skipped', 'busy'))
+
+    def test_the_entry_point_books_now_or_never(self):
+        seen = {}
+
+        def fake_run(*a, **k):
+            seen.update(k)
+            return G.Outcome(G.OK, [])
+        with mock.patch.object(D, 'run', side_effect=fake_run), redirect_stdout(io.StringIO()):
+            rc = tool.main(['-C', self.main_dir, '--if-due'], book_kw={'cores': 1})
+        self.assertEqual(rc, 0)
+        self.assertTrue(seen['if_due'])
+        self.assertTrue(seen['book_kw']['no_wait'])
+
+
+class RedNeverPromotes(StagingRunCase):
+    GATE = {'steps': [fixtures.GATE['steps'][0], FAILING]}
+
+    def test_red(self):
+        self.land()
+        before = self.remote_main()
+        o = self.run_daily()
+        self.assertEqual(o.code, G.FAILED, o.lines)
+        self.assertNotIn('promotion', self.result())
+        self.assertEqual(self.remote_main(), before)
+
+
+class RefOffTheWorkBase(StagingRunCase):
+    KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test', 'ref': 'origin/side'},
+           'staging': {'branch': 'staging'}}
+
+    def test_a_green_run_on_another_ref_is_never_promoted(self):
+        side = self.repo.worktree('side')
+        self.repo.write('side.txt', 'x\n', root=side)
+        self.repo.commit('side', 'side.txt', cwd=side)
+        self.repo.git('push', '-q', 'origin', 'HEAD:refs/heads/side', cwd=side)
+        before = self.remote_main()
+        o = self.run_daily()
+        self.assertEqual(o.code, G.REFUSED, o.lines)
+        self.assertEqual(self.result()['promotion']['status'], 'off-staging')
+        self.assertEqual(self.remote_main(), before)
+
+
+class MalformedStagingOnMain(Case):
+    def test_refuses_and_records(self):
+        cfg = self.cfg()
+        self.repo.write('.kit.json', json.dumps({'gate': self.GATE, 'daily_full': {
+            'enabled': True, 'kind': 'engine-test'}, 'staging': 'staging'}) + '\n')
+        self.repo.commit('bad', '.kit.json')
+        self.repo.git('push', '-q', 'origin', 'main')
+        o = D.run(self.main_dir, cfg, out=self.out, stamp='20261008-040000', book_kw=self.book_kw)
+        self.assertEqual(o.code, G.REFUSED, o.lines)
+        self.assertIn('staging', self.result()['error'])
+
+
 class Summary(unittest.TestCase):
     NOW = datetime.datetime(2026, 10, 9, 12, 0, 0)
 
@@ -422,6 +612,16 @@ class Summary(unittest.TestCase):
         with open(os.path.join(self.out, 'junk', D.RESULT), 'w') as f:
             f.write('{')
         self.assertIn('no daily full run recorded yet', self.lines()[0])
+
+    def test_a_diverged_promotion_stays_a_problem_line_until_one_succeeds(self):
+        self.put('20261008-040000', verdict='green', sha='a' * 40, red=[], steps=[],
+                 promotion={'status': 'diverged', 'why': 'origin/main has 1 commit(s)'})
+        self.put('20261009-040000', verdict='red', sha='b' * 40, red=['unit'], steps=[])
+        self.assertIn('daily     PROMOTION DIVERGED at 20261008-040000: origin/main has 1 commit(s)',
+                      self.lines())
+        self.put('20261009-050000', verdict='green', sha='b' * 40, red=[], steps=[],
+                 promotion={'status': 'promoted', 'why': None})
+        self.assertFalse(any('PROMOTION' in l for l in self.lines()), self.lines())
 
 
 if __name__ == '__main__':

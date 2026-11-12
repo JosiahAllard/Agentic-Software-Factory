@@ -47,6 +47,13 @@ class Examples(unittest.TestCase):
             self.assertEqual(argv[1:len(prog.split())], prog.split()[1:], example)
             self.assertEqual(args.verb, prog.split()[1], example)
 
+    def test_an_example_names_its_items_id_with_their_prefix(self):
+        # the id is the first word after the verb: a to-pm item is P-n, an inbox item M-n
+        # (docs/hub-pm.md's table)
+        for prog, prefix in (('hub.py to-pm reply', 'P-'), ('hub.py inbox read', 'M-')):
+            argv = shlex.split(usage.EXAMPLES[prog])
+            self.assertTrue(argv[len(prog.split())].startswith(prefix), usage.EXAMPLES[prog])
+
     def test_a_usage_error_ends_with_the_verbs_example(self):
         for argv, prog in ((['questions', 'add'], 'hub.py questions add'),
                            (['questions', 'show'], 'hub.py questions show'),

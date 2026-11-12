@@ -7,7 +7,7 @@ installs from (docs/plugin-source.md; docs/modules/install-design.md "Packages a
   state     each account's state: state.json, the pending flags, the account folders, the
             session start's lines
   prune     pruning old export folders and plugin cache versions, by what is in use
-  refresh   the refresh under its lock, ensure_export and pm_watch's poll
+  refresh   the refresh under its lock and ensure_export
 
 Import the module that holds a name; this package re-exports none.
 """

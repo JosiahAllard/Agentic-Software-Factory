@@ -63,7 +63,7 @@ KIT_ONLY = (
     'agent_roster', 'agent_temp_init', 'agent_view', 'auto_tasks', 'allow_rules', 'backlog_audit',
     'maint_lint', 'branch_overlap', 'delegated', 'hub', 'kit',
     'kit_tests', 'launch', 'lock_release_check', 'machine_lock', 'machine_setup', 'no_window',
-    'pending', 'pm_data', 'pm_watch', 'plugin_refresh', 'render_content', 'worktree_sweep_task',
+    'pending', 'pm_data', 'plugin_refresh', 'render_content', 'worktree_sweep_task',
     'stray_restore', 'ci_ratchet', 'node', 'account_inventory',
 )
 

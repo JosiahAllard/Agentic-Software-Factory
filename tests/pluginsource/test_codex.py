@@ -68,8 +68,8 @@ class Home(object):
 
 class RefreshWiringTest(unittest.TestCase):
     """pluginsource.refresh.refresh with the Codex step in `copies`: a home naming only pm-kit-local gets the
-    switch steps and its copy is left as it was; a marked session (pm_watch's auto_refresh spawn
-    inherits the mark) is skipped; a step that raises is a line, never the exit code."""
+    switch steps and its copy is left as it was; a marked session (one that inherits the
+    mark) is skipped; a step that raises is a line, never the exit code."""
 
     def setUp(self):
         self.k = Kit(self)
@@ -150,7 +150,7 @@ class HostEdgeTest(unittest.TestCase):
 
 
 class ToolMarkTest(unittest.TestCase):
-    """tools/plugin_refresh.py --apply, as pm_watch's auto_refresh starts it: the Codex home is
+    """tools/plugin_refresh.py --apply, as the owner runs it: the Codex home is
     <USERPROFILE>\\.codex (no --home, no CODEX_HOME); a marked session is skipped, and an unmarked
     one gives the switch steps and leaves the old copy alone."""
 

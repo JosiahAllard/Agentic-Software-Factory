@@ -8,17 +8,15 @@ import unittest
 
 from tests.lazyimports import child_loaded, late_kit_imports
 
-PRELOADED = ('kitlib.pluginsource.layout', 'kitlib.pluginsource.export', 'kitlib.pluginsource.state',
-             'kitlib.pluginsource.prune', 'kitlib.pluginsource.refresh', 'kitlib.launcher.accounts',
-             'kitlib.machinesetup.extras', 'kitlib.launcher.settings', 'kitlib.launcher.usage',
-             'kitlib.launcher.pipes', 'kitlib.launcher.stop', 'kitlib.proc.process', 'kitlib.hubclient.settings')
+PRELOADED = ('kitlib.launcher.accounts', 'kitlib.launcher.settings', 'kitlib.launcher.usage',
+             'kitlib.launcher.pipes', 'kitlib.launcher.stop', 'kitlib.proc.process')
 WATCH_PATH = ('kitlib.pmwatch',) + PRELOADED
 
-# As tools/pm_watch.py builds it: the host's entry point passes its own modules in.
+# As kitlib.hubjobs.session_watch builds it: the host adapter's own modules are passed in.
 BUILD = """
 from hosts.claude.adapter import claude_host
 from kitlib import pmwatch
-pmwatch.Watcher({}, [], lambda: {}, 'alerts', 'sessions.json', lambda name: None,
+pmwatch.Watcher({}, lambda: {}, 'alerts', 'sessions.json', lambda name: None,
                 preload_modules=claude_host.PRELOAD)
 """
 

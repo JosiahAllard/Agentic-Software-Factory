@@ -1,21 +1,14 @@
-"""Tests for pmwatch: the usage, alert and idle events, the Watcher and the CLI."""
-import io
+"""Tests for pmwatch: the usage, alert and idle events, the Watcher and its config reads."""
 import json
 import os
-import sys
 import tempfile
 import time
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from kitlib import pmwatch as W
 from hosts.claude.adapter import claude_host as H
-
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))), "tools"))
-import pm_watch as cli                                              # noqa: E402
-from tests.home import TempHomeCase, machine_config, pm_repo       # noqa: E402
+from tests.home import TempHomeCase, machine_config, pm_repo
 
 
 class UsageEvents(unittest.TestCase):
@@ -325,50 +318,45 @@ class WatcherRun(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def watcher(self, state, usage_reader=None, tip=lambda r, ref: "abcd1234"):
-        return W.Watcher(state, [("repo", "main")], usage_reader or (lambda: dict(self.use)),
-                         self.alerts, self.sessions, self.mt.get, tip=tip)
+    def watcher(self, state, usage_reader=None):
+        return W.Watcher(state, usage_reader or (lambda: dict(self.use)),
+                         self.alerts, self.sessions, self.mt.get)
 
     def test_first_run_is_baseline_only(self):
         with open(os.path.join(self.alerts, "old.json"), "w") as f:
             json.dump({"id": "old", "reason": "x"}, f)
         w = self.watcher({})
         w.start(1000.0 + 3600)
-        self.assertEqual(w.s, {"branches": {"repo main": "abcd1234"}, "usage": self.use,
-                               "bg_alerts": ["old.json"], "idle": {"n7": 1000.0}})
+        self.assertEqual(w.s, {"usage": self.use, "bg_alerts": ["old.json"], "idle": {"n7": 1000.0}})
         self.assertEqual(w.poll(1000.0 + 3600), [])
         self.assertEqual(w.s["idle_nolog"], [])
 
     def test_each_event_kind(self):
-        w = self.watcher({"branches": {"repo main": "old"}, "usage": {"1": {"five": 10, "week": 90}},
-                          "bg_alerts": [], "idle": {}}, )
+        w = self.watcher({"usage": {"1": {"five": 10, "week": 90}}, "bg_alerts": [], "idle": {}})
         with open(os.path.join(self.alerts, "r-5.json"), "w") as f:
             json.dump({"id": "r-5", "reason": "failed"}, f)
         self.use = {"1": {"five": 10, "week": 98}}
         w.start(5000.0)
         ev = w.poll(5000.0)
-        self.assertEqual(ev[:2], ["BRANCH repo main abcd1234", "USAGE account 1 seven_day 98% (now 98%)"])
-        self.assertTrue(ev[2].startswith("IDLE n7 66m since "), ev[2])
-        self.assertEqual(ev[3], "BGFAIL run r-5 failed")
-        self.assertEqual(w.s["branches"]["repo main"], "abcd1234")
+        self.assertEqual(ev[0], "USAGE account 1 seven_day 98% (now 98%)")
+        self.assertTrue(ev[1].startswith("IDLE n7 66m since "), ev[1])
+        self.assertEqual(ev[2:], ["BGFAIL run r-5 failed"])
 
     def test_start_offline_leaves_the_baselines_unset_for_the_next_good_poll(self):
         def down(*a):
             raise RuntimeError("offline")
-        w = self.watcher({}, usage_reader=down, tip=down)
+        w = self.watcher({}, usage_reader=down)
         w.start(1000.0 + 3600)                      # no traceback
-        self.assertEqual(w.s["branches"], {})
         self.assertNotIn("usage", w.s)
-        w.tip, w.usage_reader = (lambda r, ref: "abcd1234"), (lambda: dict(self.use))
-        self.assertEqual(w.poll(1000.0 + 3600), [])  # the first good poll is the baseline: no BRANCH event
-        self.assertEqual((w.s["branches"], w.s["usage"]), ({"repo main": "abcd1234"}, self.use))
+        w.usage_reader = lambda: dict(self.use)
+        self.assertEqual(w.poll(1000.0 + 3600), [])  # the first good poll is the baseline: no USAGE event
+        self.assertEqual(w.s["usage"], self.use)
 
     def test_watcher_reads_stop_log_beside_sessions_file(self):
         with open(os.path.join(self.tmp.name, "stop.log"), "w", encoding="utf-8") as f:
             f.write("%s stopped 'n7' claude PID 41, window PID -, conhost PID -; successor '-'\n"
                     % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(1060.0)))
-        w = self.watcher({"branches": {"repo main": "abcd1234"}, "usage": self.use, "bg_alerts": [],
-                          "idle": {}})
+        w = self.watcher({"usage": self.use, "bg_alerts": [], "idle": {}})
         w.start(5000.0)
         ev = w.poll(5000.0)
         self.assertEqual(len(ev), 1)
@@ -377,46 +365,15 @@ class WatcherRun(unittest.TestCase):
     def test_error_on_third_failure_only(self):
         def bad():
             raise RuntimeError("usage.ps1 printed no account lines")
-        w = self.watcher({"branches": {"repo main": "abcd1234"}, "usage": {}, "bg_alerts": [],
-                          "idle": {}}, usage_reader=bad)
+        w = self.watcher({"usage": {}, "bg_alerts": [], "idle": {}}, usage_reader=bad)
         w.usage_poll = 0
         got = [w.poll(1000.0 + i) for i in range(4)]
         self.assertEqual([g for g in got if g], [["ERROR usage check: usage.ps1 printed no account lines"]])
 
 
-class Cli(TempHomeCase):
-    # TempHomeCase (tests/home.py): parse's defaults and main's load_config read the machine
-    # config (an empty one here), never the real home's.
-    def test_missing_sessions_exits_2(self):
-        err = io.StringIO()
-        with redirect_stderr(err), self.assertRaises(SystemExit) as c:
-            cli.parse([], {}, launcher_set=True)
-        self.assertEqual(c.exception.code, 2)
-        self.assertIn("pm_watch.sessions_file", err.getvalue())
-
-    def test_no_launcher_key_exits_2(self):
-        err = io.StringIO()
-        with redirect_stderr(err), self.assertRaises(SystemExit) as c:
-            cli.parse(["--sessions", "s.json"], {}, launcher_set=False)
-        self.assertEqual(c.exception.code, 2)
-        self.assertIn("no usage source", err.getvalue())
-
-    def test_usage_script_flag_is_refused_with_a_pointer(self):
-        err = io.StringIO()
-        with redirect_stderr(err), self.assertRaises(SystemExit) as c:
-            cli.parse(["--sessions", "s.json", "--usage-script", "u.ps1"], {}, launcher_set=True)
-        self.assertEqual(c.exception.code, 2)
-        self.assertIn("retired", err.getvalue())
-        self.assertIn("kitlib.launcher.usage", err.getvalue())
-
-    def test_usage_script_config_key_is_refused_with_a_pointer(self):
-        err = io.StringIO()
-        with redirect_stderr(err), self.assertRaises(SystemExit) as c:
-            cli.parse(["--sessions", "s.json"], {"usage_script": "u.ps1"}, launcher_set=True)
-        self.assertEqual(c.exception.code, 2)
-        self.assertIn("pm_watch.usage_script", err.getvalue())
-        self.assertIn("retired", err.getvalue())
-
+class Config(TempHomeCase):
+    # TempHomeCase (tests/home.py): the machine config reads (an empty one here), never the real
+    # home's.
     def test_usage_takes_no_script_and_starts_no_process(self):
         with mock.patch("subprocess.run", side_effect=AssertionError("started a process")), \
                 mock.patch("subprocess.Popen", side_effect=AssertionError("started a process")):
@@ -439,15 +396,6 @@ class Cli(TempHomeCase):
         self.assertEqual(got, {"1": {"five": 0, "week": 51, "age": 3, "stale": False, "missing": False},
                                "2": {"five": None, "week": None, "age": None, "stale": True, "missing": True}})
 
-    def test_config_keys_are_defaults_and_flags_win(self):
-        cfg = {"sessions_file": "s.json", "alerts_dir": "A", "state_file": "S"}
-        a = cli.parse([], cfg, launcher_set=True)
-        self.assertEqual((a.sessions, a.alerts_dir, a.state, a.idle_minutes, a.idle_poll),
-                         ("s.json", "A", "S", 20, 300))
-        a = cli.parse(["--sessions", "x.json", "--state", "T", "--idle-minutes", "5", "--idle-poll", "60"], cfg,
-                      launcher_set=True)
-        self.assertEqual((a.sessions, a.state, a.idle_minutes, a.idle_poll), ("x.json", "T", 5, 60))
-
     def test_load_config_reads_pm_watch_key(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, "config.json")
@@ -455,23 +403,6 @@ class Cli(TempHomeCase):
                 json.dump({"pm_start": {}, "pm_watch": {"sessions_file": "s.json"}}, f)
             self.assertEqual(W.load_config(p), {"sessions_file": "s.json"})
             self.assertEqual(W.load_config(os.path.join(d, "none.json")), {})
-
-    def test_once_with_no_events_exits_0_and_saves_state(self):
-        with tempfile.TemporaryDirectory() as d:
-            sessions, state = os.path.join(d, "s.json"), os.path.join(d, "st", "state.json")
-            with open(sessions, "w", encoding="utf-8") as f:
-                json.dump({}, f)
-            out = io.StringIO()
-            with redirect_stdout(out), mock.patch.object(
-                    W, "usage", return_value={"1": {"five": 1, "week": 2}}):
-                rc = cli.main(["--sessions", sessions,
-                               "--alerts-dir", os.path.join(d, "none"), "--state", state, "--once",
-                               "--notice-dir", ""],
-                              sleep=lambda s: self.fail("slept"), launcher_set=True, plugin=False, hub=False, rc=False)
-            self.assertEqual((rc, out.getvalue()), (0, ""))
-            with open(state, encoding="utf-8") as f:
-                self.assertEqual(json.load(f), {"branches": {}, "usage": {"1": {"five": 1, "week": 2}},
-                                                "bg_alerts": [], "idle": {}, "idle_nolog": []})
 
 
 if __name__ == "__main__":

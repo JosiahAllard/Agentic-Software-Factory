@@ -52,7 +52,7 @@ class Events(Case):
 
     def test_watcher_baselines_then_reports(self):
         self.put(doc("start", "2026-10-08T12:00:00Z"))
-        w = W.Watcher({"branches": {}, "usage": {}, "bg_alerts": [], "idle": {}}, [],
+        w = W.Watcher({"usage": {}, "bg_alerts": [], "idle": {}},
                       dict, os.path.join(self.dir, "no-alerts"), None, lambda n: None,
                       notice_dir=self.dir)
         w.start(1000.0)

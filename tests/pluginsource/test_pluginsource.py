@@ -419,7 +419,7 @@ class RefreshLockTest(Base):
         os.makedirs(self.k.root)
         pidfile = os.path.join(self.k.root, plugin_refresh.PIDFILE)
         for name in ('windows', 'linux'):
-            with self.subTest(platform=name), mock.patch.object(plugin_refresh.kitplatform, 'NAME', name):
+            with self.subTest(platform=name), mock.patch('kitlib.platform.NAME', name):
                 with open(pidfile, 'w', encoding='utf-8') as fh:
                     json.dump({'pid': 9, 'ctime': 90}, fh)
                 a = plugin_refresh.RefreshLock(self.k.root, own=(1, 10), alive=lambda pid, ct: pid != 9)
@@ -851,31 +851,6 @@ class PlacementTest(unittest.TestCase):
     @windows_only('Windows paths compare without case')
     def test_the_sweep_root_matches_in_any_case(self):
         self.assertTrue(plugin_layout.check({'export_dir': r'D:\Scratch\pm'}, sweep_dir=r'D:\scratch'))
-
-
-class SpawnRefreshTest(unittest.TestCase):
-    """spawn_refresh's Popen arguments per platform (kitlib.platform.NAME and Popen patched)."""
-
-    def spawned(self, name):
-        base = tempfile.mkdtemp(prefix='kit-spawn-')
-        self.addCleanup(shutil.rmtree, base, True)
-        root = os.path.join(base, 'root')
-        with mock.patch('kitlib.platform.NAME', name), \
-                mock.patch('kitlib.schedtask.pythonw.windowless', return_value='pythonw'), \
-                mock.patch.object(plugin_refresh.subprocess, 'Popen') as popen:
-            plugin_refresh.spawn_refresh('kit', root)
-        self.assertEqual(popen.call_count, 1)
-        return popen.call_args.kwargs
-
-    def test_linux_starts_the_refresh_in_its_own_session(self):
-        kw = self.spawned('linux')
-        self.assertIs(kw.get('start_new_session'), True)
-        self.assertEqual(kw.get('creationflags'), 0)
-
-    def test_windows_starts_it_detached(self):
-        kw = self.spawned('windows')
-        self.assertEqual(kw.get('creationflags'), plugin_refresh._DETACHED)
-        self.assertIs(kw.get('start_new_session'), False)
 
 
 class AccountFoldersTest(unittest.TestCase):

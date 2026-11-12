@@ -119,7 +119,7 @@ class InWatcher(unittest.TestCase):
             json.dump({"k": {"name": "kit-a1"}}, f)
         rc = W.rc_check(sessions, lambda dirs: records(), dirs=lambda: [], ctime=ctime,
                         rc_pids=lambda: {11: "pm-session", 12: "kit-a1"})
-        return W.Watcher({}, [], lambda: {}, os.path.join(d, "none"), sessions, lambda n: NOW,
+        return W.Watcher({}, lambda: {}, os.path.join(d, "none"), sessions, lambda n: NOW,
                          idle_poll=300, rc=rc)
 
     def test_pm_and_sessions_json_names_are_watched_on_the_idle_cadence(self):

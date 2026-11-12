@@ -26,12 +26,11 @@ REL = '.pm-kit/config.json'
 
 def setUpModule():
     """The real check; and the checklist reads none of this machine's pm_data setting, foreground
-    lock, pm_watch heartbeat, launcher.repos or hub key (as tests/pmstart/test_pmstart.py)."""
+    lock, launcher.repos or hub key (as tests/pmstart/test_pmstart.py)."""
     from kitlib.pmstart import fglock
     for obj, name, value in ((configcheck, 'lines', tpm.REAL_CONFIG_LINES),
                              (pmstart, 'pm_data_settings', lambda: None),
-                             (fglock, 'read_live', lambda user32=None: 0),
-                             (pmstart, 'read_heartbeat', lambda load=None: None)):
+                             (fglock, 'read_live', lambda user32=None: 0)):
         p = mock.patch.object(obj, name, value)
         p.start()
         unittest.addModuleCleanup(p.stop)

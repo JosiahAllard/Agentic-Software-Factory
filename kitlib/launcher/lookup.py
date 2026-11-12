@@ -116,29 +116,31 @@ def _default_profile():
         raise LaunchError('cannot tell a session process on Linux: %s' % e)
 
 
-def _session_images():
+def _session_images(prof):
     """The process names a launched session runs as: claude.exe; on Linux the default host's
-    (the claude host's) Linux process_names in hosts.json (claude, node). LaunchError when
-    hosts.json cannot be read."""
+    (the claude host's) Linux process_names in hosts.json (claude, node)."""
     if platform.NAME != 'linux':
         return ('claude.exe',)
-    return tuple(dict(_default_profile().process_names).get('linux') or ())
+    return tuple(dict(prof.process_names).get('linux') or ())
 
 
-def runs_cli(cmd):
+def runs_cli(cmd, prof=None):
     """On Linux: `cmd` runs the default host's CLI (hosts.json cli_program and cli_package;
     runs_host_cli), so a node process with `-n x` that runs anything else is no session and
-    stop never ends it. LaunchError when hosts.json cannot be read."""
-    prof = _default_profile()
+    stop never ends it. `prof` is the default profile when the caller already has it (a scan
+    reads the registry once). LaunchError when hosts.json cannot be read."""
+    prof = prof or _default_profile()
     return runs_host_cli(cmd, ((prof.cli_program, prof.cli_package),))
 
 
 def launched(procs):
-    """The running session processes of the default host (launched or not by the launcher)."""
-    images = _session_images()
+    """The running session processes of the default host (launched or not by the launcher).
+    LaunchError when hosts.json cannot be read (Linux)."""
     linux = platform.NAME == 'linux'
+    prof = _default_profile() if linux else None
+    images = _session_images(prof)
     return [p for p in procs
-            if p.get('Name') in images and p.get('CommandLine') and (not linux or runs_cli(p['CommandLine']))
+            if p.get('Name') in images and p.get('CommandLine') and (not linux or runs_cli(p['CommandLine'], prof))
             and STORE_DIR not in (p.get('ExecutablePath') or '')]
 
 

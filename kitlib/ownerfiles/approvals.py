@@ -359,7 +359,8 @@ def new_doc(repo, title, head, files, now, reason=None, branch=None):
     repo_id; `files` is a list of {path, base_blob, content}: base_blob the file's blob at `head`
     (None: a new file), content its new text (None: a delete). Any `blob` a caller sends is
     ignored: blob_id(content) is computed here. `branch`, the branch the hub applies the change
-    on, is a branch name (BRANCH) or None. `now` is an aware datetime. ApprovalError names the
+    on, is a branch name (BRANCH); None only for a legacy stored document (the hub's add
+    route requires one). `now` is an aware datetime. ApprovalError names the
     field that is wrong."""
     try:
         repo = as_repo_id(repo)

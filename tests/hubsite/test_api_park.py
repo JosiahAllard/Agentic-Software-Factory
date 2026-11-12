@@ -267,7 +267,8 @@ class AskParkTest(ApiCase):
 
     def approval(self, **kw):
         body = {'repo': self.URL, 'title': 'Edit the readme', 'head': self.repo.initial,
-                'files': [{'path': 'docs/new.md', 'base_blob': None, 'content': 'fresh\n'}]}
+                'files': [{'path': 'docs/new.md', 'base_blob': None, 'content': 'fresh\n'}],
+                'branch': 'kit/x'}
         return self.ok('POST', '/approvals', AGENT, dict(body, **kw))
 
     def version(self, coll, doc_id):

@@ -697,6 +697,29 @@ class LandedScript(LandedBase):
         d = self.daily()
         self.assertIsNone(d, d and d.reason)
 
+    def test_only_every_line_end_written_as_crlf_matches(self):
+        # the copy is the blob or the blob with each LF written as CRLF, nothing in between
+        path = os.path.join(self.wt, *self.DAILY.split('/'))
+        lines = self.SCRIPT.encode().split(b'\n')
+        with open(path, 'wb') as f:
+            f.write(b'\r\n'.join(lines[:3]) + b'\n' + b'\n'.join(lines[3:]))
+        with self.subTest('mixed'):
+            self.refused(self.daily())
+        # a landed CRLF blob: a copy whose CR is doubled is not it
+        crlf = self.SCRIPT.encode().replace(b'\n', b'\r\n')
+        with open(os.path.join(self.repo.root, *self.DAILY.split('/')), 'wb') as f:
+            f.write(crlf)
+        self.repo.commit('crlf', self.DAILY)
+        with open(path, 'wb') as f:
+            f.write(crlf)
+        with self.subTest('crlf blob'):
+            d = self.daily()
+            self.assertIsNone(d, d and d.reason)
+        with open(path, 'wb') as f:
+            f.write(crlf.replace(b'\r\n', b'\r\r\n'))
+        with self.subTest('doubled cr'):
+            self.refused(self.daily())
+
     def test_an_edited_or_untracked_copy_is_judged(self):
         self.put(self.DAILY, self.SCRIPT + '# edited\n')
         self.refused(self.daily())
@@ -773,6 +796,28 @@ class LandedScriptReplaceRef(LandedBase):
         self.repo.git('replace', landed, fake)
         self.assertEqual(self.repo.git('cat-file', 'blob', 'main:%s' % self.DAILY), forged.rstrip('\n'))
         self.refused(self.daily())
+
+
+@real_git('git pack-refs: the fake git keeps no packed refs')
+class LandedScriptCaseRef(LandedBase):
+    """A branch whose name is main's in another case makes no script landed: on a file system that
+    ignores case, after `git pack-refs --all` a loose refs/heads/Main (a plain `git branch Main`,
+    which no ref rule judges) is what refs/heads/main reads."""
+
+    def test_a_main_in_another_case_is_never_trusted(self):
+        self.assertIsNone(self.daily())
+        self.repo.git('pack-refs', '--all')
+        self.repo.git('branch', 'Main', 'main')
+        with self.subTest('Main at the landed commit'):
+            self.refused(self.daily())
+        self.repo.git('branch', '-D', 'Main')
+        self.assertIsNone(self.daily())
+        self.put(self.DAILY, self.SCRIPT + 'import os\n')
+        forged = self.repo.commit('forged', self.DAILY, cwd=self.wt)
+        self.repo.git('pack-refs', '--all')
+        self.repo.git('branch', 'Main', forged)
+        with self.subTest('Main at a forged commit'):
+            self.refused(self.daily())
 
 
 class QuotedWords(Base):

@@ -674,16 +674,19 @@ FIXED_MAINS = ('main', 'master')               # the mains a derived main_branch
 def landed_script(event, ctx, cwd, path):
     """True when the python script file `path` is its repository's landed code (owner Q-2180,
     docs/guard-jail-roles.md "Landed scripts"): its whole bytes are the blob at the local
-    refs/heads/<main branch>:<its path>, or are once its CRLF line ends read as LF. Only the
-    landing's merge in the main checkout moves that ref (git-shared-ref, git-push-main; git
-    refuses a fetch or push into a checked-out branch). Checked in this order, each failing to
-    False: a checkout place (MAIN or LINKED, not the PM data worktree) that holds `path`; a git
-    common dir the session may not write (jail_roots), so a repository it made or can rewrite is
-    never trusted, before any git runs; a PM data record (rules.pmdata_recorded); the main
-    checkout's .kit.json, whose main_branch, when it writes none, is read from <remote>/HEAD
-    and is then trusted only as main or master; never the linked worktree's own branch; then
-    `git --no-replace-objects cat-file blob`, so a replace ref does not stand in for the blob.
-    Any error is False: the script is judged as before."""
+    refs/heads/<main branch>:<its path>, or, for a blob with no CR, that blob with every LF
+    written as CRLF. The guard
+    refuses an agent's direct write of that ref (git-shared-ref, git-push-main); the ways it
+    does not see are in docs/guard-fallback.md "Backlog roles and code". Checked in this order,
+    each failing to False: a checkout place (MAIN or LINKED, not the PM data worktree) that
+    holds `path`; a git common dir the session may not write (jail_roots), so a repository it
+    made or can rewrite is never trusted, before any git runs; a PM data record
+    (rules.pmdata_recorded); the main checkout's .kit.json, whose main_branch, when it writes
+    none, is read from <remote>/HEAD and is then trusted only as main or master; never the
+    linked worktree's own branch; no branch that equals refs/heads/<main> only when case is
+    ignored (on NTFS a loose refs/heads/Main shadows a packed main); then `git
+    --no-replace-objects cat-file blob`, so a replace ref does not stand in for the blob. Any
+    error is False: the script is judged as before."""
     try:
         return _landed(event, ctx, cwd, path)
     except Exception:                           # noqa: BLE001 - no trust read: judged as before
@@ -716,13 +719,18 @@ def _landed(event, ctx, cwd, path):
         return False                            # <remote>/HEAD named it: any session can repoint that
     if place.kind == repo.LINKED and (rules_gitref._head_ref(place) or '').lower() == 'refs/heads/' + main.lower():
         return False
-    blob, why = gitcmd.run(['--no-replace-objects', 'cat-file', 'blob', 'refs/heads/%s:%s' % (main, rel)],
-                           place.top)
+    want = 'refs/heads/' + main
+    names, _why = gitcmd.run_text(['for-each-ref', '--format=%(refname)', 'refs/heads/'], place.top)
+    if names is None or any(n != want and n.casefold() == want.casefold() for n in names.splitlines()):
+        return False                            # a loose refs/heads/Main may shadow a packed main (NTFS)
+    blob, _why = gitcmd.run(['--no-replace-objects', 'cat-file', 'blob', 'refs/heads/%s:%s' % (main, rel)],
+                            place.top)
     if blob is None:
         return False
     with open(path, 'rb') as f:
-        data = f.read(len(blob) * 2 + 1)        # longer than the blob even with every CRLF read as LF
-    return data == blob or data.replace(b'\r\n', b'\n') == blob
+        data = f.read(len(blob) * 2 + 1)        # longer than the blob even with every LF written as CRLF
+    # a checkout writes each LF of a blob with no CR as CRLF (core.autocrlf), and a CRLF blob as it is
+    return data == blob or (b'\r' not in blob and data == blob.replace(b'\n', b'\r\n'))
 
 
 LITERAL_WHY = 'Run the tool\'s verb itself, its words literal, directly as a command of its own:'

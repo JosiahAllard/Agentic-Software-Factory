@@ -14,6 +14,8 @@ from kitlib.guard import fallback, rules
 
 from . import test_jail as tj
 from .test_shared_ref import RULE, SharedRefBase, put
+from .claudehost import action
+from .world import event
 
 
 class PushIntoItself(SharedRefBase):
@@ -124,6 +126,53 @@ class FetchRefspecs(SharedRefBase):
                          ('remotes/o/x', 'refs/remotes/o/x'), ('refs/notes/x', 'refs/notes/x'),
                          ('Refs/heads/x', 'refs/heads/Refs/heads/x')):
             self.assertEqual(rules.fetch_dst_ref(dst), ref)
+
+
+class InjectedConfig(SharedRefBase):
+    """A fetch, pull or `remote update|prune` on config the guard does not read (rules_gitref.
+    _injected_config) is refused whatever refs its words name: another URL, an included file or a
+    moved home can change where it fetches from and which refs it writes."""
+    X = 'https://example.invalid/x.git'
+
+    def test_a_fetch_on_config_the_guard_does_not_read(self):
+        self.each_refused(['git -c remote.origin.url=%s fetch origin' % self.X,
+                           'git -c remote.origin.url=%s fetch --all' % self.X,
+                           'git -c Remote.Origin.PushURL=%s fetch' % self.X,
+                           'git -c url.%s.insteadOf=https://example.invalid/y.git fetch origin' % self.X,
+                           'git -c include.path=x.cfg fetch origin',
+                           'git -c includeIf.onbranch:main.path=x.cfg fetch origin',
+                           'HOME=/x git fetch origin',
+                           'git -c remote.origin.url=%s remote update' % self.X,
+                           'git -c remote.origin.url=%s remote -v prune origin' % self.X])
+
+    def test_a_pull_on_it_is_refused(self):
+        d = self.worker('git -c remote.origin.url=%s pull origin main' % self.X)
+        self.assertIsNotNone(d, 'allowed')
+        self.assertEqual(d.verdict, 'deny', d.reason)
+
+    def test_the_environment_and_config_env_are_the_write_jails(self):
+        # what re-points git (gc.blind) is refused by the write jail for every session the rule
+        # holds, so the rule leaves it there and its refusal names write-jail
+        from kitlib.guard import commands as cm, commands_git as cg, commands_nested as cn, shell as sh
+        for text in ('GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.url GIT_CONFIG_VALUE_0=%s git fetch origin'
+                     % self.X, "GIT_CONFIG_PARAMETERS=\"'remote.origin.url'='%s'\" git fetch origin" % self.X,
+                     'git --config-env=remote.origin.url=V fetch origin', 'GIT_DIR=.git git fetch --all'):
+            with self.subTest(text):
+                c = cn.read(text, sh.BASH, self.w.wt).commands[-1]
+                gc = cg.git_call(cm.invocation(c))
+                ev = action(event('Bash', {'command': text, 'description': 'test'}, self.w.wt, True, 'worker'))
+                self.assertIsNone(rules.git_shared_ref_forms(ev, self.w.ctx(environ={}), c, gc, self.w.wt,
+                                                             'subagent'))
+                self.refused(self.worker(text), 'write-jail')
+
+    def test_config_it_reads_or_that_moves_no_ref(self):
+        self.each_allowed(['git fetch origin', 'git fetch --all', 'git -c core.quotepath=off fetch origin',
+                           'git -c http.sslVerify=true fetch origin', 'git -c remote.origin.url=%s remote -v' % self.X,
+                           'git -c remote.origin.url=%s ls-remote origin' % self.X])
+
+    def test_the_refusal_names_the_setting(self):
+        d = self.refused(self.worker('git -c include.path=x.cfg fetch origin'))
+        self.assertIn('-c include.path', d.reason)
 
 
 class SymbolicRef(SharedRefBase):

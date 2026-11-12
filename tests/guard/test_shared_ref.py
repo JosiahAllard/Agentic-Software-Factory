@@ -386,6 +386,13 @@ class SharedRefScratchRepositories(SharedRefBase):
                            'git -C "%s" update-ref -d refs/heads/main' % self.at,
                            'git -C "%s" update-ref --stdin' % self.at])
 
+    def test_a_fetch_on_injected_config_is_not_judged_there(self):
+        # rules_gitref._injected_config: refused in a shared repository, not in a scratch one
+        x = 'https://example.invalid/x.git'
+        self.each_allowed(['git -C "%s" -c remote.origin.url=%s fetch origin' % (self.at, x),
+                           'git -C "%s" -c include.path=x.cfg fetch --all' % self.at,
+                           'git -C "%s" -c url.%s.insteadOf=y remote update' % (self.at, x)])
+
     def test_a_junction_out_of_its_refs_is_judged(self):
         # .git/refs/heads of the scratch repository is main's: a write there moves main
         heads = os.path.join(self.scratch_git, 'refs', 'heads')

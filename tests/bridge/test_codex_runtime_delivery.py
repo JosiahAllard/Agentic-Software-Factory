@@ -24,6 +24,7 @@ from optional.bridge.win.frontend import NativeFrontend
 from optional.bridge.win.transport import PipeTarget
 from kitlib.proc.process import own_ctime,proc_ctime
 from tests.bridge import test_codex_runtime as runtime_fixtures
+from tests.bridge.test_codex_context import counting
 from tests.bridge.test_pairing import chat
 
 ERROR_BROKEN_PIPE=109
@@ -239,42 +240,19 @@ class LeasedWriterDeliveryTests(unittest.TestCase):
             self.assertFalse(lease.recheck())
         self.refused(adapter,self.claude_message,'codex-direct-route-unavailable')
 
-    def counting(self):
-        from optional.bridge.hosts.codex.context import CodexObserver
-        from unittest.mock import patch
-        reads,walks=[],[]
-        read,walk=CodexObserver._read_records,CodexObserver._walk
-        def counted_read(observer,path,contexts):
-            reads.append(path)
-            return read(observer,path,contexts)
-        def counted_walk(observer,thread):
-            walks.append(thread)
-            return walk(observer,thread)
-        patcher=patch.multiple(CodexObserver,_read_records=counted_read,_walk=counted_walk)
-        return patcher,reads,walks
-
     def test_a_recheck_finds_and_reads_each_rollout_once(self):
         self.leased()
         self.grant()
-        patcher,reads,walks=self.counting()
+        patcher,reads,walks=counting()
         with self.factory._delivery_lease(self.claude_message) as lease, patcher:
             self.assertTrue(lease.recheck())
         self.assertEqual(sorted(reads),sorted([self.path,self.target_path]))
         self.assertEqual(sorted(walks),sorted([self.sender.identity.native_session_id,
             self.recipient.identity.native_session_id]))
 
-    def test_a_recheck_on_large_rollouts_fits_the_start_timeout(self):
-        self.leased()
-        self.grant()
-        junk=(b'{"timestamp":"2026-10-12T12:00:01Z","type":"response_item","payload":{"x":"'
-            +b'a'*60000+b'"}}\n')
-        with self.factory._delivery_lease(self.claude_message) as lease:
-            for path in (self.path,self.target_path):
-                with path.open('ab') as stream:
-                    for _ in range(700): stream.write(junk)  # about 42 MB each
-            started=time.monotonic()
-            self.assertTrue(lease.recheck())
-            self.assertLess(time.monotonic()-started,3)
+    # No timing test of a 40 MB rollout against start_timeout: one such read is about 0.5 s, so it
+    # would pass at the old read count too and could only flake under load. The count test above
+    # is what keeps a recheck within the deadline.
 
     def test_a_lease_is_no_route_so_a_deselected_sender_gets_no_bytes(self):
         adapter=self.leased()

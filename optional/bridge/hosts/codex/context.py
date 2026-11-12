@@ -215,10 +215,12 @@ class CodexObserver:
     def scope(self):
         """Within this block, on this thread, each rollout is found and read once.
 
-        Only a block's outermost entry owns the memo; an inner exit leaves it. The memo adds no
-        new staleness: a read is already as old as the check that used it, and a rollout that is
-        appended meanwhile is a live chat, not a dead one. A check that must see a write it
-        follows (the delivery's confirm) runs outside any scope and reads fresh.
+        Only a block's outermost entry owns the memo; an inner exit leaves it, and so does an
+        error. The facts are those of the block's first read: a turn that ends or is replaced
+        after it is seen only by a later read, so by the next send (a replacement also by
+        observe_successor, which runs outside any scope). The staleness is bounded by one block,
+        and a rollout appended meanwhile is a live chat, not a dead one. A check that must see a
+        write it follows (the delivery's confirm) runs outside any scope and reads fresh.
         """
         outer=getattr(self._scoped,'memo',None) is None
         if outer: self._scoped.memo={'chats':{},'reads':{}}

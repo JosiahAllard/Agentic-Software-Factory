@@ -301,21 +301,37 @@ def _failed(what, r, out):
 def _confirm_no(ancestor, descendant, cwd):
     """is_ancestor's answer once rev-list said NO: `merge-base --independent <ancestor's hash>
     <descendant>` prints the given commits no other given commit reaches, so `ancestor`'s hash is
-    among them exactly when `descendant` does not reach it (NO), and absent when it does (YES)."""
+    among them exactly when `descendant` does not reach it (NO), and absent when it does (YES).
+
+    A full hash is asked first as given, with no resolve: a commit's hash among the commits printed
+    is the confirmed NO. Any other answer is read only once the hash is resolved, since a tag's
+    hash (merge-base peels it) is never printed: a NO would read as a YES. So everything but a
+    confirmed NO resolves first, and a resolve's failure is the answer, as when it ran first."""
+    first = _independent(ancestor, descendant, cwd) if is_sha(ancestor) else None
+    if first and first[0] and ancestor in first[0]:
+        return False, None
     full, why = resolve(ancestor, cwd)
     if not full:
         return None, 'confirming a NO: %s' % why
+    lines, why = first if first and full == ancestor else _independent(full, descendant, cwd)
+    if lines is None:
+        return None, 'confirming a NO: %s' % why
+    return full not in lines, None
+
+
+def _independent(full, descendant, cwd):
+    """`(commits, None)`: what `merge-base --independent <full> <descendant>^{commit}` printed,
+    one or two commits; `(None, why)` for any other answer."""
     what = 'merge-base --independent %s %s^{commit}' % (full, descendant)
     r = cmd.call(['merge-base', '--independent', full, '%s^{commit}' % descendant], cwd)
     if r.rc is None:
-        return None, 'confirming a NO: %s' % r.err
+        return None, r.err
     out = cmd.text(r.out).strip()
     lines = out.split()
     if r.rc != 0 or not lines or len(lines) > 2 or not all(is_sha(l) for l in lines):
-        why = (_failed(what, r, out) if r.rc != 0 else
-               'git %s printed %r, not one or two commits' % (what, out[:200]))
-        return None, 'confirming a NO: %s' % why
-    return full not in lines, None
+        return None, (_failed(what, r, out) if r.rc != 0 else
+                      'git %s printed %r, not one or two commits' % (what, out[:200]))
+    return lines, None
 
 
 def is_fast_forward(old, new, cwd):

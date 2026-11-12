@@ -336,14 +336,40 @@ class ClaudePeerTests(unittest.TestCase):
                     outbox.recipient_reply(operation,'test reply')
 
     def test_an_entry_the_broker_holds_open_is_never_dropped_and_send_513_is_refused(self):
-        self.reopen_endpoint(lambda operation: True)
+        def unreadable(operation):
+            raise DeliveryError('outbox-closed')
+        for name, port in (('holds open',lambda operation: True),('raises',unreadable),
+                           ('returns none',lambda operation: None)):
+            with self.subTest(port=name):
+                self.reopen_endpoint(port)
+                with mock.patch.object(claude_peer,'write_once',return_value=claude_peer.push.WRITTEN):
+                    for index in range(MAX_PENDING):
+                        self.written(self.numbered(index))
+                    with self.assertRaisesRegex(BeforeWriteError,'peer-pending-capacity'):
+                        self.adapter.send(self.numbered(MAX_PENDING))
+                    with self.assertRaisesRegex(DeliveryError,'native-operation-already-attempted'):
+                        self.adapter.send(self.numbered(0))   # the first entry is still held
+        self.endpoint.close()
+        with self.assertRaises(DeliveryError) as raised:
+            ClaudePeerEndpoint(self.own_registry,self.root,self.directory,is_live='not callable')
+        self.assertEqual(raised.exception.code,'invalid-peer-ports')
+
+    def test_with_a_port_an_expired_entry_stays_until_the_broker_lets_it_go(self):
+        # A row still open in the broker past its expiry stays reconcilable there.
+        released = set()
+        self.reopen_endpoint(lambda operation: operation not in released)
         with mock.patch.object(claude_peer,'write_once',return_value=claude_peer.push.WRITTEN):
-            for index in range(MAX_PENDING):
+            for index in range(MAX_PENDING-1):
                 self.written(self.numbered(index))
+            expiry = time.time()+.3
+            self.written(self.numbered('expiring',expiry))
+            time.sleep(max(0,expiry-time.time())+.05)
             with self.assertRaisesRegex(BeforeWriteError,'peer-pending-capacity'):
-                self.adapter.send(self.numbered(MAX_PENDING))
-            with self.assertRaisesRegex(DeliveryError,'native-operation-already-attempted'):
-                self.adapter.send(self.numbered(0))   # the first entry is still held
+                self.adapter.send(self.numbered('refused-while-held-open'))
+            released.add('test-op-expiring')
+            self.written(self.numbered('after-the-broker-let-go'))
+            with self.assertRaisesRegex(BeforeWriteError,'peer-pending-capacity'):
+                self.adapter.send(self.numbered('refused-again'))
 
     def test_a_returned_final_status_or_a_passed_expiry_frees_an_entry_at_the_cap(self):
         self.dispatch()

@@ -56,7 +56,7 @@ class ClaudePeerEndpoint:
     """
     def __init__(self, registry_dir, workspace, directory, *, is_live=None):
         """`is_live(operation_id) -> bool`: whether the broker still holds the operation open
-        (not terminal). Without it no entry is ever judged finished by the broker."""
+        (not terminal). With it, the broker alone decides which entries are finished (expect)."""
         if type(directory) is not ClaudeDirectory:
             raise DeliveryError('invalid-peer-directory')
         if is_live is not None and not callable(is_live):
@@ -120,6 +120,15 @@ class ClaudePeerEndpoint:
             self._owned[path] = (info.st_dev, info.st_ino, data)
 
     def expect(self, message, snapshot):
+        """Record a send's expectation; at the cap, first free the finished ones.
+
+        With an is_live port the broker alone decides: an entry is finished when the broker
+        no longer holds its operation open, even past its expiry or after a final status,
+        since a row still open there must stay reconcilable. Without a port, a refused or
+        expired status already returned by result(), or a passed expiry, finishes it.
+        Once freed, an identical re-admission (the outbox prunes only finished rows, so its
+        repeat-ID window is the newest 512 messages) is written to the peer again.
+        """
         native_id = native_message_id(message)
         with self._lock:
             self._admissible(native_id)
@@ -127,19 +136,25 @@ class ClaudePeerEndpoint:
                 self._pending[native_id] = (message, snapshot)
                 return native_id
             candidates = dict(self._pending)
-        # At the cap, ask the broker which entries it has finished, with the endpoint lock
-        # released: the port takes the outbox lock, and the receive thread takes only this
-        # one, so the two are never nested here and no order between them is set. An entry
-        # dropped afterwards is one the broker called finished (terminal is final there)
-        # and that is still the same entry.
-        finished = {key for key, (pending, _snapshot) in candidates.items()
-                    if not self._broker_live(pending.operation_id)}
+        # The port is asked with the endpoint lock released. On the dispatch path it
+        # re-enters the outbox RLock this thread already holds (run_dispatch holds it across
+        # send), so the order stays outbox lock then endpoint lock, never the reverse; the
+        # receive thread takes only the endpoint lock. An entry is dropped only when the
+        # broker called it finished (terminal is final there) and it is still the same entry.
+        finished = set()
+        if self._is_live is not None:
+            finished = {key for key, (pending, _snapshot) in candidates.items()
+                        if not self._broker_live(pending.operation_id)}
         with self._lock:
             self._admissible(native_id)
             now = time.time()
             for key, entry in tuple(self._pending.items()):
-                if ((key in finished and candidates.get(key) is entry) or key in self._returned
-                        or entry[0].expires_at is not None and now >= entry[0].expires_at):
+                if self._is_live is not None:
+                    done = key in finished and candidates.get(key) is entry
+                else:
+                    done = key in self._returned or (entry[0].expires_at is not None
+                                                     and now >= entry[0].expires_at)
+                if done:
                     self.forget_before_write(key)
             if len(self._pending) >= MAX_PENDING:
                 raise BeforeWriteError('peer-pending-capacity')
@@ -153,8 +168,6 @@ class ClaudePeerEndpoint:
             raise DeliveryError('native-operation-already-attempted')
 
     def _broker_live(self, operation_id):
-        if self._is_live is None:
-            return True
         try:
             return self._is_live(operation_id) is not False
         except Exception:

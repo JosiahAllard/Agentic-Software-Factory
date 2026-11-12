@@ -184,6 +184,7 @@ import time
 
 from kitlib import pmwatch
 from kitlib.config.user import HomeFenced
+from kitlib.hubclient import codestale
 from kitlib.hubclient.push import NO_SESSION, NOT_WRITTEN, PM_KEY, UNCERTAIN, WRITTEN, Sent, field
 from kitlib.hubsite.api import HUB_DONE_BY, OWNER_FROM, sessions_once
 from kitlib.hubsite import hublog, store
@@ -206,7 +207,19 @@ _CROSSOVER = 'The hub usage crossover job (hub health jobs.usage-crossover, usag
 # the PM's way back from a checkpoint ask: a crossing of the PM that ends without `crossed`
 _PM_RESUMES = (' When detail is pm or starts pm: (you, the PM), no crossing of yours is open now: '
                'the checkpoint message no longer holds, so resume your normal work.')
-JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition was met: the '
+JOB_EACH = {'stale-code': 'The hub server (serve.py, job name hub) will not restart itself onto the '
+                          'hub code now on disk: ' + codestale.text() + '. It keeps its old code '
+                          'until the owner restarts it, or until a newer landing restarts it '
+                          'where its self-restart can still run; hub.log and GET health `code` '
+                          'say why. File the owner step above as a to-do; no reply is needed.',
+            'behind': 'The hub plugin-refresh job found the pm-kit plugin export not at kit main '
+                      'and did not refresh it. Detail is <main sha12>:<why>. no-export: there '
+                      'is no export yet; unmigrated: an account folder is not migrated to it; '
+                      'run python "<kit>/tools/plugin_refresh.py" --migrate --apply for either. '
+                      'behind: plugin.auto_refresh is off; run python '
+                      '"<kit>/tools/plugin_refresh.py" --apply. Hub health '
+                      'jobs.plugin-refresh.note gives the command in full. No reply is needed.',
+            'unblocked': 'A hub timed job cleared a hold whose `until` condition was met: the '
                          'record named in detail (<repo>:<ID>) is unblocked; `backlog.py show '
                          '<ID>` gives the commit. No reply is needed.',
             'approval-expired': 'A hub approval expired undecided, and the record it was bound to '

@@ -1252,6 +1252,61 @@ class ReasonCase(ServeCase):
             stamp[0] = (('serve.py', 3, 14),)
             hub.watch()
             self.assertEqual(len(self.lines), 3, 'said again for the same stale server')
+            self.assertIsNone(hub.push, 'a hub with no push worker owes the PM nothing')
+        hub.close()
+
+    def pushes(self, hub):
+        """The job events `hub` owes the PM, recorded by a stand-in push worker."""
+        owed = []
+
+        class Push(object):
+            def job_event(self, name, event, detail=None):
+                owed.append((name, event, detail))
+        hub.push = Push()
+        return owed
+
+    def test_the_pm_is_pushed_stale_code_once_across_two_definite_outcomes(self):
+        class Broken(object):
+            stale = definite = False
+
+            def look(self, stamp):
+                raise RuntimeError('broken look')
+
+        stamp = [(('serve.py', 1, 10),)]
+        with mock.patch.object(serve, 'code_stamp', lambda *folders: stamp[0]), \
+                mock.patch.object(serve, 'CODE_LOOK_S', 0):
+            hub = self.build()
+            owed = self.pushes(hub)
+            hub.watch()
+            self.assertEqual(owed, [], 'no push while the code is the start code')
+            stamp[0] = (('serve.py', 2, 12),)
+            hub.watch()                     # NOT_HERE: the first definite outcome
+            self.assertEqual(self.lines, self.warned())
+            self.assertEqual(owed, [(serve.STALE_JOB, serve.STALE_EVENT, None)])
+            hub.self_restart = Broken()     # a look that raises: the second
+            stamp[0] = (('serve.py', 3, 14),)
+            hub.watch()
+            self.assertIn(('error', 'the self-restart look failed: RuntimeError: broken look'),
+                          self.lines)
+            self.assertEqual(owed, [(serve.STALE_JOB, serve.STALE_EVENT, None)], 'once a process')
+            hub.push = None
+        hub.close()
+
+    def test_a_restart_still_being_tried_pushes_no_stale_code(self):
+        stamp = [(('serve.py', 1, 10),)]
+        with mock.patch.object(serve, 'code_stamp', lambda *folders: stamp[0]), \
+                mock.patch.object(serve, 'CODE_LOOK_S', 0), \
+                mock.patch.object(selfrestart, 'GIVE_UP_S', 0), \
+                mock.patch.object(selfrestart, 'eligible', lambda port, store: None):
+            hub = self.build()
+            owed = self.pushes(hub)
+            stamp[0] = (('serve.py', 2, 12),)
+            hub.watch()
+            hub.watch()                     # STILL_TRYING: the warning shows, nothing definite
+            self.assertIn(('error', serve.STALE_CODE), self.lines)
+            self.assertFalse(hub.self_restart.definite)
+            self.assertEqual(owed, [])
+            hub.push = None
         hub.close()
 
     def warned(self):
@@ -1371,7 +1426,7 @@ class ReasonCase(ServeCase):
 
     def test_a_self_restart_look_that_raises_shows_the_warning_and_the_server_goes_on(self):
         class Broken(object):
-            stale = False
+            stale = definite = False
 
             def look(self, stamp):
                 raise RuntimeError('broken look')
@@ -1380,6 +1435,7 @@ class ReasonCase(ServeCase):
         with mock.patch.object(serve, 'code_stamp', lambda *folders: stamp[0]), \
                 mock.patch.object(serve, 'CODE_LOOK_S', 0):
             hub = self.build()
+            owed = self.pushes(hub)
             hub.self_restart = Broken()
             hub.watch()
             self.assertEqual(self.lines, [
@@ -1387,6 +1443,10 @@ class ReasonCase(ServeCase):
                 ('error', serve.STALE_CODE)])
             hub.watch()
             self.assertEqual(len(self.lines), 3, 'the look is tried again, STALE_CODE not')
+            self.assertEqual(owed, [(serve.STALE_JOB, serve.STALE_EVENT, None)],
+                             'a look that raises is definite: pushed once')
+            self.assertFalse(hub.self_restart.definite, "serve never sets the Watcher's flag")
+            hub.push = None
         hub.close()
 
     def test_health_and_snapshot_say_when_the_hub_code_on_disk_is_newer(self):

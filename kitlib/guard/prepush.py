@@ -19,6 +19,8 @@ lander):
   says. A remote main this clone lacks cannot be an ancestor of the pushed commit, so git
   cannot tell: refused too (fail closed). Git passes such a ref to the hook only when the push is
   forced (--force, a + refspec, --force-with-lease);
+- then, with a staging branch, a push to main itself, push_block or not, needs a tested record
+  (kitlib.records.gate_ok.verify_for_main; docs/gate-records.md "Tested records");
 - then, when the repository sets repo.push_block, the pushed commit needs a gate-OK record, read by
   kitlib.records.gate_ok.verify_record: it must name a config_rev in the pushed commit's history and
   hash the gate config that commit holds. With a dev_drive only the record folder counts and a
@@ -54,6 +56,7 @@ from kitlib.git import defaults as gitdefaults
 from kitlib.git import repo as gitrepo
 from kitlib.ownerfiles import rules as ownerrules
 
+TRANSIENT_PREFIX = 'pre-push: refused, cannot '  # every transient refusal (a read failed), no final one
 ZERO = '0' * 40
 FIXED_MAIN = kschema.SECTIONS['repo']['main_branch'].default
 
@@ -307,7 +310,7 @@ def secrets_refusal(root, lines, name):
         if remotes is None:
             remotes, why = _remote_names(root)
             if remotes is None:
-                return ('pre-push: refused, cannot read the remotes to check what %s sends for this '
+                return (TRANSIENT_PREFIX + 'read the remotes to check what %s sends for this '
                         'machine\'s secrets (%s).' % (local_ref, why))
         what = '%s (%s)' % (local_ref, local_sha[:12])
         has, why = _remote_has(root, remote_sha, name, remotes)
@@ -317,7 +320,7 @@ def secrets_refusal(root, lines, name):
                                      '--diff-filter=ACMRT', '--format=commit %H', local_sha, '--not'] +
                                     has + ['--'], root)
         if out is None:
-            return ('pre-push: refused, cannot list the files %s sends to check them for this '
+            return (TRANSIENT_PREFIX + 'list the files %s sends to check them for this '
                     'machine\'s secrets (%s).' % (what, why))
         commit = ''
         for row in out.splitlines():
@@ -338,7 +341,7 @@ def leak_refusal(root, lines, name, url=None):
     hook argument (the remote's name, or the URL for a push by URL), `url` its second."""
     common, why = gitrepo.common_dir(root)
     if common is None:
-        return ('pre-push: refused, cannot find the git directory to look for %s (%s).'
+        return (TRANSIENT_PREFIX + 'find the git directory to look for %s (%s).'
                 % (pmdata.FILE_NAME, why))
     try:
         record = pmdata.read(common)
@@ -354,7 +357,7 @@ def leak_refusal(root, lines, name, url=None):
                 % (record.root[:12], path))
     remotes, why = _remote_urls(root)
     if remotes is None:
-        return ('pre-push: refused, cannot read the remotes to tell whether %s is the private '
+        return (TRANSIENT_PREFIX + 'read the remotes to tell whether %s is the private '
                 'remote %s (%s).' % (name, record.remote, why))
     private = _private(record, remotes, name, url)
     data_ref = 'refs/heads/' + record.branch
@@ -395,14 +398,14 @@ def leak_refusal(root, lines, name, url=None):
                        record.root[:12], name, record.remote))
         pushed, why = _pushed_objects(root, local_sha, remote_sha, name, remotes)
         if pushed is None:
-            return ('pre-push: refused, cannot list the objects %s pushes to check them against '
+            return (TRANSIENT_PREFIX + 'list the objects %s pushes to check them against '
                     'the PM data branch (%s).' % (what, why))
         if not pushed:
             continue
         if not data:
             objects, why = _data_objects(root, record)
             if objects is None:
-                return ('pre-push: refused, cannot list the PM data branch\'s objects to check %s '
+                return (TRANSIENT_PREFIX + 'list the PM data branch\'s objects to check %s '
                         'against them (%s).' % (what, why))
             data.append(objects)
         shared = sorted(pushed & set(data[0]))
@@ -459,6 +462,27 @@ def verify_record(root, sha):
         return None, 'cannot read gate-OK records: %s: %s' % (type(e).__name__, e)
 
 
+def tested_record(root, sha, remote_sha):
+    """gate_ok.verify_for_main: a read failure (OSError, gate_ok.Unreadable) is transient."""
+    try:
+        from kitlib.records import gate_ok
+        return gate_ok.verify_for_main(root, sha, remote_sha)
+    except OSError as e:
+        return None, TRANSIENT_PREFIX + 'read the tested records of %s (%s); push again.' % (sha[:12], e)
+    except Exception as e:
+        return None, 'cannot read tested records: %s: %s' % (type(e).__name__, e)
+
+
+def tested_refusal(cfg, sha, remote_sha, why):
+    """A push to main of `sha` (replacing `remote_sha`) with no tested record."""
+    staging = kconfig.work_base(cfg)
+    return ('pre-push: refused, %s has no daily full record, and no promotion record made on '
+            'main %s (%s). With the staging branch %s, main moves only to a commit a green daily '
+            'full run passed or a promotion tested on the main it replaces. Instead: land onto '
+            '%s/%s, and let the daily full run promote it (docs/daily-full.md "Promotion").'
+            % (sha[:12], (remote_sha or '?')[:12], why, staging, cfg.remote, staging))
+
+
 def _exclude(root, cfg, remote_sha, remote):
     """The commits a push to main does not add: the remote main it replaces when this clone has it,
     else <remote>/<main> as last fetched, else none (every commit is judged). Never other
@@ -495,15 +519,16 @@ def not_fast_forward(root, local_sha, remote_sha, main):
     if ff:
         return None
     if ff is None:
-        return ('pre-push: refused, cannot tell whether %s is a fast-forward of %s %s (%s). '
+        return (TRANSIENT_PREFIX + 'tell whether %s is a fast-forward of %s %s (%s). '
                 'Fetch, merge %s into it, then push again; never force-push %s.'
                 % (local_sha[:12], main, remote_sha[:12], why.strip(), main, main))
     return ('pre-push: refused, %s is not a fast-forward of %s %s. Merge %s into it, then '
             'push again; never force-push %s.' % (local_sha[:12], main, remote_sha[:12], main, main))
 
 
-def check(root, lines, gate_ok=None, remote='origin', url=None):
+def check(root, lines, gate_ok=None, remote='origin', url=None, tested=None):
     gate_ok = gate_ok or verify_record
+    tested = tested or tested_record
     why = leak_refusal(root, lines, remote, url) or secrets_refusal(root, lines, remote)
     if why:
         return False, why
@@ -527,6 +552,11 @@ def check(root, lines, gate_ok=None, remote='origin', url=None):
         why = not_fast_forward(root, local_sha, remote_sha, main)
         if why:
             return False, why
+        if cfg is not None and kconfig.staging_on(cfg) and main == cfg.main_branch:
+            rec, why = tested(root, local_sha, remote_sha)
+            if rec is None:
+                return False, why if why.startswith(TRANSIENT_PREFIX) else tested_refusal(
+                    cfg, local_sha, remote_sha, why)
         if cfg is None or not cfg.push_block:
             continue
         rec, why = gate_ok(root, local_sha)

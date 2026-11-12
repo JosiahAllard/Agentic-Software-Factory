@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 
+from kitlib import kitroot
 from kitlib.config import user as kuser
 from kitlib.config.types import ConfigError
 
@@ -88,7 +89,7 @@ def known_repos(cfg, read=None, toplevel=_toplevel, kit_dir=None):
     names = {e["repo"] for e in json.loads(read(path)).values()
              if isinstance(e, dict) and isinstance(e.get("repo"), str) and e["repo"]}
     for d in (os.path.dirname(os.path.abspath(path)),
-              kit_dir or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))):
+              kit_dir or kitroot.root()):
         n = toplevel(d)
         if n:
             names.add(n)

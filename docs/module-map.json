@@ -865,6 +865,12 @@
   },
   {
    "from": "autotasks",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "apps uses base"
+  },
+  {
+   "from": "autotasks",
    "to": "launcher",
    "kind": "build",
    "why": "apps uses services"
@@ -1045,6 +1051,12 @@
   },
   {
    "from": "commit",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "work uses base"
+  },
+  {
+   "from": "commit",
    "to": "machinepaths",
    "kind": "build",
    "why": "work uses services"
@@ -1084,6 +1096,12 @@
    "to": "host",
    "kind": "build",
    "why": "same layer (facts): config's row names host"
+  },
+  {
+   "from": "config",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "facts uses base"
   },
   {
    "from": "config",
@@ -1282,6 +1300,12 @@
    "to": "hubclient",
    "kind": "build",
    "why": "work uses services"
+  },
+  {
+   "from": "delegations",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "work uses base"
   },
   {
    "from": "delegations",
@@ -1824,6 +1848,12 @@
    "why": "same layer (services): hubclient's row names hubvalidate"
   },
   {
+   "from": "hubclient",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "services uses base"
+  },
+  {
    "from": "hubjobs",
    "to": "backlog",
    "kind": "build",
@@ -2275,6 +2305,12 @@
   },
   {
    "from": "launcher",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "services uses base"
+  },
+  {
+   "from": "launcher",
    "to": "ledger",
    "kind": "build",
    "why": "same layer (services): launcher's row names ledger"
@@ -2317,6 +2353,12 @@
   },
   {
    "from": "ledger",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "services uses base"
+  },
+  {
+   "from": "ledger",
    "to": "platform",
    "kind": "build",
    "why": "services uses base"
@@ -2350,6 +2392,12 @@
    "to": "git",
    "kind": "build",
    "why": "work uses facts"
+  },
+  {
+   "from": "loadnode",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "work uses base"
   },
   {
    "from": "loadnode",
@@ -2488,6 +2536,12 @@
    "to": "host",
    "kind": "build",
    "why": "apps uses facts"
+  },
+  {
+   "from": "machinesetup",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "apps uses base"
   },
   {
    "from": "machinesetup",
@@ -3115,6 +3169,12 @@
   },
   {
    "from": "pytests",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "services uses base"
+  },
+  {
+   "from": "pytests",
    "to": "platform",
    "kind": "build",
    "why": "services uses base"
@@ -3178,6 +3238,12 @@
    "to": "guard",
    "kind": "build",
    "why": "apps uses guard"
+  },
+  {
+   "from": "redfirst",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "apps uses base"
   },
   {
    "from": "redfirst",
@@ -3316,6 +3382,12 @@
    "to": "host",
    "kind": "build",
    "why": "apps uses facts"
+  },
+  {
+   "from": "stackskill",
+   "to": "kitlib-root",
+   "kind": "build",
+   "why": "apps uses base"
   },
   {
    "from": "strayrestore",

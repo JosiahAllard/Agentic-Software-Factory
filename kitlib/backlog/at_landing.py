@@ -34,6 +34,7 @@ ancestry_refusal moves no ref: it fetches the store's objects with an empty --re
 """
 import os
 
+from kitlib import kitroot
 import kitlib.config as kconfig
 from kitlib.pluginsource import layout as plugin_layout
 from kitlib.config import pmdata
@@ -49,7 +50,7 @@ from . import store_folder, store_open, store_read
 from .errors import Dirty, IndexStale, Overtaken, Refusal, Uncommitted
 
 SESSION = 'gate-land'
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 FETCH_TIMEOUT = 300
 # What a printed write command names for -C: a backlog write refuses in the main checkout (the
 # landers'), so the command never names the main checkout a landing runs in.

@@ -5,7 +5,6 @@ is Lander.__init__'s.
 """
 
 import os
-import re
 
 from kitlib import gate as G
 from kitlib.backlog import at_landing
@@ -19,44 +18,14 @@ from kitlib.records import gate_ok
 from kitlib.records import landing
 from kitlib.records import place
 from kitlib.landing.checks import _what
-from kitlib.landing.merge import MERGE_TIMEOUT, PUSH_TIMEOUT, _paths
+from kitlib.landing.merge import MERGE_TIMEOUT, _paths
 
 
-# git's own ref status line for a push it refused (transport.c; untranslated, and kitlib.git.cmd
-# runs git under LC_ALL=C): `! [rejected]` decided before sending (non-fast-forward, fetch first),
-# `! [remote rejected]` the remote's answer (a hook declined). `failed to push some refs` alone is
-# not one: git prints it for any failed push, a status report lost after the upload included
-PUSH_REFUSED = ('! [rejected] ', '! [remote rejected] ')
-# git's line for a push over HTTP(S) that never connected (exit 128, nothing else on stderr):
-# `fatal: unable to access '<url>': <curl's error>`, which git dies with only when its first
-# request, the ref discovery (remote-curl.c discover_refs), fails, before any pack is sent; with
-# curl's error one that only a connection never made gives: `Could not resolve host: <host>` (or
-# `proxy`), `Failed to connect to <host>:<port>` or `<host> port <port>` (curl 8 adds `after <n>
-# ms`; the reason after `: ` is the OS's or curl's, as `Connection refused`, `Timed out`, `Could
-# not connect to server`), `Connection timed out after <n> milliseconds` and `Resolving timed out
-# after <n> milliseconds` (curl's connect timeout in those states, before any request is sent).
-# git 2.55.0.windows.5 with libcurl 8.21.0 printed the first two forms, `<host>:<port> after <n>
-# ms: Could not connect to server` for both a refused port and a timed-out connect. Every other
-# curl error (a reset, a TLS failure, `Operation timed out`) came after the connection: STUCK
-PUSH_NEVER_CONNECTED = re.compile(
-    r"fatal: unable to access '[^']*': (?:"
-    r"Could not resolve (?:host|proxy): \S+"
-    r"|Failed to connect to \S+(?::\d+| port \d+)(?: after \d+ ms)?: [^:]+"
-    r"|(?:Connection|Resolving) timed out after \d+ milliseconds"
-    r")\Z")
 STEP_CMD = '    $ '      # a STUCK clear step's command line starts with this
 
 
 class _Stuck(Exception):
     pass
-
-
-def push_never_connected(rc, err):
-    """Whether a push that ended with exit `rc` and stderr `err` never connected to the remote,
-    so no byte of it can have reached it: git died (exit 128) and every line it printed is
-    PUSH_NEVER_CONNECTED. Any other line, a later-phase one included, or any other exit: False."""
-    lines = [l.strip() for l in (err or '').splitlines() if l.strip()]
-    return rc == 128 and bool(lines) and all(PUSH_NEVER_CONNECTED.match(l) for l in lines)
 
 
 class Push(object):
@@ -87,15 +56,17 @@ class Push(object):
         else why nothing landed (NOT LANDED: the record could not be written, the remote's main
         moved on while the gate ran, so the push was refused, or git refused the push, exit 1
         with git's own ref status line `! [rejected] ...` or `! [remote rejected] ...`
-        (PUSH_REFUSED), with the remote's main still the base; or the push never connected,
-        push_never_connected, with the remote's main anything but the merge or a commit holding
-        it, unreadable included). _Stuck when the push may have
+        (cmd.PUSH_REFUSED), with the remote's main still the base; or the push never connected,
+        cmd.push_never_connected, with the remote's main anything but the merge or a commit
+        holding it, unreadable included). _Stuck when the push may have
         landed and git cannot tell (ls-remote unreadable, or a remote main this checkout cannot
         place), or when any other push did not land on a remote main still at the base or absent:
         exit 0, no exit (timed out), exit 1 without that line (no message: a git ended from
         outside, refs.KILLED_SHAPE; a stray warning; a bare `failed to push some refs`) or exit
         128 (git died: a connection dropped after the upload may still be applied on the
-        remote)."""
+        remote). The push runs with cmd.NETWORK_ENV (cmd.with_network_env): a remote that wants
+        credentials makes git exit at once instead of waiting on a prompt nobody sees, and that
+        exit is judged as above like any other."""
         main_b, remote = self.base_branch, self.cfg.remote
         try:
             path = self.write_record(started, results)
@@ -107,15 +78,15 @@ class Push(object):
         self.lock.set_phase(self.token, 'push')
         self.phase = 'push'
         r = self.git('push', '--quiet', remote, '%s:refs/heads/%s' % (self.merge, main_b),
-                     timeout=PUSH_TIMEOUT)
+                     timeout=cmd.PUSH_TIMEOUT, env=cmd.with_network_env(self.git_env))
         pushed, why = refs.ls_remote(remote, 'refs/heads/%s' % main_b, self.root)
         how = 'exited 0' if r.rc == 0 else 'failed (%s)' % (r.err or 'exit %s' % r.rc)
         lines = [l.strip() for l in (r.err or '').splitlines() if l.strip()]
         said = ' | '.join(lines)
-        unconnected = push_never_connected(r.rc, r.err)
+        unconnected = cmd.push_never_connected(r.rc, r.err)
 
         def never_connected(state):
-            # git died before connecting (PUSH_NEVER_CONNECTED): no byte reached the remote, so
+            # git died before connecting (cmd.PUSH_NEVER_CONNECTED): no byte reached the remote, so
             # the merge, made only here, is not on it whatever ls-remote read (in an outage it
             # fails the same way). A remote main that is or holds the merge still counts as landed
             return ('the push of the merge %s never connected to %s (%s), and %s/%s %s; nothing '
@@ -143,10 +114,10 @@ class Push(object):
                     return never_connected('is still the base %s' % self.expect_main[:10]
                                            if pushed == self.expect_main else
                                            'is %s' % (pushed[:10] or 'absent'))
-                refused = any(l.startswith(PUSH_REFUSED) for l in lines)
+                refused = any(l.startswith(cmd.PUSH_REFUSED) for l in lines)
                 if r.rc == 1 and refused and pushed == self.expect_main:
-                    # git ran to the end and printed the ref's refusal (PUSH_REFUSED): nothing was
-                    # published. Exit 1 without it (no message: a git ended from outside,
+                    # git ran to the end and printed the ref's refusal (cmd.PUSH_REFUSED): nothing
+                    # was published. Exit 1 without it (no message: a git ended from outside,
                     # refs.KILLED_SHAPE; or only a stray warning) and exit 128 (git died) may have
                     # gone after the upload, which the remote may still apply after this
                     # ls-remote: STUCK
@@ -175,8 +146,8 @@ class Push(object):
         changes (a local edit elsewhere is carried). Else nothing in the main checkout moves, and
         a WARNING says why and how to bring it there. [] or [WARNING lines]; never raises git's
         failures. A landing onto a staging branch moves nothing in the main checkout: its main is
-        not the base, and the promotion is its only writer (docs/gate-landing.md "Staging
-        branch")."""
+        not the base, and a landing never moves it; the main branch moves on the remote only when
+        staging is promoted (docs/gate-landing.md "Staging branch")."""
         self.synced = True
         if self.staging:
             return []
@@ -397,9 +368,13 @@ class Push(object):
             steps = self.clear_steps(left)
         else:
             steps = []
-        steps.append(('break the landing lock (it refuses while the holder is alive, or while %s '
-                      'differs from %s/%s)' % (self.base_branch, self.cfg.remote,
-                                               self.base_branch), [self.break_command()]))
+        if self.staging:            # break_lock then asks only about MERGE_HEAD (LandingLock.unpushed)
+            refuses = 'a merge is in progress in the main checkout (MERGE_HEAD)'
+        else:
+            refuses = '%s differs from %s/%s' % (self.base_branch, self.cfg.remote,
+                                                 self.base_branch)
+        steps.append(('break the landing lock (it refuses while the holder is alive, or while %s)'
+                      % refuses, [self.break_command()]))
         for n, (text, commands) in enumerate(steps, 1):
             lines.append('%d. %s' % (n, text))
             lines.extend(STEP_CMD + c for c in commands)
@@ -415,7 +390,8 @@ class Push(object):
         pushed, pushed_why = refs.ls_remote(self.cfg.remote, 'refs/heads/%s' % self.base_branch,
                                             self.root)
         extra = []
-        if main and main != self.expect_main:
+        # With a staging branch, main is not the base, so its own commits are not on top of it.
+        if main and main != self.expect_main and not self.staging:
             known = [self.expect_main] + self.tips + self.merges
             out, _ = cmd.run_text(['log', '--format=%H %s', main, '--not'] + known, self.root)
             extra = [l for l in (out or '').splitlines() if l.strip()]
@@ -467,20 +443,25 @@ class Push(object):
                         ] + self.on_origin_steps(left, left['tracking'])
             if on is None:
                 return [self.check_first(left['tracking'])]
+            if self.staging:
+                done = ('%s; go to the last step' % self.main_unmoved())
+            else:
+                done = ('bring %s to it (HEAD on %s, then `%s merge --ff-only %s`), then go to '
+                        'the last step' % (main_b, main_b, g, upstream))
             steps = [('the push may have landed: %s could not be read (%s). Fetch, then check '
                       'what %s is' % (upstream, left['pushed_why'] or 'ls-remote failed', upstream),
                       ['%s fetch %s' % (g, remote), '%s rev-parse %s' % (g, tracking)]),
-                     ('if that printed the merge %s, the landing is done: bring %s to it (HEAD '
-                      'on %s, then `%s merge --ff-only %s`), then go to the last step. If it '
+                     ('if that printed the merge %s, the landing is done: %s. If it '
                       'printed %s, the push did not land, and nothing is to be undone: the main '
                       'checkout was never merged into. If the fetch failed, stop: what it printed '
-                      'is stale' % ((self.merge or '(none)'), main_b, main_b, g, upstream,
-                                    self.expect_main), [])]
+                      'is stale' % ((self.merge or '(none)'), done, self.expect_main), [])]
             if self.merge:          # neither: someone pushed, maybe on top of the merge
+                landed = (self.main_unmoved() if self.staging
+                          else 'bring %s to it as above' % main_b)
                 steps.append(('if it printed anything else, list the remote branches that hold '
-                              'the merge: if the list names %s, the merge is landed: bring %s to '
-                              'it as above; if it does not, nothing landed and nothing is to be '
-                              'undone' % (upstream, main_b),
+                              'the merge: if the list names %s, the merge is landed: %s; if it '
+                              'does not, nothing landed and nothing is to be undone'
+                              % (upstream, landed),
                               ['%s branch -r --contains %s' % (g, self.merge)]))
             return steps
         on = self.on_remote(pushed)
@@ -504,17 +485,29 @@ class Push(object):
         main_b, remote = self.base_branch, self.cfg.remote
         g = 'git -C "%s"' % self.root
         upstream = '%s/%s' % (remote, main_b)
+        if self.staging:
+            stale = 'stop here'
+            landed = '%s; go to the last step' % self.main_unmoved()
+        else:
+            stale = 'stop here and do not move %s' % main_b
+            landed = ('bring the checkout to %s by hand (HEAD on %s, %s fast-forwarded to %s), '
+                      'then go to the last step' % (upstream, main_b, main_b, upstream))
         return ('%s is at %s, which this checkout cannot place against the merge %s, so whether '
                 'it holds the merge cannot be told here. Fetch, then list the remote branches '
-                'that hold the merge. If the fetch failed, the list is stale: stop here and do '
-                'not move %s. If the list names %s, the merge is landed: bring the checkout to %s '
-                'by hand (HEAD on %s, %s fast-forwarded to %s), then go to the last step. If it '
+                'that hold the merge. If the fetch failed, the list is stale: %s. If the list '
+                'names %s, the merge is landed: %s. If it '
                 'does not, the merge is not on %s, and nothing is to be undone (the main checkout '
                 'was never merged into): settle %s with whoever pushed it, then go to the last '
                 'step' % (
-                    upstream, (pushed or '?')[:10], (self.merge or '?')[:10], main_b, upstream,
-                    upstream, main_b, main_b, upstream, remote, upstream),
+                    upstream, (pushed or '?')[:10], (self.merge or '?')[:10], stale, upstream,
+                    landed, remote, upstream),
                 ['%s fetch %s' % (g, remote), '%s branch -r --contains %s' % (g, self.merge)])
+
+    def main_unmoved(self):
+        """What a landed merge asks of the main checkout with a staging branch: nothing."""
+        return ('nothing in the main checkout is to be moved (a landing onto the staging branch '
+                '%s never moves %s; only a promotion does)' % (self.base_branch,
+                                                               self.checkout_branch))
 
     def on_origin_steps(self, left, pushed):
         """clear_steps when the remote's main (`pushed`) is a merge of this landing or descends
@@ -529,9 +522,10 @@ class Push(object):
         upstream = '%s/%s' % (remote, main_b)
         steps = []
         if left['tracking'] != pushed:
-            steps.append(('the tracking ref %s is at %s, not %s as on %s: fetch it, or break_lock '
-                          'refuses' % (upstream, (left['tracking'] or '?')[:10], pushed[:10],
-                                       remote), ['%s fetch %s' % (g, remote)]))
+            steps.append(('the tracking ref %s is at %s, not %s as on %s: fetch it, %s' % (
+                upstream, (left['tracking'] or '?')[:10], pushed[:10], remote,
+                'so the next landing starts from it' if self.staging else 'or break_lock refuses'),
+                ['%s fetch %s' % (g, remote)]))
         gate_out = self.gate_out
         if gate_out is None or gate_out.code != G.OK:
             merges = list(reversed(self.merges))

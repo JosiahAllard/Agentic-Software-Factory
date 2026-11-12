@@ -26,6 +26,7 @@ import os
 import subprocess
 import sys
 
+from kitlib import kitroot
 from kitlib import config
 from kitlib.config import ConfigError
 from kitlib.git import cmd
@@ -33,7 +34,7 @@ from kitlib.proc import spawn
 
 from . import files, rulebook
 
-KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT = kitroot.root()
 LEDGER_TOOL = os.path.join(KIT, 'tools', 'ledger.py')
 WORD = 'pre_commit_check'
 REFUSED = '; commit refused'

@@ -47,6 +47,8 @@ ALLOWED = {
         (1, "the landed trust is a script as the local main writes it; a staging tip is not trusted"),
     'kitlib/guard/prepush.py:<module>': (1, MAIN),
     'kitlib/guard/prepush.py:_default_mains': (1, MAIN),
+    'kitlib/guard/prepush.py:check':
+        (1, 'with a staging branch, a push to the main branch itself needs a tested record'),
     'kitlib/guard/prepush.py:_exclude':
         (1, 'a push that creates its branch is judged against the published main'),
     'kitlib/guard/rules_gitjail.py:lander_forms':
@@ -75,7 +77,6 @@ ALLOWED = {
     'kitlib/machinesetup/repo.py:Setup.report': (1, NEW_REPO),
     'kitlib/ownerfiles/apply.py:_owner_rules':
         (3, "the main checkout's branch, and " + STAGING_FROM + ' (the rules are the base\'s)'),
-    'kitlib/ownerfiles/approvals.py:landed_ref': (1, STAGING_FROM),
     'kitlib/pmdata/init.py:_check_data_config': (2, PMDATA),
     'kitlib/pmdata/init.py:_check_names': (2, PMDATA),
     'kitlib/pmdata/init.py:_check_unshared': (2, PMDATA),

@@ -616,16 +616,11 @@ def landed_ref(checkout, cfg):
     checkout's config), or refs/remotes/<remote>/<staging> when `.kit.json` at main as fetched
     names a staging branch (docs/gate-landing.md "Staging branch": landings push it). The setting
     is read from main, never the checkout, so a branch cannot drop it; main not fetched leaves the
-    checkout's own. ConfigError when main's staging setting is not well formed."""
+    checkout's own (kitlib.config.overlay_fetched_staging). ConfigError when main's staging
+    setting is not well formed."""
     from kitlib import config as kconfig
-    from kitlib.git import refs
-    main = 'refs/remotes/%s/%s' % (cfg.remote, cfg.main_branch)
-    sha, _why = refs.resolve(main, checkout, known=True)
-    if sha:
-        kconfig.overlay_staging(cfg, sha)
-    if kconfig.staging_on(cfg):
-        return 'refs/remotes/%s/%s' % (cfg.remote, kconfig.work_base(cfg))
-    return main
+    kconfig.overlay_fetched_staging(cfg, checkout)
+    return 'refs/remotes/%s/%s' % (cfg.remote, kconfig.work_base(cfg))
 
 
 def on_main(checkout, sha):

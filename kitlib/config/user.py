@@ -25,6 +25,7 @@ import os
 import stat
 
 import kitlib.platform
+from kitlib import kitroot
 from kitlib.platform.linux import paths as linux_paths
 from kitlib.proc import console
 
@@ -1078,7 +1079,7 @@ def _console_log_dir():
     """The folder of the console guard's incident log (kitlib.proc.console.set_log_dir): the kit
     temp folder of this kit checkout (work_temp); None, no log, in a fenced test process
     (HomeFenced). A bad machine config raises ConfigError."""
-    kit = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    kit = kitroot.root()
     try:
         return work_temp(kit)
     except HomeFenced:

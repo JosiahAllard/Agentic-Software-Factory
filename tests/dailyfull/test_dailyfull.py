@@ -413,14 +413,6 @@ class StagingOffIsToday(Case):
         self.plain(self.run_daily())
         self.assertEqual(self.remote_main(), before)
 
-    def test_if_due_needs_staging_on_and_records_nothing(self):
-        o = D.run(self.main_dir, self.cfg(), out=self.out, stamp='20261008-040000',
-                  book_kw=self.book_kw, if_due=True)
-        self.assertEqual(o.code, G.USAGE, o.lines)
-        self.assertIn('--if-due', o.lines[0])
-        self.assertFalse(os.path.exists(os.path.join(self.out, '20261008-040000')))
-
-
 class StagingRunCase(Case):
     KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test'}, 'staging': {'branch': 'staging'}}
 
@@ -430,6 +422,18 @@ class StagingRunCase(Case):
         self.stg = self.repo.worktree('stg')
         self.repo.git('reset', '-q', '--hard', 'origin/staging', cwd=self.stg)
         self.n = 0
+        # The daily record (gate_ok.record_tested_pass) stood in at its seam: it is the gaps
+        # branch's, and its folder is the machine's.
+        self.records = []
+        self.record_why = None
+
+        def write(main, sha, tested, started_utc, ran, wt, git=D.git):
+            self.records.append({'sha': sha, 'main_then': self.remote_main(),
+                                 'steps': [r['name'] for r in ran], 'wt': wt})
+            return self.record_why
+        patcher = mock.patch.object(D, 'write_daily_record', side_effect=write)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def land(self, files=None):
         self.n += 1
@@ -439,14 +443,6 @@ class StagingRunCase(Case):
         sha = self.repo.commit('landed %d' % self.n, *files, cwd=self.stg)
         self.repo.git('push', '-q', 'origin', 'HEAD:refs/heads/staging', cwd=self.stg)
         return sha
-
-    def staging_tip(self):
-        return self.repo.git('--git-dir', self.repo.remote, 'rev-parse', 'staging', cwd=self.repo.base)
-
-    def if_due(self, stamp='20261008-040000'):
-        return D.run(self.main_dir, self.cfg(), out=self.out, stamp=stamp,
-                     book_kw=dict(self.book_kw, no_wait=True), if_due=True)
-
 
 class Promotes(StagingRunCase):
     def test_green_promotes_exactly_the_tested_commit(self):
@@ -458,6 +454,41 @@ class Promotes(StagingRunCase):
         self.assertEqual(r['promotion']['status'], 'promoted')
         self.assertEqual(self.remote_main(), tested)
         self.assertTrue(any(l.startswith('daily: PROMOTED main') for l in o.lines), o.lines)
+
+    def test_the_daily_record_is_written_before_the_push(self):
+        tested = self.land()
+        before = self.remote_main()
+        o = self.run_daily()
+        self.assertEqual(o.code, G.OK, o.lines)
+        self.assertEqual(len(self.records), 1, self.records)
+        self.assertEqual(self.records[0]['sha'], tested)
+        self.assertEqual(self.records[0]['main_then'], before)     # main had not moved yet
+        self.assertEqual(self.records[0]['steps'], ['unit'])
+        self.assertEqual(self.remote_main(), tested)
+
+    def test_no_daily_record_no_push(self):
+        self.land()
+        before = self.remote_main()
+        self.record_why = 'the record folder cannot be made (test)'
+        with mock.patch.object(P, '_push', side_effect=AssertionError('pushed')):
+            o = self.run_daily()
+        self.assertEqual(o.code, G.REFUSED, o.lines)
+        p = self.result()['promotion']
+        self.assertEqual(p['status'], 'not-promoted')
+        self.assertIn('daily record', p['why'])
+        self.assertIn('cannot be made (test)', p['why'])
+        self.assertEqual(self.remote_main(), before)
+
+    def test_the_unchanged_skip_writes_no_second_record(self):
+        self.land()
+        self.run_daily('20261008-040000')
+        o = self.run_daily('20261009-040000')
+        self.assertIn('SKIPPED (unchanged)', o.lines[0])
+        self.assertEqual(len(self.records), 1)
+
+    def test_if_due_is_retired(self):
+        with redirect_stdout(io.StringIO()), mock.patch('sys.stderr', io.StringIO()):
+            self.assertEqual(tool.main(['-C', self.main_dir, '--if-due']), G.USAGE)
 
     def test_the_unchanged_skip_promotes_what_an_earlier_run_could_not(self):
         tested = self.land()
@@ -472,58 +503,6 @@ class Promotes(StagingRunCase):
         self.assertIn('SKIPPED (unchanged)', o.lines[0])
         self.assertEqual(self.result('20261009-040000')['promotion']['status'], 'promoted')
         self.assertEqual(self.remote_main(), tested)
-
-    def test_if_due_not_due_creates_no_folder(self):
-        self.land()
-        o = self.if_due()
-        self.assertEqual(o.code, G.OK, o.lines)
-        self.assertIn('daily: NOT DUE (1 untested', o.lines[0])
-        self.assertFalse(os.path.exists(os.path.join(self.out, '20261008-040000')))
-
-    def test_if_due_runs_and_promotes_once_due(self):
-        for _ in range(P.DUE_COUNT):
-            tip = self.land()
-        o = self.if_due()
-        self.assertEqual(o.code, G.OK, o.lines)
-        self.assertEqual(self.remote_main(), tip)
-
-    def test_a_busy_if_due_leaves_nothing_behind(self):
-        for _ in range(P.DUE_COUNT):
-            self.land()
-        refused = G.Outcome(lockstore.EXIT_BUSY, ['NOT RUN: the machine lock refused: busy'])
-        with mock.patch.object(runner, 'gated', return_value=(None, refused)):
-            o = self.if_due()
-        self.assertEqual(o.code, G.OK, o.lines)
-        self.assertIn('nothing recorded', o.lines[0])
-        self.assertFalse(os.path.exists(os.path.join(self.out, '20261008-040000')))
-        self.assertEqual(D.results(self.out), [])
-
-    def test_a_busy_if_due_that_left_a_file_is_recorded(self):
-        for _ in range(P.DUE_COUNT):
-            self.land()
-        refused = G.Outcome(lockstore.EXIT_BUSY, ['NOT RUN: the machine lock refused: busy'])
-
-        def gated(*a, **k):
-            with open(os.path.join(a[8], 'left.txt'), 'w') as f:
-                f.write('x')
-            return None, refused
-        with mock.patch.object(runner, 'gated', side_effect=gated):
-            o = self.if_due()
-        self.assertEqual(o.code, G.OK, o.lines)
-        self.assertEqual((self.result()['verdict'], self.result()['cause']), ('skipped', 'busy'))
-
-    def test_the_entry_point_books_now_or_never(self):
-        seen = {}
-
-        def fake_run(*a, **k):
-            seen.update(k)
-            return G.Outcome(G.OK, [])
-        with mock.patch.object(D, 'run', side_effect=fake_run), redirect_stdout(io.StringIO()):
-            rc = tool.main(['-C', self.main_dir, '--if-due'], book_kw={'cores': 1})
-        self.assertEqual(rc, 0)
-        self.assertTrue(seen['if_due'])
-        self.assertTrue(seen['book_kw']['no_wait'])
-
 
 class RedNeverPromotes(StagingRunCase):
     GATE = {'steps': [fixtures.GATE['steps'][0], FAILING]}

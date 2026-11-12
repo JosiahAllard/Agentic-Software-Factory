@@ -1,5 +1,6 @@
 """kitlib.dailyfull.promote: the staging branch's promotion, in a scratch repository with a bare
-remote (tests/gate/fixtures.GateRepoCase), and its pure parts with a stand-in git."""
+remote (tests/gate/fixtures.GateRepoCase), and its pure parts with a stand-in git. When a
+promotion is due is kitlib.staging.changes' (tests/staging/test_changes.py)."""
 import json
 import os
 import stat
@@ -13,23 +14,6 @@ from kitlib.git import cmd as gitcmd
 from tests.gate import fixtures
 from tests.home import temp_home
 from tests.realgit import real_git
-
-HOUR = 3600
-NOW = 1_800_000_000
-
-
-class Due(unittest.TestCase):
-    def test_the_count_boundary(self):
-        self.assertFalse(P.due(P.DUE_COUNT - 1, NOW - HOUR, NOW))
-        self.assertTrue(P.due(P.DUE_COUNT, NOW - HOUR, NOW))
-
-    def test_the_age_boundary(self):
-        self.assertFalse(P.due(1, NOW - int(5.9 * HOUR), NOW))
-        self.assertTrue(P.due(1, NOW - 6 * HOUR, NOW))
-
-    def test_nothing_untested_is_never_due(self):
-        self.assertFalse(P.due(0, None, NOW))
-
 
 class FakeGit:
     """A stand-in for kitlib.dailyfull.git: `answers` maps an args tuple prefix to (rc, out, err)."""
@@ -47,31 +31,6 @@ class FakeGit:
 
 class Cfg:
     remote, main_branch = 'origin', 'main'
-
-
-class Untested(unittest.TestCase):
-    def results(self):
-        return [{'verdict': 'green', 'sha': 'a' * 40}, {'verdict': 'red', 'sha': None},
-                {'verdict': 'skipped', 'sha': None}]
-
-    def test_from_the_last_tested_commit_skipping_results_without_a_sha(self):
-        git = FakeGit({('merge-base',): (0, '', ''), ('log',): (0, '%d\n%d' % (NOW, NOW - 9), '')})
-        self.assertEqual(P.untested('.', Cfg(), 'staging', self.results(), git),
-                         ((2, NOW - 9), None))
-        self.assertIn(('log', '--first-parent', '--format=%ct', '%s..origin/staging' % ('a' * 40)),
-                      git.calls)
-
-    def test_a_last_tested_commit_off_the_staging_tip_counts_from_main(self):
-        git = FakeGit({('merge-base',): (1, '', ''), ('log',): (0, '', '')})
-        self.assertEqual(P.untested('.', Cfg(), 'staging', self.results(), git), ((0, None), None))
-        self.assertIn(('log', '--first-parent', '--format=%ct', 'origin/main..origin/staging'),
-                      git.calls)
-
-    def test_a_failing_log_says_so(self):
-        git = FakeGit({('log',): (128, '', 'bad')})
-        got, why = P.untested('.', Cfg(), 'staging', [], git)
-        self.assertIsNone(got)
-        self.assertIn('bad', why)
 
 
 class StagingReadFailsClosed(unittest.TestCase):

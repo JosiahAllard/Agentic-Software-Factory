@@ -3,16 +3,14 @@
   daily_full.py [-C DIR] [--out DIR] [--stamp S] [--force]
                                                   run every non-manual gate step on the ref,
                                                   unless it passed green at this commit already
-  daily_full.py [-C DIR] --if-due [--out DIR]      with staging on: run only when enough has
-                                                  landed untested, and only if the machine lock
-                                                  grants a slot now
   daily_full.py [-C DIR] --plan                    print what would run; run nothing
   daily_full.py [-C DIR] --summary [--out DIR]     print the status lines from the recorded runs
 
 A thin entry point: it parses, calls kitlib.dailyfull, prints and exits. It refuses unless
 `.kit.json` "daily_full".enabled is true. The kit never schedules it. With staging on, a green
-run promotes the commit it tested to the main branch (docs/daily-full.md "Promotion").
-Exit: 0 green, or skipped by the machine lock (recorded), or not due; 1 a step red; 2 usage, or
+run promotes the commit it tested to the main branch (docs/daily-full.md "Promotion"); the
+promotion between daily runs is tools/promote.py's.
+Exit: 0 green, or skipped by the machine lock (recorded); 1 a step red; 2 usage, or
 off; 4 the worktree or its gate could not be readied (recorded red), or a promotion was not made;
 5 another run holds the tree (nothing touched or recorded); a lock usage code passes through.
 """
@@ -41,8 +39,6 @@ def parse_args(argv):
     mode = p.add_mutually_exclusive_group()
     mode.add_argument('--plan', action='store_true', help='print the steps; run nothing')
     mode.add_argument('--summary', action='store_true', help='print the recorded runs\' status')
-    mode.add_argument('--if-due', action='store_true',
-                      help='staging on: run only when due, and only on a slot granted now')
     p.add_argument('--out', help='the results folder (default <gate log dir>/daily)')
     p.add_argument('--force', action='store_true',
                    help='run even when the ref is the commit the last run passed green at')
@@ -99,10 +95,7 @@ def main(argv=None, book_kw=None):
             say('REFUSED: %s' % e)
             return G.REFUSED
         return G.OK
-    if a.if_due:            # now or never: a busy machine is a skip, and background runs yield
-        book_kw = dict(book_kw or {}, no_wait=True)
-    out = D.run(top, cfg, out=a.out, stamp=a.stamp, say=say, book_kw=book_kw,
-                force=a.force, if_due=a.if_due)
+    out = D.run(top, cfg, out=a.out, stamp=a.stamp, say=say, book_kw=book_kw, force=a.force)
     for line in out.lines:
         say(line)
     return out.code

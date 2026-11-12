@@ -56,6 +56,7 @@ Layers, lowest first: base, facts, services, work, guard, apps, entry. An edge g
 | loadnode | work | `gate` | `kitlib/loadnode` | Load nodes |
 | preflight | work | `backlog`, `worktree` | `kitlib/preflight` | The start-of-task picture of one checkout |
 | reviewpack | work | `preflight`, `gate`, `landing` | `kitlib/reviewpack` | Everything a reviewer needs about a branch, and the quality signals |
+| staging | work | `dailyfull`, `gate`, `landing` | `kitlib/staging` | The staging branch promoted to main: the promotion run, its phase record and its move of main |
 | strayrestore | work | - | `kitlib/strayrestore` | Discard a main-checkout stray that a branch tip already holds |
 | syncbase | work | `commit` | `kitlib/syncbase` | Merge the named main commit into a branch and check the result |
 | worktree | work | `backlog` | `kitlib/worktree` | Linked worktrees |
@@ -299,6 +300,7 @@ None: no module is open to every other.
 | hubjobs | pmwatch | build | same layer (apps): hubjobs's row names pmwatch |
 | hubjobs | proc | build | apps uses base |
 | hubjobs | records | build | apps uses services |
+| hubjobs | staging | build | apps uses work |
 | hubjobs | worktree | build | apps uses work |
 | hubmcp | config | build | apps uses facts |
 | hubmcp | hubclient | build | apps uses services |
@@ -529,6 +531,13 @@ None: no module is open to every other.
 | schedtask | proc | build | same layer (base): schedtask's row names proc |
 | scrub | forbidden | build | same layer (services): scrub's row names forbidden |
 | stackskill | host | build | apps uses facts |
+| staging | config | build | work uses facts |
+| staging | dailyfull | build | same layer (work): staging's row names dailyfull |
+| staging | fs | build | work uses base |
+| staging | gate | build | same layer (work): staging's row names gate |
+| staging | git | build | work uses facts |
+| staging | landing | build | same layer (work): staging's row names landing |
+| staging | records | build | work uses services |
 | strayrestore | fs | build | work uses base |
 | strayrestore | git | build | work uses facts |
 | strayrestore | host | build | work uses facts |
@@ -598,6 +607,7 @@ None: no module is open to every other.
 | tools | redfirst | build | entry uses apps |
 | tools | reviewpack | build | entry uses work |
 | tools | stackskill | build | entry uses apps |
+| tools | staging | build | entry uses work |
 | tools | strayrestore | build | entry uses work |
 | tools | syncbase | build | entry uses work |
 | tools | tooldeps | build | entry uses services |

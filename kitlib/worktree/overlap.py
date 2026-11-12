@@ -164,6 +164,16 @@ def _full_ref(rev, every):
     return None
 
 
+def _tip(rev, every, root):
+    """`(commit, None)` of `rev`, or `(None, why)`: the tip `every` already holds for the branch
+    `_full_ref` names, else `refs.resolve` (HEAD, a sha, a tag, `every` None). A short name that is
+    also a tag's is the branch here, where git would take the tag."""
+    full = _full_ref(rev, every) if every else None
+    if full:
+        return next(b.tip for b in every if b.ref == full), None
+    return refs.resolve(rev, root)
+
+
 def look(root, files=None, branch=None, base=None, cfg=None):
     """Outcome(code, lines) for the repository at `root`: CLEAR, OVERLAP or CANNOT. Exactly one of
     `files` (scope members) and `branch` (a rev naming a branch) is given. `base` None is the
@@ -190,17 +200,17 @@ def look(root, files=None, branch=None, base=None, cfg=None):
         members = [normalise(f) for f in files]
         if not members:
             raise Usage('the file set is empty')
-    base_sha, why = refs.resolve(base, root)
+    every, every_why = branches(root)
+    base_sha, why = _tip(base, every, root)
     if not base_sha:
         return Outcome(CANNOT, lines + ['CANNOT ANSWER: base %s: %s' % (base, why)])
     lines.append('base      %s (%s)' % (base, base_sha[:10]))
-    every, why = branches(root)
     if every is None:
-        return Outcome(CANNOT, lines + ['CANNOT ANSWER: %s' % why])
+        return Outcome(CANNOT, lines + ['CANNOT ANSWER: %s' % every_why])
 
     excluded = {}                                       # ref -> why it is left out
     if branch is not None:
-        tip, why = refs.resolve(branch, root)
+        tip, why = _tip(branch, every, root)
         if not tip:
             return Outcome(CANNOT, lines + ['CANNOT ANSWER: --branch %s: %s' % (branch, why)])
         members, why = changed_files(base_sha, tip, root)

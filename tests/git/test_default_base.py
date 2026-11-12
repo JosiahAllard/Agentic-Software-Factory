@@ -156,6 +156,13 @@ class NetworkEnv(unittest.TestCase):
         out = cmd.network_env(['fetch'], mine)
         self.assertEqual(mine, {'PATH': 'p'})
         self.assertEqual(out['GIT_TERMINAL_PROMPT'], '0')
+        out = cmd.with_network_env(mine)        # a push's env, as the landing passes it
+        self.assertEqual(mine, {'PATH': 'p'})
+        self.assertEqual((out['PATH'], out['GCM_INTERACTIVE']), ('p', 'never'))
+        with mock.patch.dict('os.environ', {'GIT_DIR': 'elsewhere', 'PATH': 'p'}, clear=True):
+            out = cmd.with_network_env()        # None: this process's, scrubbed
+        self.assertEqual((out.get('GIT_DIR'), out['PATH'], out['GIT_TERMINAL_PROMPT']),
+                         (None, 'p', '0'))
 
     def test_call_hands_a_fetch_the_env(self):
         seen = []

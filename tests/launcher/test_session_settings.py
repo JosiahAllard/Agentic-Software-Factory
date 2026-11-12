@@ -144,7 +144,10 @@ class Launch(Base):
         self.assertEqual((never, found['deep-net-race'][0].brief), ({}, self.brief))
 
     def test_the_bash_window_with_a_spaced_settings_path_still_parses(self):
-        with mock.patch('kitlib.platform.NAME', 'linux'):
+        # the Started line asks the kit's tmux server (linuxwin.anchor_check), which reads this
+        # machine's os and tmux: fake its answer so the test depends on neither
+        with mock.patch('kitlib.platform.NAME', 'linux'), \
+                mock.patch('kitlib.launcher.linuxwin.anchor_check', return_value=(False, None)):
             text = self.deep()
             self.assertIn(' --settings %s --remote-control ' % window.q(self.rendered), text)
             self.assertIsNotNone(unlisted.read_window(text, 'deep-net-race'))

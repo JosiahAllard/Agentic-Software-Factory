@@ -13,7 +13,7 @@ from kitlib.hubsite import api, push, schema, serverepos, skilledits
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
 from tests.scrub import test_no_cites
-from tests.hubsite.test_push import FakePush, Ticks, no_watcher
+from tests.hubsite.test_push import FakePush, Ticks
 
 CLOCK = lambda: '2026-01-02T03:04:05+00:00'      # noqa: E731
 OLD = '---\nname: builder\ndescription: Builds.\n---\nold\n'
@@ -342,7 +342,6 @@ class PendingTest(EditsCase):
 
 class PushTest(unittest.TestCase):
     def setUp(self):
-        no_watcher(self)
         root = tempfile.mkdtemp(prefix='kit-skilledit-push-')
         self.addCleanup(shutil.rmtree, root, True)
         folder = os.path.join(root, 'state')

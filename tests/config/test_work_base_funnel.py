@@ -40,6 +40,8 @@ ALLOWED = {
     'kitlib/commit/run.py:_commit': (1, LANDER_MAIN + ' (main_checkout_error)'),
     'kitlib/gate/runner.py:merged_tip':
         (1, 'neither the main branch nor the work base is gated as a branch'),
+    'kitlib/guard/backlogrole.py:_landed':
+        (1, "the landed trust is a script as the local main writes it; a staging tip is not trusted"),
     'kitlib/guard/prepush.py:<module>': (1, MAIN),
     'kitlib/guard/prepush.py:_default_mains': (1, MAIN),
     'kitlib/guard/prepush.py:_exclude':

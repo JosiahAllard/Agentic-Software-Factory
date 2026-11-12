@@ -41,7 +41,6 @@ ALLOWED = {
     'kitlib/gate/runner.py:merged_tip':
         (1, 'neither the main branch nor the work base is gated as a branch'),
     'kitlib/guard/prepush.py:<module>': (1, MAIN),
-    'kitlib/guard/prepush.py:_cfg': (1, STAGING_FROM + ', so a staging tip keeps its guard'),
     'kitlib/guard/prepush.py:_default_mains': (1, MAIN),
     'kitlib/guard/prepush.py:_exclude':
         (1, 'a push that creates its branch is judged against the published main'),

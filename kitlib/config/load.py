@@ -387,6 +387,21 @@ def overlay_staging(cfg, rev):
     return cfg
 
 
+def load_at_fetched_staging(root, rev, remote):
+    """load_at(root, rev) with overlay_staging from <remote>/<main> as last fetched, when that
+    resolves to another commit than `rev`. Lenient, for the pre-push guard: a ref that does not
+    resolve, or a section there that cannot be read, leaves `rev`'s own setting."""
+    cfg = load_at(root, rev)
+    if remote and not gitrefs.bad_rev(remote):
+        main, _ = gitrefs.resolve('refs/remotes/%s/%s' % (remote, cfg.main_branch), root)
+        if main and main != rev:
+            try:
+                overlay_staging(cfg, main)
+            except ConfigError:
+                pass
+    return cfg
+
+
 # A retired key a config still writes (Config.retired): gate.py and land.py say it once a run.
 RETIRED_WARNING = 'WARNING: %s still writes "%s", a retired section or key: it is ignored; remove it'
 

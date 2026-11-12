@@ -444,23 +444,9 @@ def _default_mains(root, remote):
 
 
 def _cfg(root, remote_sha, remote):
-    """The base Config, or None when there is no base commit at all (the defaults: no push_block).
-    Its "staging" section is <remote>/<main>'s as last fetched when that is another commit
-    (kitlib.config.overlay_staging), so a staging tip whose .kit.json drops the section cannot
-    drop its own guard (docs/gate-landing.md "Staging branch"); a section there that cannot be
-    read leaves the base's own."""
+    """The base Config, or None with no base commit (the defaults); staging is the fetched main's."""
     rev = _base_rev(root, remote_sha, remote)
-    if rev is None:
-        return None
-    cfg = kconfig.load_at(root, rev)
-    if remote and not refs.bad_rev(remote):
-        main, _ = refs.resolve('refs/remotes/%s/%s' % (remote, cfg.main_branch), root)
-        if main and main != rev:
-            try:
-                kconfig.overlay_staging(cfg, main)
-            except kconfig.ConfigError:
-                pass
-    return cfg
+    return None if rev is None else kconfig.load_at_fetched_staging(root, rev, remote)
 
 
 def verify_record(root, sha):

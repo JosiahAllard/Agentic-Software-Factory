@@ -139,6 +139,25 @@ class Overlay(unittest.TestCase):
         with self.assertRaises(kconfig.ConfigError):
             kconfig.load_at(self.fx.root, self.plain, staging_from='refs/remotes/origin/nothing')
 
+    def fetched(self, rev):
+        """Point refs/remotes/origin/main at `rev`, as a fetch would."""
+        self.git('update-ref', 'refs/remotes/origin/main', rev)
+
+    def test_the_pre_push_read_takes_the_fetched_main_s_setting(self):
+        self.fetched(self.staged)
+        cfg = kconfig.load_at_fetched_staging(self.fx.root, self.plain, 'origin')
+        self.assertEqual(kconfig.work_base(cfg), 'stg')
+        self.assertEqual(cfg.section('gate')['steps'], [])
+
+    def test_the_pre_push_read_keeps_the_base_s_own_when_main_cannot_say(self):
+        self.assertEqual(kconfig.work_base(kconfig.load_at_fetched_staging(
+            self.fx.root, self.staged, 'origin')), 'stg')          # no fetched main
+        self.assertEqual(kconfig.work_base(kconfig.load_at_fetched_staging(
+            self.fx.root, self.staged, None)), 'stg')              # no remote
+        self.fetched(self.bad)
+        self.assertEqual(kconfig.work_base(kconfig.load_at_fetched_staging(
+            self.fx.root, self.staged, 'origin')), 'stg')          # a section there that is bad
+
 
 if __name__ == '__main__':
     unittest.main()

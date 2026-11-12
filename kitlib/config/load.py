@@ -328,8 +328,6 @@ def _build(root, where, reader, home=None, machine=None):
         why = ownermod.trailer_problem(owner['trailer'])
         if why:
             errs.append(why)
-    if not errs:
-        _staging_rules(raw, '', errs)
     if isinstance(raw.get('gate'), dict) and not errs:     # cross-field rules walk checked types only
         _gate_rules(raw['gate'], errs)
         hooked = isinstance(hook, dict) and hook.get('module')
@@ -340,18 +338,22 @@ def _build(root, where, reader, home=None, machine=None):
                         % ', '.join(checks))
     if errs:
         raise ConfigError('%s: %s' % (where, '; '.join(errs)))
-    return Config(root, where, raw, files, found=text is not None, home=home, machine=machine,
-                  retired=retired)
+    cfg = Config(root, where, raw, files, found=text is not None, home=home, machine=machine,
+                 retired=retired)
+    why = _staging_problem(cfg.written('staging', 'branch'), lambda: cfg.main_branch)
+    if why:
+        raise ConfigError('%s: %s' % (where, why))
+    return cfg
 
 
-def _staging_rules(raw, where, errs):
-    """`"staging".branch` names a branch other than the main branch `raw` writes (or, writing
-    none, than the fixed default main)."""
-    branch = (raw.get('staging') or {}).get('branch')
-    main = (raw.get('repo') or {}).get('main_branch') or FIXED_MAIN
-    if branch is not None and branch == main:
-        errs.append('%s"staging".branch is %s, the main branch itself: name another branch, or '
-                    'leave staging unset' % (where, branch))
+def _staging_problem(branch, main):
+    """None, or why `"staging".branch` cannot be `branch`: it names the main branch itself.
+    `main()` gives the main branch, written or derived from the repository (Config.main_branch),
+    read only when a staging branch is set."""
+    if branch is not None and branch == main():
+        return ('"staging".branch is %s, the main branch itself: name another branch, or leave '
+                'staging unset' % branch)
+    return None
 
 
 def overlay_staging(cfg, rev):
@@ -376,7 +378,9 @@ def overlay_staging(cfg, rev):
             schema.section_type('staging').check(value, '"staging"', errs)
             raw['staging'], files['staging'] = copy.deepcopy(value), None
     if not errs:
-        _staging_rules(raw, '', errs)
+        why = _staging_problem((raw.get('staging') or {}).get('branch'), lambda: cfg.main_branch)
+        if why:
+            errs.append(why)
     if errs:
         raise ConfigError('%s, staging read from %s: %s' % (cfg.where, where, '; '.join(errs)))
     cfg._raw, cfg._files = raw, files

@@ -396,8 +396,10 @@ class Lander(Checks, Merge, MergedGate, Push, After):
     def read_staging(self, head):
         """The first read's staging setting from <remote>/<main> as last fetched, over the main
         checkout's own (kitlib.config.overlay_staging), when that ref is another commit than
-        `head`. A config there that cannot be read leaves the checkout's own: follow() reads it
-        again after the fetch, and refuses there."""
+        `head`. A config there that cannot be read leaves the checkout's own setting. follow()
+        reads <remote>/<main> again after the fetch, and refuses on such a config, but only when
+        the base the fetch finds is not the commit the config was read at (onto_origin); when it
+        is, the landing goes on with the checkout's own setting."""
         src = self.ref(self.main_tracking())
         if src and src != head:
             try:

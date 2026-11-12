@@ -1113,6 +1113,31 @@ class DeltaApprovals(DeltaCase):
         again = self.agent_commit({'CLAUDE.md': self.new}, subject='the same edit, rebuilt')
         self.refused(again, 'spent: landed in %s' % first[:12], main=None)
 
+    def staging_named_by_main(self, landed):
+        """`landed` on refs/remotes/origin/staging, and main as fetched a commit whose .kit.json
+        names that staging branch (docs/gate-landing.md "Staging branch"); the checkout's own
+        .kit.json names none. Returns main as fetched."""
+        self.repo.git('update-ref', 'refs/remotes/origin/staging', landed)
+        self.repo.git('reset', '-q', '--hard', self.main)
+        on = self.commit_as(OWNER, 'staging on',
+                            {'.kit.json': json.dumps({'staging': {'branch': 'staging'}})})
+        self.repo.git('update-ref', MAIN, on)
+        self.repo.git('reset', '-q', '--hard', self.main)
+        return on
+
+    def test_with_a_staging_branch_an_approval_that_landed_there_is_spent(self):
+        self.approve({'CLAUDE.md': self.new})
+        first = self.agent_commit({'CLAUDE.md': self.new})
+        self.staging_named_by_main(first)
+        again = self.agent_commit({'CLAUDE.md': self.new}, subject='the same edit, rebuilt')
+        self.refused(again, 'spent: landed in %s' % first[:12], main=None)
+
+    def test_with_a_staging_branch_on_main_asks_the_staging_branch(self):
+        landed = self.commit_as(AGENT, 'landed on staging', {'a.py': 'a\n'})
+        on = self.staging_named_by_main(landed)
+        self.assertEqual(ap.on_main(self.repo.root, landed), (True, None))
+        self.assertEqual(ap.on_main(self.repo.root, on), (False, None))
+
     def test_the_commit_that_landed_is_not_spent_by_itself(self):
         self.approve({'CLAUDE.md': self.new})
         sha = self.agent_commit({'CLAUDE.md': self.new})

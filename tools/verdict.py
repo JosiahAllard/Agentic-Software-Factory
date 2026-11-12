@@ -48,12 +48,12 @@
       after a main sync of a queued branch: move B's verdict to B's head when every commit after
       the review is a conflict-free merge of main and B's own diff against main is the one
       reviewed (docs/gate-landing-policy.md "Carrying a verdict forward"), checked against main as last fetched
-      (`<remote>/<main_branch>`). Prints `CARRIED <branch> <head> from reviewed <sha>: ...`, or
+      (`<remote>/<work base>`: the staging branch when set, kitlib.config.work_base). Prints `CARRIED <branch> <head> from reviewed <sha>: ...`, or
       `NOT CARRIED: <why>` (exit 1, nothing written; review and queue the head instead).
   verdict.py list [-C DIR]
       first drops each entry that waits to land no more (verdicts.expire), one line each:
       `EXPIRED <branch> <tip>: landed: ...` when the tip is in main as last fetched
-      (`<remote>/<main_branch>`), `EXPIRED <branch> <tip>: superseded: ...` when it is not and the
+      (`<remote>/<work base>`), `EXPIRED <branch> <tip>: superseded: ...` when it is not and the
       branch is gone; `KEPT ALL: ...` when main as fetched cannot be read (nothing dropped). Then
       one line per entry left, oldest first: `<STATE> <branch> <tip> <risk> <verdict> <queued_utc> ...`
       (`carried_from=<sha>` on a carried one); `BAD <file>: <why>` for a file in the queue that is
@@ -212,7 +212,7 @@ def carry(a, common_dir):
     root = os.path.abspath(a.root)
     try:
         cfg = kconfig.load(root)
-        remote, main = cfg.remote, cfg.main_branch
+        remote, main = cfg.remote, kconfig.work_base(cfg)
     except kconfig.ConfigError as e:
         return fail('NOT CARRIED', 'the kit configuration cannot be read: %s' % e, NOT_DONE)
     base, why = refs.remote_tip(remote, main, root)

@@ -117,8 +117,20 @@ def fetch_say(exc, root=None):
 def main_commit(root):
     """The commit of the main branch of the repository at `root`: the branch `.kit.json` names
     (repo.main_branch), else `main`, else `master`. ReadError when it is not there (a misnamed
-    main branch is a failure, never an empty store) or git cannot tell."""
-    named = (hubbacklog.kit_json(root).get("repo") or {}).get("main_branch")
+    main branch is a failure, never an empty store) or git cannot tell. With a staging branch set
+    (docs/gate-landing.md "Staging branch") it is the work base: the staging branch as last
+    fetched (hubbacklog.staging), which landings push and records land on."""
+    kit = hubbacklog.kit_json(root)
+    try:
+        on = hubbacklog.staging(root, kit)
+    except RuntimeError as exc:
+        raise ReadError(kind(str(exc), BAD_STORE))
+    if on:
+        commit, why = refs.ref_commit("refs/remotes/%s/%s" % on, root)
+        if not commit:
+            raise ReadError(kind(why, BAD_REF))
+        return commit
+    named = (kit.get("repo") or {}).get("main_branch")
     for branch in ([named] if named else ["main", "master"]):
         commit, why = refs.ref_commit("refs/heads/%s" % branch, root)
         if commit is None:

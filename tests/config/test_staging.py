@@ -68,6 +68,14 @@ class Rules(unittest.TestCase):
         self.assertIn('the main branch itself', self.refused(
             {'repo': {'main_branch': 'trunk'}, 'staging': {'branch': 'trunk'}}))
 
+    def test_an_unwritten_main_is_the_one_read_from_the_repository(self):
+        # .kit.json writes no main_branch: the derived one (kitlib.git.defaults), not 'main'
+        with mock.patch('kitlib.config.load.gitdefaults.main_branch', return_value='trunk'):
+            self.assertIn('"staging".branch is trunk, the main branch itself',
+                          self.refused({'staging': {'branch': 'trunk'}}))
+            cfg = load({'staging': {'branch': 'main'}})
+        self.assertEqual((cfg.main_branch, kconfig.work_base(cfg)), ('trunk', 'main'))
+
     def test_a_name_that_is_no_branch_is_refused(self):
         self.refused({'staging': {'branch': '-x'}})
         self.refused({'staging': {'branch': ''}})

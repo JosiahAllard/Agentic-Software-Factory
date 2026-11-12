@@ -33,6 +33,8 @@ their change is the approved one (Verifier) and fail closed on any doubt.
                                   ApprovalError
   on_main(checkout, sha)          (True/False, None): whether main as last fetched reaches the
                                   commit `sha`, or (None, why)
+  landed_ref(checkout, cfg)       the ref landings reach as last fetched: main's, or the
+                                  staging branch main names
   decide_fields(key, doc_id, doc, decision, now)
                                   the fields a decision writes; ApprovalError
   consume_fields(key, doc_id, doc, commit, now)
@@ -609,15 +611,31 @@ def supersede_fields(doc_id, doc, by, who, now):
     return {'superseded': {'by': by, 'from': who, 'at': _iso(now)}}
 
 
+def landed_ref(checkout, cfg):
+    """The ref landings reach, as last fetched: refs/remotes/<remote>/<main> of `cfg` (the
+    checkout's config), or refs/remotes/<remote>/<staging> when `.kit.json` at main as fetched
+    names a staging branch (docs/gate-landing.md "Staging branch": landings push it). The setting
+    is read from main, never the checkout, so a branch cannot drop it; main not fetched leaves the
+    checkout's own. ConfigError when main's staging setting is not well formed."""
+    from kitlib import config as kconfig
+    from kitlib.git import refs
+    main = 'refs/remotes/%s/%s' % (cfg.remote, cfg.main_branch)
+    sha, _why = refs.resolve(main, checkout, known=True)
+    if sha:
+        kconfig.overlay_staging(cfg, sha)
+    if kconfig.staging_on(cfg):
+        return 'refs/remotes/%s/%s' % (cfg.remote, kconfig.work_base(cfg))
+    return main
+
+
 def on_main(checkout, sha):
-    """(True/False, None): whether main as last fetched (refs/remotes/<remote>/<main> of the
-    checkout's config, as kitlib.ownerfiles.rules names it) reaches the commit `sha`; (None,
-    why) when that cannot be told (no main, an unknown commit, git failing)."""
+    """(True/False, None): whether main as last fetched (landed_ref of the checkout's config:
+    the staging branch when one is set, as kitlib.ownerfiles.rules names it) reaches the commit
+    `sha`; (None, why) when that cannot be told (no main, an unknown commit, git failing)."""
     from kitlib import config as kconfig
     from kitlib.git import refs
     try:
-        cfg = kconfig.load(checkout)
-        ref = 'refs/remotes/%s/%s' % (cfg.remote, cfg.main_branch)
+        ref = landed_ref(checkout, kconfig.load(checkout))
     except Exception as e:      # noqa: BLE001 - fail closed: no main reaches nothing
         return None, 'main cannot be named: %s' % e
     return refs.is_ancestor(sha, ref, checkout)

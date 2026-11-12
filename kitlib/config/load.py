@@ -154,6 +154,7 @@ class Config(object):
         self._raw = raw          # name -> dict as written (absent sections are {})
         self._files = files      # name -> repo-relative file it came from, or None (inline/absent)
         self._derived = {}       # repo.main_branch, repo.name, the machine owner email, each read once
+        self._held = ()          # branches guarded_mains also holds (load_at_fetched_staging)
 
     def raw(self, name):
         return copy.deepcopy(self._raw.get(name, {}))
@@ -220,11 +221,30 @@ class Config(object):
         """The branches the push rules (guard, pre-push) hold as main: main_branch, and, while
         `.kit.json` writes no main_branch, `main` too, the fixed default before it was read from
         the repository: `<remote>/HEAD` is local and any session can repoint it, so reading it
-        never takes the protection off `main`."""
+        never takes the protection off `main`. Also any branch load_at_fetched_staging kept."""
         main = self.main_branch
+        out = [main]
         if self.written('repo', 'main_branch') is None and main != FIXED_MAIN:
-            return [main, FIXED_MAIN]
-        return [main]
+            out.append(FIXED_MAIN)
+        base = self.work_base
+        if base not in out:     # the staging branch: held as main too (no delete, no forced push)
+            out.append(base)
+        return out + [b for b in self._held if b not in out]
+
+    @property
+    def work_base(self):
+        """The branch work lands on and starts from: `"staging".branch` when written (and not
+        the main branch itself), else main_branch. Callers read it through kitlib.config.work_base,
+        never main_branch, wherever they mean the base work merges onto (docs/gate-landing.md
+        "Staging branch")."""
+        main = self.main_branch
+        branch = self.written('staging', 'branch')
+        return branch if branch and branch != main else main
+
+    @property
+    def staging_on(self):
+        """True when the work base is a staging branch, not the main branch."""
+        return self.work_base != self.main_branch
 
     @property
     def remote(self):
@@ -319,8 +339,72 @@ def _build(root, where, reader, home=None, machine=None):
                         % ', '.join(checks))
     if errs:
         raise ConfigError('%s: %s' % (where, '; '.join(errs)))
-    return Config(root, where, raw, files, found=text is not None, home=home, machine=machine,
-                  retired=retired)
+    cfg = Config(root, where, raw, files, found=text is not None, home=home, machine=machine,
+                 retired=retired)
+    why = _staging_problem(cfg.written('staging', 'branch'), lambda: cfg.main_branch)
+    if why:
+        raise ConfigError('%s: %s' % (where, why))
+    return cfg
+
+
+def _staging_problem(branch, main):
+    """None, or why `"staging".branch` cannot be `branch`: it names the main branch itself.
+    `main()` gives the main branch, written or derived from the repository (Config.main_branch),
+    read only when a staging branch is set."""
+    if branch is not None and branch == main():
+        return ('"staging".branch is %s, the main branch itself: name another branch, or leave '
+                'staging unset' % branch)
+    return None
+
+
+def overlay_staging(cfg, rev):
+    """Replace `cfg`'s "staging" section with the one `.kit.json` at `rev` writes (none there:
+    none here). The staging setting is read from <remote>/<main> alone, never from the branch
+    being merged onto, so a change on that branch cannot turn staging on or off (docs/gate-landing.md
+    "Staging branch"). Only that section of `rev`'s file is read and checked. ConfigError when it
+    cannot be read or is not well formed, or names `cfg`'s main branch."""
+    where = '%s:%s' % (rev, CONFIG_NAME)
+    text = _git_show(cfg.root, rev, CONFIG_NAME)
+    top = {} if text is None else _parse(text, where)
+    errs = []
+    raw = dict(cfg._raw)
+    files = dict(cfg._files)
+    raw.pop('staging', None)
+    files.pop('staging', None)
+    if 'staging' in top:
+        value = top['staging']
+        if not isinstance(value, dict):
+            errs.append('%s: section "staging" must be an object' % where)
+        else:
+            schema.section_type('staging').check(value, '"staging"', errs)
+            raw['staging'], files['staging'] = copy.deepcopy(value), None
+    if not errs:
+        why = _staging_problem((raw.get('staging') or {}).get('branch'), lambda: cfg.main_branch)
+        if why:
+            errs.append(why)
+    if errs:
+        raise ConfigError('%s, staging read from %s: %s' % (cfg.where, where, '; '.join(errs)))
+    cfg._raw, cfg._files = raw, files
+    return cfg
+
+
+def load_at_fetched_staging(root, rev, remote):
+    """load_at(root, rev) with overlay_staging from <remote>/<main> as last fetched, when that
+    resolves to another commit than `rev`. For the pre-push guard, never looser than `rev`'s own
+    read: guarded_mains holds the union of both (a stale fetch of main can name no staging
+    branch), and a ref that does not resolve, or a section there that cannot be read, leaves
+    `rev`'s own setting."""
+    cfg = load_at(root, rev)
+    if remote and not gitrefs.bad_rev(remote):
+        main, _ = gitrefs.resolve('refs/remotes/%s/%s' % (remote, cfg.main_branch), root)
+        if main and main != rev:
+            own = cfg.guarded_mains()
+            try:
+                overlay_staging(cfg, main)
+            except ConfigError:
+                pass
+            cfg._held = tuple(own)
+    return cfg
 
 
 # A retired key a config still writes (Config.retired): gate.py and land.py say it once a run.
@@ -356,11 +440,16 @@ def load(root, home=None, machine=None):
                   home, machine)
 
 
-def load_at(root, rev, home=None):
+def load_at(root, rev, home=None, staging_from=None):
     """The Config revision `rev` holds (`.kit.json` and its section files read with git show).
-    The defaults read from the repository read `root`'s files as they are now."""
-    return _build(root, '%s:%s' % (rev, CONFIG_NAME),
-                  lambda rel: _git_show(root, rev, CONFIG_NAME if rel is None else rel), home)
+    The defaults read from the repository read `root`'s files as they are now. `staging_from`: a
+    revision whose "staging" section replaces `rev`'s (overlay_staging), the one loader a landing
+    reads its base's config with (the base's gate and owner rules, <remote>/<main>'s staging)."""
+    cfg = _build(root, '%s:%s' % (rev, CONFIG_NAME),
+                 lambda rel: _git_show(root, rev, CONFIG_NAME if rel is None else rel), home)
+    if staging_from is not None and staging_from != rev:
+        overlay_staging(cfg, staging_from)
+    return cfg
 
 
 def check_value(type_, value, where):

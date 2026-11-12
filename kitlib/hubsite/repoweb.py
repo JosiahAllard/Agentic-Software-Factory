@@ -65,22 +65,25 @@ def web_url(remote):
     return 'https://%s/%s' % (host, '/'.join(parts))
 
 
-def _main_branch(root):
+def _landed_branch(root):
+    """(rev, name) of the branch landed files are on (hubbacklog.landed_branch: the main branch,
+    or the staging branch as last fetched when one is set), or (None, None)."""
     try:
-        return hubbacklog.main_branch(root, hubbacklog.kit_json(root))
+        return hubbacklog.landed_branch(root, hubbacklog.kit_json(root))
     except RuntimeError:
-        return None
+        return None, None
 
 
 def _read(root):
     """{web, branch, top} of the checkout at `root`, or {}: no origin, not a web address of a
-    known host, no main branch, or git failed."""
+    known host, no main branch, or git failed. `branch` is the one landed work is on (the
+    staging branch when set, docs/gate-landing.md "Staging branch")."""
     url, _ = cmd.run_text(['remote', 'get-url', 'origin'], root, timeout=GIT_S)
     web = web_url(url) if url else None
-    branch = _main_branch(root) if web else None
+    rev, branch = _landed_branch(root) if web else (None, None)
     if not branch:
         return {}
-    out, _ = cmd.run_text(['ls-tree', '--name-only', branch], root, timeout=GIT_S)
+    out, _ = cmd.run_text(['ls-tree', '--name-only', rev], root, timeout=GIT_S)
     top = sorted({n.strip('"') for n in (out or '').split('\n') if n})[:MAX_TOP]
     return {'web': web, 'branch': branch, 'top': top}
 

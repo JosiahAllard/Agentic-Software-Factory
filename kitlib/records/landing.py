@@ -12,9 +12,10 @@ of two takers exactly one wins - and holds one JSON object:
                   holder: the command that took it has exited)
   token           the secret a release or a phase change must quote
   started_utc     when it was taken
-  main_branch     the main branch it guards
-  origin_at_take  refs/remotes/<remote>/<main> when it was taken
-  main_at_take    refs/heads/<main> when it was taken
+  main_branch     the branch it guards: the base landings push (the work base, the staging
+                  branch when one is set, kitlib.config.work_base), else the main branch
+  origin_at_take  refs/remotes/<remote>/<that branch> when it was taken
+  main_at_take    refs/heads/<main> when it was taken (the main checkout's own main)
   phase           merge | gate | push | stuck; undo is retired (no landing sets it), and a
                   lock file an older kit left at it still reads
 
@@ -27,7 +28,8 @@ never happens by age (a gate may run an hour). It is refused unless BOTH
     another start time is a reused pid: gone; one that cannot be inspected: alive), or a token
     holder (or a JSON object of an old format) the caller declares gone with holder_gone=True, AND
   - <main> == <remote>/<main> and the main checkout has no MERGE_HEAD (`<common dir>/MERGE_HEAD`,
-    whichever checkout asks): nothing unpushed exists.
+    whichever checkout asks): nothing unpushed exists. With a staging branch the base (`base`),
+    only the MERGE_HEAD half: a landing onto it never moves the main checkout's main.
 A file that cannot be read, is empty, or is not a JSON object is never broken, holder_gone or not:
 a taker between its create and its write leaves it so. Such a file is cleared by hand.
 Just before removing, a break re-reads the file and refuses when it is no longer the one judged
@@ -46,6 +48,7 @@ import os
 import secrets
 import time
 
+import kitlib.config as kconfig
 from kitlib.fs import replace as fsreplace
 from kitlib.git import refs, repo
 
@@ -133,7 +136,7 @@ class LandingLock(object):
     own."""
 
     def __init__(self, root, main='main', remote='origin',
-                 start_of=process_start, is_alive=process_alive):
+                 start_of=process_start, is_alive=process_alive, base=None):
         common, why = repo.common_dir(root)
         if not common:
             raise LockError('no git common dir for %s: %s' % (root, why))
@@ -141,10 +144,14 @@ class LandingLock(object):
         self.common = common
         self.path = os.path.join(common, LOCK_NAME)
         self.main, self.remote = main, remote
+        self.base = base or main    # the branch landings push: a staging branch, or main
         self.start_of, self.is_alive = start_of, is_alive
 
     @classmethod
     def for_config(cls, root, cfg, **kw):
+        base = kconfig.work_base(cfg)
+        if base != cfg.main_branch:
+            kw.setdefault('base', base)
         return cls(root, cfg.main_branch, cfg.remote, **kw)
 
     # ---------------------------------------------------------------- reading
@@ -198,8 +205,8 @@ class LandingLock(object):
             # `lane` is read by no tool here: an older kit refuses a record without it.
             'lane': FULL, 'branches': list(branches), 'pid': pid,
             'pid_start': self.start_of(pid) if pid is not None else None,
-            'token': secrets.token_hex(8), 'started_utc': _utc(now), 'main_branch': self.main,
-            'origin_at_take': self._ref('refs/remotes/%s/%s' % (self.remote, self.main)),
+            'token': secrets.token_hex(8), 'started_utc': _utc(now), 'main_branch': self.base,
+            'origin_at_take': self._ref('refs/remotes/%s/%s' % (self.remote, self.base)),
             'main_at_take': self._ref('refs/heads/%s' % self.main), 'phase': 'merge',
         }
         try:
@@ -285,7 +292,12 @@ class LandingLock(object):
     # ---------------------------------------------------------------- breaking
 
     def unpushed(self):
-        """None when <main> == <remote>/<main> and the main checkout has no MERGE_HEAD, else why."""
+        """None when <main> == <remote>/<main> (not asked with a staging base) and the main
+        checkout has no MERGE_HEAD, else why."""
+        if self.base != self.main:
+            if os.path.exists(os.path.join(self.common, 'MERGE_HEAD')):
+                return 'a merge is in progress in the main checkout (MERGE_HEAD)'
+            return None
         m = self._ref('refs/heads/%s' % self.main)
         o = self._ref('refs/remotes/%s/%s' % (self.remote, self.main))
         if not m or not o:
@@ -360,8 +372,8 @@ class LandingLock(object):
             return 'nobody holds the landing lock: take it before a merged-tree gate'
         if rec.get('phase') == 'stuck':
             return 'the landing lock is stuck (a landing stopped half-way): %s' % describe(rec)
-        origin = self._ref('refs/remotes/%s/%s' % (self.remote, self.main))
+        origin = self._ref('refs/remotes/%s/%s' % (self.remote, self.base))
         if not origin or origin != rec.get('origin_at_take'):
             return ('%s/%s is %s, and the lock was taken at %s: it moved under this landing'
-                    % (self.remote, self.main, (origin or '?')[:10], (rec.get('origin_at_take') or '?')[:10]))
+                    % (self.remote, self.base, (origin or '?')[:10], (rec.get('origin_at_take') or '?')[:10]))
         return None

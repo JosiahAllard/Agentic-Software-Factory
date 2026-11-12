@@ -3,7 +3,8 @@
 One store document per repository: backlog/<repo> holds its open records and completed/<repo> what
 closed in the last DAYS days. Read from git, never the working tree, at the store `.kit.json` names
 (kitlib.backlog.store_open.open_backend; absent: the hidden ref's local copy, no fetch) or, for a
-folder store, its folder on the main branch, so only published records show. A record closes either
+folder store, its folder on the main branch (the staging branch as last fetched when one is set:
+landed_branch), so only published records show. A record closes either
 by a `closed: <date>` line (it stays in the store) or by its file being deleted from the store (the
 commit's date; its summary from the parent commit).
 """
@@ -93,6 +94,37 @@ def main_branch(root, cfg):
     raise RuntimeError("no main branch in " + root)
 
 
+def staging(root, cfg):
+    """(remote, branch) of the staging branch `.kit.json` "staging".branch names, the work base
+    (docs/gate-landing.md "Staging branch"), read through kitlib.config.work_base; None when
+    staging is off. `cfg` is the raw `.kit.json` (kit_json): without the section the config is not
+    loaded, so a repository without staging reads exactly as before. A config that cannot be
+    loaded raises RuntimeError."""
+    section = cfg.get("staging")
+    if not (isinstance(section, dict) and section.get("branch")):
+        return None
+    try:
+        full = kconfig.load(root)
+    except kconfig.ConfigError as exc:
+        raise RuntimeError("config: %s" % exc)
+    return (full.remote, kconfig.work_base(full)) if kconfig.staging_on(full) else None
+
+
+def landed_branch(root, cfg):
+    """(rev, name) of the branch landed work is on: with staging on, the staging branch at
+    `refs/remotes/<remote>/<staging>` as last fetched (a landing pushes it and never moves a
+    local branch; no fetch here); else main_branch(root, cfg) for both. A staging branch not
+    fetched raises RuntimeError, as a missing main does: never main's records instead."""
+    on = staging(root, cfg)
+    if on:
+        rev = "refs/remotes/%s/%s" % on
+        if not has_rev(root, rev + "^{commit}"):
+            raise RuntimeError("the staging branch %s cannot be read (not fetched?)" % rev)
+        return rev, on[1]
+    main = main_branch(root, cfg)
+    return main, main
+
+
 def blobs(root, specs):
     """The text of each `rev:path` in specs, in order ("" for one that does not exist)."""
     if not specs:
@@ -167,7 +199,7 @@ def store_at(root, main):
 def snapshot(name, root, now=None, days=DAYS):
     """(backlog doc, completed doc) for one repository; empty item lists when it has no store."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
-    ref, store = store_at(root, main_branch(root, kit_json(root)))
+    ref, store = store_at(root, landed_branch(root, kit_json(root))[0])
     since = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
     open_items, done = [], []
     if ref is None:

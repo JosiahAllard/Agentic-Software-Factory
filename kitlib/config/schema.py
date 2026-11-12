@@ -199,7 +199,7 @@ SECTIONS = {
                        'the record store: ref (refs/backlog/main), branch (the backlog branch), main (docs/backlog) or a folder (docs/backlog.md); the default ref is read-only, so a repository that writes records names its store'),
         'phases': Field(Strs, [], 'phase names in order'),
         'id_grammar': Field(Enum('upper', 'mixed'), 'upper', 'item id spelling'),
-        'code_main': Field(Str(), None, 'the branch code lands on, which `add --found-on` measures a branch\'s diff from; default repo.main_branch'),
+        'code_main': Field(Str(), None, 'the branch code lands on, which `add --found-on` measures a branch\'s diff from; default the work base (staging.branch when set, else repo.main_branch)'),
         'cap': Field(Int(1, None), 5, 'most records `backlog.py next` offers and `pull` takes in order (`next --cap` overrides it for one call); every worktree reads the main checkout\'s value'),
         'resources': Field(MapOf(Int(1, None), 'name', key=Str(pattern=r'[a-z0-9][a-z0-9-]*', what='a lower-case resource name')), {},
                            'limited resources and how many live pulls may use each at once: a record names one with `uses:`, and `next` passes it over at capacity (docs/backlog.md "Resources"); every worktree reads the main checkout\'s value'),
@@ -328,6 +328,10 @@ SECTIONS = {
     'review_pack': {
         'coauthor': Field(Bool(), False, 'list the branch\'s commits with no Co-Authored-By trailer, judged by the trailers rule; a warning, never a block'),
     },
+    'staging': {
+        'branch': Field(Str(pattern=r'[A-Za-z0-9][A-Za-z0-9._/-]*', what='a branch name'), None,
+                        'the staging branch: landings merge onto <remote>/<branch> and push to it, and work branches start from it (the work base, kitlib.config.work_base); unset: off, the work base is repo.main_branch; read from <remote>/<repo.main_branch>, never from the branch being merged onto (docs/gate-landing.md "Staging branch")'),
+    },
     'tool_tests': {
         'mentions': Field(Enum('path', 'tokens'), 'path', 'how a tool mention is found'),
         'selector_files': Field(Strs, ['tool_deps.py', 'pytests.py'], 'changes that select every test'),
@@ -368,7 +372,8 @@ SECTIONS = {
 # .kit.json would let a change to it widen what agent sessions may write past the kit-json rule.
 # modules never: a file beside .kit.json would let an agent repoint the owner's module map.
 # kinds never: a file beside .kit.json would let a change to it size runs without the owner.
-FILE_OK = frozenset(SECTIONS) - {'repo', 'owner', 'hook', 'guard', 'modules', 'kinds'}
+# staging never: it is read from <remote>/<main> alone (load_at staging_from), one key inline.
+FILE_OK = frozenset(SECTIONS) - {'repo', 'owner', 'hook', 'guard', 'modules', 'kinds', 'staging'}
 # Sections whose content is a table the kit does not shape-check (an object of anything).
 OPAQUE = frozenset(('forbidden', 'pieces'))
 # Sections that are a map of one entry type: (entry type, key name, doc, key type or None).

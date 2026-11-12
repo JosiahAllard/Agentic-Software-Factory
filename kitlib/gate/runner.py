@@ -179,13 +179,14 @@ def changed_between(root, a, b):
 
 
 def default_base(cfg, root):
-    """`(ref, note)`: kitlib.git.refs.default_base (`<remote>/<main>` when it resolves, else
-    `<main>`; `note` says when the local main differs), or `(None, why)` when neither resolves."""
-    ref, note = refs.default_base(root, cfg.remote, cfg.main_branch)
+    """`(ref, note)`: kitlib.git.refs.default_base of the work base (kitlib.config.work_base:
+    `<remote>/<base>` when it resolves, else `<base>`; `note` says when the local one differs), or
+    `(None, why)` when neither resolves."""
+    base = kconfig.work_base(cfg)
+    ref, note = refs.default_base(root, cfg.remote, base)
     if refs.resolve(ref, root)[0]:
         return ref, note
-    return None, 'neither %s/%s nor %s resolves: pass --base' % (cfg.remote, cfg.main_branch,
-                                                                  cfg.main_branch)
+    return None, 'neither %s/%s nor %s resolves: pass --base' % (cfg.remote, base, base)
 
 
 # ---------------------------------------------------------------- running steps
@@ -600,7 +601,7 @@ def merged_tip(cfg, root, branch, tree):
     (refs.is_ancestor) for a clean work tree (`tree`, tested_tree, not None) on a branch other
     than the main branch; None otherwise: a detached HEAD, uncommitted files (they are what is
     gated), a no, or any git failure (the gate runs)."""
-    if not branch or tree is None or branch == cfg.main_branch:
+    if not branch or tree is None or branch in (cfg.main_branch, kconfig.work_base(cfg)):
         return None
     try:
         head, _ = refs.head(root)

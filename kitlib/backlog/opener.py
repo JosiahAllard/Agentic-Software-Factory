@@ -78,9 +78,9 @@ def open_store(root, fetch=True, session=None, branch=None, *, probes):
     if code is not None:
         # The PM data worktree: its own main and remote are the data's; the code lands on the
         # main checkout's (docs/backlog.md "The fold-in guard").
-        code_main, code_remote = code_main or code.main_branch, code.remote
+        code_main, code_remote = code_main or kconfig.work_base(code), code.remote
     ctx = pmod.Context(store, top, remote=cfg.remote, main_branch=cfg.main_branch,
-                       branch=branch, code_main=code_main or cfg.main_branch,
+                       branch=branch, code_main=code_main or kconfig.work_base(cfg),
                        code_remote=code_remote,
                        liveness=None if live is None else (lambda name: live(top, name)),
                        quiet=None if quiet is None else (

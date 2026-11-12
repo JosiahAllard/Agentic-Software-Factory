@@ -64,6 +64,7 @@ from kitlib import kitroot
 from kitlib.preflight import paths
 from kitlib.config import ConfigError, load as load_config, load_at
 from kitlib.config import owner as ownermod
+import kitlib.config as kconfig
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
 from kitlib.git import repo as gitrepo
@@ -632,7 +633,7 @@ def _pack(lines, path, branch, base, diff):
     try:
         if base is None:
             cfg = load_config(top)
-            base, note = gitrefs.default_base(top, cfg.remote, cfg.main_branch)
+            base, note = gitrefs.default_base(top, cfg.remote, kconfig.work_base(cfg))
             base_note = note
             if note and not diff:
                 lines.append('%s: %s' % (TOOL, note))

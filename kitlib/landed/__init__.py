@@ -2,7 +2,8 @@
 
 `look(root, ref)` -> Outcome(code, lines). It never loops, sleeps, fetches or writes.
 
-LANDED: the tip is an ancestor of the main branch (`.kit.json` "repo".main_branch) ON THE REMOTE
+LANDED: the tip is an ancestor of the work base (kitlib.config.work_base: `.kit.json`
+"staging".branch when set, else "repo".main_branch; called the main branch below) ON THE REMOTE
 ("repo".remote, read with `git ls-remote`) when the clone has that remote, else, in a clone with
 no remote at all, of the local main branch (that remote missing beside others: CANNOT ANSWER). A
 remote that cannot be reached falls back to the last fetched `refs/remotes/<remote>/<main>`
@@ -33,6 +34,7 @@ import collections
 import os
 import re
 
+import kitlib.config as kconfig
 from kitlib.config import ConfigError, load
 from kitlib.git import cmd, refs, repo
 from kitlib.records import gate_ok, landing, place
@@ -212,7 +214,7 @@ def look(root, ref):
         lock = landing.LandingLock.for_config(root, cfg)
     except (ConfigError, landing.LockError) as e:
         return Outcome(CANNOT, ['landed: refused: kit configuration: %s' % e])
-    main_branch, remote = cfg.main_branch, cfg.remote
+    main_branch, remote = kconfig.work_base(cfg), cfg.remote
     tip, why = refs.resolve(ref, root, known=True)
     if tip is None:
         return Outcome(CANNOT, ['landed: CANNOT ANSWER: `%s` could not be read in %s: %s'

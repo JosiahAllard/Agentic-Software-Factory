@@ -64,6 +64,22 @@ class WebsTests(unittest.TestCase):
         self.assertEqual(got, [{'name': 'a', 'aliases': [], 'web': 'https://github.com/o/r',
                                 'branch': 'main', 'top': ['README.md', 'docs']}])
 
+    def test_with_a_staging_branch_the_links_name_it_and_its_root_names(self):
+        # docs/gate-landing.md "Staging branch": landed files are on the staging branch as fetched
+        root = self.repo('s', 'git@github.com:o/r.git')
+        git(root, 'checkout', '-q', '--detach')
+        with open(os.path.join(root, 'NEW.md'), 'w') as f:
+            f.write('x')
+        git(root, 'add', 'NEW.md')
+        git(root, '-c', 'user.name=t', '-c', 'user.email=t@t.test', 'commit', '-q', '-m', 's')
+        git(root, 'update-ref', 'refs/remotes/origin/staging', 'HEAD')
+        git(root, 'checkout', '-q', 'main')
+        with open(os.path.join(root, '.kit.json'), 'w') as f:
+            f.write('{"staging": {"branch": "staging"}}')
+        got = repoweb.Webs(lambda: [('S', root)]).annotate([{'name': 's', 'aliases': []}])
+        self.assertEqual(got[0]['branch'], 'staging')
+        self.assertEqual(got[0]['top'], ['NEW.md', 'README.md', 'docs'])
+
     def test_a_repo_with_no_origin_a_foreign_host_or_no_checkout_is_unchanged(self):
         none, other = self.repo('n'), self.repo('o', 'https://bitbucket.org/o/r')
         repos = [{'name': n, 'aliases': []} for n in ('n', 'o', 'x', 'y')]

@@ -444,9 +444,9 @@ def _default_mains(root, remote):
 
 
 def _cfg(root, remote_sha, remote):
-    """The base Config, or None when there is no base commit at all (the defaults: no push_block)."""
+    """The base Config, or None with no base commit (the defaults); staging is the fetched main's."""
     rev = _base_rev(root, remote_sha, remote)
-    return None if rev is None else kconfig.load_at(root, rev)
+    return None if rev is None else kconfig.load_at_fetched_staging(root, rev, remote)
 
 
 def verify_record(root, sha):

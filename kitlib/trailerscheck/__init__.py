@@ -20,6 +20,7 @@ import collections
 
 from kitlib.config import ConfigError, load as load_config, load_at
 from kitlib.config import owner as ownermod
+import kitlib.config as kconfig
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
 from . import trailers
@@ -91,19 +92,19 @@ def check(root, base=None, cfg=None, merged=False):
     cfg = cfg if cfg is not None else load_config(root)
     lines = []
     if base is None:
-        base, note = gitrefs.default_base(root, cfg.remote, cfg.main_branch)
+        base, note = gitrefs.default_base(root, cfg.remote, kconfig.work_base(cfg))
         if note:
             lines.append(note)
     why = gitrefs.bad_rev(base)
     if why:
         return Outcome(REFUSED, lines + ['trailers: NOT CHECKED: %s' % why])
     if merged:
-        why = _merged_refusal(root, base, cfg.main_branch)
+        why = _merged_refusal(root, base, kconfig.work_base(cfg))
         if why:
             return Outcome(REFUSED, lines + [
                 "trailers: REFUSED - --merged exempts the lander's merges and holds only on %s "
                 "itself or at a landing's detached merge onto the base; %s. On a branch, run "
-                "without --merged." % (cfg.main_branch, why)])
+                "without --merged." % (kconfig.work_base(cfg), why)])
     try:
         rules = ownermod.merge(load_at(root, 'HEAD').owner_rules(),
                                load_at(root, base).owner_rules())

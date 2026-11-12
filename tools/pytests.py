@@ -9,8 +9,8 @@ its own job object (docs/test-tools.md).
 
 A name is a test module of the checkout's tools folder, or `module.Class` / `module.Class.test`.
 --select: the changed paths (`git diff --name-only --no-renames -z <merge-base B HEAD>` plus
-untracked files, B = --base, default docs/gate-run.md "Default base": <remote>/<main branch> when it
-resolves, else the main branch, a line saying when the local one differs; or the --changed
+untracked files, B = --base, default docs/gate-run.md "Default base": <remote>/<work base> (the main branch, or the
+staging branch when set) when it resolves, else the work base, a line saying when the local one differs; or the --changed
 list) go through kitlib.tooldeps' selection (its `always_run` included); prints `pytests: <why>` and
 `pytests: <names>`, then runs them (--plan: stops there). When git cannot say what changed it
 REFUSES and no test runs. --merged (a landing's merged-tree gate, a step's merged_args) adds the
@@ -28,7 +28,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from kitlib.config import ConfigError, load as load_config          # noqa: E402
+from kitlib.config import ConfigError, load as load_config, work_base  # noqa: E402
 from kitlib.git import refs as gitrefs                              # noqa: E402
 from kitlib.git import repo as gitrepo                              # noqa: E402
 from kitlib.pytests import child, runner                            # noqa: E402
@@ -112,7 +112,7 @@ def main(argv=None, out=None):
         tcfg = tool_deps.config(top)
         base, base_note = a.base, None
         if a.select and not base:
-            base, base_note = gitrefs.default_base(top, kit.remote, kit.main_branch)
+            base, base_note = gitrefs.default_base(top, kit.remote, work_base(kit))
     except ConfigError as e:
         say('pytests: refused: kit configuration: %s' % e)
         return USAGE

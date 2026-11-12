@@ -440,7 +440,7 @@ class ANoIsConfirmed(RepoFixture):
     GOTCHA), so refs.is_ancestor confirms every NO with `merge-base --independent`; a confirmation
     that fails is no answer, never a NO. git is a stub here, by subcommand; rev-list always says NO."""
 
-    def ask(self, independent, rev_parse=None):
+    def ask(self, independent, rev_parse=None, ancestor=None):
         a, d = self.feature, self.r.initial
         calls = []
 
@@ -455,31 +455,45 @@ class ANoIsConfirmed(RepoFixture):
                 return independent
             raise AssertionError(argv)
         with mock.patch.object(cmd, '_run', side_effect=stub):
-            got = refs.is_ancestor(a, d, self.r.root)
+            got = refs.is_ancestor(ancestor or a, d, self.r.root)
         return got, calls
 
-    def test_a_confirmed_no_is_a_no(self):
-        both = (0, ('%s\n%s\n' % (self.feature, self.r.initial)).encode(), b'')
-        self.assertEqual(self.ask(both), ((False, None), ['rev-list', 'rev-parse', 'merge-base']))
+    def both(self):
+        return (0, ('%s\n%s\n' % (self.feature, self.r.initial)).encode(), b'')
+
+    def test_a_confirmed_no_of_a_full_hash_needs_no_resolve(self):
+        # Two launches: the full hash is asked of merge-base as given, and is among its answer.
+        self.assertEqual(self.ask(self.both()), ((False, None), ['rev-list', 'merge-base']))
+
+    def test_a_confirmed_no_of_an_abbreviation_resolves_it_first(self):
+        self.assertEqual(self.ask(self.both(), ancestor=self.feature[:12]),
+                         ((False, None), ['rev-list', 'rev-parse', 'merge-base']))
 
     def test_a_no_the_exact_walk_overturns_is_a_yes(self):
         # Only the descendant is independent: it reaches the ancestor, whatever rev-list printed.
-        self.assertEqual(self.ask((0, (self.r.initial + '\n').encode(), b''))[0], (True, None))
+        # The YES is read only once the hash resolved to itself (a tag's hash never is printed).
+        self.assertEqual(self.ask((0, (self.r.initial + '\n').encode(), b'')),
+                         ((True, None), ['rev-list', 'merge-base', 'rev-parse']))
 
     def test_a_confirmation_that_fails_is_no_answer(self):
+        only_d = (0, (self.r.initial + '\n').encode(), b'')
         for independent, rev_parse, words in (
                 ((1, b'', b''), None, 'printed nothing'),                   # killed
                 ((128, b'', b'fatal: boom'), None, 'fatal: boom'),
                 ((0, b'', b''), None, 'not one or two commits'),
                 ((0, b'abc\n', b''), None, 'not one or two commits'),
+                # a line holding the ancestor's hash plus more is not a commit: the shape check
+                # refuses it before any membership test
+                ((0, ('%sx\n' % self.feature).encode(), b''), None, 'not one or two commits'),
                 # rev-parse killed: no answer, no longer "does not name a commit" (refs.resolve)
-                (None, (1, b'', b''), 'rev-parse --verify %s^{commit} exited 1 and printed nothing'
-                 % self.feature)):
+                (only_d, (1, b'', b''), 'rev-parse --verify %s^{commit} exited 1 and printed '
+                 'nothing' % self.feature)):
             with self.subTest(words=words):
-                (got, why), _ = self.ask(independent, rev_parse)
+                (got, why), calls = self.ask(independent, rev_parse)
                 self.assertIsNone(got)
                 self.assertIn('confirming a NO', why)
                 self.assertIn(words, why)
+                self.assertEqual(calls, ['rev-list', 'merge-base', 'rev-parse'])
 
     def test_a_yes_needs_no_confirmation(self):
         calls = []
@@ -527,6 +541,17 @@ class SkewedDates(unittest.TestCase):
                          self.root)
         self.assertEqual(refs.is_ancestor(self.root, self.tip, self.dir), (True, None))
         self.assertEqual(refs.is_ancestor(self.tip, self.root, self.dir), (False, None))
+
+    def test_an_annotated_tags_hash_is_answered_as_its_commit(self):
+        # merge-base peels a tag and never prints the tag's own hash, so the full-hash shortcut of
+        # refs._confirm_no must not read the tag's absence as a YES: the hash is resolved first.
+        tags = {}
+        for name, rev in (('t-root', self.root), ('t-tip', self.tip)):
+            self.git('-c', 'tag.gpgSign=false', 'tag', '-a', '-m', name, name, rev)
+            tags[name] = self.git('rev-parse', 'refs/tags/%s' % name)
+            self.assertNotEqual(tags[name], rev)             # the tag object, not the commit
+        self.assertEqual(refs.is_ancestor(tags['t-tip'], self.root, self.dir), (False, None))
+        self.assertEqual(refs.is_ancestor(tags['t-root'], self.tip, self.dir), (True, None))
 
     def test_unrelated_histories_are_a_confirmed_no(self):
         # pmdata's case: a data branch's root against main shares no commit. `merge-base` would

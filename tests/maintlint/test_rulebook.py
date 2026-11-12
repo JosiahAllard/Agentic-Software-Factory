@@ -1,5 +1,5 @@
 """kitlib.maintlint.ledger over the rulebooks (docs/maint-lint.md "Ledger counts"): rules per file,
-files over budget, possible-conflict pairs and overrides, as numbers and file names only."""
+files over the byte cap, possible-conflict pairs and overrides, as numbers and file names only."""
 import json
 import os
 import tempfile
@@ -7,6 +7,7 @@ import unittest
 
 from kitlib.maintlint import ledger, page
 from tests.gitfixture import rmtree
+from tests.ledger.test_rulebook import big
 from tests.ledger.test_standing import entry
 
 
@@ -18,7 +19,6 @@ IDS = {'h1': _id(1), 'h2': _id(2), 'h3': _id(3)}
 
 SHARED = """# Shared rules
 Repos: shared
-Budget: 40
 
 ## Landing
 - landing.batch: Landers batch several branches together. (from %(h1)s)
@@ -27,7 +27,6 @@ Budget: 40
 
 KIT = """# Kit rules
 Repos: kit
-Budget: 2
 
 ## Gate
 - gate.batch: Batch branches together through gate runs. (from %(h2)s)
@@ -60,19 +59,26 @@ def home(test, books):
 
 class RulebookCounts(unittest.TestCase):
 
-    def test_rules_per_file_over_budget_pairs_and_overrides(self):
+    def test_rules_per_file_pairs_and_overrides(self):
         got, notes = ledger.counts(user_config=home(self, {'all': SHARED, 'kit': KIT}))
         self.assertEqual(got['rules'], {'all': 2, 'kit': 3})
-        self.assertEqual(got['over_budget'], ['kit'])
+        self.assertEqual(got['over_cap'], [])
         self.assertEqual(got['overrides'], 1)
         self.assertEqual(got['conflict_pairs'], 1)      # landing.batch with gate.batch, once
         self.assertEqual(notes, [])
         self.assertNotIn('superseded_live', got)
         self.assertNotIn('superseded', got)
 
+    def test_a_book_over_the_byte_cap_is_named(self):
+        got, notes = ledger.counts(user_config=home(self, {'all': SHARED, 'kit': KIT,
+                                                           'game': big('game', 60, _id(1))}))
+        self.assertEqual(got['over_cap'], ['game'])
+        self.assertEqual(got['rules']['game'], 60)
+        self.assertNotIn('over_budget', got)
+
     def test_no_rulebook_is_zero_counts(self):
         got, _notes = ledger.counts(user_config=home(self, {}))
-        self.assertEqual((got['rules'], got['over_budget'], got['conflict_pairs'],
+        self.assertEqual((got['rules'], got['over_cap'], got['conflict_pairs'],
                           got['overrides']), ({}, [], 0, 0))
 
     def test_a_malformed_rulebook_is_a_note_not_a_crash(self):
@@ -92,18 +98,21 @@ class RulebookCounts(unittest.TestCase):
 
 class RulebookFindings(unittest.TestCase):
 
-    def test_over_budget_and_conflicts_are_findings_and_overrides_are_not(self):
+    def test_over_cap_and_conflicts_are_findings_and_overrides_are_not(self):
         got = ledger.findings({'stale_cites': 0, 'rules': {'all': 2, 'kit': 3},
-                               'over_budget': ['kit'], 'conflict_pairs': 2, 'overrides': 1})
+                               'over_cap': ['kit'], 'conflict_pairs': 2, 'overrides': 1})
         self.assertEqual([(f.check, f.key) for f in got],
-                         [('ledger-over-budget', 'over_budget'),
+                         [('ledger-over-cap', 'over_cap'),
                           ('ledger-rule-conflicts', 'conflict_pairs')])
         self.assertIn('kit', got[0].text)
+        self.assertIn('16384 bytes', got[0].text)
+        self.assertIn('rule-drop', got[0].fix)
+        self.assertNotIn('Budget', got[0].fix)
         self.assertIn('2 possible', got[1].text)
         for f in got:
             self.assertIn('the PM', f.fix)
 
     def test_nothing_above_0_is_no_finding(self):
         self.assertEqual(ledger.findings({'stale_cites': 0, 'rules': {'kit': 1},
-                                          'over_budget': [], 'conflict_pairs': 0,
+                                          'over_cap': [], 'conflict_pairs': 0,
                                           'overrides': 3}), [])

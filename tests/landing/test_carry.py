@@ -219,6 +219,29 @@ class Refuses(CarryCase):
             self.assertTrue(re.search('full commit hash', why), why)
 
 
+class ListsEachTreeOnce(CarryCase):
+    """kitlib.landing.carry._same_diff lists each rev's tree once: with the reviewed tip's merge
+    base and the tip's the same commit, `ls-tree` runs for three revs, not four."""
+
+    def test_equal_merge_bases_list_three_trees(self):
+        wt, reviewed = self.branch('feature', {'a.py': 'a\n'})
+        base = self.repo.git('merge-base', reviewed, 'main').strip()
+        # A clean merge of a main commit the reviewed tip already holds: both merge bases are main.
+        tree = self.repo.git('rev-parse', '%s^{tree}' % reviewed).strip()
+        tip = self.repo.git('commit-tree', tree, '-p', reviewed, '-p', base, '-m', 'sync').strip()
+        self.main = base
+        listed = []
+
+        def git(args):
+            if args[0] == 'ls-tree':
+                listed.append(args[-1])
+            return cmd.call(args, self.repo.root)
+        facts, why = self.check(reviewed, tip, git=git)
+        self.assertIsNone(why)
+        self.assertEqual(facts['merges'], [tip])
+        self.assertEqual(sorted(listed), sorted([base, reviewed, tip]))
+
+
 @real_git("update-index --chmod: the fake has none, and what is pinned is git's own merge of a "
           'mode change')
 class MainChangedTheModeOfABranchFile(CarryCase):

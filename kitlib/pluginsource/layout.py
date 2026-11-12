@@ -21,7 +21,6 @@ import json
 import os
 import posixpath
 import re
-import shutil
 import stat
 import sys
 
@@ -248,7 +247,11 @@ def _is_link(path):
 
 def _rmtree(path):
     """shutil.rmtree, clearing a read-only bit on the way. A failure other than removing one entry
-    (rmtree refusing a link, a listing error) is raised, never passed over."""
+    (rmtree refusing a link, a listing error) is raised, never passed over. shutil is imported
+    here, not at the top: every guarded hook call imports this module (kitlib.hookrun.headerfollow),
+    and shutil would add about 17 ms to each (tests/guard/test_import_budget.py)."""
+    import shutil
+
     def retry(func, p, exc):
         if func not in (os.unlink, os.rmdir, os.remove):
             raise exc

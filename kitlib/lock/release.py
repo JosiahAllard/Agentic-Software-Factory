@@ -41,7 +41,7 @@ OK, REFUSED, USAGE, ERROR = 0, 1, 2, 3
 # tests/lock/test_release.py walks the imports and fails when one falls outside). A name ending
 # in "/" is a folder.
 LOCK_PATHS = ("tools/machine_lock.py", "kitlib/__init__.py", "kitlib/lock/", "kitlib/proc/",
-              "kitlib/config/", "kitlib/git/",
+              "kitlib/config/", "kitlib/git/", "kitlib/fs/",
               # the agent process images and session variable come from the host registry
               "kitlib/host/", "hosts.json",
               # kitlib/config/policy.py takes names_of (a role's old and new names) from

@@ -242,11 +242,6 @@ class ResultFiles(unittest.TestCase):
             os.utime(p, (t, t))
         return p
 
-    def test_junit_counts_this_run_only(self):
-        self.put('TEST-a.xml', '<testsuite tests="2" failures="1" errors="0"/>')
-        self.put('TEST-old.xml', '<testsuite tests="9" failures="9" errors="0"/>', age=3600)
-        self.assertEqual(V.junit_counts(self.dir, time.time() - 60)[:2], (2, 1))
-
     def gradle(self, rc, since, tw=None):
         sel = V.parse_selector('engine/core/src/test/FooTest.java', RUNNERS)
         return V.judge(sel, rc, '', tw or self.dir, self.dir, 1, [sel.path], '', since)
@@ -305,10 +300,6 @@ class ResultFiles(unittest.TestCase):
         tw = os.path.join(self.dir, 'm[1]')
         self.put('m[1]/engine/core/build/test-results/test/TEST-a.FooTest.xml', ONE_ASSERT % 3)
         self.assertEqual(self.gradle(1, time.time() - 60, tw), (V.RED, '1 of 3 test(s) failed'))
-
-    def test_junit_unparseable_is_none(self):
-        self.put('TEST-a.xml', '<testsuite tests="2"')
-        self.assertIsNone(V.junit_counts(self.dir))
 
     def test_trx_counts(self):
         p = self.put('r.trx', '<TestRun><ResultSummary><Counters total="5" failed="1" error="1"/>'

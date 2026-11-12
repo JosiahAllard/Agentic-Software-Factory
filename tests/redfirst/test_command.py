@@ -161,19 +161,6 @@ class Verdicts(unittest.TestCase):
             with self.subTest(rc=rc, counts=counts):
                 self.assertEqual(V.command_verdict(rc, '', self.RESULT, counts)[0], want)
 
-    def test_junit_file_counts(self):
-        with tempfile.TemporaryDirectory() as d:
-            wrapped, flat = os.path.join(d, 'a.xml'), os.path.join(d, 'b.xml')
-            with open(wrapped, 'w') as f:
-                f.write('<testsuites><testsuite tests="2" failures="1" errors="0"/>'
-                        '<testsuite tests="3" failures="0" errors="1"/></testsuites>')
-            with open(flat, 'w') as f:
-                f.write('<testsuite tests="4" failures="0" errors="0"/>')
-            self.assertEqual(V.junit_file_counts(wrapped), (5, 2, []))
-            self.assertEqual(V.junit_file_counts(flat), (4, 0, []))
-            self.assertIsNone(V.junit_file_counts(flat, since=os.path.getmtime(flat) + 60))
-            self.assertIsNone(V.junit_file_counts(os.path.join(d, 'none.xml')))
-
 
 class Kind(unittest.TestCase):
     def test_a_command_runner_books_build_unless_its_lock_names_another_kind(self):

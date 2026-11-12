@@ -4,18 +4,25 @@ A red whole `gate.py` of a clean tree, --full or default-mode (not --only, a par
 the docs-only route), writes a red run (record_red, called by kitlib.gate.runner): the commit,
 its tree and author, the gate config's hash, whether it was --full (`full`), each step's
 status and, for each FAIL step, the failing test ids parsed from its log (parse_log) with the
-mode each failed in, or why the step is uncovered. `gate.py --rerun` (rerun_gate) then runs,
+mode each failed in, or why the step is uncovered. A gradle or dotnet step's ids come from its
+reports (kitlib.gate.reports): each such failure carries `runner` ('gradle' or 'dotnet'), the
+tree-relative module or project folder (`scope`) and what its report needs (`report`); a
+failure with no `runner` is unittest's. `gate.py --rerun` (rerun_gate) then runs,
 under one machine-lock slot booked as a gate run of the branch (so it counts toward the branch
 gate budget, kitlib.gate.budget), each failing test class with `python -m unittest -v <class>`
 at the tip (run_classes; a class still running after class_timeout seconds is ended and does
 not pass), each paired with the same class at the merge base in a throwaway tree (the
-control), and every step the red run did not reach (NOT RUN) whole, in the form the red run
-ran it (its full_cmd only after a --full red run). Nothing is reused: every class and step
-runs again. It writes a rerun record and says FLAKE or REAL.
+control), and then, whole and in the red run's step order, every FAIL step whose failures
+carry a runner (no control; its ids are judged from that run's reports, judge_reports) and
+every step the red run did not reach (NOT RUN), in the form the red run ran it (its full_cmd
+only after a --full red run). Nothing is reused: every class and step runs again. It writes a
+rerun record and says FLAKE or REAL.
 
-FLAKE: every failing id passed at the tip, every NOT RUN step passed, warned or skipped, no step
-was uncovered, and no id that failed on the tip has failed twice on the branch (branch_twice).
-Anything else is REAL. The
+FLAKE: every failing id passed at the tip, every step rerun whole passed, warned or skipped, no
+step was uncovered, and no id that failed on the tip has failed twice on the branch
+(branch_twice). Anything else is REAL. An id a rerun did not show passing counts as a failure
+of that rerun (failure_counts), `not run` included: a whole step that dies early marks every id
+it carried failed again. The
 control is information only: a red control never turns a REAL into a FLAKE; it is said and
 recorded as `also red at base`; a control past the time limit is recorded `timed out`, neither
 red nor green. A FLAKE prints the `backlog.py add` line the builder reports;
@@ -29,12 +36,13 @@ a green gate of a fix lands. Every missing, unreadable or mismatched record refu
 closed).
 
 Uncovered (the rerun refuses; only a passing gate lands the tip): a FAIL step whose
-reasons are more than its exit code and a missing pass pattern; one whose log is neither
-kit_tests' report nor unittest's (a gradle or dotnet log, say); a kit_tests unit that is not
-FAILED (TIMEOUT, a runner
-failure); a test that could not be loaded (`unittest.loader._FailedTest`); FAIL/ERROR lines
-that do not add up to the FAILED summary; an unexpected success; an interrupted or refused
-kit_tests run; a step whose directory is outside the tree.
+reasons are more than its exit code and a missing pass pattern; one whose log is none of
+kit_tests' report, unittest's, gradle's or dotnet's; a kit_tests unit that is not FAILED
+(TIMEOUT, a runner failure); a test that could not be loaded (`unittest.loader._FailedTest`);
+FAIL/ERROR lines that do not add up to the FAILED summary; an unexpected success; an
+interrupted or refused kit_tests run; a gradle or dotnet log that fails on more than its tests,
+or whose reports do not add up (kitlib.gate.reports); a step whose directory is outside the
+tree.
 
 Records: `<dev_drive>/pm-kit/kit-gate-rerun/<repo key>/<commit>/`, one file per run, written
 once (red-<ns>-<token>.json, rerun-<ns>-<token>.json), each carrying the sha256 of its own
@@ -46,6 +54,7 @@ a clean tree writes `<dev_drive>/pm-kit/kit-gate-red/<repo key>/<tree>.<mode>.js
 verdict, the gate config's hash, the kit and the steps that failed; a later gate of the same
 tree that would only repeat a failed one is refused before it books.
 """
+import calendar
 import contextlib
 import hashlib
 import json
@@ -65,6 +74,7 @@ from kitlib.gate import budget
 from kitlib.gate import detect
 from kitlib.gate import gatecap
 from kitlib.gate import gitstatus
+from kitlib.gate import reports
 from kitlib.gate import runner
 from kitlib.gate import stash
 from kitlib.gate import steps as S
@@ -363,18 +373,25 @@ def _parse_kit_tests(lines):
     return failures, uncovered
 
 
-def parse_log(text):
+def parse_log(text, top=None, since=None):
     """`(failures, uncovered)` of a FAIL step's log: failures [{id, cls, env}] (env: the
     variables the pass that failed it set, `{"KIT_FAKE_GIT": "0"|"1"}` after a kit_tests tier
     header, else {}), uncovered the reasons the rerun cannot cover the step (an empty list:
-    every failure is a test id the class rerun can run)."""
+    every failure is a test id the rerun can judge). A gradle or dotnet log's failures also
+    carry `runner`, `scope` and `report` (kitlib.gate.reports); a gradle one's come from the
+    JUnit XML its tasks wrote in the tree `top` at or after `since` (epoch seconds), so with
+    either None a gradle step is uncovered."""
     lines = (text or '').splitlines()
     if any(SECTION.match(line) or KT_LINE.match(line) for line in lines):
         return _parse_kit_tests(lines)
     if any(RAN.match(line) for line in lines):
         return _parse_block(lines, {}, 'unittest')
-    return [], ['gate.py --rerun covers kit_tests and unittest reports only, and this log is '
-                'neither (a gradle or dotnet log, say)']
+    if reports.is_gradle(lines):
+        return reports.gradle_red(lines, top, since)
+    if reports.is_dotnet(lines):
+        return reports.dotnet_red(lines, top)
+    return [], ['gate.py --rerun covers kit_tests, unittest, gradle and dotnet reports only, and '
+                'this log is none of them']
 
 
 def _read(path):
@@ -385,8 +402,18 @@ def _read(path):
         return None
 
 
-def cover_step(res, cwd_rel):
-    """The red run's entry of one step result `res` (runner.run_steps)."""
+def since_of(stamp):
+    """Epoch seconds of a record's `started`/`ended` stamp (gate_ok.utc), or None."""
+    try:
+        return float(calendar.timegm(time.strptime(stamp, '%Y-%m-%dT%H:%M:%SZ')))
+    except (TypeError, ValueError):
+        return None
+
+
+def cover_step(res, cwd_rel, top, since):
+    """The red run's entry of one step result `res` (runner.run_steps), whose directory is
+    `cwd_rel` in the tree `top`; `since`: the red gate's start, epoch seconds (parse_log; `top`
+    or `since` None, as in the daily full run's bisect, leaves a gradle step uncovered)."""
     entry = {'name': res['name'], 'status': res['status']}
     if res['status'] != 'FAIL':
         return entry
@@ -399,23 +426,12 @@ def cover_step(res, cwd_rel):
         uncovered.append('%s: its log cannot be read' % res['name'])
         failures = []
     else:
-        failures, why = parse_log(text)
+        failures, why = parse_log(text, top, since)
         uncovered += ['%s: %s' % (res['name'], w) for w in why]
     for f in failures:
         f['cwd'] = cwd_rel
     entry.update(failures=failures, uncovered=uncovered, log=res.get('log'))
     return entry
-
-
-def cwd_rel(top, cwd):
-    """A step directory `cwd` relative to the tree `top` ('' for the top, '/'-separated), or None
-    when it is outside the tree."""
-    rel = os.path.relpath(os.path.abspath(cwd or top), os.path.abspath(top))
-    if rel == os.curdir:
-        return ''
-    if rel.startswith(os.pardir) or os.path.isabs(rel):
-        return None
-    return rel.replace(os.sep, '/')
 
 
 def record_red(top, cfg, head, base, started, results, chosen, log_dir, full):
@@ -426,12 +442,13 @@ def record_red(top, cfg, head, base, started, results, chosen, log_dir, full):
         commit, tree, author = gate_ok._facts(top, head)
     except gate_ok.RecordError as e:
         raise RerunError(str(e))
-    cwds = {s.name: cwd_rel(top, s.cwd) for s in chosen}
+    cwds = {s.name: reports.inside(top, s.cwd or top) for s in chosen}
     rec = {'kind': RED, 'commit': commit, 'tree': tree, 'author': author, 'base': base,
            'config_rev': commit, 'full': bool(full),
            'gate_config': gate_ok.config_hash(gate_ok.gate_config(cfg)),
            'started': started, 'ended': gate_ok.utc(), 'log_dir': log_dir,
-           'steps': [cover_step(r, cwds.get(r['name'])) for r in results]}
+           'steps': [cover_step(r, cwds.get(r['name']), top, since_of(started))
+                     for r in results]}
     return _write(top, rec)[0]
 
 
@@ -796,10 +813,13 @@ def run_classes(kind, name, slug, book_kw, tree, top, classes, gate, ctx, logs, 
 
 
 def classes_of(red):
-    """[{cls, env, cwd, ids}] of the red run's failures, one per class, mode and directory."""
+    """[{cls, env, cwd, ids}] of the red run's unittest failures (those with no `runner`), one per
+    class, mode and directory."""
     out = []
     for s in red['steps']:
         for f in s.get('failures') or []:
+            if f.get('runner'):
+                continue
             key = (f['cls'], json.dumps(f.get('env') or {}, sort_keys=True), f.get('cwd') or '')
             for c in out:
                 if (c['cls'], json.dumps(c['env'], sort_keys=True), c['cwd']) == key:
@@ -809,6 +829,35 @@ def classes_of(red):
             else:
                 out.append({'cls': f['cls'], 'env': dict(f.get('env') or {}),
                             'cwd': f.get('cwd') or '', 'ids': [f['id']]})
+    return out
+
+
+def report_steps(red):
+    """[(step name, its failures)] of the red run's FAIL steps whose failures carry a `runner`
+    (gradle, dotnet): each reruns whole, and its ids are judged from its reports."""
+    return [(s['name'], s['failures']) for s in red['steps']
+            if s.get('status') == 'FAIL' and any(f.get('runner') for f in s.get('failures') or [])]
+
+
+def judge_reports(top, whole, results, since):
+    """The rerun record's class entries of the `whole` steps (report_steps) once they ran again:
+    one per step and class, {cls, step, runner, env, cwd, scope, ids: {id: status}, tip, log,
+    control: 'not run', control_log: None}. `results`: the rerun's step results; `since`: its
+    start, epoch seconds (kitlib.gate.reports judge). A class passes (tip 'pass') when its step
+    passed, warned or was skipped and every id of it is `ok`."""
+    by = {r['name']: r for r in results}
+    out = []
+    for name, failures in whole:
+        r = by.get(name) or {}
+        got = reports.judge(failures, _read(r.get('log')), top, since)
+        for cls in dict.fromkeys(f['cls'] for f in failures):
+            mine = [f for f in failures if f['cls'] == cls]
+            ids = {f['id']: got.get(f['id'], 'not run') for f in mine}
+            ok = r.get('status') in PASSING and all(st == 'ok' for st in ids.values())
+            out.append({'cls': cls, 'step': name, 'runner': mine[0]['runner'], 'env': {},
+                        'cwd': mine[0].get('cwd') or '', 'scope': mine[0].get('scope'),
+                        'ids': ids, 'tip': 'pass' if ok else 'fail', 'log': r.get('log'),
+                        'control': 'not run', 'control_log': None})
     return out
 
 
@@ -842,23 +891,39 @@ def add_line(top, branch, head, classes):
     """The `backlog.py add` line a FLAKE prints: the builder reports it; the coordinator decides
     on filing it (skill builder, step 10). The summary is a short title, within plan_edit.SUMMARY_MAX
     (the class, cut to 60 characters, and the tip); the failing test ids go into the
-    not-folded reason, which the record keeps in its body's `## Found` section."""
+    not-folded reason, which the record keeps in its body's `## Found` section. A gradle or
+    dotnet class's scope is its module or project folder (`scope`); one at the tree root (scope
+    '') takes its build files there (reports.root_files), or `none` when it has none. Each scope
+    member is its own quoted `--scope` (backlog.py takes one member a flag). Inside the double
+    quotes a `"` or backquote becomes `'` and a `$` (a nested JVM class) `.`, so no shell reads
+    them."""
+    def plain(text):
+        return text.replace('"', "'").replace('`', "'").replace('$', '.')
+
+    def scopes_of(c):
+        if c.get('scope') is None:
+            return [scope_of(top, c['cls'])]
+        return [c['scope']] if c['scope'] else reports.root_files(top, c.get('runner')) or ['none']
     ids = [t for c in classes for t in c['ids']]
     cls = classes[0]['cls'].split('.')[-1]
     name = re.sub(r'[^A-Za-z0-9]+', '-', cls).strip('-').upper()
-    scopes = sorted({scope_of(top, c['cls']) for c in classes})
+    scopes = sorted({s for c in classes for s in scopes_of(c)})
     more = ' and %d more' % (len(classes) - 1) if len(classes) > 1 else ''
-    return ('%s add FLAKE-%s --summary "flaky: %s%s in gate.py at %s" --scope %s '
+    return ('%s add FLAKE-%s --summary "flaky: %s%s in gate.py at %s" %s '
             '--found-on %s --why-not-folded "a flake outside this branch\'s story; it failed in '
             'gate.py and passed its targeted rerun: %s"'
-            % (kitroot.command('backlog', top), name[:40] or 'TEST', cls[:60], more, head[:10],
-               ','.join(scopes), branch or 'none', ', '.join(ids)))
+            % (kitroot.command('backlog', top), name[:40] or 'TEST', plain(cls[:60]), more,
+               head[:10], ' '.join('--scope "%s"' % plain(s) for s in scopes), branch or 'none',
+               plain(', '.join(ids))))
 
 
 def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     """`gate.py --rerun` (module docstring): an Outcome, OK for FLAKE, FAILED for REAL (or VOID:
     the tree or HEAD changed while it ran), REFUSED when nothing can be rerun, or a machine
-    lock code."""
+    lock code. The `code=` callback of run_classes gives the slot's release code, and also judges
+    the report steps' ids (judged, judge_reports) and stores them in `ctl`: it is the only point
+    before the slot is released that sees the run's `out`; the record and the FLAKE line read
+    that one judgement."""
     say = say or runner._quiet
     top, why = repo.toplevel(root)
     if not top:
@@ -908,7 +973,10 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
         return G.Outcome(G.REFUSED, ['REFUSED: the red run is uncovered, so only a passing '
                                      'gate lands this tip:'] + ['  %s' % u for u in unc])
     classes = classes_of(red)
+    whole = report_steps(red)
     not_run = [s['name'] for s in red['steps'] if s['status'] == 'NOT RUN']
+    again = [s['name'] for s in red['steps']
+             if s['status'] == 'NOT RUN' or s['name'] in dict(whole)]
     base = red['base']
     try:
         eff = detect.effective(cfg, top, base=base)
@@ -917,10 +985,10 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
                                             full=red.get('full') is True)}
     except (detect.DetectError, S.GateConfigError) as e:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
-    missing = [n for n in not_run if n not in built]
+    missing = [n for n in again if n not in built]
     if missing:
         return G.Outcome(G.REFUSED, ['REFUSED: the gate has no step %s now' % ', '.join(missing)])
-    steps = [built[n] for n in not_run]
+    steps = [built[n] for n in again]
     checks, options, why = runner.load_checks(cfg, steps)
     if checks is None:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
@@ -928,8 +996,10 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
     name = place.repo_name(cfg, top)
     logs = runner.new_log_dir(cfg, top, name, 'rerun-' + (branch or head[:10]), log_dir)
     started = gate_ok.utc()
-    say('targeted rerun of %s at %s (red run of %s): %d class(es)%s' % (
+    say('targeted rerun of %s at %s (red run of %s): %d class(es)%s%s' % (
         branch or '(detached)', head[:10], red['ended'], len(classes),
+        '; steps rerun whole for their test reports: %s' % ', '.join(n for n, _ in whole)
+        if whole else '',
         '; steps never reached: %s' % ', '.join(not_run) if not_run else ''))
     store = (book_kw or {}).get('store') or Store()
     over = budget.refusal(top, store, name, branch or None, say)
@@ -974,8 +1044,19 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
         done.append(dict(c, tip='pass' if passed else 'fail', ids=got, log=log,
                          control=control, control_log=clog))
 
+    def judged(out):
+        """The report steps' class entries (judge_reports), judged once: in the release code
+        (code=), the one point before the slot is released that sees `out`."""
+        if 'reports' not in ctl:
+            ctl['reports'] = judge_reports(top, whole, out['steps'], since_of(started))
+            for c in ctl['reports']:
+                say('%-5s %s at the tip, from the %s reports of the step %s rerun whole; no '
+                    'control' % ('PASS' if c['tip'] == 'pass' else 'FAIL', c['cls'],
+                                 c['runner'], c['step']))
+        return ctl['reports']
+
     def flaky(out):
-        return (all(c['tip'] == 'pass' for c in done) and
+        return (all(c['tip'] == 'pass' for c in done + judged(out)) and
                 all(r['status'] in PASSING for r in out['steps']))
     ctx = {'root': top, 'base': base, 'merged': False, 'changed': list(changed or []),
            'options': options}
@@ -992,6 +1073,7 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
         return out['stopped']
     results = out['steps']
     flake = flaky(out)
+    done += judged(out)
     after, _ = gitstatus.status(top)
     head_now, _ = refs.head(top)
     void = None
@@ -1017,10 +1099,10 @@ def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):
             base[:10], ', '.join(red_base)))
     lines.append('logs: %s' % logs)
     if verdict == FLAKE:
-        lines = ['RERUN FLAKE: every failing test passed at the tip, and every step the red run '
-                 'never reached passed; the tip lands on this record'] + lines + [
+        lines = ['RERUN FLAKE: every failing test passed at the tip, and every step rerun whole '
+                 'passed; the tip lands on this record'] + lines + [
             'report this line to your coordinator, who decides on filing it:',
-            '  ' + add_line(top, branch, head, classes)]
+            '  ' + add_line(top, branch, head, classes + judged(out))]
         return G.Outcome(G.OK, lines, verdict=verdict, record=path)
     head_line = ('RERUN VOID: %s; the tip does not land on this rerun' % void if void else
                  'RERUN REAL: a failing test failed again, or a step did not pass: the failure is '

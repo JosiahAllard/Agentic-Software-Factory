@@ -40,13 +40,13 @@ or cmd itself) is checked the same way, every word after it (command_argv). Any 
 as a list, never through a shell.
 """
 import fnmatch
-import glob
 import os
 import re
 import sys
 import xml.etree.ElementTree as ET
 
 from kitlib import platform
+from kitlib.gate.reports import junit_counts, junit_file_counts
 from kitlib.guard.shell import cmd_unsafe
 
 RED, GREEN, NONE, ERROR = 'RED', 'GREEN', 'NONE', 'ERROR'
@@ -499,72 +499,6 @@ def command_verdict(rc, log, runner, counts):
         line = log[log.rfind('\n', 0, hit.start()) + 1:].split('\n', 1)[0].strip()
         return RED, "the command exited 1 and a log line matches the runner's assertion: %s" % line[:200]
     return ERROR, 'the command exited %d; only 0 (passed) and 1 (failed) give a verdict' % rc
-
-
-def junit_failures(root):
-    """Each <failure> and <error> under a JUnit XML element: `(tag, type, message, test name)`."""
-    out = []
-    for case in root.iter('testcase'):
-        name = '.'.join(x for x in (case.get('classname'), case.get('name')) if x)
-        for el in case:
-            if el.tag in ('failure', 'error'):
-                out.append((el.tag, el.get('type') or '', el.get('message') or el.text or '', name))
-    return out
-
-
-def junit_file_counts(path, since=0.0):
-    """(tests, failures + errors, failures) of the one JUnit XML file `path`: its root's counts,
-    else the sum over its testsuite elements, and each failure (junit_failures). None when absent,
-    older than `since`, unparseable, or a count that is no integer."""
-    try:
-        if os.path.getmtime(path) < since:
-            return None
-        root = ET.parse(path).getroot()
-        suites = ([root] if root.get('tests') is not None
-                  else [el for el in root.iter() if el.tag == 'testsuite'])
-        tests = sum(int(el.get('tests', 0)) for el in suites)
-        bad = sum(int(el.get('failures', 0)) + int(el.get('errors', 0)) for el in suites)
-    except (ET.ParseError, OSError, ValueError):
-        return None
-    return tests, bad, junit_failures(root)
-
-
-def is_class_of(path, name):
-    """Whether the Gradle JUnit file `path`, `TEST-<class>.xml`, is for the class `name` in any
-    package (`<pkg>.<name>`, or bare `<name>`) or one nested in it (`<pkg>.<name>$<Inner>`)."""
-    base = os.path.basename(path)
-    if not (base.startswith('TEST-') and base.endswith('.xml')):
-        return False
-    top = base[len('TEST-'):-len('.xml')].split('$', 1)[0]
-    return top == name or top.endswith('.' + name)
-
-
-def junit_counts(results_dir, since=0.0, cls=None):
-    """(tests, failures + errors, failures) over the TEST-*.xml files at any depth under `results_dir`
-    (Gradle writes one folder per test task) written at or after `since`; with `cls`, only the
-    files of that class and its nested classes (is_class_of) count. None when a fresh file of any
-    class would not parse or holds a count that is no integer: skipping it could turn a failing
-    suite into a GREEN made of the others, and a broken file of another class fails closed too."""
-    tests = bad = 0
-    failures = []
-    for f in sorted(set(glob.glob(os.path.join(glob.escape(results_dir), '**', 'TEST-*.xml'),
-                                  recursive=True))):
-        try:
-            if os.path.getmtime(f) < since:
-                continue
-        except OSError:
-            continue
-        try:
-            root = ET.parse(f).getroot()
-            n = int(root.get('tests', 0))
-            b = int(root.get('failures', 0)) + int(root.get('errors', 0))
-        except (ET.ParseError, OSError, ValueError):
-            return None
-        if cls is None or is_class_of(f, cls):
-            tests += n
-            bad += b
-            failures += junit_failures(root)
-    return tests, bad, failures
 
 
 def _local(tag):

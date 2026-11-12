@@ -25,7 +25,7 @@ Low-level design of `kitlib/gate`, `kitlib/loadnode` and `kitlib/dailyfull`. The
 |---|---|
 | `gate/steps.py`, `detect.py`, `hookrev.py` | Steps from config, selection, judging; the auto-detected gate; the hook module at one commit |
 | `gate/runner.py` | The steps run in a lock slot; the branch gate and the merged-tree gate |
-| `gate/reuse.py`, `rerun.py`, `result.py`, `outfile.py` | Reuse; the targeted rerun; the result record; whose run a log is |
+| `gate/reuse.py`, `rerun.py`, `reports.py`, `result.py`, `outfile.py` | Reuse; the targeted rerun; the JUnit, gradle and dotnet reports it and red-first read; the result record; whose run a log is |
 | `gate/budget.py`, `gatecap.py`, `measure.py`, `stop.py`, `stash.py`, `caller.py`, `gitstatus.py`, `pin.py` | One concern each |
 | `gate/strict_defaults.py` | The kit's default strict landing paths (owner-only) |
 | `loadnode/` | `registry`, `remote`, `route`, `dispatch`, `job`, `box`, `frames`, `reply`, `mirror`, and the node's side of a gate and of a landing's gate |

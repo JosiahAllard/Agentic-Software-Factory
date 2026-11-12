@@ -4,6 +4,7 @@ store in the scratch repository, pushed to its bare remote). The record is alway
 priority 2 by an agent."""
 import contextlib
 import os
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -434,6 +435,36 @@ class LoadChecks(unittest.TestCase):
                 with mock.patch.object(hookrev if rev else policy, there, fake):
                     self.assertEqual(runner.load_checks(object(), [step], 'root', rev), want)
                 self.assertEqual(fake.called, step is check)
+
+
+class Targets(unittest.TestCase):
+    """targets(): a gradle or dotnet red step is probed whole (its reports are not read here, and
+    a probe runs unittest classes only); a unittest one is probed by its failing classes."""
+    GRADLE = ('> Task :m:test\n\n2 tests completed, 1 failed\n\n* What went wrong:\n'
+              "Execution failed for task ':m:test'.\n> There were failing tests. See the report "
+              'at: file:///x/m/build/reports/tests/test/index.html\n\nBUILD FAILED in 1s\n')
+    DOTNET = ('Test run for x\\P.Tests\\bin\\Debug\\net10.0\\P.Tests.dll (.NETCoreApp)\n'
+              '  Failed P.Tests.A.B [1 s]\nFailed!  - Failed:     1, Passed:     1, Skipped:     '
+              '0, Total:     2, Duration: 1 s - P.Tests.dll (net10.0)\n')
+    UNIT = ('=' * 70 + '\nFAIL: test_x (pkg.mod.Case.test_x)\n' + '-' * 70 +
+            '\nAssertionError: boom\n' + '-' * 70 + '\nRan 2 tests in 0.1s\n\nFAILED (failures=1)\n')
+
+    def targets(self, text):
+        d = tempfile.mkdtemp(prefix='kit-bisect-')
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        log = os.path.join(d, 's.log')
+        with open(log, 'w', encoding='utf-8') as f:
+            f.write(text)
+        return B.targets(['s'], [{'name': 's', 'status': 'FAIL', 'log': log,
+                                  'reasons': ['exit 1']}])
+
+    def test_each_kind_of_red_step(self):
+        self.assertEqual(self.targets(self.GRADLE),
+                         (None, B.WHOLE + 's: gradle: its test reports are not read here'))
+        self.assertEqual(self.targets(self.DOTNET),
+                         (None, B.WHOLE + 's: a dotnet step is probed whole'))
+        covers, mode = self.targets(self.UNIT)
+        self.assertEqual((list(covers), mode), (['s'], 'tests: 1 class(es)'))
 
 
 class Judge(unittest.TestCase):

@@ -19,6 +19,11 @@ The time fence (docs/test-tools.md "Time fence"): KIT_TIME_FENCE=1 unless the en
 otherwise, so kitlib.clock.budget gives its ceiling for a degrade budget (kitlib.agentstart's) and a
 loaded machine makes a test slower, not different. The tool processes a test starts inherit it.
 
+The session fence (docs/test-tools.md "Session fence"): this package drops from os.environ what
+kit_tests.py's children never get (kitlib.tooldeps.childenv.scrubbed: the session's name, role, host
+and kit binding), so a test run directly from a coordinator session cannot write to that session's
+event log (kitlib.coordstate.log) or follow its kit. A test that wants one sets it itself.
+
 The home fence has one exception, real_install_config(): the scrub tests check the kit's files against
 this install's own names, which only the real machine config holds. It reads the machine config
 the PM-repo pointer names (the registry's value, read below before the fence), else the one under
@@ -38,6 +43,7 @@ from kitlib import clock as _kclock  # noqa: E402
 from kitlib.config import user as _kuser  # noqa: E402  (after KIT_FAKE_GIT is set)
 from kitlib.config import pointer as _kpointer  # noqa: E402
 from kitlib.git.fake import config as _fakeconfig  # noqa: E402
+from kitlib.tooldeps import childenv as _childenv  # noqa: E402
 
 os.environ.setdefault(_kclock.FENCE_ENV, '1')   # the time fence: degrade budgets are the ceiling
 
@@ -45,6 +51,8 @@ _REAL_HOME = os.path.expanduser('~')    # read by real_install_config() only
 _REAL_POINTER = _kpointer.registry()    # the same: (value, why), the registry's PM-repo pointer
 _kuser.fence_env(os.environ)            # the marker the children of this process inherit
 _kuser.fence_home()
+for _name in set(os.environ) - set(_childenv.scrubbed(os.environ)):   # the session fence
+    del os.environ[_name]
 _fakeconfig.process_home = _kuser.home_dir   # the fake git's no-home fallback is fenced too
 
 

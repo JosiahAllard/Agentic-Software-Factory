@@ -305,9 +305,7 @@ def _flock(path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     f = open(path, 'a+b')
     try:
-        try:
-            import fcntl
-        except ImportError:
+        if kitlib.platform.NAME != 'linux':
             import msvcrt
             f.seek(0)
             msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
@@ -317,6 +315,7 @@ def _flock(path):
                 f.seek(0)
                 msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
             return
+        import fcntl
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         try:
             yield

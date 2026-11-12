@@ -23,7 +23,7 @@ import shutil
 import stat
 import time
 
-from kitlib import platform
+from kitlib.fs import replace as fsreplace
 from kitlib.git import cmd, refs, repo
 
 DELETE = 'DELETE'           # untracked (??): the file is removed
@@ -375,26 +375,12 @@ def _log_safe(common, record):
 def _put_back(held, full):
     """'' when the moved file is back at `full`, else a note naming where it is kept."""
     try:
-        # A hard link never replaces a file written at `full` meanwhile, on any platform (POSIX
-        # rename would).
-        os.link(held, full)
-    except FileExistsError:
-        return '; the file is kept at %s' % held
+        # Never over a file written at `full` meanwhile (place_new); `held` stays when not placed.
+        if fsreplace.place_new(held, full):
+            return ''
     except OSError:
-        # No hard links here (FAT, some shares). Windows rename refuses an existing target, so it
-        # is safe there; on POSIX the file stays in quarantine.
-        if platform.NAME != 'windows':
-            return '; the file is kept at %s' % held
-        try:
-            os.rename(held, full)
-        except OSError:
-            return '; the file is kept at %s' % held
-        return ''
-    try:
-        os.unlink(held)
-    except OSError:
-        pass                             # back at `full`; a leftover moved copy is harmless
-    return ''
+        pass
+    return '; the file is kept at %s' % held
 
 
 def _mark(environ):

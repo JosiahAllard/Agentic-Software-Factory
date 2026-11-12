@@ -8,6 +8,9 @@ has. Every missing, unreadable or altered record refuses."""
 import json
 import os
 import re
+import shutil
+import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -107,10 +110,57 @@ gate_tiers: --- gradle-build exited 1
       FAILED     :app-api:test
 gate_tiers gradle: FAILED - gradle-build: exit 1
 '''
-GRADLE_GATE = {'steps': [
-    {'name': 'gradle', 'always': True, 'pass': '^gate_tiers gradle: OK',
-     'cmd': ['{python}', '-c', 'import sys; print(open("gradle_report.txt").read()); sys.exit(1)']}]}
-COVERS = 'gate.py --rerun covers kit_tests and unittest reports only, and this log is neither'
+COVERS = ('gate.py --rerun covers kit_tests, unittest, gradle and dotnet reports only, and this '
+          'log is none of them')
+
+# A gradle or dotnet step's stand-in (`fake_runner.py gradle|dotnet`): its one test `the flaky
+# one` fails as test_flaky does (FLAKY_STATE `red`, or `once` then `done`); `compile` fails the
+# build before any test. The gradle one writes its JUnit XML under mod/build (git-ignored) and
+# prints its report url; both print the console lines kitlib.gate.reports reads.
+FAKE_RUNNER = r'''import os
+import pathlib
+import sys
+
+path, kind = os.environ.get('FLAKY_STATE', ''), sys.argv[1]
+now = open(path, encoding='utf-8').read().strip() if os.path.isfile(path) else ''
+if now == 'once':
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write('done')
+red, mod = now in ('red', 'once'), os.path.join(os.getcwd(), 'mod')
+if kind == 'gradle' and now == 'compile':
+    print("* What went wrong:\nExecution failed for task ':mod:compileJava'.\n"
+          '> Compilation failed; see the compiler error output for details.\n\nBUILD FAILED')
+    sys.exit(1)
+if kind == 'gradle':
+    res = os.path.join(mod, 'build', 'test-results', 'test')
+    os.makedirs(res, exist_ok=True)
+    with open(os.path.join(res, 'TEST-pkg.FooTest.xml'), 'w', encoding='utf-8') as f:
+        f.write('<testsuite tests="2" failures="%d" errors="0"><testcase classname="pkg.FooTest" '
+                'name="steady"/><testcase classname="pkg.FooTest" name="the flaky one">%s'
+                '</testcase></testsuite>' % (red, '<failure message="m">x</failure>' * red))
+    url = pathlib.Path(mod, 'build', 'reports', 'tests', 'test', 'index.html').as_uri()
+    print('> Task :mod:test\n\n' + ("2 tests completed, 1 failed\n> Task :mod:test FAILED\n"
+          "* What went wrong:\nExecution failed for task ':mod:test'.\n> There were failing "
+          'tests. See the report at: %s\n\nBUILD FAILED' % url if red else
+          'BUILD SUCCESSFUL\ngate_tiers gradle: OK'))
+    sys.exit(int(red))
+dll = os.path.join(os.getcwd(), 'proj', 'bin', 'Debug', 'net10.0', 'P.Tests.dll')
+print('Test run for %s (.NETCoreApp,Version=v10.0)' % dll)
+print('  Failed P.Tests.FooTests.TheFlakyOne [1 s]' if red else '')
+print('%s!  - Failed: %5d, Passed: %5d, Skipped:     1, Total:     3, Duration: 1 s - '
+      'P.Tests.dll (net10.0)' % ('Failed' if red else 'Passed', red, 2 - red))
+print('' if red else 'gate_tiers dotnet: OK')
+sys.exit(int(red))
+'''
+REPORT_FILES = {'.gitignore': '.claude/\nbuild/\n', 'fake_runner.py': FAKE_RUNNER}
+GRADLE_ID = 'pkg.FooTest.the flaky one'
+DOTNET_ID = 'P.Tests.FooTests.TheFlakyOne'
+
+
+def report_gate(kind):
+    return {'steps': [{'name': kind, 'always': True, 'pass': '^gate_tiers %s: OK' % kind,
+                       'cmd': ['{python}', 'fake_runner.py', kind]},
+                      {'name': 'after', 'always': True, 'cmd': AFTER, 'pass': '^ok$'}]}
 
 
 def unittest_log(*blocks, summary='FAILED (failures=1)', ran=2):
@@ -195,18 +245,30 @@ class ParseLog(unittest.TestCase):
         self.assertTrue(any('unexpected' in u for u in rerun.parse_log(text)[1]))
 
     def test_any_other_log_is_uncovered(self):
-        self.assertEqual(rerun.parse_log('lint: 3 problems\n'),
-                         ([], [COVERS + ' (a gradle or dotnet log, say)']))
+        self.assertEqual(rerun.parse_log('lint: 3 problems\n'), ([], [COVERS]))
 
-    def test_a_gradle_log_gives_no_failing_id_and_says_what_the_rerun_covers(self):
-        failures, uncovered = rerun.parse_log(GRADLE_LOG)
+    def test_a_gradle_log_is_read_from_its_reports_in_the_tree(self):
+        """With no tree or start its reports are not read; this one's report url names no module
+        folder in the tree (the parse itself: tests/gate/test_reports.py)."""
+        self.assertEqual(rerun.parse_log(GRADLE_LOG),
+                         ([], ['gradle: its test reports are not read here']))
+        failures, uncovered = rerun.parse_log(GRADLE_LOG, os.getcwd(), 0.0)
         self.assertEqual(failures, [])
-        self.assertEqual(len(uncovered), 1, uncovered)
-        self.assertIn(COVERS, uncovered[0])
+        self.assertTrue(any('is not a module folder in the tree' in u for u in uncovered),
+                        uncovered)
+
+    def test_a_dotnet_log_gives_its_failed_ids(self):
+        log = ('Test run for x\\P.Tests\\bin\\Debug\\net10.0\\P.Tests.dll (.NETCoreApp)\n'
+               '  Failed P.Tests.A.B [1 s]\n'
+               'Failed!  - Failed:     1, Passed:     1, Skipped:     0, Total:     2, '
+               'Duration: 1 s - P.Tests.dll (net10.0)\n')
+        failures, uncovered = rerun.parse_log(log)
+        self.assertEqual(([(f['id'], f['cls'], f['runner']) for f in failures], uncovered),
+                         ([('P.Tests.A.B', 'P.Tests.A', 'dotnet')], []))
 
     def test_a_step_failing_on_more_than_its_exit_is_uncovered(self):
         entry = rerun.cover_step({'name': 'unit', 'status': 'FAIL', 'log': None,
-                                  'reasons': ['exit 1', 'matched fail pattern']}, '')
+                                  'reasons': ['exit 1', 'matched fail pattern']}, '', None, None)
         self.assertTrue(any('matched fail pattern' in u for u in entry['uncovered']))
         self.assertTrue(any('cannot be read' in u for u in entry['uncovered']))
 
@@ -263,6 +325,77 @@ class AddLine(unittest.TestCase):
         why = re.search(r'--why-not-folded "([^"]*)"', add).group(1)
         for c in classes:
             self.assertIn(c['ids'][0], why)
+
+    def test_a_report_class_takes_its_folder_as_scope_and_no_shell_character(self):
+        classes = [{'cls': 'pkg.Foo$Inner', 'scope': 'app/api',
+                    'ids': ['pkg.Foo$Inner.it says "no" to `x`']},
+                   {'cls': 'tests.gate.test_none.Case', 'ids': ['tests.gate.test_none.Case.t']}]
+        add = rerun.add_line(os.getcwd(), BRANCH, 'a' * 40, classes)
+        # one quoted --scope a member: backlog.py takes one a flag, and no comma in one
+        self.assertIn(' --scope "app/api" --scope "tests" --found-on ', add)
+        quoted = re.findall(r'"([^"]*)"', add.split(' add ', 1)[1])
+        self.assertEqual(len(quoted), 4, add)
+        self.assertIn("pkg.Foo.Inner.it says 'no' to 'x'", quoted[3])
+        self.assertFalse(any(ch in add for ch in '$`'), add)
+
+    def test_a_module_at_the_tree_root_scopes_its_build_files_there(self):
+        d = tempfile.mkdtemp(prefix='kit-rerun-')
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        for name in ('build.gradle.kts', 'settings.gradle.kts', 'App.Tests.csproj', 'README.md'):
+            with open(os.path.join(d, name), 'w', encoding='utf-8') as f:
+                f.write('x\n')
+        for runner, want in (
+                ('gradle', ' --scope "build.gradle.kts" --scope "settings.gradle.kts" --found-on '),
+                ('dotnet', ' --scope "App.Tests.csproj" --found-on ')):
+            with self.subTest(runner):
+                add = rerun.add_line(d, BRANCH, 'a' * 40, [
+                    {'cls': 'pkg.FooTest', 'runner': runner, 'scope': '', 'ids': ['pkg.FooTest.t']}])
+                self.assertIn(want, add)
+        empty = tempfile.mkdtemp(prefix='kit-rerun-')
+        self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
+        add = rerun.add_line(empty, BRANCH, 'a' * 40, [
+            {'cls': 'pkg.FooTest', 'runner': 'gradle', 'scope': '', 'ids': ['pkg.FooTest.t']}])
+        self.assertIn(' --scope "none" --found-on ', add)
+        self.assertNotIn('"tests"', add)
+
+
+class ReportSteps(unittest.TestCase):
+    """The red run's steps of report failures (a `runner`) rerun whole; its unittest classes, an
+    old record's failures with no runner among them, rerun one by one."""
+    RED = {'steps': [
+        {'name': 'unit', 'status': 'FAIL', 'failures': [{'id': 'a.B.c', 'cls': 'a.B', 'env': {}}]},
+        {'name': 'gradle', 'status': 'FAIL', 'failures': [
+            {'id': 'p.C.x', 'cls': 'p.C', 'env': {}, 'runner': 'gradle', 'scope': 'mod',
+             'report': {'task': ':mod:test'}, 'cwd': ''}]},
+        {'name': 'after', 'status': 'NOT RUN'}]}
+
+    def test_each_failure_reruns_its_own_way(self):
+        self.assertEqual(rerun.classes_of(self.RED),
+                         [{'cls': 'a.B', 'env': {}, 'cwd': '', 'ids': ['a.B.c']}])
+        self.assertEqual(rerun.report_steps(self.RED),
+                         [('gradle', self.RED['steps'][1]['failures'])])
+
+    def test_a_report_class_passes_only_in_a_passing_step(self):
+        d = tempfile.mkdtemp(prefix='kit-rerun-')
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        log = os.path.join(d, 'dotnet.log')
+        with open(log, 'w', encoding='utf-8') as f:
+            f.write('Passed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2, '
+                    'Duration: 1 s - P.Tests.dll (net10.0)\n')
+        whole = [('dotnet', [{'id': 'P.Tests.A.B', 'cls': 'P.Tests.A', 'env': {}, 'cwd': '',
+                              'runner': 'dotnet', 'scope': 'P.Tests',
+                              'report': {'dll': 'P.Tests.dll', 'fw': 'net10.0', 'total': 2,
+                                         'skipped': 0}}])]
+        for status, tip in (('PASS', 'pass'), ('FAIL', 'fail')):
+            with self.subTest(status):
+                got = rerun.judge_reports(d, whole, [{'name': 'dotnet', 'status': status,
+                                                      'log': log}], 0.0)
+                self.assertEqual(got, [{'cls': 'P.Tests.A', 'step': 'dotnet', 'runner': 'dotnet',
+                                        'env': {}, 'cwd': '', 'scope': 'P.Tests',
+                                        'ids': {'P.Tests.A.B': 'ok'}, 'tip': tip, 'log': log,
+                                        'control': 'not run', 'control_log': None}])
+        got = rerun.judge_reports(d, whole, [], 0.0)
+        self.assertEqual((got[0]['ids'], got[0]['tip']), ({'P.Tests.A.B': 'not run'}, 'fail'))
 
 
 class RerunCase(test_land.LandCase):
@@ -417,7 +550,7 @@ class Flake(RerunCase):
         add = out.lines[-1].strip()
         # the id it proposes is FLAKE- and the failing test's class name
         self.assertIn(' add FLAKE-%s ' % ID.split('.')[-2].upper(), add)
-        self.assertIn('--scope flaky_mod.py', add)
+        self.assertIn('--scope "flaky_mod.py"', add)
         self.assertIn('--found-on %s' % BRANCH, add)
         # the summary is a title `backlog.py add` takes; the test id goes in the reason
         summary = re.search(r'--summary "([^"]*)"', add).group(1)
@@ -617,20 +750,94 @@ class Real(RerunCase):
 
 
 class GradleStep(RerunCase):
-    GATE = GRADLE_GATE
+    """A red gradle step's failing ids come from the JUnit XML it wrote; the rerun runs the step
+    whole, in the red run's step order, and judges each id from the XML of that run."""
+    GATE = report_gate('gradle')
 
-    def test_a_red_gradle_step_is_not_rerun_and_the_refusal_says_what_is_covered(self):
-        wt, tip = self.branch('feature', {'gradle_report.txt': GRADLE_LOG})
+    def work(self, state):
+        self.set_state(state)
+        return self.branch('feature', REPORT_FILES)
+
+    def test_a_gradle_flake_passes_its_whole_step_rerun_and_the_tip_lands_on_it(self):
+        wt, tip = self.work('once')
         self.red(wt)
         step = self.loaded(tip)[0][0]['steps'][0]
-        self.assertEqual((step['name'], step['failures']), ('gradle', []))
+        self.assertEqual((step['name'], step['uncovered']), ('gradle', []))
+        self.assertEqual(step['failures'], [
+            {'id': GRADLE_ID, 'cls': 'pkg.FooTest', 'env': {}, 'runner': 'gradle', 'scope': 'mod',
+             'report': {'task': ':mod:test'}, 'cwd': ''}])
+        out = self.rerun(wt)
+        self.assertEqual(out.code, G.OK, out.lines + out.said)
+        self.assertTrue(out.lines[0].startswith('RERUN FLAKE'), out.lines)
+        self.assertIn(' add FLAKE-%s ' % GRADLE_ID.split('.')[-2].upper(), out.lines[-1])
+        self.assertIn(' --scope "mod" --found-on ', out.lines[-1])
+        self.assertTrue(any(s.startswith('PASS  pkg.FooTest at the tip, from the gradle reports')
+                            for s in out.said), out.said)
+        rr = self.loaded(tip)[1][0]
+        self.assertEqual([(c['cls'], c['runner'], c['ids'], c['tip']) for c in rr['classes']],
+                         [('pkg.FooTest', 'gradle', {GRADLE_ID: 'ok'}, 'pass')])
+        self.assertEqual([s['name'] for s in rr['steps'] if s['name'] != 'windows'],
+                         ['gradle', 'after'])
+        self.assertIsNone(rerun.verify_flake(self.repo.root, tip))
+        out = self.lander(BRANCH, self.main, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+
+    def test_a_gradle_test_that_fails_its_rerun_is_real_and_never_lands(self):
+        wt, tip = self.work('red')
+        self.red(wt)
+        out = self.rerun(wt)
+        self.assertEqual(out.code, G.FAILED, out.lines + out.said)
+        self.assertTrue(out.lines[0].startswith('RERUN REAL'), out.lines)
+        rr = self.loaded(tip)[1][0]
+        self.assertEqual([c['ids'] for c in rr['classes']], [{GRADLE_ID: 'failure'}])
+        self.assertIn('%s failed on this tip and failed twice' % GRADLE_ID,
+                      rerun.twice_refusal(self.repo.root, tip, self.main))
+
+    def test_a_passing_rerun_whose_reports_do_not_show_the_id_passed_is_real(self):
+        # the step passes, but its XML predates the rerun's start (stale): the red id is not
+        # shown passed, so the rerun is REAL, not a FLAKE on the step's status alone
+        wt, tip = self.work('once')
+        self.red(wt)
+        with mock.patch.object(rerun, 'since_of', lambda stamp: time.time() + 3600):
+            out = self.rerun(wt)
+        self.assertEqual(out.code, G.FAILED, out.lines + out.said)
+        self.assertTrue(out.lines[0].startswith('RERUN REAL'), out.lines)
+        rr = self.loaded(tip)[1][0]
+        self.assertEqual([s['status'] for s in rr['steps'] if s['name'] == 'gradle'], ['PASS'])
+        self.assertEqual([(c['ids'], c['tip']) for c in rr['classes']],
+                         [({GRADLE_ID: 'not run'}, 'fail')])
+
+    def test_a_gradle_failure_that_is_not_failing_tests_is_not_rerun(self):
+        wt, tip = self.work('compile')
+        self.red(wt)
         n = len(self.book_calls)
         out = self.rerun(wt)
         self.assertEqual(out.code, G.REFUSED, out.lines)
         self.assertIn('only a passing gate lands this tip', out.lines[0])
-        self.assertIn('  gradle: ' + COVERS, '\n'.join(out.lines))
+        self.assertIn('  gradle: gradle: a failure that is not failing tests', '\n'.join(out.lines))
         self.assertEqual(self.book_calls[n:], [])
-        self.assertIn(COVERS, rerun.verify_flake(self.repo.root, tip))
+        self.assertIn('uncovered', rerun.verify_flake(self.repo.root, tip))
+
+
+class DotnetStep(RerunCase):
+    """A red dotnet step's failing ids come from its `dotnet test` summaries, judged again from the
+    summaries of its whole rerun."""
+    GATE = report_gate('dotnet')
+    work = GradleStep.work
+
+    def test_a_dotnet_flake_passes_its_whole_step_rerun_and_the_tip_lands_on_it(self):
+        wt, tip = self.work('once')
+        self.red(wt)
+        step = self.loaded(tip)[0][0]['steps'][0]
+        self.assertEqual(([(f['id'], f['scope']) for f in step['failures']], step['uncovered']),
+                         ([(DOTNET_ID, 'proj')], []))
+        out = self.rerun(wt)
+        self.assertEqual(out.code, G.OK, out.lines + out.said)
+        self.assertIn(' --scope "proj" --found-on ', out.lines[-1])
+        rr = self.loaded(tip)[1][0]
+        self.assertEqual([(c['runner'], c['ids']) for c in rr['classes']],
+                         [('dotnet', {DOTNET_ID: 'ok'})])
+        self.assertIsNone(rerun.verify_flake(self.repo.root, tip))
 
 
 class Branch(RerunCase):

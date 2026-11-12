@@ -148,16 +148,16 @@ class TheSignedBranch(Case):
         self.assertIsNone(done)
         self.assertIn('was approved for branch %s, not kit/x' % BRANCH, why)
 
-    def test_a_request_with_no_branch_is_refused_at_apply(self):
-        status, obj = self.hub.api.call('POST', BASE + '/approvals', AGENT, {
-            'repo': URL, 'title': 'No branch', 'head': self.head,
-            'files': [{'path': PATH, 'base_blob': ap.blob_id('one\n'), 'content': 'two\n'}]},
-            None)
+    def test_an_approved_request_with_no_branch_is_not_applied(self):
+        files = [{'path': PATH, 'base_blob': ONE, 'content': 'two\n'}]
+        doc = ap.new_doc(URL, 't', self.head, files, WHEN)
+        doc.update(ap.decide_fields(KEY, self.did, doc, ap.APPROVE, WHEN))
+        self.hub.store.put(ap.COLLECTION, self.did, doc)
+        status, obj = self.apply_route()
         self.assertEqual(status, 200, obj)
-        self.hub.decide(obj['id'])
-        doc = self.hub.approvals()[obj['id']]
+        self.assertFalse(obj['applied'])
+        doc = self.doc()
         self.assertEqual(doc['status'], ap.APPROVED)
-        self.assertNotIn('commit', doc)
         self.assertTrue(doc['apply']['error'])
         self.assertEqual((self.tip(), self.read()), (self.head, b'one\n'))
 
@@ -438,6 +438,7 @@ class Where(unittest.TestCase):
         self.assertIn("main checkout's branch", consumer.worktree_for(repo.root, 'main')[1])
         self.assertIn('no linked worktree', consumer.worktree_for(repo.root, 'kit/x')[1])
         self.assertIsNone(consumer.worktree_for(repo.root, BRANCH)[1])
+        self.assertIsNone(consumer.worktree_for(repo.root, None)[0])
 
 
 if __name__ == '__main__':

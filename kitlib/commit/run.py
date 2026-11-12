@@ -10,6 +10,7 @@ import subprocess
 import sys
 import uuid
 
+from kitlib import kitroot
 from kitlib import config as kconfig
 from kitlib import attribution, verdict
 from kitlib.docs import callers as doc_callers
@@ -29,7 +30,7 @@ from kitlib.commit.message import (
 from kitlib.ownerfiles import rules as ownerrules
 
 
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 
 
 DOC_BUDGET_TIMEOUT = 600     # seconds

@@ -20,6 +20,7 @@ On Linux a job opens no console window, so `check` says nothing.
 import os
 import re
 
+from kitlib import kitroot
 from kitlib import platform
 from kitlib.launcher import reboot
 from kitlib.machinesetup import agenttemp
@@ -29,7 +30,7 @@ from kitlib.schedtask.read import words
 
 CONSOLE = frozenset(('python.exe', 'py.exe', 'powershell.exe', 'pwsh.exe', 'cmd.exe', 'bash.exe'))
 NAME_SUFFIXES = ('-worktree-sweep', '-daily-full')    # docs/worktree-remove.md; docs/daily-full.md
-KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT = kitroot.root()
 ABSOLUTE = re.compile(r'^(?:[A-Za-z]:\\|\\\\)')
 
 

@@ -7,10 +7,9 @@ through notice(); a server that will not restart itself pushes the PM `job hub s
 its scheduled task restarts itself (kitlib/hubsite/selfrestart.py) and shows `stale` only when
 it does not: no task, a failed self-check or a restart that did not happen; the restart is then
 the owner's."""
-import os
+from kitlib import kitroot
 
-HUB_TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))), 'tools', 'hub.py')
+HUB_TOOL = kitroot.tool('hub')
 
 
 def restart_step(tool=None):

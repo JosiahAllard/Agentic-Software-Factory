@@ -43,7 +43,7 @@ def eng_review(cfg):
 
 
 # This kit's checkout: the PM session's directory is not the kit, so kit paths are made absolute.
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 
 
 def current_account():

@@ -33,7 +33,7 @@ Verbs (the docstrings of `kitlib/hubsite/cli/` are the source), with the line ea
 | `questions add --title T [--repo R] [--context-file F] [--option "label::description" ...] [--recommended N] [--refs ID ...] [--urgent] [--story S-n] (--record REPO:ID \| --class rule\|machine\|cross-repo\|go) [--from KEY]` | `ASKED Q-2`, then any warning lines |
 | `questions log Q-1 [--unfiled WHY] --if-version V` | `LOGGED Q-1` |
 | `questions done Q-1 --why TEXT [--unfiled WHY] --if-version V` | `DONE Q-1` |
-| `questions file [Q-1]` | `FILED Q-1` and `NOT FILED Q-2: <why> (<code>)` lines, or `nothing to file` (docs/hub-questions.md "Filing the answer") |
+| `questions file [Q-1]` | `QUEUED Q-1` (`QUEUED all` with no id) from a running hub, whose refile job then files it; else `FILED Q-1` and `NOT FILED Q-2: <why> (<code>)` lines, or `nothing to file` (docs/hub-questions.md "Filing the answer") |
 | `questions bind --dry-run \| --apply` (PM) | `BIND Q-1 repo:ID` (dry run) or `BOUND Q-1 repo:ID` lines (each answered one followed by `FILED Q-1` or `NOT FILED Q-1: <why> (<code>)`), `NOT BOUND Q-1: <why> (<code>)`, then `MISS repo:ID: <why>` (`MISS repo: <why>` when the whole repository could not be read), `MULTI repo:ID cites Q-1 Q-2`, `SKIP Q-1: <why>`, or `nothing to bind` (docs/hub-questions.md "Binding the open questions") |
 | `questions edit Q-1 --from KEY --if-version V [--title T] [--context-file F] [--option "label::description" ...] [--recommended N] [--refs ID ...] [--urgent \| --no-urgent] [--record REPO:ID \| --no-record] [--class C]` | `EDITED Q-1` |
 | `questions withdraw Q-1 --from KEY --if-version V` | `WITHDRAWN Q-1` |

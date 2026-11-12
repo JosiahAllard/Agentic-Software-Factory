@@ -65,7 +65,7 @@ WRITES_WHY = {
     'strong': 'reservations and the division need the strong owner login (a browser paired as '
               'the strong owner, or Cloudflare Access)'}
 STATUS = {'invalid': 400, 'forbidden': 403, 'not_found': 404, 'conflict': 409, 'store': 503,
-          'unavailable': 503, 'internal': 500}
+          'busy': 503, 'unavailable': 503, 'internal': 500}
 FEED_MAX = 200                      # the landing feed events GET snapshot and GET landings give
 LIMIT_DIGITS = 9                    # GET landings `limit`: longer is refused, never a huge int()
 LOCK_POLL_S = 0.5                   # how often GET lock/wait looks at the lock's revision
@@ -79,7 +79,8 @@ OWNER_FROM = 'you'                  # a to-do's or a story's `from` when the own
 AGENT_FROM = PM_KEY                 # a to-do's `from` when an agent gives none
 DAYS_MAX = 3650
 # what a caller who is not the owner is told in place of the store's own message, by code
-AGENT_SAYS = {'store': 'the hub store is not available: the owner sees why'}
+AGENT_SAYS = {'store': 'the hub store is not available: the owner sees why',
+              'busy': 'another write on this machine holds the backlog store: try again shortly'}
 
 Route = collections.namedtuple('Route', 'method pattern role handler')
 # full: the local owner, told the store's own words (agent_words False) and not through the tunnel

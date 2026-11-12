@@ -10,6 +10,9 @@ Read from skill `coordinator-dispatch`, "Creative dispatches".
   proposing strongly different looks for the owner to pick; none hand-sculpts; rigs and their test
   animations are scripted (skill `specialty-rigging`). An asset generation cannot supply -> the
   owner, not another agent.
+- Launched sessions start without Blender or Suno, and their agents too: before a 3D or Blender
+  (or Suno sound) dispatch, a coordinator launched without `--mcp blender` (or `--mcp suno`) asks
+  the PM to relaunch it with that flag.
 - Every creative brief carries this block, filled in:
 
   > FEEL: one sentence. REFERENCES: one to three (a game and what specifically, or an image path,

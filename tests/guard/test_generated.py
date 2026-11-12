@@ -55,6 +55,8 @@ class Source(unittest.TestCase):
                 ('hosts/codex/shell/hooks/hooks.linux.json', manifest % 'codex'),
                 ('hosts/codex/shell/mcp.linux.json', manifest % 'codex'),
                 ('.claude-plugin/plugin.json', manifest % 'claude'),
+                ('hosts/claude/shell/session-settings.json',
+                 'hosts/claude/adapter/content.py and content/roles/'),
                 ('.claude-plugin/plugin.linux.json', manifest % 'claude'),
                 ('.claude-plugin/marketplace.json', manifest % 'claude'),
                 ('hosts/claude/shell/agents', 'content/roles/'),                  # the folders themselves

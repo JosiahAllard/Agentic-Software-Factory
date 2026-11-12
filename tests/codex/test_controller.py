@@ -21,6 +21,7 @@ class Controller(unittest.TestCase):
     def setUp(self):
         self.world = World()
         self.addCleanup(self.world.cleanup)
+        self.world.stub_main_checkout(self)
         old = Path(self.world.wt)
         assigned = Path(self.world.main) / '.codex/worktrees/assigned'
         assigned.parent.mkdir(parents=True)

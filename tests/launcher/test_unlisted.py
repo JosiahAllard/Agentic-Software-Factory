@@ -110,9 +110,12 @@ class LinuxWindow(Base):
 
     def setUp(self):
         super().setUp()
-        patch = mock.patch('kitlib.platform.NAME', 'linux')
-        patch.start()
-        self.addCleanup(patch.stop)
+        # anchor_check (the Started line's tmux question) reads os.getuid and this machine's tmux:
+        # fake its answer, so these tests need neither (Windows has no os.getuid)
+        for patch in (mock.patch('kitlib.platform.NAME', 'linux'),
+                      mock.patch.object(linuxwin, 'anchor_check', return_value=(False, None))):
+            patch.start()
+            self.addCleanup(patch.stop)
 
     def bash_rows(self, text, pid, name):
         parent = {'Name': 'bash', 'ProcessId': pid + 1, 'ParentProcessId': 1,

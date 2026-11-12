@@ -28,7 +28,9 @@ stories, notes to the PM, inbox and hand-offs, and pending and wait.
   hub.py questions file [Q-1]                       `FILED Q-1`, `NOT FILED Q-1: <why> (<code>)`
                                                      or `nothing to file`: each answer to a
                                                      question bound to a record not filed yet,
-                                                     filed into its record again
+                                                     filed into its record again; a running hub
+                                                     queues it for its refile job and says
+                                                     `QUEUED Q-1` (`QUEUED all` with no id)
   hub.py questions bind --dry-run | --apply          (PM) `BIND Q-1 repo:ID` per open question a
                                                      parked record's q or an owner-blocked
                                                      record cites, then `MISS`, `MULTI`, `SKIP`
@@ -167,6 +169,12 @@ def questions(a, out, stop=None):
         return common.wrote(a, out, got, 'DONE %s' % got.get('id'))
     if a.sub == 'file':
         got = hub.post('/questions/file', client.AGENT, common.body(id=a.id))
+        queued = got.get('queued')
+        if queued is not None:
+            # the hub's refile job does it now: the result is on the question and its push
+            # (docs/hub-questions.md "Filing the answer")
+            return common.show(a, out, got, ['QUEUED all'] if queued == 'all' else
+                               ['QUEUED %s' % i for i in queued])
         lines = ['FILED %s' % i for i in got.get('filed') or []]
         lines += ['NOT FILED %s: %s (%s)' % (f.get('id'), f.get('message'), f.get('code'))
                   for f in got.get('failed') or [] if isinstance(f, dict)]

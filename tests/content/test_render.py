@@ -14,6 +14,7 @@ import tempfile
 import unittest
 
 from hosts.claude.adapter import content as claude_content
+from hosts.codex.adapter import content as codex_content
 from kitlib import content
 from kitlib.host import content as hc
 from kitlib.host import registry
@@ -101,7 +102,8 @@ class RealContentTest(unittest.TestCase):
                          sorted(c.role_names()))
         self.assertFalse(os.path.exists(os.path.join(KIT_ROOT, 'hosts', 'claude', 'shell', 'skills')))
         rendered = claude_content.renderer().render(c)
-        self.assertEqual([p for p in rendered if not p.startswith(claude_content.AGENTS_REL + '/')], [])
+        self.assertEqual([p for p in rendered if not p.startswith(claude_content.AGENTS_REL + '/')],
+                         [claude_content.SESSION_SETTINGS_REL])
 
     def test_the_plugin_manifest_lists_every_role(self):
         with open(os.path.join(KIT_ROOT, '.claude-plugin', 'plugin.json'), encoding='utf-8') as f:
@@ -403,6 +405,22 @@ class ClaudeRendererTest(unittest.TestCase):
                 self.assertIn('\nmodel: %s\n' % model, got.split('\n---\n', 1)[0])
                 self.assertIn('the 1M-context %s model' % model, got)
 
+    def test_the_description_cap_counts_each_hosts_rendered_text(self):
+        """DESCRIPTION_MAX counts the description once a host fills its tokens: {{tool:dispatch}} is
+        `Agent` on Claude and a longer phrase on Codex, so one source passes on one host and not the other."""
+        text = 'x' * (hc.DESCRIPTION_MAX - len(claude_content.TOOLS['dispatch'])) + '{{tool:dispatch}}'
+        role = hc.parse_role(BETA.replace(b'"Two: parts"', text.encode('utf-8')))
+        got = claude_content.renderer().agent_file(role, ('beta',))
+        dispatch = claude_content.TOOLS['dispatch']
+        self.assertIn(('\ndescription: %s%s\n' % ('x' * (hc.DESCRIPTION_MAX - len(dispatch)), dispatch)).encode('utf-8'),
+                      got)
+        over_cap = r'content/roles/beta\.md: description is \d+ characters once rendered, over %d' % hc.DESCRIPTION_MAX
+        with self.assertRaisesRegex(hc.ContentError, over_cap):
+            codex_content.renderer().agent_file(role, ('beta',))
+        over = hc.parse_role(BETA.replace(b'"Two: parts"', b'x' + text.encode('utf-8')))
+        with self.assertRaisesRegex(hc.ContentError, 'over %d' % hc.DESCRIPTION_MAX):
+            claude_content.renderer().agent_file(over, ('beta',))
+
     def test_every_tier_and_capability_has_a_claude_value(self):
         self.assertEqual(sorted(claude_content.renderer().tier_models()), sorted(hc.TIERS))
         self.assertEqual(claude_content.renderer().tier_models(), dict(registry.host('claude').tiers))
@@ -440,6 +458,7 @@ class TempTreeTest(unittest.TestCase):
         # hosts.json: a plugin ships its host's entry
         for rel in ('kit.json', 'hosts.json', os.path.join('hosts', 'claude', 'shell', 'hooks', 'hooks.json'),
                     os.path.join('hosts', 'claude', 'shell', 'hooks', 'hooks.linux.json'),
+                    os.path.join('hosts', 'claude', 'shell', 'session-settings.json'),
                     os.path.join('docs', 'ROSTER.md')):
             write(self.path(rel), read(os.path.join(KIT_ROOT, rel)))
         self.rs = [claude_content.renderer()]

@@ -32,13 +32,15 @@ _PARK_SAYS = {
     'not_found': 'the record is completed or gone: nothing waits on this %(noun)s',
     'invalid': 'the backlog store refused to block the record: the PM handles it',
     'store': 'the backlog store could not be written now: the hub tries again',
+    'busy': 'another write on this machine held the backlog store: the hub tries again',
     'unavailable': 'this hub cannot write a backlog store: the hub tries again',
     'no_store': 'this repository names no backlog store the hub may write (.kit.json '
                 '"backlog".store): the PM handles it',
 }
 PARK_SAYS = {k: v % {'noun': 'question', 'end': 'answered'} for k, v in _PARK_SAYS.items()}
-# the codes a later park tries again (POST questions/file; the hub runs it at start)
-PARK_RETRY = ('store', 'unavailable', 'internal')
+# the codes a later park tries again (POST questions/file, and the hub's refile job:
+# kitlib.hubsite.refile)
+PARK_RETRY = ('store', 'busy', 'unavailable', 'internal')
 _UNPARK_FAILED = ('the record still waits on this %s, which is gone or bound elsewhere: the hub '
                   'tries again at its next start or questions file call')
 UNPARK_FAILED = _UNPARK_FAILED % 'question'

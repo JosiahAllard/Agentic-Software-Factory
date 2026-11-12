@@ -2,7 +2,7 @@
 # Review template: do not install until live acceptance (hosts/codex/README.md).
 # Codex hooks do not see which agent runs: hosts/codex/README.md, "Not verified".
 name = "kit-strong-worker"
-description = "Default coder for High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring. Concurrency, networking, simulation or ordering, migrations, CI config, landing, gate or lock logic, build-cache or codegen design: `kit-senior-worker`. Routine, plan-only or sync work: `kit-worker`."
+description = "Default coder for High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring."
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """

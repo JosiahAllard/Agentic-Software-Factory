@@ -134,5 +134,56 @@ class RemoveTest(unittest.TestCase):
         self.assertEqual(m.call_count, 1)
 
 
+class PlaceNewTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix='kit-fs-')
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.src = os.path.join(self.dir, 'new')
+        self.dst = os.path.join(self.dir, 'file')
+        with open(self.src, 'w', encoding='utf-8') as f:
+            f.write('new')
+
+    def read(self, path):
+        with open(path, encoding='utf-8') as f:
+            return f.read()
+
+    def test_a_free_target_gets_the_file_by_either_branch_and_the_source_goes(self):
+        for name in ('linux', 'windows'):       # the branch that is not this machine's still places
+            with self.subTest(platform=name), mock.patch.object(R.platform, 'NAME', name):
+                self.assertTrue(R.place_new(self.src, self.dst))
+                self.assertEqual(self.read(self.dst), 'new')
+                self.assertFalse(os.path.exists(self.src))
+                os.rename(self.dst, self.src)
+
+    def test_an_existing_target_is_left_alone_and_the_source_kept(self):
+        # this machine's own branch: a rename over a file replaces it on POSIX, so the other
+        # branch's refusal would prove nothing here
+        with open(self.dst, 'w', encoding='utf-8') as f:
+            f.write('old')
+        self.assertFalse(R.place_new(self.src, self.dst))
+        self.assertEqual(self.read(self.dst), 'old')
+        self.assertEqual(self.read(self.src), 'new')
+
+    def test_another_error_is_raised_with_the_source_kept(self):
+        for name, call in (('linux', 'link'), ('windows', 'rename')):
+            with self.subTest(platform=name), mock.patch.object(R.platform, 'NAME', name), \
+                    mock.patch.object(R.os, call, side_effect=OSError(5, 'io')):
+                with self.assertRaises(OSError):
+                    R.place_new(self.src, self.dst)
+                self.assertTrue(os.path.exists(self.src))
+
+    def test_windows_waits_out_a_refusal_for_wait_seconds_and_by_default_not_at_all(self):
+        clock = fake_time(self)
+        with mock.patch.object(R.platform, 'NAME', 'windows'), \
+                mock.patch.object(R.os, 'rename', side_effect=PermissionError(13, 'denied')) as m:
+            with self.assertRaises(PermissionError):
+                R.place_new(self.src, self.dst)
+            self.assertEqual((m.call_count, clock.sleeps), (1, []))
+            with self.assertRaises(PermissionError):
+                R.place_new(self.src, self.dst, wait=WAIT, pause=PAUSE)
+            self.assertEqual(m.call_count, 6)
+            self.assertEqual(clock.sleeps, [PAUSE] * 4)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,29 +1,45 @@
 """kitlib.config.pm: the PM settings (docs/modules/config-design.md): the machine config's
-`pm_start` section (load_config), the whole machine config read unchecked (machine_config), and
-the repositories the PM knows (known_repos). The session starts, the hub and the launcher read
-them here.
+`pm_start` section (load_config, on section: the one reader of a key), the whole machine config
+(machine_config), and the repositories the PM knows (known_repos). The session starts, the hub
+and the launcher read them here.
 """
 import json
 import os
 import subprocess
 
 from kitlib.config import user as kuser
+from kitlib.config.types import ConfigError
 
 KEY = "pm_start"
 TIMEOUT = 4           # seconds the git ask of _toplevel waits
 
 
-def load_config(path=None):
-    """The "pm_start" dict from the user-profile config, or None when the file or key is missing.
-    With no `path`, a machine config location that cannot be told (kitlib.config.user.locate BAD)
-    raises kitlib.config.ConfigError: never read as "no config"."""
+def section(key, path=None):
+    """The dict at `key` of the machine config: the one reader of a key, with one failure meaning.
+    None when the file is missing, the key is missing or its value is not an object ("not
+    configured"). kitlib.config.ConfigError, naming the file, when the file is there but cannot be
+    used (unreadable, bad JSON, not an object) and, with no `path`, when its location cannot be
+    told (kitlib.config.user.locate BAD): a broken file is never read as "no config". A caller in
+    an unattended process catches the error where it reports and skips its step."""
     p = os.path.expanduser(path) if path else kuser.readable_file()
-    try:
-        with open(p, encoding="utf-8-sig") as f:
-            cfg = json.load(f).get(KEY)
-    except (OSError, ValueError, AttributeError):
-        return None
+    cfg = _object(p).get(key)
     return cfg if isinstance(cfg, dict) else None
+
+
+def _object(path):
+    """The JSON object in the file `path`; {} when the file is missing. ConfigError naming the
+    file when it cannot be read, is not JSON or is not an object."""
+    data = kuser._read_object(path)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ConfigError("%s: the machine config is not a JSON object" % path)
+    return data
+
+
+def load_config(path=None):
+    """The "pm_start" dict (section), or None when the file or key is missing."""
+    return section(KEY, path)
 
 
 def _read(path):
@@ -33,25 +49,17 @@ def _read(path):
 
 
 def machine_config(path=None):
-    """The whole machine config as a dict ({} when the file is missing or is not a JSON object),
-    read as load_config reads it: unchecked, so one bad key elsewhere does not stop the hub line.
-    With no `path`, a PM repository's local.json is read too (its keys over config.json's: `hub`
-    and `launcher` live there, kitlib.config.user.LOCAL_KEYS). ConfigError when its location
-    cannot be told (kitlib.config.user.readable_file)."""
-    def read(p):
-        try:
-            with open(p, encoding="utf-8-sig") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
-            return {}
-        return data if isinstance(data, dict) else {}
-
+    """The whole machine config as a dict ({} when the file is missing), its keys unchecked, so one
+    bad key elsewhere does not stop the hub line. With no `path`, a PM repository's local.json is
+    read too (its keys over config.json's: `hub` and `launcher` live there,
+    kitlib.config.user.LOCAL_KEYS). A file that cannot be used raises ConfigError naming it, as
+    `section` does, and so does a location that cannot be told (kitlib.config.user.readable_file)."""
     if path:
-        return read(os.path.expanduser(path))
-    data = read(kuser.readable_file())
+        return _object(os.path.expanduser(path))
+    data = _object(kuser.readable_file())
     loc = kuser.locate()
     if loc.state == kuser.OK and loc.local:
-        data.update(read(loc.local))
+        data.update(_object(loc.local))
     return data
 
 

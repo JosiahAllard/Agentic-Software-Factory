@@ -200,6 +200,19 @@ class AddTest(Base):
             with self.assertRaises(write.Usage, msg=bad):
                 self.add(when=bad)
 
+    def test_plan_entry_refuses_as_add_does_and_writes_nothing(self):
+        self.add()
+        before = self.text()
+        args = dict(repo='alpha', prov='selected', q='Which?', a='This one', decides='Use.',
+                    source='PM session chat', when=WHEN)
+        plan = write.plan_entry(self.path, **args)
+        self.assertEqual(plan.rid, rid(2))
+        self.assertEqual(plan.new.count('## %s |' % rid(2)), 1)
+        for bad in ({'q': ' '}, {'repo': 'Alpha'}, {'prov': 'mystery'}, {'when': 'now'}):
+            with self.assertRaises(write.Usage, msg=bad):
+                write.plan_entry(self.path, **dict(args, **bad))
+        self.assertEqual(self.text(), before)
+
     def test_when_defaults_to_now_utc(self):
         self.add(when=None)
         header = self.text().split('\n## ', 1)[1].split('\n', 1)[0]

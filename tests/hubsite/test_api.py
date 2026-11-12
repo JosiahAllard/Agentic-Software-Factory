@@ -19,6 +19,7 @@ from kitlib.hubsite import api, apipages, derived, push, recordwrite, schema, se
 from kitlib.ownerfiles import approvals
 from kitlib.hubvalidate import todosteps
 from kitlib.hubsite import backlog as hbacklog
+from kitlib.hubsite import jobs, refile
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
 from kitlib.maintlint import result as lint_result
@@ -3101,7 +3102,7 @@ class ApprovalRouteTest(ApiCase):
 
     def add(self, **kw):
         body = {'repo': self.URL, 'title': 'Edit the readme', 'head': self.repo.initial,
-                'files': self.files(), 'reason': 'asked for'}
+                'files': self.files(), 'reason': 'asked for', 'branch': 'kit/x'}
         body.update(kw)
         return self.ok('POST', '/approvals', AGENT, body)
 
@@ -3133,14 +3134,19 @@ class ApprovalRouteTest(ApiCase):
         files[0]['base_blob'] = approvals.blob_id('else\n')
         self.refused('invalid', 'files', 'POST', '/approvals', AGENT,
                      {'repo': self.URL, 'title': 't', 'head': self.repo.initial,
-                      'files': files})
+                      'files': files, 'branch': 'kit/x'})
 
     def test_a_repo_with_no_checkout_here_is_refused(self):
         self.refused('invalid', 'repo', 'POST', '/approvals', AGENT,
                      {'repo': 'https://github.com/Owner/Other', 'title': 't',
-                      'head': self.repo.initial, 'files': self.files()})
+                      'head': self.repo.initial, 'files': self.files(), 'branch': 'kit/x'})
         self.api = api.Api(self.store, clock=CLOCK)         # no checkout given: fails closed
         self.refused('invalid', 'repo', 'POST', '/approvals', AGENT,
+                     {'repo': self.URL, 'title': 't', 'head': self.repo.initial,
+                      'files': self.files(), 'branch': 'kit/x'})
+
+    def test_a_file_request_naming_no_branch_is_refused(self):
+        self.refused('invalid', 'branch', 'POST', '/approvals', AGENT,
                      {'repo': self.URL, 'title': 't', 'head': self.repo.initial,
                       'files': self.files()})
 
@@ -4835,26 +4841,21 @@ class FilingTest(ApiCase):
         self.refused('not_found', 'id', 'POST', '/questions/file', AGENT, {'id': 'Q-404'})
         self.refused('invalid', 'why', 'POST', '/questions/file', AGENT, {'why': 'x'})
 
-    def test_the_hub_start_files_what_is_left_and_logs_each_failure(self):
+    def test_the_refile_job_s_first_run_files_what_is_left_and_logs_each_failure(self):
         qid = self.bound()
         self.views.fail = HubError('store', 'C:\\work\\repo is busy', '')
         self.answer(qid)
-        said = []
-
-        class Timer(object):
-            def start(self):
-                pass
-
-        hub = serve.Hub(None, self.store, self.api, self.views, None, [], None, Timer(), [],
-                        log=lambda level, text: said.append((level, text)),
-                        code=serve.code_folders())
-        hub._refile()
-        self.assertEqual(said, [('note', '%s not filed: %s' % (qid, api.FILING_SAYS['store']))])
+        said, at = [], [0.0]
+        job = refile.Refile(self.api, log=said.append, now=lambda: at[0])
+        ctx = jobs.Ctx(threading.Event(), lambda *a: None)
+        self.assertNotIsInstance(job.run(ctx), jobs.Skip)       # the full pass of hub start
+        # the store's own text is the owner's log's; the question keeps the fixed phrase
+        self.assertEqual(said, ['%s not filed (store): C:\\work\\repo is busy' % qid])
+        self.assertEqual(self.doc(qid)['filing']['message'], api.FILING_SAYS['store'])
         self.views.fail = None
-        self.assertTrue(hub.start())
-        for t in threading.enumerate():
-            if t.name == 'hub-refile':
-                t.join(30)
+        self.assertIsInstance(job.run(ctx), jobs.Skip)          # its backoff is not over
+        at[0] = refile.BACKOFF_FIRST_S
+        job.run(ctx)
         self.assertEqual(self.doc(qid)['status'], 'filed')
         self.assertEqual(len(said), 1)
 

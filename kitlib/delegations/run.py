@@ -670,21 +670,6 @@ def preconditions(pres, checks):
 
 # --- The run ----------------------------------------------------------------------------------
 
-def _would_add(path, col, split, repos, others, when, q, answer, line, source):
-    """LedgerRefused or LedgerUsage when lwrite.add would refuse this entry for its repo or for
-    the ledger's validity, as add checks them; nothing is written."""
-    bad = lwrite.split_repo_problem(path, col, repos) if split else fmt.repo_problem(col, repos)
-    if bad:
-        raise LedgerUsage(bad)
-    mine = col if split else None
-    text = lwrite.read_text(path)
-    rid = fmt.next_id(fmt.split_entries(text)[1], mine)
-    block = fmt.render(rid, when, col, PROV, q, answer, line, source, '-')
-    errs = lwrite.check(text.rstrip('\n') + '\n\n' + block, None, repos, mine, others)
-    if errs:
-        raise LedgerRefused('the ledger or the new entry is invalid:\n  %s' % '\n  '.join(errs))
-
-
 def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
     """Add the run's ledger entry under the runner lock; its id. RunRefused when the trigger or
     its anchor already ran, or the ledger refuses the entry. `before` (a hub approval's
@@ -721,7 +706,8 @@ def _claim(op, order, line, found, cfg, now, lock_wait, pause, before=None):
             source = 'under %s: %s %s' % (order.anchor, op.id, order.trigger)
             with lwrite.locked(path):       # the runner lock, then the ledger's: add nests in it
                 if before:
-                    _would_add(path, col, split, repos, others, when, q, answer, line, source)
+                    lwrite.plan_entry(path, col, PROV, q, answer, line, source, when=when, repos=repos,
+                                      split=split, others=others)
                     before()
                 added = lwrite.add(path, col, PROV, q, answer, line, source,
                                    when=when, repos=repos, split=split, others=others)

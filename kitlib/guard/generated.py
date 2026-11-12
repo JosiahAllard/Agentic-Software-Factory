@@ -72,4 +72,5 @@ def source(top, rel):
         return 'hosts.json'
     if low[3:] in MANIFESTS:
         return _manifest_source(host)
-    return None
+    # the settings file a launched session starts with (docs/launcher.md "Session settings")
+    return 'hosts/%s/adapter/content.py and %s' % (host, ROLES) if low[3:] == ('session-settings.json',) else None

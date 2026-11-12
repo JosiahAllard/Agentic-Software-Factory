@@ -39,6 +39,7 @@ class Host(object):
     def __init__(self, home=None, environ=None):
         self.home = home or kuser.home_dir()
         self.environ = os.environ if environ is None else environ
+        self.session_spec = None        # kitlib.launcher.sessionsettings.Spec; tools/launch.py sets it
 
     def env(self, name):
         """The process value, then the user's registry value: a process started before the owner

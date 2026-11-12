@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/lander.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: lander
-description: Optional wrapper that lands one reviewed branch (or a batch) - submits it, waits for the result, verifies the push, reports. Spawned fresh per landing. Needs the branch, reviewed tip sha, verdict and any extra gate. Never edits code.
+description: Optional wrapper that lands one reviewed branch or a batch, waits for the result and verifies the push. Never edits code.
 tools: PowerShell, Bash, Read, Grep, Glob, Agent, Skill
 model: haiku
 effort: medium

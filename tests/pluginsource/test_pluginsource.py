@@ -1,5 +1,6 @@
 """kitlib.pluginsource: the export of pushed main, the marketplace switch, the per-folder claude
 runs, prune, the refresh pid file and the behind lines (docs/plugin-source.md)."""
+import contextlib
 import datetime
 import json
 import os
@@ -439,6 +440,28 @@ class RefreshLockTest(Base):
                 self.assertEqual(os.listdir(self.k.root), [plugin_refresh.PIDFILE])     # no claim left
                 a.release()
                 self.assertFalse(os.path.exists(pidfile))
+
+    def test_a_claim_that_cannot_go_back_stays_and_never_replaces_a_file_made_meanwhile(self):
+        os.makedirs(self.k.root)
+        pidfile = os.path.join(self.k.root, plugin_refresh.PIDFILE)
+        claim = pidfile + '.break-1-x'
+        lock = plugin_refresh.RefreshLock(self.k.root, own=(2, 20), alive=never_alive)
+        for text, patches in (('there', ()), (None, ('link', 'rename'))):
+            with self.subTest(refused=bool(patches)), contextlib.ExitStack() as stack:
+                for call in patches:
+                    stack.enter_context(mock.patch.object(os, call, side_effect=OSError('refused')))
+                with open(claim, 'w', encoding='utf-8') as fh:
+                    fh.write('claim')
+                if text:
+                    with open(pidfile, 'w', encoding='utf-8') as fh:
+                        fh.write(text)
+                lock._put_back(claim)
+                with open(claim, encoding='utf-8') as fh:
+                    self.assertEqual(fh.read(), 'claim')
+                self.assertEqual(os.path.exists(pidfile), bool(text))
+            for p in (claim, pidfile):
+                if os.path.exists(p):
+                    os.remove(p)
 
     def test_release_leaves_a_file_another_run_took_over(self):
         os.makedirs(self.k.root)

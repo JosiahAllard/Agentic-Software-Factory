@@ -570,7 +570,7 @@ def _patch_path(row, side):
     return name[2:] if name.startswith(side) else None
 
 
-def new_sources(cwd, rng, exts, is_test, types):
+def new_sources(cwd, rng, exts, is_test, types, main=None):
     """The new non-test source files and classes the range `rng` (`<base>..<tip>`) adds, sorted:
     `<path>` for a file the diff adds (status A of `git diff --name-status --find-renames
     <base>...<tip>`; a rename is not one) ending in one of `exts`, `<path>:<Name>` for a type an
@@ -579,7 +579,11 @@ def new_sources(cwd, rng, exts, is_test, types):
     caller passes the repo module map's ModuleMap.is_test_source). `types`: `(suffix, regex)`
     pairs, the first whose suffix the path ends in (None: any) gives the regex whose group 2 is the
     type's name (kitlib.docs.codemap's). The prefixes are given, so diff.noprefix and the like
-    change nothing. Git runs in `cwd`. VerdictError when git gives no answer."""
+    change nothing. `main`: main as fetched (a rev), or None. With it, a file or type counts only
+    if the diff from merge-base(tip, main) adds it too: what a sync merge brought from main is
+    left out. A `main` that gives no merge-base keeps the full range. Known limit: a fetched main
+    older than the sync point leaves the files main added since counted as new (refused, the safe
+    direction; fetch first). Git runs in `cwd`. VerdictError when git gives no answer."""
     base, _, tip = rng.partition('..')
     for rev in (base, tip):
         why = refs.bad_rev(rev)
@@ -595,35 +599,43 @@ def new_sources(cwd, rng, exts, is_test, types):
                 m = rx.match(line)
                 return m.group(2) if m else None
         return None
-    fields = _git_diff(cwd, ['--name-status', '-z', '--find-renames'], base, tip).split('\0')
-    files, i = set(), 0
-    while i < len(fields) and fields[i]:
-        status = fields[i]
-        width = 3 if status[:1] in 'RC' else 2
-        if status == 'A' and source(fields[i + 1]):
-            files.add(fields[i + 1])
-        i += width
-    added, removed = set(), set()
-    old = new = None
-    hunk = False
-    for row in _git_diff(cwd, ['--unified=0', '--no-renames'], base, tip).splitlines():
-        if row.startswith('diff --git '):
-            old = new = None
-            hunk = False
-        elif not hunk and row.startswith('--- '):
-            old = source(_patch_path(row, 'a/'))
-        elif not hunk and row.startswith('+++ '):
-            new = source(_patch_path(row, 'b/'))
-        elif row.startswith('@@'):
-            hunk = True
-        elif hunk and row.startswith('+') and new:
-            name = type_name(new, row[1:])
-            if name:
-                added.add((new, name))
-        elif hunk and row.startswith('-') and old:
-            name = type_name(old, row[1:])
-            if name:
-                removed.add(name)
+    def scan(base):
+        fields = _git_diff(cwd, ['--name-status', '-z', '--find-renames'], base, tip).split('\0')
+        files, i = set(), 0
+        while i < len(fields) and fields[i]:
+            status = fields[i]
+            width = 3 if status[:1] in 'RC' else 2
+            if status == 'A' and source(fields[i + 1]):
+                files.add(fields[i + 1])
+            i += width
+        added, removed = set(), set()
+        old = new = None
+        hunk = False
+        for row in _git_diff(cwd, ['--unified=0', '--no-renames'], base, tip).splitlines():
+            if row.startswith('diff --git '):
+                old = new = None
+                hunk = False
+            elif not hunk and row.startswith('--- '):
+                old = source(_patch_path(row, 'a/'))
+            elif not hunk and row.startswith('+++ '):
+                new = source(_patch_path(row, 'b/'))
+            elif row.startswith('@@'):
+                hunk = True
+            elif hunk and row.startswith('+') and new:
+                name = type_name(new, row[1:])
+                if name:
+                    added.add((new, name))
+            elif hunk and row.startswith('-') and old:
+                name = type_name(old, row[1:])
+                if name:
+                    removed.add(name)
+        return files, added, removed
+    files, added, removed = scan(base)
+    mb, _ = refs.merge_base(tip, main, cwd) if main else (None, None)
+    if mb:
+        own_files, own_added, _ = scan(mb)
+        files &= own_files
+        added &= own_added
     return sorted(files | set('%s:%s' % (p, n) for p, n in added if n not in removed))
 
 

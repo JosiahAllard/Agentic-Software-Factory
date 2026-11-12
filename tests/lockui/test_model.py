@@ -3,6 +3,7 @@ with no tkinter."""
 import datetime as dt
 import unittest
 
+from kitlib.lock import queue as qm
 from kitlib.lockui import model as m
 
 UTC = dt.timezone.utc
@@ -160,7 +161,7 @@ class Build(unittest.TestCase):
         txt = "".join(t for t, _tags in self.v["queue"])
         self.assertIn("#1 game/e2e  measure  needs 2 slots + 1 gpu", txt)
         self.assertIn("waits for r-A", txt)
-        self.assertIn("backfill", txt)
+        self.assertIn(", backfill" + qm.BACKFILL_TEXT, txt)        # the lock CLI's words
         self.assertNotIn("moved to the top", txt)
 
     def test_each_waiting_run_carries_its_move_to_top_marker(self):
@@ -351,11 +352,15 @@ class ToJson(unittest.TestCase):
         out = m.to_json(m.build(s, now=NOW), s)
         it, = out["queue_items"]
         self.assertEqual(set(it), {"id", "position", "repo", "slug", "kind", "needs_cpu", "needs_gpu",
-                                   "est_start", "since", "backfill", "parked", "why"})
+                                   "est_start", "since", "backfill", "backfill_text", "parked", "why"})
         self.assertEqual((it["id"], it["position"], it["repo"], it["slug"], it["kind"]),
                          ("r-B", 1, "game", "e2e", "measure"))
         self.assertEqual((it["needs_cpu"], it["needs_gpu"], it["backfill"], it["parked"], it["why"]),
                          (2, 1, True, False, "waits for r-A"))
+        # the hub's Schedule card shows this, the lock CLI's words
+        self.assertEqual(it["backfill_text"], "backfill" + qm.BACKFILL_TEXT)
+        s["queue"]["entries"][0]["backfill"] = False
+        self.assertIsNone(m.to_json(m.build(s, now=NOW), s)["queue_items"][0]["backfill_text"])
         self.assertEqual(it["est_start"], m.to_local(at(5)).isoformat(timespec="seconds"))
         for remote in (False, True):
             _, text = self.json_of(remote)

@@ -2,7 +2,7 @@
 # Review template: do not install until live acceptance (hosts/codex/README.md).
 # Codex hooks do not see which agent runs: hosts/codex/README.md, "Not verified".
 name = "kit-consultant"
-description = "NEVER dispatch with the spawn_agent (not available to a Codex agent: ask the PM) tool. A long-lived launched session per repository (`launch.py consultant`), named consultant-<repo>, that answers coordinators' and workers' engineering questions and owns those calls. Never edits, lands or dispatches. Ask it by send_message (not available to a Codex agent: ask the PM)."
+description = "NEVER dispatch with the spawn_agent (not available to a Codex agent: ask the PM) tool: a session per repo (`launch.py consultant`) for engineering questions."
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """

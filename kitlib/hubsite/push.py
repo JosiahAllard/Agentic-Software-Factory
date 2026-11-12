@@ -653,7 +653,7 @@ class PushWorker(object):
             beat = hb.get('beat') if isinstance(hb, dict) else None
             beat = beat if isinstance(beat, (int, float)) and not isinstance(beat, bool) else None
         except Exception as e:          # noqa: BLE001 - an unreadable heartbeat is none
-            self.log('push: watcher heartbeat unreadable: %s' % type(e).__name__)
+            self.log('push: watcher heartbeat unreadable: %s: %s' % (type(e).__name__, e))
             beat = None
         self._beat = beat
         self._job_up = self._session_job_up(now)
@@ -1139,7 +1139,7 @@ class PushWorker(object):
         try:
             got = self.pm_folder()
         except (Exception, HomeFenced) as e:    # noqa: BLE001 - a host fault: no folder, no mapping
-            self.log('push: pm_folder failed: %s' % type(e).__name__)
+            self.log('push: pm_folder failed: %s: %s' % (type(e).__name__, e))
             return ''
         self._pm_folder_got = got if isinstance(got, str) else ''
         return self._pm_folder_got

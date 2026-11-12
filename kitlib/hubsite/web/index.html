@@ -2784,7 +2784,7 @@ ul.hist .sch-line{display:block}
       el("h2", { text: schName(q) }),
       schLine(q.kind, "place " + (q.position != null ? q.position : "?") + " in line"),
       schLine(q.needs_cpu != null ? "needs " + q.needs_cpu + " cpu" : "", q.needs_gpu ? "needs " + q.needs_gpu + " gpu" : ""),
-      schLine(est != null ? "expected to start about " + schDay(est) + " " + schHm(est) : "no start time yet", q.backfill ? "a backfill: it fits in before a larger run" : "", q.since ? "waiting since " + schWhen(q.since) : ""),
+      schLine(est != null ? "expected to start about " + schDay(est) + " " + schHm(est) : "no start time yet", q.backfill_text || "", q.since ? "waiting since " + schWhen(q.since) : ""),
       q.why ? schLine(String(q.why)) : null,
       el("div", { class: "act" }, schBtn("Move to top", "lock", () => schWrite("/lock/runs/" + schSeg(id) + "/top", {}, r => "Run " + (r.id || id) + " is now first in line."), { id: "sch-top" })),
       el("p", { class: "status" + (state.sch.bad ? " err" : ""), role: "status", id: "sch-status", text: state.sch.status }));
@@ -3422,7 +3422,9 @@ ul.hist .sch-line{display:block}
     const cs = docCells(t, rows, node), pct = v => (Math.round(v * 100) / 100) + "%";
     const kids = docLayout(cs, 0, 0, 100, 100, []).map(([c, x, y, w, h]) => {
       const title = c.label + " · " + c.n + (c.n === 1 ? " doc" : " docs");
-      const inner = [el("span", {class:"cl", text: c.label}), el("span", {class:"n", text: String(c.n)})];
+      // A cell too short for the count under the label (it is cut off at the cell's edge) is one line, "label · n". The
+      // map is about 175 px high (16:7) and, on a phone (hub.css, max 700 px), about 270 px (4:3); two lines need about 43 px.
+      const inner = h < (window.innerWidth <= 700 ? 16 : 26) ? [el("span", {class:"cl", text: c.label + " · " + c.n})] : [el("span", {class:"cl", text: c.label}), el("span", {class:"n", text: String(c.n)})];
       const at = {class: "cell k-" + c.tone, title};
       const cell = c.go ? el("button", {...at, type: "button", tabindex: "-1", onclick: () => docPick(c.go)}, ...inner) : el("span", at, ...inner);
       Object.assign(cell.style, {left: pct(x), top: pct(y), width: pct(w), height: pct(h)});    // set on the node: the page allows no style attribute

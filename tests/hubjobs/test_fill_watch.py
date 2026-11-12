@@ -1273,13 +1273,18 @@ class PullRecordCodes(unittest.TestCase):
                      'EX-H': FakeRec(state='open', session='game', blocked_on='owner'),
                      'EX-P': FakeRec(state='pulled', session='game'),
                      'EX-O': FakeRec(state='pulled', session='lane')}
-        self.raises, self.planned = None, []
+        self.raises, self.planned, self.waits = None, [], []
         test = self
 
         class Store(object):
             backend = mock.Mock(implicit=False)
+            lock_wait = 90                  # the library's default, kitlib.backlog.store
+
+            def longest_hold(self):
+                return 777
 
             def write(self, plan):
+                test.waits.append(self.lock_wait)
                 if test.raises is not None:
                     raise test.raises
                 return plan(test.snap)
@@ -1308,9 +1313,16 @@ class PullRecordCodes(unittest.TestCase):
                          ['held', 'not-open', 'not-theirs', 'gone'])
         self.assertEqual(self.planned, [])
 
+    def test_the_pull_waits_out_the_store_locks_longest_hold(self):
+        """A job thread holds no hub record lock, so its pull waits out any local writer
+        (Store.longest_hold) rather than the library's default wait."""
+        self.assertIsNone(self.code('EX-A'))
+        self.assertEqual(self.waits, [777])
+
     def test_a_write_that_surely_did_not_land_is_store(self):
         from kitlib.backlog import errors as E
-        for exc in (E.Busy('lock'), E.Dirty('dirty'), E.Overtaken('moved')):
+        busy = E.StoreBusy('busy', 'kit-backlog-store-x.lock', 'held by pid 1 since now', 777)
+        for exc in (E.Busy('lock'), busy, E.Dirty('dirty'), E.Overtaken('moved')):
             self.raises = exc
             self.assertEqual(self.code('EX-A'), 'store', type(exc).__name__)
 

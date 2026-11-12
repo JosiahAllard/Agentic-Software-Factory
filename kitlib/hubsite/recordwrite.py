@@ -46,8 +46,10 @@ to clear) and a `reason`, and with no `on` it is refused here as `invalid` on `o
 store's own refusal names the backlog tool's path.
 
 What is raised is a HubError: NotFound `not_found`; Usage and any other refusal `invalid`, with the
-store's own text; a Failure (git, a publish, a folder store outside a linked worktree) `store`,
-whose text the Api gives the local owner only (kitlib.hubsite.api "What an agent is told"). An
+store's own text; another local writer holding the store lock past HUB_LOCK_WAIT seconds
+(errors.StoreBusy) `busy`, nothing written; any other Failure (git, a publish, a folder store
+outside a linked worktree) `store`, whose text, like busy's, the Api gives the local owner only
+(kitlib.hubsite.api "What an agent is told"). An
 IndexStale is not raised: its write is committed, so the route returns it as written, the
 WARNING line last in "lines" (condition_met's "unblocked" true). The
 implicit `ref` store (no "backlog".store in `.kit.json`) is refused as `store` before any write,
@@ -62,11 +64,14 @@ from kitlib.backlog import plan_edit, plan_end, plan_hold
 from kitlib.backlog import scope as bscope
 from kitlib.backlog import store as bstore
 from kitlib.backlog import store_live
-from kitlib.backlog.errors import Failure, IndexStale, NotFound, Refusal
+from kitlib.backlog.errors import Failure, IndexStale, NotFound, Refusal, StoreBusy
 
 from .store import HubError
 
 SESSION = 'owner-hub'               # the commit's Session: line and the review mark's source
+# Seconds a write here waits for another local writer's store lock (kitlib.backlog.store): these
+# run under the Api's record_lock, so a long wait would hold every other record write.
+HUB_LOCK_WAIT = 5
 # The Session: line of condition_met's commit: the hub's timed job, not the owner (an audit
 # by-design writer, kitlib.backlog.audit_check.BY_DESIGN).
 CONDITION_SESSION = 'hub-condition'
@@ -79,6 +84,7 @@ def _open(root, no_store='store', session=SESSION):
         ctx = opener.open_store(root, fetch=True, session=session, probes=opener.NO_PROBES)
     except Failure as e:
         raise HubError('store', str(e), 'repo')
+    ctx.store.lock_wait = HUB_LOCK_WAIT
     if getattr(ctx.store.backend, 'implicit', False):
         raise HubError(no_store, store_live.default_store_refusal(ctx.root), 'repo')
     return ctx
@@ -104,6 +110,8 @@ def _change(root, plan, no_store='store', session=SESSION):
         return made[0]
     except NotFound as e:
         raise HubError('not_found', str(e), 'id')
+    except StoreBusy as e:
+        raise HubError('busy', str(e), '')
     except Failure as e:
         raise HubError('store', str(e), '')
     except Refusal as e:

@@ -11,10 +11,11 @@ another program changed since the survey refuses the write. The file's other key
 the machine config cannot be read after the write. A folder with no .gitignore gets GITIGNORE before
 the first key lands, so local.json is never unignored. Nothing here prints or exits.
 """
+import errno
 import os
 import tempfile
 
-from kitlib import platform
+from kitlib.fs import replace as fsreplace
 from kitlib.config import ConfigError
 from kitlib.config import user as kuser
 
@@ -101,22 +102,16 @@ def set_key(home, snap, key, value, replace=False):
 
 def _write_new(full, data):
     """Write `data` to `full`, which must not exist: a new temp file beside it (named
-    .<name>.*TMP_SUFFIX, which GITIGNORE ignores), then a move that fails when the target
-    appeared meanwhile (os.link on Linux, os.rename on Windows). On any failure the temp file is removed."""
+    .<name>.*TMP_SUFFIX, which GITIGNORE ignores), then fs.replace.place_new, which fails
+    (FileExistsError) when the target appeared meanwhile. On any failure the temp file is removed."""
     os.makedirs(os.path.dirname(full), exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix='.%s.' % os.path.basename(full), suffix=TMP_SUFFIX,
                                dir=os.path.dirname(full))
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
-        if platform.NAME == 'linux':
-            os.link(tmp, full)              # rename replaces an existing target on POSIX
-            try:
-                os.remove(tmp)              # the target is written: a stray temp file is not a failure
-            except OSError:
-                pass
-        else:
-            os.rename(tmp, full)            # fails when the target exists (Windows); needs no hard links
+        if not fsreplace.place_new(tmp, full):
+            raise FileExistsError(errno.EEXIST, 'File exists', full)
     except BaseException:
         try:
             os.remove(tmp)

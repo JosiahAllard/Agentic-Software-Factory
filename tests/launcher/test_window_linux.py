@@ -40,6 +40,10 @@ class Linux(unittest.TestCase):
         patch = mock.patch('kitlib.platform.NAME', 'linux')
         patch.start()
         self.addCleanup(patch.stop)
+        # anchor_socket asks os.getuid on linux; Windows has none: give it one.
+        patch = mock.patch.object(os, 'getuid', create=True, return_value=1000)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def text(self, name='alpha-coordinator-a1', config_dir='/home/u/.claude-a1', temp='/t/agent'):
         cmd = window.claude_command(name, "it's go", 'pm-kit:coordinator')
@@ -142,6 +146,10 @@ class LinuxStart(Base):
         patch = mock.patch('kitlib.platform.NAME', 'linux')
         patch.start()
         self.addCleanup(patch.stop)
+        # anchor_socket asks os.getuid on linux; Windows has none: give it one.
+        patch = mock.patch.object(os, 'getuid', create=True, return_value=1000)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def test_start_hands_the_window_its_name_and_says_the_tmux_session(self):
         out = '\n'.join(start.start(self.h.settings, self.host, repo='alpha', account='1',
@@ -193,6 +201,11 @@ class LinuxStart(Base):
 
 
 class LinuxReboot(unittest.TestCase):
+    def setUp(self):
+        # anchor_socket asks os.getuid on linux; Windows has none: give it one.
+        patch = mock.patch.object(os, 'getuid', create=True, return_value=1000)
+        patch.start()
+        self.addCleanup(patch.stop)
     def test_resume_pm_hands_the_window_the_pm_session_name(self):
         h, lines = Home(self), []
         host = FakeHost(h.root, uptime=60)
@@ -216,6 +229,10 @@ class LinuxHomeWorktree(HomeBase):
     def setUp(self):
         HomeBase.setUp(self)
         patch = mock.patch('kitlib.platform.NAME', 'linux')
+        patch.start()
+        self.addCleanup(patch.stop)
+        # anchor_socket asks os.getuid on linux; Windows has none: give it one.
+        patch = mock.patch.object(os, 'getuid', create=True, return_value=1000)
         patch.start()
         self.addCleanup(patch.stop)
 

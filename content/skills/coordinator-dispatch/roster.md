@@ -9,7 +9,7 @@ Read from skill `coordinator-dispatch`, "Which role, which tier". Use only the r
 | weak-worker | light/high | Low risk, small and well defined, sized by what the brief lists (named files and edits): doc lines, small additive changes with their test. Never moves, renames, merges or designs. |
 | worker | standard/medium | Low and Medium risk: additive content, UI, pure logic with tests, behaviour-preserving moves and renames (the brief names **Moves and renames**; its equivalence check is not optional); a small known-cause fix even on a High path (its review stays strong); plan-only and sync/prep work (merge main into a branch, rebase, conflict-free sync) whatever the branch's risk. |
 | strong-worker | strong/medium | High-risk build and fix work on standard paths: API changes, live fixes, ordinary tool features, generated-data wiring. |
-| senior-worker | strong/high | Builds and designs in concurrency, networking, simulation or ordering, migrations, CI config, landing, gate or lock tools, build-cache correctness, codegen; known-area crash fixes. Never plan-only. |
+| senior-worker | strong/high | Builds and designs in concurrency, networking, simulation or ordering, migrations, CI config, landing, gate or lock tools, build-cache correctness, codegen; known-area crash fixes; changes nobody can observe directly. Never plan-only. |
 | deep-worker | deep/xhigh, own session | A race, crash root cause or subtle concurrency senior-worker failed at or plainly will (never a build or a plan). |
 
 Not installed: weak-worker -> the worker; strong-worker -> the worker raised to strong. Never the host's general-purpose agent for code. An escalation reassigns upward with the findings: not a failure.
@@ -18,7 +18,7 @@ Not installed: weak-worker -> the worker; strong-worker -> the worker raised to 
 
 - analyst: the read type: design and branch review (skill `specialty-review`), research (`specialty-research`), art critique (`specialty-art-critique`). Builds and edits nothing.
 - docs-writer: settled facts into docs, and specs extended from the owner's answers (skill `specialty-docs`). Docs only.
-- lander: optional; submits one reviewed branch (or a batch), waits, reports.
+- lander: optional; spawned fresh per landing; submits one reviewed branch (or a batch), waits, reports.
 - test-runner: runs test tiers in a worktree; PASS/FAIL plus failing lines. A pass/fail check whose log nobody needs: the cheapest role the profile lists (none: the worker).
 - helper: dispatched by builders only, for bulk menial reads and mechanical bulk writes.
 - consultant: a long-lived session per repository (`consultant-<repo>` in your session list): engineering questions go there before the PM; owner matters still go to the PM, which logs its calls as delegated.

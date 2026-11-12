@@ -27,9 +27,11 @@ import json
 import os
 import time
 
-try:
+import kitlib.platform
+
+if kitlib.platform.NAME == 'windows':
     import msvcrt
-except ImportError:          # not Windows: a flock on Linux (_linux), a refusal elsewhere
+else:                        # a flock on Linux (_linux), a refusal elsewhere
     msvcrt = None
 
 NBLCK = msvcrt.LK_NBLCK if msvcrt else None     # _lock_byte's mode; on Linux always LOCK_NB
@@ -70,7 +72,6 @@ def describe(record):
 
 def _linux():
     """kitlib.platform.linux.locks on Linux (imported only then), else None."""
-    import kitlib.platform
     if kitlib.platform.NAME != 'linux':
         return None
     from kitlib.platform.linux import locks
@@ -126,7 +127,6 @@ class TreeLock(object):
     def acquire(self):
         linux = None if msvcrt else _linux()
         if msvcrt is None and linux is None:
-            import kitlib.platform
             raise TreeLockError('the tree lock needs Windows (msvcrt) or Linux (flock), not this '
                                 'platform (%s)' % kitlib.platform.NAME)
         if self.fd is not None:

@@ -68,10 +68,11 @@ def role_definition(role, kit=None):
 def require_host_worktree(cwd, place):
     from kitlib.config import load
     from kitlib.worktree import hostdirs
-    from kitlib.worktree.new import main_checkout_of
-    if not place.common:
+    from kitlib.git import repo
+    top = repo.main_checkout_toplevel(cwd, place)
+    if not top:
         raise ValueError('cannot verify the main checkout for the worktree')
-    main = Path(main_checkout_of(place.common)).resolve()
+    main = Path(top).resolve()
     expected = main / hostdirs.folder(load(str(main)), HOST)
     if expected.resolve() != expected:
         raise ValueError('the worktree folder must not redirect into another location')

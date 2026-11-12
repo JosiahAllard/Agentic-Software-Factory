@@ -18,6 +18,7 @@ from kitlib.hubsite import httpd, lockdoor, servesources
 from kitlib.hubvalidate import pagecheck
 from kitlib.hubsite.api import BASE
 from kitlib.lock import api as lock_api
+from kitlib.lockui import model as lockui_model
 from kitlib.proc import spawn
 from tests.hubsite import httpfix, pagedom
 from tests.hubsite.httpfix import get, post
@@ -3442,6 +3443,13 @@ class ScheduleTest(unittest.TestCase):
             await click(document.getElementById("row-q:q1")); await click($("#sch-top"));
             return calls.filter(c => c.method === "POST").map(c => [c.path, c.body]);""", sch_view(runs=[RUN1], queue_items=[QUEUE1]))
         self.assertEqual(got, [["/lock/runs/q1/top", {}]])
+
+    def test_a_backfill_card_says_the_views_backfill_text(self):
+        # the view's words (kitlib.lockui.model.BACKFILL_LINE, the lock CLI's), not the page's own
+        q = dict(QUEUE1, backfill=True, backfill_text=lockui_model.BACKFILL_LINE)
+        got = self.sch("""await click(document.getElementById("row-q:q1"));
+                          return $$("#sch-card .sch-line").map(text);""", sch_view(runs=[RUN1], queue_items=[q]))
+        self.assertIn(lockui_model.BACKFILL_LINE, " ".join(got))
 
     def test_a_control_this_login_may_not_use_is_disabled_and_says_why(self):
         why = "this hub is not a strong session"

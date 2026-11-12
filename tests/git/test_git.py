@@ -223,6 +223,52 @@ class ClassifyTest(RepoFixture):
         self.assertEqual(git.same_repository(self.r.root, self.other.root), (False, None))
 
 
+@real_git('--separate-git-dir: the fake models no git dir outside the work tree')
+@gitfixture.real_fixture('the fixture steps start real git: --separate-git-dir')
+class SeparateGitDirTest(unittest.TestCase):
+    """A checkout whose git dir is elsewhere: git's common dir is not `<checkout>/.git`."""
+
+    def setUp(self):
+        base = tempfile.mkdtemp(prefix='kit-sepgit-', dir=gitfixture.fixture_parent())
+        self.addCleanup(gitfixture.rmtree, base)
+        self.top = os.path.join(base, 'sep')
+        self.gitdir = os.path.join(base, 'gd')
+        self.wt = os.path.join(base, 'sepwt')
+        for args, where in ((['init', '-q', '--separate-git-dir', self.gitdir, 'sep'], base),
+                            (['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'i'], self.top),
+                            (['worktree', 'add', '-q', self.wt], self.top)):
+            done = gitfixture.own_git(args, where)
+            self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_the_main_checkout_is_its_own_top(self):
+        self.assertTrue(git.same_path(git.main_checkout_toplevel(self.top), self.top))
+
+    def test_its_linked_worktree_has_no_main_checkout_git_can_tell(self):
+        self.assertIsNone(git.main_checkout_toplevel(self.wt))
+
+    def test_core_worktree_names_the_main_checkout_for_the_linked_worktree(self):
+        done = gitfixture.own_git(['config', 'core.worktree', self.top], self.gitdir)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(git.same_path(git.main_checkout_toplevel(self.wt), self.top))
+
+    def test_core_worktree_naming_a_folder_that_is_gone_is_none(self):
+        gitfixture.own_git(['config', 'core.worktree', os.path.join(self.gitdir, 'gone')], self.gitdir)
+        self.assertIsNone(git.main_checkout_toplevel(self.wt))
+
+    def test_a_bare_repositorys_linked_worktree_has_no_main_checkout(self):
+        bare = os.path.join(os.path.dirname(self.top), 'bare.git')
+        bwt = os.path.join(os.path.dirname(self.top), 'barewt')
+        for args, where in ((['clone', '-q', '--bare', self.top, bare], os.path.dirname(self.top)),
+                            (['worktree', 'add', '-q', bwt], bare)):
+            done = gitfixture.own_git(args, where)
+            self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIsNone(git.main_checkout_toplevel(bwt))
+
+    def test_a_deleted_folder_of_a_gone_repository_is_none(self):
+        gone = os.path.join(os.path.dirname(self.top), 'gone-repo', 'deep')
+        self.assertIsNone(git.main_checkout_toplevel(gone))
+
+
 class ParseWorktreesTest(unittest.TestCase):
 
     def test_every_field_git_prints(self):

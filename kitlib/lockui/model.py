@@ -13,6 +13,7 @@ keys for every listener, and fixed phrases over the tunnel for warnings that can
 """
 import datetime as dt
 
+from kitlib.lock import queue as qm
 from kitlib.lock import status as st
 
 COLOURS = {"whole": "#d9534f", "half": "#f0ad4e", "slots": "#e5c07b", "game": "#c678dd",
@@ -26,6 +27,9 @@ OPEN_FOR = dt.timedelta(minutes=30)     # how long a run with no expected end is
 DAYS, ROWS = 7, 48          # the schedule: 7 day columns of 48 half-hour rows
 BACK_DAYS = 14              # how far back < Earlier goes
 ROW = dt.timedelta(minutes=30)
+# What a backfilled waiting run's line says, in the window's queue and the hub's Schedule card
+# (to_json's backfill_text): the lock CLI's words (queue.BACKFILL_TEXT).
+BACKFILL_LINE = "backfill" + qm.BACKFILL_TEXT
 
 
 # ------------------------------------------------------------------ the grid
@@ -351,7 +355,7 @@ def _queue(queue, now):
             needs_text(n.get("cpu") or 0, n.get("gpu") or 0), when(since, now) if since else "?",
             "starts about " + when(est, now) if est else "start not planned"), ()))
         if q.get("backfill"):
-            parts.append((", backfill (it ends before the runs ahead of it can start)", ("warn",)))
+            parts.append((", " + BACKFILL_LINE, ("warn",)))
         if q.get("parked"):
             parts.append((", parked", ()))
         mv = q.get("moved")
@@ -512,8 +516,9 @@ def _queue_items(snap):
                     "slug": q.get("slug"), "kind": q.get("kind"),
                     "needs_cpu": n.get("cpu") or 0, "needs_gpu": n.get("gpu") or 0,
                     "est_start": _t(to_local(q.get("est_start"))), "since": _t(to_local(q.get("since"))),
-                    "backfill": bool(q.get("backfill")), "parked": bool(q.get("parked")),
-                    "why": q.get("why") or None})
+                    "backfill": bool(q.get("backfill")),
+                    "backfill_text": BACKFILL_LINE if q.get("backfill") else None,
+                    "parked": bool(q.get("parked")), "why": q.get("why") or None})
     return out
 
 

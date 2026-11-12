@@ -13,7 +13,8 @@
   backlog-raw-write  a write of the backlog that skips the tool and its role check: a subagent's
                      python code importing kitlib.backlog (-c, standard input, -m, runpy) or naming
                      tools/backlog.py (a script file's: only where its code can run it, py_reach,
-                     or what it prints may run as code, piped_script);
+                     or what it prints may run as code, piped_script), except a script file
+                     that is its repository's landed code (landed_script);
                      any session's but the owner's python code naming the hub's
                      record writer by its module name, not its file's path
                      (kitlib.hubsite.recordwrite, plan_answer: hub_writer_code);
@@ -31,7 +32,7 @@ import os
 import re
 
 from kitlib.host import agentname
-from kitlib.git import repo
+from kitlib.git import refs, repo
 
 from . import commands as cm
 from . import commands_nested as cn
@@ -667,6 +668,71 @@ def _kit_code(ctx, path):
         d = up
 
 
+FIXED_MAINS = ('main', 'master')               # the mains a derived main_branch may name (landed_script)
+
+
+def landed_script(event, ctx, cwd, path):
+    """True when the python script file `path` is its repository's landed code (the owner's
+    ruling, trust landed code; docs/guard-jail-roles.md "Landed scripts"): its whole bytes are the blob at the local
+    refs/heads/<main branch>:<its path>, or, for a blob with no CR, that blob with every LF
+    written as CRLF. The guard
+    refuses an agent's direct write of that ref (git-shared-ref, git-push-main); the ways it
+    does not see are in docs/guard-fallback.md "Backlog roles and code". Checked in this order,
+    each failing to False: a checkout place (MAIN or LINKED, not the PM data worktree) that
+    holds `path`; a git common dir the session may not write (jail_roots), so a repository it
+    made or can rewrite is never trusted, before any git runs; a PM data record
+    (rules.pmdata_recorded); the main checkout's .kit.json, whose main_branch, when it writes
+    none, is read from <remote>/HEAD and is then trusted only as main or master; never the
+    linked worktree's own branch; no branch that equals refs/heads/<main> only when case is
+    ignored (on NTFS a loose refs/heads/Main shadows a packed main); then `git
+    --no-replace-objects cat-file blob`, so a replace ref does not stand in for the blob. Any
+    error is False: the script is judged as before."""
+    try:
+        return _landed(event, ctx, cwd, path)
+    except Exception:                           # noqa: BLE001 - no trust read: judged as before
+        return False
+
+
+def _landed(event, ctx, cwd, path):
+    from kitlib.git import cmd as gitcmd
+    from . import rules_gitref
+    if not path or not os.path.isabs(path) or not os.path.isfile(path):
+        return False
+    place = ctx.place(path)
+    if place.kind not in (repo.MAIN, repo.LINKED) or not place.top or not place.common or ctx.is_pm_data(path):
+        return False
+    rel = os.path.relpath(path, place.top).replace('\\', '/')
+    if rel == '.' or rel.startswith('../') or rel == '..' or os.path.isabs(rel):
+        return False
+    if jail.judge(place.common, rules.jail_roots(event, ctx, cwd))[0] is None:
+        return False                            # the session may write its refs or objects
+    if not rules.pmdata_recorded(ctx, path):
+        return False
+    cfg = ctx.config(path)
+    if cfg is None:
+        return False
+    main = cfg.main_branch
+    written = cfg.written('repo', 'main_branch') if hasattr(cfg, 'written') else None
+    if not isinstance(main, str) or refs.bad_rev(main) or not rules_gitref.ref_name_ok('refs/heads/' + main):
+        return False
+    if written is None and main.lower() not in FIXED_MAINS:
+        return False                            # <remote>/HEAD named it: any session can repoint that
+    if place.kind == repo.LINKED and (rules_gitref._head_ref(place) or '').lower() == 'refs/heads/' + main.lower():
+        return False
+    want = 'refs/heads/' + main
+    names, _why = gitcmd.run_text(['for-each-ref', '--format=%(refname)', 'refs/heads/'], place.top)
+    if names is None or any(n != want and n.casefold() == want.casefold() for n in names.splitlines()):
+        return False                            # a loose refs/heads/Main may shadow a packed main (NTFS)
+    blob, _why = gitcmd.run(['--no-replace-objects', 'cat-file', 'blob', 'refs/heads/%s:%s' % (main, rel)],
+                            place.top)
+    if blob is None:
+        return False
+    with open(path, 'rb') as f:
+        data = f.read(len(blob) * 2 + 1)        # longer than the blob even with every LF written as CRLF
+    # a checkout writes each LF of a blob with no CR as CRLF (core.autocrlf), and a CRLF blob as it is
+    return data == blob or (b'\r' not in blob and data == blob.replace(b'\n', b'\r\n'))
+
+
 LITERAL_WHY = 'Run the tool\'s verb itself, its words literal, directly as a command of its own:'
 
 
@@ -699,6 +765,7 @@ def script_file(event, ctx, cmd, inv, cwd, role):
             names = files
         elif cmd.pipe_from is not None and (inv.name or '').lower() in SOURCERS:
             return None                         # commands reads a sourced pipe (echo) or flags it unread
+    landed = bool(found) and names == [found[0].text]   # a script it names, not files piped in
     read = []
     for name in names:
         path, text = _script_text(cmd, name)
@@ -710,7 +777,8 @@ def script_file(event, ctx, cmd, inv, cwd, role):
         if text is not None:
             read.append((path, text))
     for path, text in read:
-        d = judge_text(event, ctx, cmd, cwd, role, kind, text, '`%s` runs %s' % (line, rules.fwd(path)), path)
+        d = judge_text(event, ctx, cmd, cwd, role, kind, text, '`%s` runs %s' % (line, rules.fwd(path)), path,
+                       landed=landed)
         if d:
             return d
     return None
@@ -955,17 +1023,19 @@ def _names_backlog(s):
     return any(PY_BACKLOG_PATH_RE.match(m.group(0)) is None for m in CODE_RE.finditer(s))
 
 
-def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1):
+def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1, landed=False):
     """The code `cmd` runs from a script file or its standard input (`text`, read in `kind`:
     shell.BASH, shell.PS or 'py'): a shell's text is read as a command line in the shell that runs
     it and its commands judged by runs and gate-allow (gaterole.shell), an unreadable one by
     fallback.named_runs at `level` (past level 0 it reads no file the text names); a judged
     subagent's python by py_reach (CODE_RE, then its syntax tree: a name only printed or in a
-    comment passes), except the kit's own (_kit_code of `path`). -c code is backlog_code's
-    (py_reach for the code word, c_code). A refusal is reworded to begin with `head`."""
+    comment passes), except the kit's own (_kit_code of `path`) and, with `landed` (the script
+    file a command names), its repository's landed code (landed_script). -c code is
+    backlog_code's (py_reach for the code word, c_code). A refusal is reworded to begin with
+    `head`."""
     if kind == 'py':
         why = py_reach(text) if _judged_subagent(event) else None
-        if not why or (path and _kit_code(ctx, path)):
+        if not why or (path and (_kit_code(ctx, path) or (landed and landed_script(event, ctx, cwd, path)))):
             return None
         return rules.refuse(RAW_RULE, role, '%s, whose code %s: code that reaches the backlog\'s library or '
                             'runs tools/backlog.py from a script skips the guard\'s role check, so it is a raw '

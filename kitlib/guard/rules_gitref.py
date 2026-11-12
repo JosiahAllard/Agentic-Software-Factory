@@ -969,19 +969,60 @@ REF_FORM_READERS = {'fetch': fetch_refs, 'pull': pull_refs, 'symbolic-ref': symb
                     'filter-branch': history_tool_refs}
 
 
+INJECT_SUBS = ('fetch', 'pull')                 # and `remote update|prune` (_injected_config)
+INJECT_REMOTE_VERBS = ('update', 'prune')
+INJECT_KEY_PREFIXES = ('include.', 'includeif.', 'url.', 'remote.')
+
+
+def _injected_config(gc):
+    """Why git fetch, pull or `remote update|prune` `gc` runs on config the guard does not read
+    (a text), or None: a line that moves the home folder (another user config), or a -c setting
+    of include.*, includeIf.*, url.* or remote.* other than the remote.<name>.fetch and
+    *.pruneTags that fetch_refs reads. Each can change where the fetch reads from or which refs
+    it writes; per git call, so a fetch --all is held as one that names its remote. What
+    re-points git from the environment or a variable (gc.blind: GIT_DIR, GIT_CONFIG_COUNT and
+    the like, --config-env) is not judged here: every session this rule holds is an agent
+    session, and the write jail refuses that git for each of them (git_jail_unknown)."""
+    if gc.sub == 'remote':
+        verb = next((w for w in gc.rest if not w.text.startswith('-')), None)
+        if verb is None or verb.text not in INJECT_REMOTE_VERBS:
+            return None
+    elif gc.sub not in INJECT_SUBS:
+        return None
+    if gc.blind or gc.inv is None:
+        return None                             # gc.blind: the write jail's (git_jail_unknown)
+    home = getattr(gc.inv.cmd, 'home_env', False)
+    if home:
+        return 'the line sets %s, so git reads another user config' % home
+    for key, _val, _first, _last in git_prefix_configs(gc):
+        if REMOTE_FETCH_KEY_RE.match(key) or PRUNE_TAGS_KEY_RE.match(key):
+            continue                            # fetch_refs reads it
+        if key.startswith(INJECT_KEY_PREFIXES):
+            return 'its -c %s changes where it fetches from or what config git reads' % key
+    return None
+
+
 def _judge_refs(event, ctx, cmd, gc, cwd, role, refs, unread):
     """git-shared-ref for a git form other than update-ref: `refs` [(ref, delete, what, instead)]
     the refs it writes or deletes (`what` a phrase for the refusal, None for "writes/deletes
     <ref>"; `instead` (sentence, command with <at> and maybe <temp>, the temp folder), None for show-ref), `unread` why the guard
     cannot tell them (None when it can). As git_shared_ref: only a held session
     (shared_ref_held), not in a scratch repository (_scratch_repo), each ref by _ref_ok; no form
-    here writes through HEAD."""
-    if (not refs and not unread) or not shared_ref_held(event, ctx):
+    here writes through HEAD. A fetch, pull or `remote update|prune` on config the guard does not
+    read (_injected_config) is refused whatever refs it names."""
+    injected = _injected_config(gc)
+    if (not refs and not unread and not injected) or not shared_ref_held(event, ctx):
         return None
     place, _top, at, where = _shared_scene(ctx, gc, cwd)
     if _scratch_repo(ctx, place):
         return None
     text = bare(cmd)
+    if injected:
+        temp = jail.temp_roots(ctx)
+        return refuse('git-shared-ref', role, '`%s`: %s, so the guard cannot tell which refs it writes; %s. '
+                      'Fetch with the repository\'s own config, or in a clone under the temp folder, where the '
+                      'guard does not judge refs:' % (text, injected, SHARED_REFS),
+                      'git clone %s "%s/<name>"' % (quote(at), fwd(temp[0]) if temp else '<temp folder>'))
     unread = unread or where
     if unread:
         return refuse('git-shared-ref', role, '`%s`: the guard cannot tell which refs it writes: %s; %s. Name each '

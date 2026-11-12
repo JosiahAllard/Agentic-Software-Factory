@@ -5,6 +5,8 @@ a folder store's record files are raw writes no agent session makes (backlog-raw
 session's backlog.py run is the tool's own check (tests/backlog/test_policy.py)."""
 import json
 import os
+import shutil
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -12,12 +14,13 @@ from unittest import mock
 from kitlib.config import pmdata
 from kitlib.host import agentname
 from kitlib.backlog import policy, roles
-from kitlib.git import refs, repo
+from kitlib.git import cmd as gitcmd, refs, repo
 from kitlib.guard import backlogrole, context
 
 from tests.backlog.helpers import TODAY, priced
 from tests.gitfixture import TempRepo, fixture_env
 from tests.home import temp_home
+from tests.realgit import real_git
 
 from . import world as W
 from .claudehost import decide
@@ -623,6 +626,198 @@ class RealStore(unittest.TestCase):
     def test_the_main_checkout_and_the_pm_data_worktree_are_refused(self):
         self.assertTrue(self.decide(self.repo.root))
         self.assertTrue(self.decide(self.pm))
+
+
+class LandedBase(unittest.TestCase):
+    """A subagent's python script file that is its repository's landed code is not judged by
+    backlog-raw-write (the owner's ruling, trust landed code; backlogrole.landed_script): seen
+    refused live, a repository's `python tools/daily_full.py --kit-tools <kit>/tools --plan` from
+    a linked worktree, whose script imports kitlib.platform.windows and prints a backlog.py add
+    line. Its bytes must be the blob at the local main, in a repository with a PM data record whose
+    git common dir the session may not write; every other copy is judged as before."""
+    DAILY = 'tools/daily_full.py'
+    SCRIPT = ('"""The daily run."""\nimport subprocess\nimport sys\n\nfrom kitlib.platform import windows\n\n\n'
+              'def main():\n    print(\'python tools/backlog.py add --summary "the daily is red"\')\n'
+              '    return subprocess.call([sys.executable, "--version"]) if windows else 0\n\n\n'
+              "if __name__ == '__main__':\n    sys.exit(main())\n")
+
+    def setUp(self):
+        patch = mock.patch.dict(os.environ, fixture_env(), clear=True)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.home = temp_home(self)
+        self.repo = TempRepo(bare_remote=True)
+        self.addCleanup(self.repo.cleanup)
+        self.repo.write(self.DAILY, self.SCRIPT)
+        self.repo.commit('the daily', self.DAILY)
+        pmdata.write(self.repo.common_dir(), 'pmdata', 'private', self.repo.head())
+        self.wt = self.repo.worktree('wk')
+        self.temp = tempfile.mkdtemp(prefix='kit-landed-')
+        self.addCleanup(shutil.rmtree, self.temp, True)
+        self.blob_reads = []
+        real_run = gitcmd.run
+
+        def run(args, cwd, *a, **kw):
+            if 'cat-file' in args:
+                self.blob_reads.append(list(args))
+            return real_run(args, cwd, *a, **kw)
+        p = mock.patch.object(gitcmd, 'run', run)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def daily(self, script=DAILY, cwd=None, tempdir=None):
+        text = 'python %s --kit-tools %s/tools --plan' % (script, W.fwd(self.temp))
+        return self.run_line(text, cwd, tempdir)
+
+    def run_line(self, text, cwd=None, tempdir=None):
+        ev = event('Bash', {'command': text, 'description': 'test'}, W.fwd(cwd or self.wt), True, 'worker')
+        return decide(ev, context.Ctx(environ={}, home=self.home, tempdir=tempdir or self.temp))
+
+    def refused(self, d):
+        self.assertIsNotNone(d, 'allowed')
+        self.assertEqual((d.verdict, d.rule), ('deny', 'backlog-raw-write'), d.reason)
+        return d
+
+    def put(self, rel, text, root=None, newline='\n'):
+        path = os.path.join(root or self.wt, *rel.split('/'))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8', newline=newline) as f:
+            f.write(text)
+
+
+class LandedScript(LandedBase):
+    def test_the_landed_daily_runs_from_a_linked_worktree(self):
+        d = self.daily()
+        self.assertIsNone(d, d and d.reason)
+        self.assertTrue(any('--no-replace-objects' in a and 'refs/heads/main:%s' % self.DAILY in a
+                            for a in self.blob_reads), self.blob_reads)
+
+    def test_a_crlf_copy_of_the_landed_script_runs(self):
+        self.put(self.DAILY, self.SCRIPT, newline='\r\n')
+        d = self.daily()
+        self.assertIsNone(d, d and d.reason)
+
+    def test_only_every_line_end_written_as_crlf_matches(self):
+        # the copy is the blob or the blob with each LF written as CRLF, nothing in between
+        path = os.path.join(self.wt, *self.DAILY.split('/'))
+        lines = self.SCRIPT.encode().split(b'\n')
+        with open(path, 'wb') as f:
+            f.write(b'\r\n'.join(lines[:3]) + b'\n' + b'\n'.join(lines[3:]))
+        with self.subTest('mixed'):
+            self.refused(self.daily())
+        # a landed CRLF blob: a copy whose CR is doubled is not it
+        crlf = self.SCRIPT.encode().replace(b'\n', b'\r\n')
+        with open(os.path.join(self.repo.root, *self.DAILY.split('/')), 'wb') as f:
+            f.write(crlf)
+        self.repo.commit('crlf', self.DAILY)
+        with open(path, 'wb') as f:
+            f.write(crlf)
+        with self.subTest('crlf blob'):
+            d = self.daily()
+            self.assertIsNone(d, d and d.reason)
+        with open(path, 'wb') as f:
+            f.write(crlf.replace(b'\r\n', b'\r\r\n'))
+        with self.subTest('doubled cr'):
+            self.refused(self.daily())
+
+    def test_an_edited_or_untracked_copy_is_judged(self):
+        self.put(self.DAILY, self.SCRIPT + '# edited\n')
+        self.refused(self.daily())
+        self.put(self.DAILY, self.SCRIPT)
+        self.put('tools/copy.py', self.SCRIPT)
+        self.refused(self.daily('tools/copy.py'))
+
+    def test_its_standard_input_is_never_landed(self):
+        for text in ('python < %s' % self.DAILY, 'cat %s | python' % self.DAILY, 'python - < %s' % self.DAILY):
+            with self.subTest(text):
+                self.refused(self.run_line(text))
+
+    def test_a_script_only_on_the_remote_tracking_main_is_judged(self):
+        self.put('tools/new.py', self.SCRIPT)
+        sha = self.repo.commit('on the branch', 'tools/new.py', cwd=self.wt)
+        self.repo.git('update-ref', 'refs/remotes/origin/main', sha)
+        self.refused(self.daily('tools/new.py'))
+
+    def test_a_repository_with_no_pm_data_record_is_judged(self):
+        os.remove(os.path.join(self.repo.common_dir(), pmdata.FILE_NAME))
+        self.refused(self.daily())
+
+    def test_a_repository_the_session_may_write_is_judged_before_git_runs(self):
+        self.refused(self.daily(tempdir=self.repo.base))
+        self.assertEqual(self.blob_reads, [])
+
+    def test_a_main_branch_that_does_not_read_is_judged(self):
+        self.put('.kit.json', json.dumps({'repo': {'main_branch': 'nosuch'}}) + '\n', root=self.repo.root)
+        self.refused(self.daily())
+
+    def test_the_worktrees_own_branch_is_never_the_main(self):
+        # the branch the worktree has checked out moves with the session's own commits: a forged
+        # script committed there is not landed, whether <remote>/HEAD or .kit.json names that branch
+        self.put(self.DAILY, self.SCRIPT + 'import os\n')
+        sha = self.repo.commit('forged', self.DAILY, cwd=self.wt)
+        self.repo.git('update-ref', 'refs/remotes/origin/kit/wk', sha)
+        self.put('refs/remotes/origin/HEAD', 'ref: refs/remotes/origin/kit/wk\n', root=self.repo.common_dir())
+        with self.subTest('<remote>/HEAD'):
+            self.refused(self.daily())
+        self.put('.kit.json', json.dumps({'repo': {'main_branch': 'kit/wk'}}) + '\n', root=self.repo.root)
+        with self.subTest('.kit.json'):
+            self.refused(self.daily())
+
+    def test_the_pm_data_worktree_is_not_trusted(self):
+        # the guard answers it as a main checkout on the data branch, which commits there move
+        pm = self.repo.worktree('pm', branch='pmdata')
+        self.put('.kit.json', json.dumps({'repo': {'name': 'data', 'main_branch': 'pmdata'}}) + '\n', root=pm)
+        self.put(self.DAILY, self.SCRIPT + 'import os\n', root=pm)
+        self.repo.commit('forged', '.kit.json', self.DAILY, cwd=pm)
+        self.refused(self.daily('"%s/%s"' % (W.fwd(pm), self.DAILY)))
+
+    def test_a_derived_main_other_than_main_or_master_is_not_trusted(self):
+        # with no main_branch in .kit.json the name comes from <remote>/HEAD, a local file: only
+        # main and master (refs git-shared-ref guards in every repository) are taken from it
+        self.put(self.DAILY, self.SCRIPT + 'import os\n')
+        sha = self.repo.commit('forged', self.DAILY, cwd=self.wt)
+        self.repo.git('update-ref', 'refs/heads/kit/new', sha)
+        self.repo.git('update-ref', 'refs/remotes/origin/kit/new', sha)
+        self.put('refs/remotes/origin/HEAD', 'ref: refs/remotes/origin/kit/new\n', root=self.repo.common_dir())
+        self.refused(self.daily())
+
+
+@real_git('git replace: the fake git keeps no replace refs')
+class LandedScriptReplaceRef(LandedBase):
+    """A replace ref that stands the forged blob in for the landed one does not make it landed:
+    the guard reads the blob with --no-replace-objects."""
+
+    def test_a_replace_ref_does_not_stand_in_for_the_blob(self):
+        self.assertIsNone(self.daily())
+        forged = self.SCRIPT + 'import os\n'
+        self.put(self.DAILY, forged)
+        landed = self.repo.git('rev-parse', 'main:%s' % self.DAILY)
+        fake = self.repo.git('hash-object', '-w', os.path.join(self.wt, *self.DAILY.split('/')))
+        self.repo.git('replace', landed, fake)
+        self.assertEqual(self.repo.git('cat-file', 'blob', 'main:%s' % self.DAILY), forged.rstrip('\n'))
+        self.refused(self.daily())
+
+
+@real_git('git pack-refs: the fake git keeps no packed refs')
+class LandedScriptCaseRef(LandedBase):
+    """A branch whose name is main's in another case makes no script landed: on a file system that
+    ignores case, after `git pack-refs --all` a loose refs/heads/Main (a plain `git branch Main`,
+    which no ref rule judges) is what refs/heads/main reads."""
+
+    def test_a_main_in_another_case_is_never_trusted(self):
+        self.assertIsNone(self.daily())
+        self.repo.git('pack-refs', '--all')
+        self.repo.git('branch', 'Main', 'main')
+        with self.subTest('Main at the landed commit'):
+            self.refused(self.daily())
+        self.repo.git('branch', '-D', 'Main')
+        self.assertIsNone(self.daily())
+        self.put(self.DAILY, self.SCRIPT + 'import os\n')
+        forged = self.repo.commit('forged', self.DAILY, cwd=self.wt)
+        self.repo.git('pack-refs', '--all')
+        self.repo.git('branch', 'Main', forged)
+        with self.subTest('Main at a forged commit'):
+            self.refused(self.daily())
 
 
 class QuotedWords(Base):

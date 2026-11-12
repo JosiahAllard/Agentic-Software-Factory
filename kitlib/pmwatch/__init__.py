@@ -348,7 +348,7 @@ def _newest_live(names, records, alive):
 
 
 def rc_events(names, records, alive, rc_pids, lost, now):
-    """(events, lost now) of the Remote Control link check (docs/pm-watch.md "Remote Control link").
+    """(events, lost now) of the Remote Control link check (docs/session-watch.md "Remote Control link").
 
     records: the host's session records, dicts {name, pid, proc_start, started_ms, linked}, linked
     None when the host's record says nothing about the link. alive(rec): its pid runs now with that
@@ -396,7 +396,7 @@ def at_limit(u):
 
 
 def limit_events(names, records, alive, folders, readings, fired, now):
-    """(events, stalled now) of the usage-limit check (docs/pm-watch.md "Usage-limit stall").
+    """(events, stalled now) of the usage-limit check (docs/session-watch.md "Usage-limit stall").
 
     records and alive as rc_events; a record's weekly_stop(folders) gives (the config folder holding
     the session's transcript, the epoch time the weekly limit that stopped the session resets), or

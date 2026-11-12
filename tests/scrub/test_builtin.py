@@ -66,7 +66,6 @@ PENDING_HISTORY = {
     ('provenance', 'docs/machine-setup.md'): 5,
     ('provenance', 'docs/new-worktree.md'): 2,
     ('provenance', 'docs/pending.md'): 1,
-    ('provenance', 'docs/pm-watch.md'): 1,
     ('provenance', 'docs/preflight.md'): 3,
     ('provenance', 'docs/repo-checks.md'): 1,
     ('provenance', 'docs/review-pack.md'): 1,

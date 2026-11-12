@@ -66,9 +66,10 @@ home folder, all absolute. A hand step changes the owner's own settings: give it
    `launcher.state_dir` (docs/launcher.md "State files"): start it from
    `docs/launcher.sessions.example.json`, or from `{}` until step 11. Put that folder inside the PM
    repository (the hub server's backlog view finds the repository from the sessions file's folder,
-   `kitlib.hubsite.servesources` `_repo_pairs`, and fails outside a git repo). Fill `pm_start` in the user config with their paths, and
-   `pm_watch_cmd` (docs/pm-start.md "Config"); set `pm_watch.sessions_file` to the same file
-   (docs/pm-watch.md "Config"); `pm_watch.py` exits 2 without the machine config's `launcher` key.
+   `kitlib.hubsite.servesources` `_repo_pairs`, and fails outside a git repo). Fill `pm_start` in the user config with their paths
+   (docs/pm-start.md "Config"); set `pm_watch.sessions_file` to the same file, for the hub's
+   session-watch job (docs/session-watch.md "Config"), which reads no usage without the machine
+   config's `launcher` key.
    Then, as a hand step, the owner adds the SessionStart hook from docs/pm-start.md to the
    settings only the PM session loads (machine setup's `-PmSettings` above writes it).
    Success: the next PM session starts with "PM session start checklist", not "no pm_start

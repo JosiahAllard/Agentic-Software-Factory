@@ -1,4 +1,4 @@
-"""The LIMIT check: a session stalled at its weekly usage limit, told from an idle one (docs/pm-watch.md
+"""The LIMIT check: a session stalled at its weekly usage limit, told from an idle one (docs/session-watch.md
 "Usage-limit stall"). The readers over real entries (usage_limit_entry.jsonl: line 1 a main session's,
 line 2 a subagent's), limit_events over fake records, and the check inside a Watcher."""
 import copy

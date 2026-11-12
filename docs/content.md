@@ -75,7 +75,7 @@ coordinator, PM and worker role files say what a bare role name and `<kit>` are 
 A repository holds no stubs of the kit's tools: every command a skill, role or the
 default profile shows is `python <kit>/tools/<name>.py`, with `-C <worktree>` (or `<repo>`,
 `<main checkout>`) when the tool takes `-C`. The tools that take no `-C` act on the machine, not a
-checkout (`machine_lock.py`, `launch.py`, `ledger.py`, `pm_watch.py` and the like), or name their
+checkout (`machine_lock.py`, `launch.py`, `ledger.py` and the like), or name their
 path another way (`checkout_guard.py [PATH]`). In the kit's own repository `<kit>` is that
 repository, so the same commands work there.
 

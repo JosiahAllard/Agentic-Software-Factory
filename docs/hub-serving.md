@@ -75,8 +75,9 @@
   health (the local listener; the tunnel's fixed health carries none) and GET snapshot
   (`kitlib.hubclient.codestale`). `restart` is the owner's to-do: `python <kit>/tools/hub.py restart`,
   or, with no autostart task, `hub.py stop` then `hub.py serve`. Three places show it: the page's
-  banner (`#codeerr`), a `hub: WARN` line in the PM session-start checklist (docs/pm-start.md), and a
-  `HUB` event of pm_watch (docs/pm-watch.md), said once per stale episode. `hub.py status` prints it as
+  banner (`#codeerr`), a `hub: WARN` line in the PM session-start checklist (docs/pm-start.md), and, once the
+  server will not restart itself onto the new code, the `job hub stale-code` push to the PM, once
+  per process (docs/hub-push.md "Timed jobs"). `hub.py status` prints it as
   its `code:` line. `web/index.html` is read from disk per request (`httpd.static_file`), so a
   page-only change needs no restart. Known limits: a restarter that stops the server and then cannot
   start the task, or whose new server never answers, leaves no hub (`self-restart.log` says why; start

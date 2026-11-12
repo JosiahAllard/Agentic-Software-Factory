@@ -1,4 +1,4 @@
-"""The REMOTE check: a running session whose Remote Control link dropped (docs/pm-watch.md
+"""The REMOTE check: a running session whose Remote Control link dropped (docs/session-watch.md
 "Remote Control link"). rc_events over fake records, the Claude reader over a real registry folder,
 and the check inside a Watcher."""
 import json

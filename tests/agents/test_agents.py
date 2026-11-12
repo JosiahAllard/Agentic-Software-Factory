@@ -213,7 +213,7 @@ class AgentFilesTest(unittest.TestCase):
                          ["Read", "Edit", "Write", "Grep", "Glob"])
 
     def test_builders_get_the_owners_tool_set(self):
-        """The owner's builder tool set (KIT-BASELINE-CONTEXT): no dispatch, PowerShell, Artifact,
+        """The owner's builder tool set: no dispatch, PowerShell, Artifact,
         owner questions, agent list or hub and lock MCP tools; files, Bash, skills and the task
         tools; WebFetch on every builder but the weak-worker."""
         absent = {"Agent", "PowerShell", "Artifact", "AskUserQuestion", "ListAgents"}

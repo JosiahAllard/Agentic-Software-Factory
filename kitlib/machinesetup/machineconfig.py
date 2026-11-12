@@ -11,6 +11,7 @@ another program changed since the survey refuses the write. The file's other key
 the machine config cannot be read after the write. A folder with no .gitignore gets GITIGNORE before
 the first key lands, so local.json is never unignored. Nothing here prints or exits.
 """
+import errno
 import os
 import tempfile
 
@@ -110,7 +111,7 @@ def _write_new(full, data):
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
         if not fsreplace.place_new(tmp, full):
-            raise FileExistsError(full)
+            raise FileExistsError(errno.EEXIST, 'File exists', full)
     except BaseException:
         try:
             os.remove(tmp)

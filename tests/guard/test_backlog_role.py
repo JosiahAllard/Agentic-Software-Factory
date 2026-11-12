@@ -630,11 +630,11 @@ class RealStore(unittest.TestCase):
 
 class LandedBase(unittest.TestCase):
     """A subagent's python script file that is its repository's landed code is not judged by
-    backlog-raw-write (owner Q-2180; backlogrole.landed_script): seen refused live, retribution's
-    `python tools/daily_full.py --kit-tools <kit>/tools --plan` from a linked worktree, whose
-    script imports kitlib.platform.windows and prints a backlog.py add line. Its bytes must be the
-    blob at the local main, in a repository with a PM data record whose git common dir the session
-    may not write; every other copy is judged as before."""
+    backlog-raw-write (the owner's ruling, trust landed code; backlogrole.landed_script): seen
+    refused live, a repository's `python tools/daily_full.py --kit-tools <kit>/tools --plan` from
+    a linked worktree, whose script imports kitlib.platform.windows and prints a backlog.py add
+    line. Its bytes must be the blob at the local main, in a repository with a PM data record whose
+    git common dir the session may not write; every other copy is judged as before."""
     DAILY = 'tools/daily_full.py'
     SCRIPT = ('"""The daily run."""\nimport subprocess\nimport sys\n\nfrom kitlib.platform import windows\n\n\n'
               'def main():\n    print(\'python tools/backlog.py add --summary "the daily is red"\')\n'

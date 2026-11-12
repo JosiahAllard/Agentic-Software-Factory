@@ -672,8 +672,8 @@ FIXED_MAINS = ('main', 'master')               # the mains a derived main_branch
 
 
 def landed_script(event, ctx, cwd, path):
-    """True when the python script file `path` is its repository's landed code (owner Q-2180,
-    docs/guard-jail-roles.md "Landed scripts"): its whole bytes are the blob at the local
+    """True when the python script file `path` is its repository's landed code (the owner's
+    ruling, trust landed code; docs/guard-jail-roles.md "Landed scripts"): its whole bytes are the blob at the local
     refs/heads/<main branch>:<its path>, or, for a blob with no CR, that blob with every LF
     written as CRLF. The guard
     refuses an agent's direct write of that ref (git-shared-ref, git-push-main); the ways it

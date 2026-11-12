@@ -54,9 +54,14 @@ class ClaudePeerEndpoint:
     evidence and is deliberately not assigned to a pending request. Replies go
     through the caller-authenticated shared-core bridge_reply API.
     """
-    def __init__(self, registry_dir, workspace, directory):
+    def __init__(self, registry_dir, workspace, directory, *, is_live=None):
+        """`is_live(operation_id) -> bool`: whether the broker still holds the operation open
+        (not terminal). With it, the broker alone decides which entries are finished (expect)."""
         if type(directory) is not ClaudeDirectory:
             raise DeliveryError('invalid-peer-directory')
+        if is_live is not None and not callable(is_live):
+            raise DeliveryError('invalid-peer-ports')
+        self._is_live = is_live
         self.registry = Path(registry_dir).resolve(strict=True)
         self.workspace = Path(workspace).resolve(strict=True)
         if not self.registry.is_dir() or not self.workspace.is_dir():
@@ -67,7 +72,7 @@ class ClaudePeerEndpoint:
         self.key_path = self.registry / ('%d.%s.key' % (
             os.getpid(), hashlib.sha256(canonical_pipe(self.pipe).encode()).hexdigest()))
         self._token = secrets.token_hex(16)
-        self._owned, self._pending, self._results = {}, {}, {}
+        self._owned, self._pending, self._results, self._returned = {}, {}, {}, set()
         self._lock, self._stop = threading.RLock(), threading.Event()
         self._listener, self._thread, self._fault, self._closed = None, None, False, False
         # The failed step names the refusal (peer-endpoint-start-failed-<step>); a refusal
@@ -115,21 +120,64 @@ class ClaudePeerEndpoint:
             self._owned[path] = (info.st_dev, info.st_ino, data)
 
     def expect(self, message, snapshot):
+        """Record a send's expectation; at the cap, first free the finished ones.
+
+        With an is_live port the broker alone decides: an entry is finished when the broker
+        no longer holds its operation open, even past its expiry or after a final status,
+        since a row still open there must stay reconcilable. Without a port, a refused or
+        expired status already returned by result(), or a passed expiry, finishes it.
+        Once freed, an identical re-admission (the outbox prunes only finished rows, so its
+        repeat-ID window is the newest 512 messages) is written to the peer again.
+        """
+        native_id = native_message_id(message)
         with self._lock:
-            if self._closed or self._fault or not self._thread.is_alive():
-                raise BeforeWriteError('peer-return-endpoint-unavailable')
-            native_id = native_message_id(message)
-            if native_id in self._pending:
-                raise DeliveryError('native-operation-already-attempted')
+            self._admissible(native_id)
+            if len(self._pending) < MAX_PENDING:
+                self._pending[native_id] = (message, snapshot)
+                return native_id
+            candidates = dict(self._pending)
+        # The port is asked with the endpoint lock released. On the dispatch path it
+        # re-enters the outbox RLock this thread already holds (run_dispatch holds it across
+        # send), so the order stays outbox lock then endpoint lock, never the reverse; the
+        # receive thread takes only the endpoint lock. An entry is dropped only when the
+        # broker called it finished (terminal is final there) and it is still the same entry.
+        finished = set()
+        if self._is_live is not None:
+            finished = {key for key, (pending, _snapshot) in candidates.items()
+                        if not self._broker_live(pending.operation_id)}
+        with self._lock:
+            self._admissible(native_id)
+            now = time.time()
+            for key, entry in tuple(self._pending.items()):
+                if self._is_live is not None:
+                    done = key in finished and candidates.get(key) is entry
+                else:
+                    done = key in self._returned or (entry[0].expires_at is not None
+                                                     and now >= entry[0].expires_at)
+                if done:
+                    self.forget_before_write(key)
             if len(self._pending) >= MAX_PENDING:
                 raise BeforeWriteError('peer-pending-capacity')
             self._pending[native_id] = (message, snapshot)
             return native_id
 
+    def _admissible(self, native_id):
+        if self._closed or self._fault or not self._thread.is_alive():
+            raise BeforeWriteError('peer-return-endpoint-unavailable')
+        if native_id in self._pending:
+            raise DeliveryError('native-operation-already-attempted')
+
+    def _broker_live(self, operation_id):
+        try:
+            return self._is_live(operation_id) is not False
+        except Exception:
+            return True  # An unreadable broker never frees an entry.
+
     def forget_before_write(self, native_id):
         with self._lock:
             self._pending.pop(native_id,None)
             self._results.pop(native_id,None)
+            self._returned.discard(native_id)
 
     def result(self, message, native_id):
         expected = native_message_id(message)
@@ -140,7 +188,10 @@ class ClaudePeerEndpoint:
             if pending is None or pending[0] != message:
                 return None
             self.directory.require_live(pending[1])
-            return self._results.get(expected)
+            result = self._results.get(expected)
+            if result is not None and result.state in ('refused','expired'):
+                self._returned.add(expected)  # Final here and handed to the broker: finished.
+            return result
 
     def _receive(self):
         while not self._stop.is_set():

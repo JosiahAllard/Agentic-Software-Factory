@@ -1,7 +1,7 @@
 """Compiled service assembly owns its original-registry Claude return peer."""
 from optional.bridge.hosts.claude.peer import ClaudePeerEndpoint
 from optional.bridge.hosts.claude.runtime import ClaudeSources
-from optional.bridge.core.messages import DeliveryError
+from optional.bridge.core.messages import DeliveryError, TERMINAL_STATES
 from optional.bridge.port import OwnedDelivery
 from optional.bridge.win.runtime import Runtime
 
@@ -16,6 +16,15 @@ def build_sources(controller,native_executables,**settings):
         raise DeliveryError('claude-plugin-scope-required')
     return ClaudeSources(controller,native_executable=native_executables,
         marker=controller.root/'service.json',**settings)
+
+
+def broker_liveness(outbox):
+    """The endpoint's is_live port: an operation pruned (no receipt) or terminal in the
+    broker's outbox is finished, so the endpoint may drop its expectation."""
+    def is_live(operation):
+        receipt=outbox.receipt(operation)
+        return receipt is not None and receipt.state not in TERMINAL_STATES
+    return is_live
 
 
 def build_delivery(provider,runtime):
@@ -33,7 +42,7 @@ def build_delivery(provider,runtime):
         raise DeliveryError('invalid-claude-delivery-assembly')
     provider.controller._require()
     endpoint=ClaudePeerEndpoint(provider.directory.registry,
-        provider.controller.root,provider.directory)
+        provider.controller.root,provider.directory,is_live=broker_liveness(provider.controller.outbox))
     try:
         adapter=provider.delivery_adapter(endpoint,runtime.sender_mode)
         return OwnedDelivery(adapter,endpoint,adapter_id='claude-peer',

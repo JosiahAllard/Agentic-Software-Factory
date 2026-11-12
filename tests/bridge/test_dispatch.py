@@ -13,7 +13,7 @@ import unittest
 from optional.bridge.core.contracts import AdapterDescription, Capability
 from optional.bridge.core.dispatch import CoreBroker
 from optional.bridge.core.messages import BeforeWriteError, DeliveryError, NativeResult, SenderAuthority
-from optional.bridge.core.outbox import Outbox
+from optional.bridge.core.outbox import MAX_MESSAGES, Outbox
 from optional.bridge.core.pairing import PairingStore
 from tests.bridge.test_pairing import chat
 
@@ -94,6 +94,36 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual(len(self.adapter.calls), 1)
         with self.assertRaisesRegex(DeliveryError, 'operation-conflict'):
             self.admit(text='different body')
+
+    def test_finished_messages_are_pruned_so_the_cap_counts_live_ones_only(self):
+        # Before the prune, send 513 ever was refused (message-capacity), delivered or not.
+        # A cycle delivers the message and its reverse reply job (a queued child is live).
+        self.core.adapters[self.a.identity.adapter_id] = TestAdapter(self.a.identity.adapter_id)
+        children = []
+        for index in range(600):
+            try:
+                self.assertEqual(self.admit('op-%d' % index).state, 'queued')
+            except DeliveryError as refused:
+                self.fail('send %d refused: %s' % (index + 1, refused.code))
+            self.assertEqual(self.core.dispatch_once('op-%d' % index).state, 'reply-received')
+            children.append(self.store.reply_delivery('op-%d' % index)['child'])
+            self.assertEqual(self.core.dispatch_once(children[-1]).state, 'reply-received')
+        for operation in ('op-0', children[0]):                 # the oldest finished one went
+            self.assertIsNone(self.store.receipt(operation))
+            self.assertEqual(self.store.events(operation), ())
+        self.assertEqual(self.core.reply('op-599', b'test-caller-proof'), 'test reply')
+        # Live messages are never pruned: queued, unknown (awaiting a native receipt), and a
+        # replied-to parent whose reverse reply job is still queued.
+        for index in range(MAX_MESSAGES):
+            self.admit('live-%d' % index)
+            self.adapter.fail = TimeoutError('lost native ack') if index % 3 == 1 else None
+            if index % 3:
+                self.core.dispatch_once('live-%d' % index)
+        with self.assertRaisesRegex(DeliveryError, 'message-capacity'):
+            self.admit('one-too-many')
+        self.assertEqual([self.store.receipt('live-%d' % index).state for index in range(3)],
+                         ['queued', 'unknown', 'reply-received'])
+        self.assertEqual(self.store.reply_delivery('live-2')['state'], 'queued')
 
     def test_revoke_queued_route_prevents_native_write(self):
         self.admit()

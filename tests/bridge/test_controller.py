@@ -117,17 +117,24 @@ class ControllerTests(unittest.TestCase):
         self.controller.enroll(peer,lambda binding:self.live.get(binding.identity.session_id)==binding)
         return peer
 
+    def _enroll_with_room(self,name):
+        """Enroll `name` where the cap counts only live chats; a capacity refusal fails the test."""
+        try: return self._enroll(name)
+        except DeliveryError as error:
+            if error.code!='native-enrollment-capacity': raise
+            self.fail('%s was refused a slot an ended or withdrawn chat still held'%name)
+
     def test_enrollment_drops_ended_chats_so_the_cap_counts_live_ones_only(self):
         for index in range(130):  # Each chat ends before the next starts.
-            self._enroll('ended-%d'%index)
+            self._enroll_with_room('ended-%d'%index)
             self.live.pop('ended-%d'%index)
-        for index in range(126): self._enroll('live-%d'%index)  # With a and b: 128 live.
+        for index in range(126): self._enroll_with_room('live-%d'%index)  # With a and b: 128 live.
         with self.assertRaisesRegex(DeliveryError,'native-enrollment-capacity'): self._enroll('one-too-many')
 
     def test_a_chat_the_store_withdrew_frees_its_enrollment_slot(self):
         for index in range(126): self._enroll('live-%d'%index)
         self.controller.pairs.withdraw('live-0')  # Still answering, but no longer listed.
-        self._enroll('next')
+        self._enroll_with_room('next')
         self.assertIn('next',{peer.identity.session_id for peer in self.controller.pairs.registered()})
 
     def test_state_is_persisted_and_new_owner_can_recover_without_replaying_completed_work(self):

@@ -47,15 +47,14 @@ def bare_uses(text):
 
 class DispatchNamesTest(unittest.TestCase):
     def test_every_dispatch_name_is_qualified(self):
-        seen = 0
-        for p in scanned_files():
+        files = scanned_files()
+        self.assertGreaterEqual(len(KIT), 14, 'the scan found almost no agent files: is it reading the folder?')
+        for p in files:
             rel = p.relative_to(ROOT).as_posix()
-            bad, good = bare_uses(p.read_text(encoding='utf-8'))
-            seen += good
+            bad, _ = bare_uses(p.read_text(encoding='utf-8'))
             with self.subTest(file=rel):
                 self.assertEqual([b for b in bad if (rel, b[1]) not in ALLOWED], [],
                                  '%s names a kit agent without %r' % (rel, agentname.PREFIX))
-        self.assertGreater(seen, 10, 'the scan found almost no qualified names: is it reading the files?')
 
     def test_the_scan_catches_each_form_and_passes_the_qualified_one(self):
         p = agentname.PREFIX

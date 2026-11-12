@@ -32,13 +32,22 @@ manifests(kit, content) writes the files that carry the kit's one version (kit.j
   (kitlib.pluginsource) writes the platform's file in its place.
 JSON holds no comment, and these keep to the keys Claude Code documents, so they carry no
 generated-file line; plugin.json's description says it is rendered.
+
+render(content) also writes SESSION_SETTINGS_REL, the one settings file every launched session
+starts with (`claude --settings`, kitlib.launcher.sessionsettings; docs/launcher.md "Session
+settings"): SESSION_KEYS (claude.ai connectors off, the HIDDEN_SKILLS bundled and SYNCED_SKILLS
+claude.ai-synced skills hidden from the model) and `permissions.deny`, SESSION_CUT minus the tool of every capability a role lists
+(session_settings). `capabilities: all` takes nothing back, or no tool would ever be cut. One file,
+not one per role, until a role needs a different one. mcp_deny_names() maps each MCP_SERVERS server,
+and each of the owner's USER_MCP servers, to its deny entry, which `launch.py --mcp <server>` takes
+back for one session.
 """
 import json
 
 from kitlib.host import agentname
 from kitlib.hookrun import main as hookrun
 from kitlib.host import registry
-from kitlib.host.content import ContentError, banner, quote, role_source, substitute
+from kitlib.host.content import ContentError, banner, capped, quote, role_source, substitute
 
 HOST = 'claude'
 SHELL_REL = 'hosts/claude/shell'
@@ -49,6 +58,7 @@ RETIRED_SKILLS_REL = SHELL_REL + '/skills'
 HOOKS_REL = SHELL_REL + '/hooks/hooks.json'
 MANIFEST_REL = '.claude-plugin/plugin.json'
 MARKETPLACE_REL = '.claude-plugin/marketplace.json'
+SESSION_SETTINGS_REL = SHELL_REL + '/session-settings.json'
 PLUGIN_ROOT = '${CLAUDE_PLUGIN_ROOT}'
 DESCRIPTION = ('The PM kit as a Claude Code plugin (ARCHITECTURE.md, Packaging): the agents rendered into '
                'hosts/claude/shell/agents/, the skills in content/skills/, its hooks and the machine lock and hub '
@@ -66,6 +76,55 @@ HOOKS = (
 MCP_SERVERS = {'machine-lock': {'command': 'python', 'args': [PLUGIN_ROOT + '/mcp/lock_server.py']},
                'hub': {'command': 'python', 'args': [PLUGIN_ROOT + '/mcp/hub_server.py']},
                'blender': {'command': 'python', 'args': [PLUGIN_ROOT + '/mcp/blender_server.py']}}
+
+
+def _plugin_deny(server):
+    """The permissions.deny entry of the kit's MCP server `server`: the plugin's tools are
+    mcp__plugin_<plugin>_<server>__<tool>, so the bare mcp__plugin_<plugin>_<server> covers them all."""
+    return 'mcp__plugin_%s_%s' % (agentname.PREFIX.rstrip(':'), server)
+
+
+# What every launched session starts with (session_settings; the owner's answers, 2026-11-12).
+# USER_MCP: the owner's user-scope MCP servers (not the kit's) that --mcp can turn on: {server: deny entry}.
+USER_MCP = {'suno': 'mcp__suno'}
+# SESSION_CUT: the tools and MCP servers it starts without, each a permissions.deny entry, a bare
+# tool name or an MCP server's entry from _plugin_deny or USER_MCP, so mcp_deny_names() gives it
+# and `launch.py --mcp <server>` can take it back. Artifact stays.
+SESSION_CUT = ('NotebookEdit', 'ReportFindings', 'ScheduleWakeup', 'SendFeedback', 'Workflow',
+               _plugin_deny('blender'), USER_MCP['suno'])
+# The bundled skills hidden from the model (still /name to the owner). Not artifact-design,
+# artifact-diagramming or artifact-capabilities: the Artifact tool, kept, says to load them.
+HIDDEN_SKILLS = ('claude-api', 'claude-in-chrome', 'code-review', 'dataviz', 'fewer-permission-prompts',
+                 'init', 'keybindings-help', 'loop', 'plugin-authoring', 'run', 'schedule',
+                 'security-review', 'simplify', 'update-config', 'workflow-authoring')
+# The claude.ai-synced skills, hidden the same way, by the name a session lists them under (sync
+# stays on: syncClaudeAiSkills false would move the account's synced skills away).
+SYNCED_SKILLS = tuple('anthropic-skills:' + name for name in (
+    'artifact-emulator', 'built-in-browser', 'chrome-browser', 'computer-use', 'deep-research', 'docs',
+    'docx', 'google-workspace', 'import-memory', 'morning', 'pdf', 'pptx', 'skill-creator', 'xlsx'))
+# The settings keys beside permissions.deny.
+SESSION_KEYS = {'disableClaudeAiConnectors': True,
+                'skillOverrides': {name: 'user-invocable-only' for name in HIDDEN_SKILLS + SYNCED_SKILLS}}
+
+
+def _json(data):
+    """`data` as the rendered JSON files are written: indent 2, a final newline, UTF-8."""
+    return (json.dumps(data, indent=2) + '\n').encode('utf-8')
+
+
+def mcp_deny_names():
+    """{server: its permissions.deny entry} of each MCP_SERVERS server (_plugin_deny) and each
+    USER_MCP server (a user-scope server's tools are mcp__<server>__<tool>)."""
+    names = {name: _plugin_deny(name) for name in sorted(MCP_SERVERS)}
+    names.update(USER_MCP)
+    return names
+
+
+def session_settings(content, cut=SESSION_CUT):
+    """The launched sessions' settings for `content`: SESSION_KEYS and {"permissions": {"deny":
+    [...]}}, the entries of `cut` in order, less the Claude tool of every capability a role lists."""
+    kept = {TOOLS[c] for role in content.roles if not role.all_tools for c in role.capabilities if c in TOOLS}
+    return dict(SESSION_KEYS, permissions={'deny': [e for e in cut if e not in kept]})
 
 
 def mcp_servers(platform='windows'):
@@ -186,7 +245,7 @@ class ClaudeContent:
         fill = lambda text: substitute(text, values, agent_name, names, src, models=tiers,    # noqa: E731
                                        tools=TOOLS)
         lines = ['---', '# ' + banner(role_source(role.name)), 'name: %s' % role.name,
-                 'description: %s' % quote(fill(role.description))]
+                 'description: %s' % quote(capped(fill(role.description), role_source(role.name)))]
         for key, value in self.settings(role, tiers, role_models):
             lines += ['experimental:', '  cacheTtl: %s' % value] if key == 'cacheTtl' else ['%s: %s' % (key, value)]
         lines.append('---')
@@ -199,7 +258,17 @@ class ClaudeContent:
         out = {}
         for role in content.roles:
             out[self.role_path(role.name)] = self.agent_file(role, names, values, tiers, role_models)
+        out[SESSION_SETTINGS_REL] = _json(session_settings(content))
         return out
+
+    @staticmethod
+    def session_settings_rel():
+        """The kit-relative path of the launched sessions' settings file (render)."""
+        return SESSION_SETTINGS_REL
+
+    @staticmethod
+    def mcp_deny_names():
+        return mcp_deny_names()
 
     def hooks(self, registry_path=None, platform='windows'):
         tool_event = registry.host(HOST, registry_path).hook.tool_event
@@ -230,11 +299,10 @@ class ClaudeContent:
             'plugins': [{'name': kit['name'], 'source': './',
                          'description': 'The PM kit: agents, skills and the machine lock and hub MCP servers.'}],
         }
-        dump = lambda data: (json.dumps(data, indent=2) + '\n').encode('utf-8')     # noqa: E731
-        out = {MARKETPLACE_REL: dump(market)}
+        out = {MARKETPLACE_REL: _json(market)}
         for platform in registry.host(HOST, registry_path).platforms:
-            out[manifest_rel(platform)] = dump(dict(plugin, mcpServers=mcp_servers(platform)))
-            out[hooks_rel(platform)] = dump(self.hooks(registry_path, platform))
+            out[manifest_rel(platform)] = _json(dict(plugin, mcpServers=mcp_servers(platform)))
+            out[hooks_rel(platform)] = _json(self.hooks(registry_path, platform))
         return out
 
 

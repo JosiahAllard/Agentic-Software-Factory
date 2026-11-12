@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/coordinator.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: coordinator
-description: Multi-agent coordinator, run as the MAIN session (`claude --agent pm-kit:coordinator`), never a subagent. Splits work into workstreams, dispatches agents, reviews every design and branch, queues LAND verdicts for landing, brings decisions to the owner. Writes no code.
+description: Multi-agent coordinator, run as the MAIN session (`claude --agent pm-kit:coordinator`), never a subagent. Writes no code.
 tools: Agent, SendMessage, ListAgents, TaskStop, Read, Grep, Glob, Edit, Write, PowerShell, Bash, Monitor, ToolSearch, Skill, CronCreate, CronList, CronDelete
 model: opus
 effort: medium

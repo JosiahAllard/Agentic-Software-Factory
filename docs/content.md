@@ -33,7 +33,7 @@ renderer).
 | key | value |
 |---|---|
 | `name` | the file's stem |
-| `description` | one line: plain, or quoted as YAML needs (a `: ` inside) |
+| `description` | one line: plain, or quoted as YAML needs (a `: ` inside). The dispatch trigger only: every session holds every agent type's description, so the routing detail is in skill coordinator-dispatch's roster.md. At most 160 characters once each host fills its tokens (`DESCRIPTION_MAX`, checked by each renderer: `{{tool:dispatch}}` and `{{launch_agent}}` fill much longer on Codex) |
 | `tier` | `light`, `standard`, `strong` or `deep`; each host maps a tier to a model (docs/ROSTER.md) |
 | `effort` | optional: `low`, `medium`, `high`, `xhigh`, `max` |
 | `sandbox` | `read-only` or `workspace-write` |
@@ -233,6 +233,8 @@ their host documents, so plugin.json, marketplace.json, mcp.json, hooks.json and
 hosts.json carry none (plugin.json's description says it is rendered); neither do the byte-for-byte
 copies (skills, `boot/`), which must stay their source's bytes. The line is part of the render, so
 the drift check covers it.
+
+Claude's renderer also writes `hosts/claude/shell/session-settings.json`, the `--settings` file every launched session starts with (docs/launcher.md "Session settings"): its deny list is `SESSION_CUT` in `hosts/claude/adapter/content.py`, less the tools the roles' `capabilities` name, and its other keys are `SESSION_KEYS` there, so its sources are that file and `content/roles/`.
 
 The guard refuses a hand edit of a rendered file in a kit checkout, in any session, and names its
 source and the render command (rule `generated-file`, docs/guard-jail-roles.md "Generated files").

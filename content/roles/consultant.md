@@ -1,6 +1,6 @@
 ---
 name: consultant
-description: NEVER dispatch with the {{tool:dispatch}} tool. A long-lived launched session per repository (`launch.py consultant`), named consultant-<repo>, that answers coordinators' and workers' engineering questions and owns those calls. Never edits, lands or dispatches. Ask it by {{tool:message}}.
+description: "NEVER dispatch with the {{tool:dispatch}} tool: a session per repo (`launch.py consultant`) for engineering questions."
 tier: deep
 effort: high
 sandbox: read-only

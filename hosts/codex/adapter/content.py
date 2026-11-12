@@ -51,7 +51,7 @@ from kitlib.host import registry
 from kitlib.blendermcp import SERVER_NAME as BLENDER_NAME
 from kitlib.hubmcp import SERVER_NAME as HUB_NAME
 from kitlib.lockmcp import SERVER_NAME
-from kitlib.host.content import ContentError, banner, role_source, substitute
+from kitlib.host.content import ContentError, banner, capped, role_source, substitute
 
 HOST = 'codex'
 SHELL_REL = 'hosts/codex/shell'
@@ -288,7 +288,7 @@ class CodexContent:
                  '# Review template: do not install until live acceptance (hosts/codex/README.md).',
                  '# Codex hooks do not see which agent runs: hosts/codex/README.md, "Not verified".',
                  'name = %s' % toml_string(agent_name(role.name)),
-                 'description = %s' % toml_string(fill(role.description))]
+                 'description = %s' % toml_string(capped(fill(role.description), role_source(role.name)))]
         lines += ['%s = %s' % (key, toml_string(value)) for key, value in self.settings(role)]
         lines.append('developer_instructions = %s' % toml_block(substitute_body(role, names), nl))
         return (nl.join(lines) + nl).encode('utf-8')

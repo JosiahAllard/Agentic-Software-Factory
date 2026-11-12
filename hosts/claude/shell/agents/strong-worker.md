@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/strong-worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: strong-worker
-description: "Default coder for High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring. Concurrency, networking, simulation or ordering, migrations, CI config, landing, gate or lock logic, build-cache or codegen design: `pm-kit:senior-worker`. Routine, plan-only or sync work: `pm-kit:worker`."
+description: "Default coder for High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring."
 model: opus
 effort: medium
 experimental:

@@ -116,6 +116,7 @@ Claude asks before each MCP tool call unless the tool is allowed. These are the 
 "mcp__plugin_pm-kit_blender__blender_close"
 ```
 
+- **Launched sessions start without it.** Every session `launch.py` starts denies `mcp__plugin_pm-kit_blender` (docs/launcher.md "Session settings"), and a deny beats these allow lines. `launch.py <verb> ... --mcp blender` turns it on for that session and its agents.
 - **`blender_exec` is a shell.** It runs arbitrary Python inside a Blender, in the agent's worktree, as the user who runs the session. The Python can read, write or delete any file that user can, and start any program.
 - **The guard sees the call, not the Python.** No kit guard rule judges what the Python does: not the write jail, the git rules or the lock rules. For an edit role, allowing `blender_exec` gives that role a shell.
 - **One role rule.** Rule `role-blender` (docs/guard-jail-roles.md "Role policy") refuses `blender_exec` and `blender_render` to every role that edits nothing (`read`, `test`, `lander`) wherever the repository turns the role policy on. `blender_render` is refused because its `path` can write a PNG anywhere.

@@ -2,7 +2,7 @@
 # Review template: do not install until live acceptance (hosts/codex/README.md).
 # Codex hooks do not see which agent runs: hosts/codex/README.md, "Not verified".
 name = "kit-test-runner"
-description = "Runs a repository's test tiers in a given worktree and reports only PASS/FAIL plus failing lines, keeping verbose output out of your context. Must be told the worktree, the tiers, and ports for anything networked; asks rather than guesses."
+description = "Runs a repository's test tiers in a given worktree and reports only PASS/FAIL plus failing lines. Needs the worktree, the tiers and any ports."
 model_reasoning_effort = "low"
 sandbox_mode = "workspace-write"
 developer_instructions = """

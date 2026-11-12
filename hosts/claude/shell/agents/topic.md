@@ -1,7 +1,7 @@
 ---
 # Generated from content/roles/topic.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: topic
-description: "NEVER dispatch with the Agent tool: a plain session the PM launches for the owner (`launch.py topic`), named topic-<slug>, that builds one batch of records on one branch in its own worktree. Never lands."
+description: "NEVER dispatch with the Agent tool: a PM-launched session (`launch.py topic`) building a batch for the owner."
 model: opus
 effort: high
 ---

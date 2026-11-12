@@ -56,6 +56,7 @@ def _command(qx):
     return re.compile(("^" + _PROGRAM + r" --agent (?P<agent>\S+)(?: --model (?P<model>{q}))?"
                        r"(?: --effort (?P<effort>\S+))?"
                        r"(?: --autocompact (?P<ac>\d+))?(?: --add-dir (?P<add>{q}))?(?: --permission-mode \S+)?"
+                       r"(?: --settings (?P<settings>{q}))?"
                        r" --remote-control (?P<rc>{q}) -n (?P<n>{q}) (?P<prompt>{q})\Z").replace('{q}', qx), re.S)
 
 

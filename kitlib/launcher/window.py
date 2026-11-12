@@ -12,7 +12,7 @@
   6. AGENT_TEMP set again, and TEMP and TMP pointed at it, when the launcher sees one (a session
      whose guard allows scratch writes only there finds all three; the PM resume too);
   7. the start folder (a home worktree with --home-worktree: home.py), then
-     `claude ... [--add-dir '<main checkout>'] --permission-mode auto --remote-control '<name>' -n '<name>' '<prompt>'`
+     `claude ... [--add-dir '<main checkout>'] --permission-mode auto [--settings '<file>'] --remote-control '<name>' -n '<name>' '<prompt>'`
      (a resume: `claude --resume '<id>' [--fork-session] [--agent ...] --remote-control ...`).
    An optional `permission_mode` (session_command; None keeps the above) replaces `auto`.
 Every value is single-quoted with quotes doubled. `open_window` starts it minimized and unfocused:
@@ -92,12 +92,14 @@ def q(text):
 
 
 def session_command(name, prompt, agent=None, model=None, effort=None, autocompact=None, resume=None,
-                    add_dir=None, remote_control=True, fork=False, permission_mode=None):
+                    add_dir=None, remote_control=True, fork=False, permission_mode=None, settings=None):
     """`permission_mode` None: today's mode for the session (`auto` for a fresh start, none for a
     resume); a value from PERMISSION_MODES replaces it (ValueError otherwise).
     `add_dir`: a folder the session's file tools may also use (`--add-dir`; a home worktree's main checkout, docs/launcher.md "The home worktree"). `remote_control` False drops only the
     `--remote-control <name>` pair (a measurement; lookup finds the session by `-n`). `fork` with
-    `resume`: `--fork-session`, the resumed conversation under a new session id (pm-relaunch)."""
+    `resume`: `--fork-session`, the resumed conversation under a new session id (pm-relaunch).
+    `settings`: the session's settings file (`--settings`, kitlib.launcher.sessionsettings), after
+    the permission mode and before --remote-control, where unlisted._command reads it."""
     if permission_mode is not None and permission_mode not in PERMISSION_MODES:
         raise ValueError('unknown permission mode %r (known: %s)'
                          % (permission_mode, ', '.join(PERMISSION_MODES)))
@@ -119,6 +121,8 @@ def session_command(name, prompt, agent=None, model=None, effort=None, autocompa
         parts += ['--permission-mode', permission_mode]
     elif not resume:
         parts += ['--permission-mode', 'auto']
+    if settings:
+        parts += ['--settings', q(settings)]
     parts += ['--remote-control', q(name)] if remote_control else []
     parts += ['-n', q(name), q(prompt)]
     return ' '.join(parts)

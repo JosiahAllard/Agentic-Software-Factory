@@ -338,6 +338,33 @@ class TreeIsMain(Case):
         self.assertEqual(self.repo.git('symbolic-ref', '-q', 'HEAD', check=False), before)
 
 
+class TreeIsMainWithStagingOn(Case):
+    """KIT-STAGING-ON-GAPS item 6: with staging on and the daily worktree set to the main
+    checkout, a scheduled run is recorded red `infra` (the plain run's refusal), never a repeating
+    exit 2 that records nothing. Slice C1 retired `--if-due`, the form that skipped the staging
+    read there and exited 2; the schedule runs the plain form."""
+    KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test', 'worktree': '.'},
+           'staging': {'branch': 'staging'}}
+
+    def setUp(self):
+        Case.setUp(self)
+        self.repo.git('push', '-q', 'origin', 'main:refs/heads/staging')
+
+    def test_the_scheduled_run_is_recorded_red_infra(self):
+        with redirect_stdout(io.StringIO()):
+            code = tool.main(['-C', self.main_dir, '--out', self.out])
+        self.assertEqual(code, G.REFUSED)
+        r = self.result(os.listdir(self.out)[0])
+        self.assertEqual(r['red'], ['infra'])
+        self.assertIn('is the main checkout', r['error'])
+
+    def test_if_due_is_a_usage_error_not_a_schedule(self):
+        with redirect_stdout(io.StringIO()), mock.patch('sys.stderr', io.StringIO()):
+            self.assertEqual(tool.main(['-C', self.main_dir, '--out', self.out, '--if-due']),
+                             G.USAGE)
+        self.assertFalse(os.path.exists(self.out))
+
+
 class AllSkipped(Case):
     GATE = {'steps': [{'name': 'needs-tool', 'always': True, 'requires': ['no-such-program-kit'],
                        'cmd': ['{python}', '-c', 'print("ok")']}]}

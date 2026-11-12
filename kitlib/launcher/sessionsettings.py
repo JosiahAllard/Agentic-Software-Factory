@@ -17,8 +17,8 @@ with no --settings.
                        (written at launch, never into the kit). The stamp makes the file this launch's
                        own: a `consultant --replace` beside a live session of the same name never
                        overwrites, or on a failed launch removes, the running session's file
-  write(path, data)    write `data` through a temp file, then os.replace: a reader sees the whole file
-  remove(path)         remove a file write() wrote (a failed launch), quietly
+start writes that JSON with kitlib.fs.atomic.write_text (a reader sees the whole file) and, when
+the window fails to open, removes it with kitlib.fs.replace.remove.
 
 The stable kit is the kit checkout: a plugin export is replaced at every plugin refresh, so its file
 would vanish under a running session (kitlib.pluginsource.layout.default_kit). The checkout and the
@@ -72,25 +72,3 @@ def plan(spec, path, mcp, folder, name, stamp):
     keep = {spec.mcp_deny[m] for m in mcp}
     data['permissions']['deny'] = [e for e in deny if e not in keep]
     return own, data
-
-
-def write(path, data):
-    """Write `data` as JSON at `path` through `<path>.tmp` and os.replace."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + '.tmp'
-    try:
-        with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
-            json.dump(data, f, indent=2)
-            f.write('\n')
-        os.replace(tmp, path)
-    except BaseException:
-        remove(tmp)
-        raise
-
-
-def remove(path):
-    """Remove `path`; a file already gone is no fault."""
-    try:
-        os.remove(path)
-    except OSError:
-        pass

@@ -11,6 +11,7 @@ Every function returns the lines it says; a refusal is a LaunchError (nothing st
 written). None of them stops a running session: a hand-off starts the successor and the PM stops
 the old one with stop.py once the successor has checked in.
 """
+import json
 import os
 import re
 import sys
@@ -18,6 +19,8 @@ import sys
 from kitlib.host import agentname
 from kitlib import content as kcontent
 from kitlib.config import user as kuser
+from kitlib.fs import atomic
+from kitlib.fs import replace as fsreplace
 from kitlib.launcher import accounts as A
 from kitlib.git import cmd
 from kitlib.git import repo as gitrepo
@@ -257,12 +260,12 @@ def start(settings, host, repo=None, repo_path=None, account=None, org=None, pro
     after_ms = pipes.launch_ms(host.now())      # the registry record the window makes starts after this
     kw = window.open_args(name, settings)
     if settings_data:
-        sessionsettings.write(settings_path, settings_data)
+        atomic.write_text(settings_path, json.dumps(settings_data, indent=2) + '\n', makedirs=True)
     try:
         host.open_window(text, **kw)
     except BaseException:
         if settings_data:
-            sessionsettings.remove(settings_path)
+            fsreplace.remove(settings_path)
         raise
     out = out + ['Started %s (%s) in %s. Remote Control name: %s'
                  % (name, label, window.opened_in(name, kw.get('terminal')), name)]
@@ -348,7 +351,7 @@ def _session_settings(host, mcp, name, out):
     """(the --settings file, the JSON start writes there or None) for a session `name`: none when
     the host has no session_spec (a refusal when `mcp` asks for servers) or the rendered file is
     missing (said in `out`)."""
-    spec = getattr(host, 'session_spec', None)
+    spec = host.session_spec
     if spec is None:
         if mcp:
             raise LaunchError('--mcp needs the session settings, which this launcher has none of.')

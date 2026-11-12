@@ -24,13 +24,17 @@ def role(capabilities=(), all_tools=False):
     return types.SimpleNamespace(capabilities=list(capabilities), all_tools=all_tools)
 
 
+def write_json(path, data):
+    """A settings file at `path`, as start writes one."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f)
+
+
 def kit_with(root, data):
     """A kit folder under `root` whose rendered session settings are `data`; its Spec."""
     kit = os.path.join(root, 'kit')
-    path = os.path.join(kit, *claude_content.SESSION_SETTINGS_REL.split('/'))
-    os.makedirs(os.path.dirname(path))
-    with open(path, 'w', encoding='utf-8') as f:
-        json.dump(data, f)
+    write_json(os.path.join(kit, *claude_content.SESSION_SETTINGS_REL.split('/')), data)
     return sessionsettings.Spec(claude_content.SESSION_SETTINGS_REL, claude_content.mcp_deny_names(), kit)
 
 
@@ -112,29 +116,9 @@ class Files(unittest.TestCase):
     def test_a_file_already_there_is_never_this_launchs(self):
         path, _ = sessionsettings.resolve(self.spec)
         own, data = sessionsettings.plan(self.spec, path, ['hub'], self.root, 'n', 7)
-        sessionsettings.write(own, data)
+        write_json(own, data)
         with self.assertRaisesRegex(LaunchError, 'already there'):
             sessionsettings.plan(self.spec, path, ['hub'], self.root, 'n', 7)
-
-    def test_write_goes_through_a_temp_name_then_replace(self):
-        target = os.path.join(self.root, 'launcher', 'settings-n.json')
-        seen = []
-        real = os.replace
-
-        def replace(src, dst):
-            seen.append((src, dst, os.path.exists(dst)))
-            real(src, dst)
-        with mock.patch('os.replace', replace):
-            sessionsettings.write(target, {'a': 1})
-        self.assertEqual(seen, [(target + '.tmp', target, False)])
-        with open(target, encoding='utf-8') as f:
-            self.assertEqual(json.load(f), {'a': 1})
-
-    def test_a_failed_write_leaves_no_temp_file(self):
-        target = os.path.join(self.root, 'launcher', 'settings-n.json')
-        with mock.patch('os.replace', side_effect=OSError('no')), self.assertRaises(OSError):
-            sessionsettings.write(target, {'a': 1})
-        self.assertEqual(os.listdir(os.path.dirname(target)), [])
 
 
 class Command(unittest.TestCase):
@@ -170,7 +154,7 @@ class Launch(Base):
         self.assertEqual(unlisted.read_window(text, 'deep-net-race')['settings'], self.own)
         with open(self.own, encoding='utf-8') as f:
             self.assertEqual(json.load(f)['permissions']['deny'], ['Read', 'NotebookEdit', BLENDER])
-        self.assertFalse(os.path.exists(self.own + '.tmp'))
+        self.assertEqual(os.listdir(os.path.dirname(self.own)), [os.path.basename(self.own)])   # no temp file
 
     def test_what_if_and_plan_write_no_file(self):
         out = start.deep(self.h.settings, self.host, repo_path=self.repo, requester='r', slug='net-race',
@@ -196,7 +180,7 @@ class Launch(Base):
 
     def test_a_failed_launch_leaves_a_running_sessions_file_of_that_name(self):
         live = os.path.join(self.temp, 'launcher', 'settings-deep-net-race-1.json')     # an earlier launch's
-        sessionsettings.write(live, {'permissions': {'deny': []}})
+        write_json(live, {'permissions': {'deny': []}})
         self.host.open_window = mock.Mock(side_effect=OSError('no window'))
         with self.assertRaisesRegex(LaunchError, 'no window'):
             self.deep(mcp=['hub'])
@@ -212,7 +196,7 @@ class Launch(Base):
         self.assertNotIn('--settings', self.opened())
 
     def test_a_host_without_a_spec_passes_none_and_refuses_mcp(self):
-        del self.host.session_spec
+        self.host.session_spec = None
         self.assertNotIn('--settings', self.deep())
         with self.assertRaisesRegex(LaunchError, '--mcp needs the session settings'):
             self.deep(mcp=['hub'])

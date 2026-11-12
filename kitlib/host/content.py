@@ -166,7 +166,12 @@ class ContentRenderer(Protocol):
     None when it has none. `role_path(name)` is the repo-relative path `render` writes role `name`
     to. `settings(role)` is [(key, value)]: what that file sets for the role to run with, each
     value as the file writes it; key `model` when the file names one, `tools` when it limits the
-    role to a tool list (the host's tool names), nothing for what the file leaves to the host."""
+    role to a tool list (the host's tool names), nothing for what the file leaves to the host.
+
+    Optional, read by tools/launch.py (kitlib.launcher.sessionsettings): `session_settings_rel()`
+    is the kit-relative path of the settings file a launched session starts with, and
+    `mcp_deny_names()` is {MCP server: its deny entry there}. A renderer without them gives no
+    session settings (sessions start with no --settings) and no `--mcp`."""
 
     host = None
 

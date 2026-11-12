@@ -153,8 +153,7 @@ def account_of(settings, config_dir):
 
 
 def read_window(script, name):
-    """{role, config_dir, agent_temp, folder, agent, model, effort, autocompact, add_dir, settings,
-    prompt}
+    """{role, config_dir, agent_temp, folder, agent, model, effort, autocompact, add_dir, prompt}
     of a window script start.py wrote for the session `name`, or None."""
     if not script or not script.startswith(_title(name)):
         return None
@@ -171,8 +170,7 @@ def read_window(script, name):
     return {'role': _val(role), 'config_dir': _val(config), 'agent_temp': _val(_TEMP.search(head)),
             'folder': _val(m), 'agent': c.group('agent'), 'model': _unq(c.group('model')),
             'effort': c.group('effort'), 'autocompact': c.group('ac') and int(c.group('ac')),
-            'add_dir': _unq(c.group('add')), 'settings': _unq(c.group('settings')),
-            'prompt': _unq(c.group('prompt'))}
+            'add_dir': _unq(c.group('add')), 'prompt': _unq(c.group('prompt'))}
 
 
 def _read_bash(script, name):
@@ -188,8 +186,7 @@ def _read_bash(script, name):
     return {'role': _bval(role), 'config_dir': _bval(config), 'agent_temp': _bval(_BTEMP.search(head)),
             'folder': _bval(m), 'agent': c.group('agent'), 'model': _bunq(c.group('model')),
             'effort': c.group('effort'), 'autocompact': c.group('ac') and int(c.group('ac')),
-            'add_dir': _bunq(c.group('add')), 'settings': _bunq(c.group('settings')),
-            'prompt': _bunq(c.group('prompt'))}
+            'add_dir': _bunq(c.group('add')), 'prompt': _bunq(c.group('prompt'))}
 
 
 def _window_of(row, by_pid):

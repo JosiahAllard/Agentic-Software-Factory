@@ -299,11 +299,10 @@ class ClaudeContent:
             'plugins': [{'name': kit['name'], 'source': './',
                          'description': 'The PM kit: agents, skills and the machine lock and hub MCP servers.'}],
         }
-        dump = lambda data: (json.dumps(data, indent=2) + '\n').encode('utf-8')     # noqa: E731
-        out = {MARKETPLACE_REL: dump(market)}
+        out = {MARKETPLACE_REL: _json(market)}
         for platform in registry.host(HOST, registry_path).platforms:
-            out[manifest_rel(platform)] = dump(dict(plugin, mcpServers=mcp_servers(platform)))
-            out[hooks_rel(platform)] = dump(self.hooks(registry_path, platform))
+            out[manifest_rel(platform)] = _json(dict(plugin, mcpServers=mcp_servers(platform)))
+            out[hooks_rel(platform)] = _json(self.hooks(registry_path, platform))
         return out
 
 

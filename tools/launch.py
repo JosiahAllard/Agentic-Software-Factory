@@ -244,16 +244,18 @@ def push_delivery(settings):
 
 
 def session_spec():
-    """The sessionsettings.Spec of start.CLI_HOST's renderer, or None when its adapter has none
-    (or will not import): sessions then start with no --settings. Its kit is the stable kit, the
+    """The sessionsettings.Spec of start.CLI_HOST's renderer, or None when its adapter will not
+    import or its renderer lacks session_settings_rel() or mcp_deny_names() (kitlib.host.content
+    ContentRenderer): sessions then start with no --settings and --mcp is refused. Its kit is the stable kit, the
     kit checkout this tool's (layout.default_kit: an export's file goes at the next refresh)."""
     try:
         import _host
         r = _host.adapter_module(start.CLI_HOST).ADAPTER.content().renderer()
+        rel, mcp_deny = r.session_settings_rel, r.mcp_deny_names
     except (ImportError, AttributeError):
         return None
     stable, _ = layout.default_kit(kitroot.root())
-    return sessionsettings.Spec(r.session_settings_rel(), r.mcp_deny_names(), stable)
+    return sessionsettings.Spec(rel(), mcp_deny(), stable)
 
 
 def run(a, settings, host):

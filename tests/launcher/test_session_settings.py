@@ -1,6 +1,6 @@
 """The settings file a launched session starts with (docs/launcher.md "Session settings"):
 hosts.claude.adapter.content.session_settings, kitlib.launcher.sessionsettings, start's --settings
-and --mcp, and unlisted reading the path back. The launch tests run on a cut list of their own, so the
+and --mcp, and unlisted still parsing a command line that carries --settings. The launch tests run on a cut list of their own, so the
 shipped one can change without them."""
 import json
 import os
@@ -136,22 +136,22 @@ class Launch(Base):
         self.host.session_spec = self.spec
         self.own = os.path.join(self.temp, 'launcher', 'settings-deep-net-race-%d.json' % (NOW.timestamp() * 1000))
 
-    def test_a_path_with_a_space_reads_back_through_unlisted(self):
+    def test_a_window_with_a_spaced_settings_path_is_still_found_by_unlisted(self):
         self.assertIn(' ', self.rendered)
         text = self.deep()
         self.assertIn(' --settings %s --remote-control ' % window.q(self.rendered), text)
-        self.assertEqual(unlisted.read_window(text, 'deep-net-race')['settings'], self.rendered)
         found, never = self.classify(rows(text, 700, 'deep-net-race'))
         self.assertEqual((never, found['deep-net-race'][0].brief), ({}, self.brief))
 
-    def test_a_path_with_a_space_reads_back_from_the_bash_window(self):
+    def test_the_bash_window_with_a_spaced_settings_path_still_parses(self):
         with mock.patch('kitlib.platform.NAME', 'linux'):
             text = self.deep()
-            self.assertEqual(unlisted.read_window(text, 'deep-net-race')['settings'], self.rendered)
+            self.assertIn(' --settings %s --remote-control ' % window.q(self.rendered), text)
+            self.assertIsNotNone(unlisted.read_window(text, 'deep-net-race'))
 
     def test_mcp_starts_with_a_file_of_its_own(self):
         text = self.deep(mcp=['hub'])
-        self.assertEqual(unlisted.read_window(text, 'deep-net-race')['settings'], self.own)
+        self.assertIn(' --settings %s --remote-control ' % window.q(self.own), text)
         with open(self.own, encoding='utf-8') as f:
             self.assertEqual(json.load(f)['permissions']['deny'], ['Read', 'NotebookEdit', BLENDER])
         self.assertEqual(os.listdir(os.path.dirname(self.own)), [os.path.basename(self.own)])   # no temp file
@@ -228,3 +228,13 @@ class Parsing(unittest.TestCase):
                                                      claude_content.mcp_deny_names()))
         with mock.patch.object(self.launch.layout, 'default_kit', return_value=(None, 'an export')):
             self.assertIsNone(self.launch.session_spec().kit)
+
+    def test_a_renderer_without_the_settings_members_gives_no_spec(self):
+        for missing in ('session_settings_rel', 'mcp_deny_names'):
+            members = {'session_settings_rel': lambda: 'x.json', 'mcp_deny_names': dict}
+            del members[missing]
+            renderer = types.SimpleNamespace(**members)
+            adapter = types.SimpleNamespace(ADAPTER=types.SimpleNamespace(
+                content=lambda: types.SimpleNamespace(renderer=lambda: renderer)))
+            with mock.patch('_host.adapter_module', return_value=adapter):
+                self.assertIsNone(self.launch.session_spec(), missing)

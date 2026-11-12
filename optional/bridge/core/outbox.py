@@ -301,8 +301,11 @@ class Outbox:
                     return self._receipt(prior)
                 if db.execute('SELECT 1 FROM refusals WHERE root=?', (message.task_root,)).fetchone():
                     raise DeliveryError('task-root-refused')
-                if db.execute('SELECT COUNT(*) FROM messages WHERE reply_of IS NULL').fetchone()[0] >= MAX_MESSAGES:
-                    raise DeliveryError('message-capacity')
+                count = 'SELECT COUNT(*) FROM messages WHERE reply_of IS NULL'
+                if db.execute(count).fetchone()[0] >= MAX_MESSAGES:
+                    self._prune_finished(db)
+                    if db.execute(count).fetchone()[0] >= MAX_MESSAGES:
+                        raise DeliveryError('message-capacity')
                 if message.expires_at is not None and now >= message.expires_at:
                     raise DeliveryError('message-already-expired')
                 db.execute('INSERT INTO messages VALUES(?,?,?,?,?,?,?,?,?,\'queued\',\'queued\',NULL,NULL,NULL,NULL,NULL,NULL)',
@@ -312,6 +315,36 @@ class Outbox:
                 self._new_queued_sibling(db,message.task_root)
                 self._event(db, message.operation_id, 'queued')
             return self.receipt(message.operation_id)
+
+    def _prune_finished(self, db):
+        """At the message cap, delete the oldest finished message, so the cap bounds live ones.
+
+        Finished: a terminal state, no event reservation, and a reply link that is absent,
+        suppressed, or queued with a terminal reply child. The link, that child and the events
+        of both go with it. Everything else stays: queued, dispatching, accepted, held and
+        unknown rows (a late reply is still accepted on them, past expiry too), pending links,
+        and the refusals table. A finished result stays readable until 512 newer messages
+        displace it. Side effect: a repeat operation ID is protected (same receipt, no resend)
+        only within the newest 512 messages; an older pruned ID is admitted as new.
+        """
+        terminal = tuple(sorted(TERMINAL_STATES))
+        marks = ','.join('?' * len(terminal))
+        row = db.execute(
+            'SELECT m.id,d.state AS link,d.child FROM messages m '
+            'LEFT JOIN reply_deliveries d ON d.parent=m.id '
+            'WHERE m.reply_of IS NULL AND m.state IN (%s) '
+            'AND m.id NOT IN (SELECT operation FROM event_reservations) '
+            "AND (d.parent IS NULL OR d.state='suppressed' OR (d.state='queued' AND EXISTS("
+            'SELECT 1 FROM messages c WHERE c.id=d.child AND c.state IN (%s) '
+            'AND c.id NOT IN (SELECT operation FROM event_reservations)))) '
+            'ORDER BY m.rowid LIMIT 1' % (marks, marks), terminal + terminal).fetchone()
+        if row is None:
+            return
+        operations = (row['id'], row['child']) if row['link'] == 'queued' else (row['id'],)
+        for operation in operations:
+            db.execute('DELETE FROM events WHERE operation=?', (operation,))
+            db.execute('DELETE FROM messages WHERE id=?', (operation,))
+        db.execute('DELETE FROM reply_deliveries WHERE parent=?', (row['id'],))
 
     def _refuse_root(self, db, root):
         db.execute('INSERT OR IGNORE INTO refusals VALUES(?,?)', (root, 'native-refusal'))

@@ -325,7 +325,9 @@ class Outbox:
         unknown rows (a late reply is still accepted on them, past expiry too), pending links,
         and the refusals table. A finished result stays readable until 512 newer messages
         displace it. Side effect: a repeat operation ID is protected (same receipt, no resend)
-        only within the newest 512 messages; an older pruned ID is admitted as new.
+        only within the newest 512 messages; an older pruned ID is admitted as new, and a
+        native peer that has freed its own entry for it (the Claude endpoint's expect) is
+        written to again.
         """
         terminal = tuple(sorted(TERMINAL_STATES))
         marks = ','.join('?' * len(terminal))

@@ -112,16 +112,18 @@ class DispatchTests(unittest.TestCase):
             self.assertIsNone(self.store.receipt(operation))
             self.assertEqual(self.store.events(operation), ())
         self.assertEqual(self.core.reply('op-599', b'test-caller-proof'), 'test reply')
-        # Live messages are never pruned: queued, and unknown (awaiting a native receipt).
-        self.adapter.fail = TimeoutError('lost native ack')
+        # Live messages are never pruned: queued, unknown (awaiting a native receipt), and a
+        # replied-to parent whose reverse reply job is still queued.
         for index in range(MAX_MESSAGES):
             self.admit('live-%d' % index)
-            if index % 2:
-                self.assertEqual(self.core.dispatch_once('live-%d' % index).state, 'unknown')
+            self.adapter.fail = TimeoutError('lost native ack') if index % 3 == 1 else None
+            if index % 3:
+                self.core.dispatch_once('live-%d' % index)
         with self.assertRaisesRegex(DeliveryError, 'message-capacity'):
             self.admit('one-too-many')
-        self.assertEqual(self.store.receipt('live-0').state, 'queued')
-        self.assertEqual(self.store.receipt('live-1').state, 'unknown')
+        self.assertEqual([self.store.receipt('live-%d' % index).state for index in range(3)],
+                         ['queued', 'unknown', 'reply-received'])
+        self.assertEqual(self.store.reply_delivery('live-2')['state'], 'queued')
 
     def test_revoke_queued_route_prevents_native_write(self):
         self.admit()

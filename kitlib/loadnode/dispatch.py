@@ -25,9 +25,10 @@ Nothing here prints: `say(text)` gets every line and `out(bytes)` the job's own 
 import os
 import re
 
+from kitlib import kitroot
 from kitlib.loadnode import box, job, registry, remote, reply, route
 
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 NODE_TOOL = 'python "%s"' % os.path.join(KIT_ROOT, 'tools', 'node.py')
 NEST_ENV = 'MACHINE_LOCK_RUN'                  # kitlib.lock.run_held.NEST_ENV: a run inside a run
 STATUS_TIMEOUT_S = 10

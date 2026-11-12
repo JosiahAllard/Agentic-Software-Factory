@@ -20,9 +20,10 @@ host the stack templates are written for.
 import os
 import re
 
+from kitlib import kitroot
 from kitlib.host import registry
 
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 KIT_ROOT_PLACEHOLDER = '{kit_root}'
 SKILLS_REL = os.path.join(*registry.default_profile().skills_directory.split('/'))
 TEXT_SUFFIXES = ('.md',)

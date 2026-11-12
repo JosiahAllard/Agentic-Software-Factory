@@ -58,11 +58,12 @@ import sys
 import threading
 import time
 
+from kitlib import kitroot
 from kitlib import platform
 from kitlib.proc import spawn
 from kitlib.hubclient import localask
 
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 HUB_TOOL = os.path.join(KIT_ROOT, 'tools', 'hub.py')
 SETTLE_S = 90               # the code must be unchanged this long before the check
 GIVE_UP_S = 900             # past this from the first difference, the stale warning shows

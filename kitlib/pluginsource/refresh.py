@@ -126,27 +126,12 @@ class RefreshLock(object):
 
     def _put_back(self, claim):
         """Move a claimed live file back to refresh.pid, never over a file a starter made there
-        meanwhile: os.link on Linux (a rename would replace it), os.rename on Windows (it refuses
-        an existing target), retried there while a reader holds the file open. On failure it
+        meanwhile (place_new, retried on Windows while a reader holds the file open). On failure it
         stays at `claim`."""
-        if kitplatform.NAME == 'linux':
-            try:
-                os.link(claim, self.path)
-                os.remove(claim)
-            except OSError:
-                pass
-            return
-        deadline = time.monotonic() + fsreplace.WAIT
-        while True:
-            try:
-                os.rename(claim, self.path)
-                return
-            except PermissionError:
-                if time.monotonic() >= deadline:
-                    return
-            except OSError:
-                return
-            time.sleep(fsreplace.PAUSE)
+        try:
+            fsreplace.place_new(claim, self.path, wait=fsreplace.WAIT)
+        except OSError:
+            pass
 
     def release(self):
         if not self.held:

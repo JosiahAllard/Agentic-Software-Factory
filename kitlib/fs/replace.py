@@ -4,10 +4,13 @@ On Windows a rename over a file another process has open without delete sharing 
 antivirus scan, a reader in another tool) fails with PermissionError for as long as that handle
 stays open, usually a few milliseconds. replace() retries only that error, every PAUSE seconds for
 at most WAIT seconds, then raises it. Any other OSError is raised at once. remove() is the same
-for os.remove, and a file already gone is success.
+for os.remove, and a file already gone is success. place_new() moves a file in only where the
+target is absent.
 """
 import os
 import time
+
+from kitlib import platform
 
 WAIT = 2.0      # seconds a refused replace is retried (kitlib.lock.store.write_json's bound)
 PAUSE = 0.05    # seconds between its tries
@@ -38,6 +41,36 @@ def remove(path, wait=None, pause=None):
             return
         except FileNotFoundError:
             return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+        time.sleep(pause)
+
+
+def place_new(src, dst, wait=0, pause=None):
+    """Move `src` to `dst` only when `dst` is absent; True when it was moved, False when `dst`
+    was already there (`src` is then untouched). A POSIX rename would replace `dst`, so on Linux
+    it is os.link of `src`, then `src` removed (a leftover `src` is not a failure: `dst` is
+    written); elsewhere os.rename, which refuses an existing target on Windows, retried on
+    PermissionError for `wait` seconds (default none). Any other OSError is raised, `src` kept."""
+    if platform.NAME == 'linux':
+        try:
+            os.link(src, dst)
+        except FileExistsError:
+            return False
+        try:
+            os.remove(src)
+        except OSError:
+            pass
+        return True
+    deadline = time.monotonic() + wait
+    pause = PAUSE if pause is None else pause
+    while True:
+        try:
+            os.rename(src, dst)
+            return True
+        except FileExistsError:
+            return False
         except PermissionError:
             if time.monotonic() >= deadline:
                 raise

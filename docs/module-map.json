@@ -2383,6 +2383,12 @@
   },
   {
    "from": "lock",
+   "to": "fs",
+   "kind": "build",
+   "why": "services uses base"
+  },
+  {
+   "from": "lock",
    "to": "git",
    "kind": "build",
    "why": "services uses facts"
@@ -2458,6 +2464,12 @@
    "to": "config",
    "kind": "build",
    "why": "apps uses facts"
+  },
+  {
+   "from": "machinesetup",
+   "to": "fs",
+   "kind": "build",
+   "why": "apps uses base"
   },
   {
    "from": "machinesetup",
@@ -3304,6 +3316,12 @@
    "to": "host",
    "kind": "build",
    "why": "apps uses facts"
+  },
+  {
+   "from": "strayrestore",
+   "to": "fs",
+   "kind": "build",
+   "why": "work uses base"
   },
   {
    "from": "strayrestore",

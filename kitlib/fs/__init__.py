@@ -5,7 +5,7 @@
 - writelock: one writer of a file at a time, across processes and threads (the rulings ledger,
   the pending-steps file, the delegated runner), on a lock file its caller names.
 - replace: os.replace retried while Windows refuses it because a reader or a scanner has the
-  target open.
+  target open; place_new, a file moved to a path that must not exist yet (never overwrites).
 - atomic: write_text and write_bytes, a whole file written through a unique temp file beside it
   (optionally fsynced), then replace, the temp file removed on error.
 - rmtree: rmtree_force, shutil.rmtree that also removes read-only files (git's objects), and

@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from kitlib import pmstart
+from kitlib.hubjobs.coord_restart import row_created
 from kitlib.platform.linux import process as P
 from tests.platforms import posix_only
 
@@ -64,7 +64,7 @@ class Fake(unittest.TestCase):
         self.assertEqual(got[1]['CommandLine'], '')
         self.assertIsNone(got[1]['ExecutablePath'])
         self.assertEqual(len(got), 2)
-        self.assertEqual(pmstart._created(got[0]), BTIME + 2.5)
+        self.assertEqual(row_created(got[0]), BTIME + 2.5)
 
     def test_an_unreadable_or_vanished_process_is_left_out(self):
         self.add(10, 'ok', 1, 5, ['ok'])
@@ -93,7 +93,7 @@ class Live(unittest.TestCase):
         self.assertEqual(row['ParentProcessId'], os.getppid())
         self.assertTrue(row['CommandLine'])
         self.assertEqual(os.path.realpath(row['ExecutablePath']), os.path.realpath(sys.executable))
-        started = pmstart._created(row)
+        started = row_created(row)
         now = datetime.datetime.now().timestamp()
         self.assertTrue(now - 86400 < started <= now + 2, (started, now))
 

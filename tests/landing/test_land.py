@@ -1,6 +1,7 @@
 """kitlib.landing.lander: one landing into a scratch repository with a bare remote in temp, gated on the
 scratch lock store. Each test proves one contract: refusals before any merge, a red merge undone,
 the push verified, landings into one repository taking turns."""
+import contextlib
 import datetime
 import json
 import os
@@ -15,7 +16,7 @@ import kitlib.config as kconfig
 from kitlib import gate as G
 from kitlib.gate import result, runner
 from kitlib.landing import lander as land
-from kitlib.git import refs
+from kitlib.git import cmd, refs
 from kitlib.lock import queue as lockqueue
 from kitlib.records import gate_ok, landing
 from tests.gate import fixtures
@@ -27,6 +28,19 @@ BRANCH = 'kit/feature'
 # machine (a full suite beside others) stretches a landing to tens of seconds.
 HANG_S = 600
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+@contextlib.contextmanager
+def parent_reads():
+    """The git launches (cmd.call argument lists) that read the landing tree's HEAD^1 or HEAD^2."""
+    real, reads = cmd.call, []
+
+    def call(args, cwd, **kw):
+        if 'HEAD^1' in args or 'HEAD^2' in args:
+            reads.append(list(args))
+        return real(args, cwd, **kw)
+    with mock.patch.object(cmd, 'call', call):
+        yield reads
 
 
 class LandCase(fixtures.GateRepoCase):
@@ -78,8 +92,10 @@ class LandCase(fixtures.GateRepoCase):
 class Lands(LandCase):
     def test_green_lands_pushes_and_verifies(self):
         _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
-        out = self.lander(BRANCH, self.main, tip, summary='add a').run()
+        with parent_reads() as reads:
+            out = self.lander(BRANCH, self.main, tip, summary='add a').run()
         self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(reads, [['rev-parse', 'HEAD^1', 'HEAD^2']])   # one launch per merge
         merge = out.merge
         self.assertTrue(out.lines[-1].startswith('LANDED kit/feature on main at %s' % merge))
         self.assertEqual(self.remote_main(), merge)                # the push really happened
@@ -280,6 +296,35 @@ class HookFromMain(LandCase):
         self.assertIn('failed to load: SystemExit: broken', out.lines[0])
         self.assertTrue(out.undone)
         self.assert_untouched(out, G.REFUSED)
+
+
+class HalfMerge(LandCase):
+    """Lander.half_merge on a landing tree stopped right after its merge: the merge of the next tip
+    onto the base is recorded from one read of HEAD's parents; a HEAD that is no merge is not."""
+
+    def stopped(self, wt, tip):
+        lander = object.__new__(land.Lander)
+        lander.tree, lander.merges, lander.merge = wt, [], None
+        lander.expect_main, lander.tips = self.main, [tip]
+        return lander
+
+    def test_a_merge_of_the_next_tip_is_recorded_from_one_parent_read(self):
+        wt, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        self.repo.git('checkout', '-q', '--detach', self.main, cwd=wt)
+        self.repo.git('merge', '-q', '--no-ff', '-m', 'Merge kit/feature', tip, cwd=wt)
+        head = self.repo.git('rev-parse', 'HEAD', cwd=wt)
+        lander = self.stopped(wt, tip)
+        with parent_reads() as reads:
+            self.assertEqual(lander.half_merge('Ctrl+C'), [])
+        self.assertEqual((lander.merges, lander.merge), ([head], head))
+        self.assertEqual(reads, [['rev-parse', 'HEAD^1', 'HEAD^2']])
+
+    def test_a_head_that_is_no_merge_is_not_recorded(self):
+        wt, _ = self.branch('feature', {'a.py': 'x = 1\n'})
+        lander = self.stopped(wt, self.main)       # HEAD is the tip: one parent, the base
+        self.assertEqual(lander.tree_parents(), (None, None))
+        self.assertEqual(lander.half_merge('Ctrl+C'), [])
+        self.assertEqual((lander.merges, lander.merge), ([], None))
 
 
 class NoStepSelected(LandCase):

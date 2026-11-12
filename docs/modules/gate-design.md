@@ -29,7 +29,7 @@ Low-level design of `kitlib/gate`, `kitlib/loadnode` and `kitlib/dailyfull`. The
 | `gate/budget.py`, `gatecap.py`, `measure.py`, `stop.py`, `stash.py`, `caller.py`, `gitstatus.py`, `pin.py` | One concern each |
 | `gate/strict_defaults.py` | The kit's default strict landing paths (owner-only) |
 | `loadnode/` | `registry`, `remote`, `route`, `dispatch`, `job`, `box`, `frames`, `reply`, `mirror`, and the node's side of a gate and of a landing's gate |
-| `dailyfull/` | The run, `bisect`, `file` (the record it files) |
+| `dailyfull/` | The run, `bisect`, `file` (the record it files), `promote` (staging to main) |
 
 ## State
 

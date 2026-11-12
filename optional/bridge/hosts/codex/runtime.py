@@ -384,7 +384,7 @@ class CodexSources:
                     or Path(source_endpoint.executable)!=image):
                 raise BeforeWriteError('codex-direct-app-channel-mismatch')
             process=open_process(0x00101000,False,source_endpoint.pid)
-            def recheck():
+            def checked():
                 # No controller/pairing callbacks execute under factory/runtime
                 # locks. Core owns selected_guard; this only reads its route.
                 try:
@@ -414,6 +414,10 @@ class CodexSources:
                         and target.snapshot(message.recipient) is target_capture)
                 except Exception:
                     return False
+            def recheck():
+                # The live checks of one call share one find and one read of each rollout.
+                with source.observer.scope(),target.observer.scope():
+                    return checked()
             target_rollout=target.rollout_identity(message.recipient,expected=target_capture)
             def confirm():
                 # After the write: the delivery has started a new turn in the recipient, so

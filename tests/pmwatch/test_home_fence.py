@@ -1,4 +1,4 @@
-"""docs/test-tools.md "Home fence": pm_watch's state file falls back to the home folder only through
+"""docs/test-tools.md "Home fence": the session watch's state file falls back to the home folder only through
 kitlib.config.user.home_dir(), so a test without LOCALAPPDATA meets the fence."""
 import os
 import unittest

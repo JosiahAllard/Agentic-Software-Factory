@@ -124,9 +124,10 @@ carries the same `push` (Api.push_seen), so a hub with no worker or a dead one s
 
 Watcher. GET snapshot and GET health carry `watcher`: null when this hub runs no push worker,
 else {"state", "age"} from PushWorker.watcher_status (kitlib.hubsite.push docstring "Watcher"):
-the PM's pm_watch heartbeat at the worker's latest read, state 'up', 'down' (older than
-WATCHER_STALE_S) or 'none' (no heartbeat readable), age its seconds (null with none). A status
-that raises is 'down' with a null age.
+the hub's session-watch job at the worker's latest read, state 'up' (healthy:
+kitlib.pmwatch.session_job_healthy), 'down' (a job block not healthy) or 'none' (no such block),
+age whole seconds since its last success (null before one). A status that raises is 'down' with a
+null age.
 
 Code. GET snapshot and GET health carry `code`: null when this hub gives none, else {"stale",
 "restart"} from Hub.code_state (kitlib.hubclient.codestale): stale is true once the hub code on disk
@@ -799,7 +800,7 @@ class Api(object):
         return got if isinstance(got, dict) else None
 
     def watcher_seen(self):
-        """The PM watcher's state as the push worker last read it, or None when this hub runs
+        """The session-watch job's state as the push worker last read it, or None when this hub runs
         no push worker (module docstring "Watcher"). A status that raises is 'down'."""
         fn = self.watcher_status
         if fn is None:

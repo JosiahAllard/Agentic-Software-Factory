@@ -198,7 +198,7 @@ class LiveRoot(unittest.TestCase):
         self.assertEqual(plugin_layout.live_root(self.export, {}), self.export)
 
     def test_refresh_cmd_from_an_export_names_the_marker_checkout(self):
-        """refresh_cmd (pm_start's and pm_watch's plugin lines) run from the plugin's export with
+        """refresh_cmd (pm_start's plugin line and the hub plugin-refresh job's note) run from the plugin's export with
         no KIT_LIVE_ROOT names the main checkout's plugin_refresh.py."""
         main = self.main_checkout()
         self.marker(main)

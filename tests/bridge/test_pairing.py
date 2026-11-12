@@ -15,6 +15,57 @@ def chat(name, adapter='test-adapter', project='test-project'):
     return ChatBinding(identity, 'test-account', 1)
 
 
+class FirstCreationTests(unittest.TestCase):
+    """A failed first creation of either state file never stops a later start."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='bridge-first-creation-')
+        self.root = Path(self.temp.name)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def stores(self):
+        from optional.bridge.core.outbox import Outbox
+        return ((PairingStore, self.root / 'pairing.sqlite'), (Outbox, self.root / 'outbox.sqlite'))
+
+    def reopen(self, store, path, **options):
+        """Open and close `store` on `path`; a refusal to open is this test's failure."""
+        try:
+            with closing(store(path, **options)):
+                pass
+        except (ValueError, OSError) as error:
+            self.fail('a later open of the empty file was refused: %s' % error)
+
+    def test_a_failed_protect_on_first_creation_is_redone_by_the_next_open(self):
+        for store, path in self.stores():
+            with self.subTest(store=store.__name__):
+                def refuse(_path):
+                    raise PermissionError('test protect failure')
+                with self.assertRaises(PermissionError):
+                    store(path, prepare_new_file=refuse)
+                self.assertEqual(path.stat().st_size, 0)
+                protected = []
+                self.reopen(store, path, prepare_new_file=protected.append)
+                self.assertEqual(protected, [path])
+                self.reopen(store, path)  # Created whole: it opens as existing state.
+
+    def test_a_schema_statement_failing_mid_script_leaves_the_file_empty(self):
+        from unittest.mock import patch
+        import optional.bridge.core.outbox as outbox
+        import optional.bridge.core.pairing as pairing
+        failing = {PairingStore: (pairing, 'INSERT INTO meta VALUES(1,0);'),
+                   outbox.Outbox: (outbox, 'INSERT INTO meta VALUES(1,0,0);')}
+        for store, path in self.stores():
+            with self.subTest(store=store.__name__):
+                module, duplicate = failing[store]
+                with patch.object(module, 'SCHEMA', module.SCHEMA + duplicate):
+                    with self.assertRaises(ValueError):
+                        store(path)
+                self.assertEqual(path.stat().st_size, 0)
+                self.reopen(store, path)
+                self.reopen(store, path)
+
+
 class PairingTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='bridge-pairing-')

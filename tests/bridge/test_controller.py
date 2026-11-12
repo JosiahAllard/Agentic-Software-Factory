@@ -5,9 +5,11 @@ import unittest
 import uuid
 from dataclasses import replace
 import hashlib
+from unittest.mock import patch
 
 from optional.bridge.win.controller import Controller
-from optional.bridge.core.messages import MessageIntent,SenderAuthority
+from optional.bridge.core.messages import DeliveryError,MessageIntent,SenderAuthority
+from optional.bridge.core.pairing import PairingError
 from optional.bridge.win.leader import ServiceLeader
 from tests.bridge.test_pairing import chat
 from tests.bridge.test_dispatch import TestAdapter
@@ -52,13 +54,90 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual([(item.operation_id,item.state) for item in pending],[(reply['child'],'queued')])
         self.assertEqual(len(self.adapter.calls),1)
 
-    def test_native_binding_drift_revokes_connection_and_unavailable_leadership_blocks_writes(self):
+    def test_native_binding_drift_refuses_owner_change_admit_and_queued_dispatch(self):
         self.controller.owner.change(self.a.reference,self.b.reference,enabled=True)
-        self.live.pop('b')
-        with self.assertRaises(ValueError): self.controller.owner.change(self.a.reference,self.b.reference,enabled=True)
-        self.leader.close()
-        self.assertFalse(self.leader.owns())
-        with self.assertRaises(ValueError): self.controller.dispatch_pending()
+        self._admit('before-drift',self.b)
+        old=self.b
+        self.b=replace(old,permission_revision=2)
+        self.live['b']=self.b
+        self.controller.enroll(self.b,lambda binding:self.live.get(binding.identity.session_id)==binding)
+        with self.assertRaisesRegex(ValueError,'visible-chat-changed'):
+            self.controller.owner.change(self.a.reference,old.reference,enabled=True)
+        with self.assertRaisesRegex(PairingError,'chat-not-observed'): self._admit('after-drift',old)
+        receipt=self.controller.dispatch_pending()[0]
+        self.assertEqual((receipt.state,receipt.reason),('refused','chat-binding-changed'))
+        self.assertEqual(self.adapter.calls,[])
+
+    def test_a_withdrawn_recipient_refuses_its_queued_message_as_not_observed(self):
+        self.controller.owner.change(self.a.reference,self.b.reference,enabled=True)
+        self._admit('queued',self.b)
+        self.controller.pairs.withdraw('b')
+        receipt=self.controller.dispatch_pending()[0]
+        self.assertEqual((receipt.state,receipt.reason),('refused','chat-not-observed'))
+        self.assertEqual(self.adapter.calls,[])
+
+    def _pending_reply(self,operation):
+        """A reply link left pending by a real event-capacity failure in its reverse job."""
+        self.controller.owner.change(self.a.reference,self.b.reference,enabled=True)
+        self._admit(operation,self.b)
+        outbox=self.controller.outbox
+        event=outbox._event
+        def full(db,op,state,epoch=None):
+            if op.startswith('bridge-reply-'): raise DeliveryError('event-capacity')
+            return event(db,op,state,epoch)
+        with patch.object(outbox,'_event',side_effect=full):
+            self.assertEqual(self.controller.core.dispatch_once(operation).state,'reply-received')
+        self.assertEqual(outbox.reply_delivery(operation)['state'],'pending')
+
+    def test_an_outbox_error_while_promoting_a_reply_leaves_the_service_running(self):
+        self._pending_reply('op')
+        outbox=self.controller.outbox
+        with patch.object(outbox,'_clock',return_value=1.0):  # The wall clock stepped back.
+            try: receipts=self.controller.dispatch_pending()
+            except DeliveryError as error: self.fail('dispatch_pending raised '+error.code)
+        self.assertEqual(receipts,())
+        self.assertTrue(self.leader.owns())
+        self.assertEqual(outbox.reply_delivery('op')['state'],'pending')
+
+    def test_leadership_lost_while_promoting_a_reply_stops_dispatch(self):
+        self._pending_reply('op')
+        self.assertEqual(self.controller.outbox.pending(),())  # Nothing else queued.
+        promote=self.controller.outbox.promote_reply
+        def lose_leadership(operation):
+            self.leader.close()
+            return promote(operation)
+        with patch.object(self.controller.outbox,'promote_reply',side_effect=lose_leadership):
+            with self.assertRaisesRegex(DeliveryError,'service-ownership-unverified'):
+                self.controller.dispatch_pending()
+        self.assertEqual(len(self.adapter.calls),1)  # The parent's send only.
+
+    def _enroll(self,name):
+        peer=chat(name)
+        self.live[name]=peer
+        self.controller.enroll(peer,lambda binding:self.live.get(binding.identity.session_id)==binding)
+        return peer
+
+    def _enroll_with_room(self,name):
+        """Enroll `name` where the cap counts only live chats; a capacity refusal fails the test."""
+        try: return self._enroll(name)
+        except DeliveryError as error:
+            if error.code!='native-enrollment-capacity': raise
+            self.fail('%s was refused a slot an ended or withdrawn chat still held'%name)
+
+    def test_enrollment_drops_ended_chats_so_the_cap_counts_live_ones_only(self):
+        for index in range(130):  # Each chat ends before the next starts.
+            self._enroll_with_room('ended-%d'%index)
+            self.live.pop('ended-%d'%index)
+        for index in range(126): self._enroll_with_room('live-%d'%index)  # With a and b: 128 live.
+        with self.assertRaisesRegex(DeliveryError,'native-enrollment-capacity'): self._enroll('one-too-many')
+
+    def test_a_chat_the_store_withdrew_frees_its_enrollment_slot(self):
+        for index in range(126): self._enroll('live-%d'%index)
+        self.controller._launched['live-0']=('test-sender',None,None)
+        self.controller.pairs.withdraw('live-0')  # Still answering, but no longer listed.
+        self._enroll_with_room('next')
+        self.assertNotIn('live-0',self.controller._launched)  # Its launch record went with it.
+        self.assertIn('next',{peer.identity.session_id for peer in self.controller.pairs.registered()})
 
     def test_state_is_persisted_and_new_owner_can_recover_without_replaying_completed_work(self):
         self.controller.owner.change(self.a.reference,self.b.reference,enabled=True)

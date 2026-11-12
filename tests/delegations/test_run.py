@@ -631,7 +631,7 @@ class Preconditions(Fixture):
             return ['hub key: demo']
 
         quiet = dict.fromkeys(
-            ('standing', 'eng_review', 'watcher', 'handoff', 'reminders', 'liveness', 'plugin_current',
+            ('standing', 'eng_review', 'handoff', 'reminders', 'liveness', 'plugin_current',
              'plugin_enabled', 'memory', 'allow_rules', 'repo_prep', 'agent_temp_lines', 'cdrive_lines',
              'worktree_sweep_lines', 'rulebook_lines', 'pm_data_settings'), lambda *a, **k: [])
         with open(stamp) as f:

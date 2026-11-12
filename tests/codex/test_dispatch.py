@@ -125,7 +125,7 @@ class KitAdapter(unittest.TestCase):
     RULEBOOK_ROLES = ("analyst", "worker", "coordinator", "test-runner", "lander", "pm")
     RULE_DROP = ["rule-drop", "kit-tools.one-entry", "--repo", "kit", "--prov", "owner",
                  "--why", "superseded", "--source", "hub"]
-    RULE_SET = ["rule-set", "--repos", "kit,game", "--budget", "40", "--repo", "kit", "--prov",
+    RULE_SET = ["rule-set", "--repos", "kit,game", "--book-title", "Kit", "--repo", "kit", "--prov",
                 "owner", "--why", "two checkouts", "--source", "hub"]
 
     def test_rules_is_a_read_for_every_role(self):

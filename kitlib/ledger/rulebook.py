@@ -4,18 +4,18 @@
 ```
 # Alpha rules
 Repos: alpha-checkout
-Budget: 40
 
 ## Landing
 - landing.batch: Landers batch up to three branches; a high-risk branch lands alone. (from <log id>, <log id>)
 ```
 
-The header has a `# title`, a `Repos:` line (checkout folder names, comma-separated) and an optional
-`Budget: N` (default 40, a soft limit). Each `##` heading is a topic; each rule is one
-`- <key>: <text> (from <log id>, ...)` line. A key is `<topic-slug>.<slug>`, unique in its file; a
-repo rulebook rule with the key of a shared rule overrides it. A source is a log entry id and
-nothing else. Unknown lines, a duplicate key, a rule with no source and a header with no `Repos:`
-are errors; going over budget is a note.
+The header has a `# title` and a `Repos:` line (checkout folder names, comma-separated). Each `##`
+heading is a topic; each rule is one `- <key>: <text> (from <log id>, ...)` line. A key is
+`<topic-slug>.<slug>`, unique in its file; a repo rulebook rule with the key of a shared rule
+overrides it. A source is a log entry id and nothing else. Unknown lines, a duplicate key, a rule
+with no source and a header with no `Repos:` are parse errors; a heading repeated (by `heading_key`)
+or starting lower case is a `check` error; a book over MAX_BYTES (as `render` writes it) is a note,
+and a set that grows it further is refused (kitlib.ledger.write).
 
 The write side builds a changed Book (`set_rule`, `drop_rule`, `set_header`) and the reading list
 before an add (`conflicts`, with its `digest`); kitlib.ledger.write writes it beside a log entry
@@ -34,7 +34,7 @@ from .fmt import ID, parse_block, split_entries
 
 SHARED = 'all'
 FOLDER = 'rules'
-DEFAULT_BUDGET = 40
+MAX_BYTES = 16384      # the cap on a rulebook's size: the UTF-8 bytes of `render(book)`
 
 KEY_RE = re.compile(r'^[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9.-]*$')
 NAME_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
@@ -43,9 +43,9 @@ ID_ONLY = re.compile(r'^%s$' % ID)
 
 # key, text, sources (a tuple of log ids), topic (the heading text), line (1-based).
 Rule = collections.namedtuple('Rule', 'key text sources topic line')
-# name (the file stem), title, repos (a tuple of folder names), budget, rules (file order).
-Book = collections.namedtuple('Book', 'name title repos budget rules')
-# errors: findings that fail `check`; notes: overrides and budget, which do not.
+# name (the file stem), title, repos (a tuple of folder names), rules (file order).
+Book = collections.namedtuple('Book', 'name title repos rules')
+# errors: findings that fail `check`; notes: overrides and a book over the cap, which do not.
 Findings = collections.namedtuple('Findings', 'errors notes')
 
 
@@ -78,7 +78,7 @@ def parse(text, name):
     `<name>.md:<line>: ...`."""
     where = file_name(name)
     errs = []
-    title, repos, budget = None, None, DEFAULT_BUDGET
+    title, repos = None, None
     rules, seen, topic = [], {}, None
     for n, line in enumerate(text.replace('\r\n', '\n').split('\n'), 1):
         if not line.strip():
@@ -95,11 +95,9 @@ def parse(text, name):
                 errs.append('%s: Repos needs checkout folder names, comma-separated%s'
                             % (at, ' (bad: %s)' % ', '.join(bad) if bad else ''))
         elif topic is None and line.startswith('Budget:'):
-            value = line[len('Budget:'):].strip()
-            if re.fullmatch(r'[0-9]+', value) and int(value) > 0:
-                budget = int(value)
-            else:
-                errs.append('%s: Budget needs a positive number, not %r' % (at, value))
+            # The legacy rule-count budget, replaced by MAX_BYTES: read and ignored, and gone on
+            # the book's next write, since `render` no longer writes it.
+            continue
         elif line.startswith('## '):
             topic = line[3:].strip()
             if not topic:
@@ -116,7 +114,7 @@ def parse(text, name):
             errs.append('%s: unknown line %r' % (at, line))
     if repos is None:
         errs.append('%s: no `Repos:` header line' % where)
-    return Book(name, title or '', repos or (), budget, tuple(rules)), errs
+    return Book(name, title or '', repos or (), tuple(rules)), errs
 
 
 def _rule(m, topic, n, at, rules, seen, errs):
@@ -138,7 +136,7 @@ def _rule(m, topic, n, at, rules, seen, errs):
 def render(book):
     """The text of `book`: parse(render(book)) gives the same Book. A heading is written whenever
     the topic changes from the rule before."""
-    out = ['# %s' % book.title, 'Repos: %s' % ', '.join(book.repos), 'Budget: %d' % book.budget]
+    out = ['# %s' % book.title, 'Repos: %s' % ', '.join(book.repos)]
     topic = None
     for r in book.rules:
         if r.topic != topic:
@@ -146,6 +144,47 @@ def render(book):
             out += ['', '## %s' % topic]
         out.append('- %s: %s (from %s)' % (r.key, r.text, ', '.join(r.sources)))
     return '\n'.join(out) + '\n'
+
+
+def size(book):
+    """The bytes of `book` as `render` writes it (UTF-8)."""
+    return len(render(book).encode('utf-8'))
+
+
+def over_cap(book):
+    """True when `book` is over MAX_BYTES."""
+    return size(book) > MAX_BYTES
+
+
+def heading_key(text):
+    """The key two headings match by: lower case, with each run of `-`, `_` and whitespace as one
+    space. `Owner files`, `owner-files` and `Owner_Files` are one topic."""
+    return ' '.join(re.split(r'[-_\s]+', str(text or '').lower())).strip()
+
+
+def lower_first(topic):
+    """True when heading `topic` starts with a lower-case letter."""
+    return bool(topic) and topic[0].islower()
+
+
+def heading_errors(book):
+    """The errors of `book`'s headings, with no line numbers (so a write that only moves lines adds
+    none; kitlib.ledger.write `_books_or_refuse`): a heading whose `heading_key` an earlier heading
+    has, and a heading that starts with a lower-case letter. A heading is where the topic changes
+    from the rule before, as `render` writes it."""
+    where, errs, seen, topic = file_name(book.name), [], {}, None
+    for r in book.rules:
+        if r.topic == topic:
+            continue
+        topic = r.topic
+        key = heading_key(topic)
+        if key in seen:
+            errs.append('%s: heading %r repeats heading %r (one heading per topic)'
+                        % (where, topic, seen[key]))
+        seen.setdefault(key, topic)
+        if lower_first(topic):
+            errs.append('%s: heading %r starts with a lower-case letter' % (where, topic))
+    return errs
 
 
 def load(folder):
@@ -165,8 +204,8 @@ def load(folder):
 
 def check(books, log_ids):
     """`Findings` over the parsed `books` ({name: Book}): a cited id absent from `log_ids` (every
-    id of the log files, retired ones included) is an error; each override of a shared key and each
-    book over its budget is a note. Parse errors come from `parse`."""
+    id of the log files, retired ones included) and each of `heading_errors` is an error; each
+    override of a shared key and each book over MAX_BYTES is a note. Parse errors come from `parse`."""
     errors, notes = [], []
     shared = {r.key for r in books[SHARED].rules} if SHARED in books else set()
     claimed = {}
@@ -188,8 +227,9 @@ def check(books, log_ids):
                                   % (where, r.line, r.key, s))
             if name != SHARED and r.key in shared:
                 notes.append('%s:%d: rule %s overrides the shared rule' % (where, r.line, r.key))
-        if len(book.rules) > book.budget:
-            notes.append('%s: %d rules, over its budget of %d' % (where, len(book.rules), book.budget))
+        errors += heading_errors(book)
+        if over_cap(book):
+            notes.append('%s: %d bytes, over its cap of %d' % (where, size(book), MAX_BYTES))
     return Findings(errors, notes)
 
 
@@ -232,8 +272,8 @@ def lines(book, over, sources=False, topic=None):
              and (not word or word in r.topic.lower() or word in r.key or word in r.text.lower())]
     label = 'shared' if shared else book.name
     count = '%d rules' % len(book.rules)
-    if len(book.rules) > book.budget:
-        count += ', over its budget of %d' % book.budget
+    if over_cap(book):
+        count += ', %d bytes, over its cap of %d' % (size(book), MAX_BYTES)
     out = ['# %s (%s)' % (label, count)]
     heading = None
     for r in shown:
@@ -263,10 +303,9 @@ def target(books, repo, book=None):
     return for_repo(books, repo) or normal(repo)
 
 
-def new_book(name, repos, budget=None, title=None):
+def new_book(name, repos, title=None):
     """An empty Book: the header `rule-set` writes for a rulebook not made yet."""
-    return Book(name, one_line(title) or '%s rules' % name.capitalize(), tuple(repos),
-                budget or DEFAULT_BUDGET, ())
+    return Book(name, one_line(title) or '%s rules' % name.capitalize(), tuple(repos), ())
 
 
 def one_line(text):
@@ -276,27 +315,35 @@ def one_line(text):
 
 def set_rule(book, key, topic, text, sources):
     """`(the new Book, the Rule it replaced or None)`: rule `key` set to `text` under heading
-    `topic`, citing `sources`. A key already in the book is replaced, never doubled: in its place
-    when the topic stays, else moved. A new rule goes after the last rule of its topic, or under a
-    new heading at the end. ValueError on a malformed key, topic or text."""
+    `topic`, citing `sources`. A heading matches by `heading_key`, and every rule under a matched
+    heading takes `topic`'s spelling: the whole heading is renamed, and rules split over several
+    such headings are gathered at the first. A key already in the book is replaced, never doubled:
+    in its place when its heading matches, else moved. A new rule goes after the last rule of its
+    topic, or under a new heading at the end. ValueError on a malformed key or text, or a topic
+    that is empty or starts with a lower-case letter."""
     topic, text = one_line(topic), one_line(text)
     if not KEY_RE.match(key or ''):
         raise ValueError('key %r is not <topic-slug>.<slug> (lower case, digits, - and .)' % (key,))
     if not topic:
         raise ValueError('the topic heading is empty')
+    if lower_first(topic):
+        raise ValueError('the topic heading %r starts with a lower-case letter; capitalise it '
+                         '(the one spelling renames the whole heading)' % topic)
     if not text:
         raise ValueError('the rule text is empty')
     rule = Rule(key, text, tuple(sources), topic, 0)
-    rules = list(book.rules)
-    old = next((r for r in rules if r.key == key), None)
-    if old is not None and old.topic == topic:
-        rules[rules.index(old)] = rule
-    else:
-        if old is not None:
-            rules.remove(old)
-        last = max((i for i, r in enumerate(rules) if r.topic == topic), default=None)
-        rules.insert(len(rules) if last is None else last + 1, rule)
-    return book._replace(rules=tuple(rules)), old
+    want = heading_key(topic)
+
+    def mine(r):
+        return heading_key(r.topic) == want
+    old = next((r for r in book.rules if r.key == key), None)
+    rules = [r for r in book.rules if not (r is old and not mine(r))]
+    first = next((i for i, r in enumerate(rules) if mine(r)), len(rules))
+    group = [rule if r is old else r._replace(topic=topic) for r in rules if mine(r)]
+    if old is None or not mine(old):
+        group.append(rule)
+    others = [r for r in rules if not mine(r)]
+    return book._replace(rules=tuple(others[:first] + group + others[first:])), old
 
 
 def drop_rule(book, key):
@@ -307,10 +354,9 @@ def drop_rule(book, key):
     return book._replace(rules=tuple(r for r in book.rules if r.key != key)), old
 
 
-def set_header(book, repos=None, budget=None, title=None):
+def set_header(book, repos=None, title=None):
     """`book` with each header field that is given replaced."""
     return book._replace(repos=tuple(repos) if repos is not None else book.repos,
-                         budget=budget if budget is not None else book.budget,
                          title=one_line(title) if title is not None else book.title)
 
 
@@ -321,9 +367,9 @@ TAG_RE = re.compile(r'\[(?:rule ([a-z0-9][a-z0-9._-]*)\.md ([a-z0-9][a-z0-9.-]*)
 
 
 def header_digest(book):
-    """12 hex of sha256 over `book`'s header (repos, budget, title): the header tag records the
-    header a change left, so `applied` can tell whether it is the one in force."""
-    data = '\n'.join(['\t'.join(book.repos), str(book.budget), book.title])
+    """12 hex of sha256 over `book`'s header (repos, title): the header tag records the header a
+    change left, so `applied` can tell whether it is the one in force."""
+    data = '\n'.join(['\t'.join(book.repos), book.title])
     return hashlib.sha256(data.encode('utf-8')).hexdigest()[:12]
 
 
@@ -463,15 +509,15 @@ def conflicts(books, name, topic, key, text):
     """`Conflicts` for a proposed rule `key` (`text` under `topic`) in book `name`. Hits, in KINDS
     order, then `scope` order, then file order: the same key in the book (the add replaces it); the
     same key in another book of the scope (an override, or one a shared rule would shadow); each
-    rule under the same heading (any case); the same topic slug (the key's part before the first
+    rule under the same heading (by `heading_key`); the same topic slug (the key's part before the first
     `.`); then up to WORD_LIMIT rules sharing content words, by a score that weighs each shared word
     by its rarity over every rulebook. `rare`: the proposal's two rarest words, for a docs search."""
     order = scope(books, name)
     inside = [(n, r) for n in order if n in books for r in books[n].rules]
-    topic_low, slug = one_line(topic).lower(), (key or '').split('.', 1)[0]
+    want, slug = heading_key(topic), (key or '').split('.', 1)[0]
     tests = (lambda n, r: n == name and r.key == key,
              lambda n, r: n != name and r.key == key,
-             lambda n, r: r.topic.lower() == topic_low,
+             lambda n, r: heading_key(r.topic) == want,
              lambda n, r: r.key.split('.', 1)[0] == slug)
     hits, seen = [], set()
     for kind, test in zip(KINDS, tests):

@@ -14,7 +14,8 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog import store_folder, store_open, store_read, store_ref
 from kitlib.fs import replace as fsreplace
-from kitlib.backlog.errors import Failure, StoreBusy, Usage
+from kitlib.backlog import errors as berrors
+from kitlib.backlog.errors import Failure, Usage
 from kitlib.fs import writelock
 from kitlib.git import cmd
 
@@ -365,7 +366,7 @@ class StoreLock(StoreCase):
         before = self.remote_tip()
         self.hold_in_thread()
         self.store.lock_wait = 0.3
-        with self.assertRaises(StoreBusy) as cm:
+        with self.assertRaises(berrors.StoreBusy) as cm:
             self.verb('set', 'FOO', [('effort', ['s'])])
         said = str(cm.exception)
         self.assertIn('held by pid %d' % os.getpid(), said)

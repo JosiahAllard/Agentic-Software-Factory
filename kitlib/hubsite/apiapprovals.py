@@ -178,7 +178,7 @@ def approvals_consume(api, req):
     only by the hub's own apply (_applied): a `commit` here is refused, so an agent cannot spend
     one the owner approved and the hub has not applied."""
     from kitlib.ownerfiles import approvals as ap
-    b =_fields(req, ('args_sha256', 'if_version'), required=('args_sha256',))
+    b = _fields(req, ('args_sha256', 'if_version'), required=('args_sha256',))
     _pin(b, required=True)
     doc_id = req.params['id']
     d = api.doc(ap.COLLECTION, doc_id, b)

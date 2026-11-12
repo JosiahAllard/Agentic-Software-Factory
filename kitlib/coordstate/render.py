@@ -195,7 +195,8 @@ def landing(root, events, branch, tip=None, read=None, block=None):
 
 
 def main_as_fetched(root):
-    """`(<remote>/<main branch> as last fetched, None)`, or `(None, why)`; no network. Shared
+    """`(<remote>/<work base> as last fetched, None)`, or `(None, why)`; no network (the work base,
+    kitlib.config.work_base: the main branch, or the staging branch landings merge onto). Shared
     with tools/verdict.py."""
     from kitlib import config as kconfig
     from kitlib.git import refs
@@ -204,8 +205,9 @@ def main_as_fetched(root):
         cfg = kconfig.load(root)
     except kconfig.ConfigError as e:
         return None, 'the kit configuration cannot be read: %s' % e
-    sha, why = refs.remote_tip(cfg.remote, cfg.main_branch, root)
-    return (sha, None) if sha else (None, '%s/%s: %s' % (cfg.remote, cfg.main_branch, why))
+    base = kconfig.work_base(cfg)
+    sha, why = refs.remote_tip(cfg.remote, base, root)
+    return (sha, None) if sha else (None, '%s/%s: %s' % (cfg.remote, base, why))
 
 
 def queued_for(common_dir, session, main=None, main_why=None):

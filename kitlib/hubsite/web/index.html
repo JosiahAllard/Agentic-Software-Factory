@@ -1080,13 +1080,13 @@ ul.hist .sch-line{display:block}
   // The hub server's page. Everything below reads what GET /api/v1/snapshot answers.
   const pmAgo = ms => { const m = Math.max(0, Math.round(ms / 60000)); return m < 1 ? "under a minute" : m < 60 ? m + " min" : m < 1440 ? Math.floor(m / 60) + " h" : Math.floor(m / 1440) + " d"; };
   // pm_seen as one line of information: whether a PM session is waiting on the hub now, else whether push delivery
-  // reaches the PM (the snapshot's push up) or when one last asked; then the PM watcher's heartbeat (the snapshot's
+  // reaches the PM (the snapshot's push up) or when one last asked; then the hub's session watch (the snapshot's
   // watcher; null: no push worker, nothing said).
   function pmSeenText(seen, now, push, watcher){
     if (!seen || typeof seen !== "object") return "";
-    const w = !watcher || typeof watcher !== "object" ? "" : watcher.state === "up" ? " The PM's watcher is running."
-      : watcher.state === "down" ? " The PM's watcher has stopped: its last heartbeat is " + (Number.isFinite(watcher.age) ? pmAgo(watcher.age * 1000) + " old." : "old.")
-      : " No PM watcher heartbeat is found.";
+    const w = !watcher || typeof watcher !== "object" ? "" : watcher.state === "up" ? " The hub's session watch is running."
+      : watcher.state === "down" ? (Number.isFinite(watcher.age) ? " The hub's session watch has had no success for " + pmAgo(watcher.age * 1000) + "." : " The hub's session watch has had no recent success.")
+      : " No session watch runs on this hub.";
     if (Number(seen.waiting) > 0) return "A PM is listening." + w;
     if (push && typeof push === "object" && push.state === "up" && push.last === "written") return "Push delivery reaches the PM." + w;
     const last = [seen.waited, seen.pulled].map(v => new Date(v || NaN).getTime()).filter(t => !isNaN(t)).sort((a, b) => a - b).pop();

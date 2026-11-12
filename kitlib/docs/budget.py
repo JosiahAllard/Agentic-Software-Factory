@@ -77,6 +77,12 @@ def sizes_from(stdout):
     return out
 
 
+def paths_from(stdout):
+    """Every path in one `ls-tree -r --long -z` listing, blobs and gitlinks alike, in its order (as
+    `--name-only` lists them). Pure."""
+    return [r.partition('\t')[2] for r in stdout.split('\0') if r]
+
+
 def names_from(stdout):
     """The paths in one `-z` name listing (`ls-tree --name-only -z`, `ls-files -z`): NUL-separated
     and raw, so a name with a quote, a newline or non-ASCII characters is not C-quoted. Pure."""
@@ -192,7 +198,7 @@ def _check(root, out, base, head, worktree, report, failures):
         disk = config.load(root)
         base_note = None
         if not base:
-            base, base_note = gitrefs.default_base(root, disk.remote, disk.main_branch)
+            base, base_note = gitrefs.default_base(root, disk.remote, config.work_base(disk))
         cfg = section_of(disk)
     except config.ConfigError as e:
         stop('doc_budget: refused: kit configuration: %s' % e)
@@ -242,9 +248,9 @@ def _check(root, out, base, head, worktree, report, failures):
                 return len(fh.read().replace(b'\r\n', b'\n'))
         where = 'the working tree'
     else:
-        listing = g('ls-tree', '-r', '--name-only', '-z', head)
-        files = names_from(listing.stdout)
-        head_sizes = sizes_or_refuse(head) if listing.returncode == 0 else {}
+        listing = g('ls-tree', '-r', '--long', '-z', head)      # names and sizes in one launch
+        files = paths_from(listing.stdout)
+        head_sizes = sizes_from(listing.stdout) if listing.returncode == 0 else {}
 
         def size(path):
             return head_sizes.get(path, 0)

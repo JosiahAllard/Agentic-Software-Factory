@@ -14,7 +14,7 @@ from unittest import mock
 
 from kitlib.config.user import HomeFenced
 from kitlib.hubsite import api, auth, push, serve, servesources, store as store_mod
-from kitlib.hubclient import settings as hub_settings
+from kitlib.hubclient import codestale, settings as hub_settings
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import HubError, Store
 
@@ -25,7 +25,6 @@ OPTIONS = [{'label': 'first', 'description': 'b'}, {'label': 'second', 'descript
 R1 = 'R-' + '0001'
 PLANTED = 'PUSHPROOF title text'
 NOTE = 'PUSHPROOF note text'
-REAL_HEARTBEAT = push.watcher_heartbeat      # the default reader, before no_watcher patches it
 
 
 class Ticks(object):
@@ -63,17 +62,8 @@ class FakePush(object):
         return [text for r, text in self.calls if r == recipient]
 
 
-def no_watcher(case):
-    """Patch the default heartbeat reader for `case`: a running worker reads it, and the real
-    one reads the machine's config (the home fence)."""
-    patcher = mock.patch.object(push, 'watcher_heartbeat', lambda: None)
-    patcher.start()
-    case.addCleanup(patcher.stop)
-
-
 class PushCase(unittest.TestCase):
     def setUp(self):
-        no_watcher(self)
         self.root = tempfile.mkdtemp(prefix='kit-hubpush-')
         self.addCleanup(shutil.rmtree, self.root, True)
         self.folder = os.path.join(self.root, 'state')
@@ -735,144 +725,133 @@ class StoryAndNoteTest(PushCase):
 
 
 class WatcherTest(PushCase):
+    """`watcher` is the hub's session-watch job (push module docstring "Watcher"): its health
+    block read on the thread, healthy per pmwatch.session_job_healthy."""
+
     def setUp(self):
         super().setUp()
-        self.beat = [None]
+        self.block = [None]
         self.worker = push.PushWorker(self.store, self.api, self.push, self.folder,
-                                      clock=lambda: self.t, watcher=self.read)
+                                      clock=lambda: self.t, jobs=self.read)
         self.worker.begin()
 
     def read(self):
-        b = self.beat[0]
-        return None if b is None else {'pid': 7, 'beat': b, 'stream': False, 'started': None}
+        b = self.block[0]
+        return {} if b is None else {'session-watch': b}
 
-    def watch(self, beat_age=None, after=0):
+    def watch(self, ok_age=None, failures=0, after=0, block=True):
+        """One read, `after` seconds on: a block whose last success is `ok_age` old (None: no
+        success yet), or no block at all (block False)."""
         self.t += after
-        self.beat[0] = None if beat_age is None else self.t - beat_age
+        self.block[0] = None if not block else {
+            'failures': failures, 'runs': 1, 'ok_at': None if ok_age is None else self.t - ok_age}
         self.worker.watch()
 
     def downs(self):
         return [t for t in self.push.to('pm') if t.startswith('[hub push] watcher down')]
 
-    def test_a_watcher_never_seen_fresh_pushes_nothing(self):
-        self.watch(None)
-        self.watch(push.WATCHER_STALE_S + 1, after=60)
+    def test_a_job_never_seen_healthy_pushes_nothing(self):
+        self.watch(block=False)
+        self.watch(None, after=60)
+        self.watch(push.pmwatch.SESSION_JOB_STALE_S + 1, after=60)
         self.assertEqual(self.push.calls, [])
         self.assertEqual(self.worker.watcher_status(),
-                         {'state': 'down', 'age': push.WATCHER_STALE_S + 1})
+                         {'state': 'down', 'age': push.pmwatch.SESSION_JOB_STALE_S + 1})
 
-    def test_a_stale_heartbeat_pushes_watcher_down_once_and_again_only_after_fresh(self):
+    def test_a_job_gone_stale_pushes_watcher_down_once_and_again_only_after_healthy(self):
+        stale = push.pmwatch.SESSION_JOB_STALE_S + 5
         self.watch(10)
         self.assertEqual(self.worker.watcher_status(), {'state': 'up', 'age': 10})
         self.assertEqual(self.push.calls, [])
-        self.watch(push.WATCHER_STALE_S + 5, after=60)
+        self.watch(stale, after=60)
         self.assertEqual(len(self.downs()), 1)
         self.assertEqual(self.downs()[0].splitlines()[0],
-                         '[hub push] watcher down age:%d route:pm attempt:1' % (push.WATCHER_STALE_S + 5))
+                         '[hub push] watcher down age:%d route:pm attempt:1' % stale)
+        self.assertIn('hub health jobs.session-watch', self.downs()[0])
+        self.assertIn('a hub restart starts it again', self.downs()[0])
+        self.assertNotIn('pm_watch', self.downs()[0])
         self.assertEqual([r for r, _ in self.push.calls], ['pm'], 'the PM alone')
         for _ in range(3):
-            self.watch(push.WATCHER_STALE_S + 5, after=push.SCHEDULE_S[-1])
+            self.watch(stale, after=push.SCHEDULE_S[-1])
         self.assertEqual(len(self.downs()), 1, 'written once: not sent again while still down')
         self.watch(5, after=60)
-        self.watch(push.WATCHER_STALE_S + 1, after=60)
-        self.assertEqual(len(self.downs()), 2, 'fresh again, then stale: a second push')
+        self.watch(push.pmwatch.SESSION_JOB_STALE_S + 1, after=60)
+        self.assertEqual(len(self.downs()), 2, 'healthy again, then stale: a second push')
 
-    def test_a_covering_session_watch_job_counts_as_up(self):
-        block = [None]
-        self.worker.jobs = lambda: {'session-watch': block[0]} if block[0] else {}
+    def test_a_job_failing_in_a_row_is_down_though_its_last_success_is_fresh(self):
         self.watch(10)
-        block[0] = {'failures': 0, 'ok_at': self.t + 50}
-        self.watch(push.WATCHER_STALE_S + 5, after=60)      # pm_watch stale, the job covers
-        self.assertEqual(self.downs(), [])
-        self.assertEqual(self.worker.watcher_status()['state'], 'up')
-        self.watch(None, after=60)                          # no beat at all: still covered
-        self.assertEqual(self.downs(), [])
-        self.assertEqual(self.worker.watcher_status(), {'state': 'up', 'age': None})
-        block[0] = {'failures': 3, 'ok_at': self.t}         # the job fails: nobody covers
-        self.watch(None, after=60)
+        self.watch(5, failures=push.pmwatch.SESSION_JOB_FAILS, after=60)
+        self.assertEqual(self.worker.watcher_status(), {'state': 'down', 'age': 5})
         self.assertEqual(len(self.downs()), 1)
-        self.assertEqual(self.worker.watcher_status(), {'state': 'none', 'age': None})
 
-    def test_a_skipping_or_stale_job_does_not_count(self):
-        self.worker.jobs = lambda: {'session-watch': {'failures': 0, 'ok_at': None}}
+    def test_a_job_that_only_skips_is_down(self):
         self.watch(10)
-        self.watch(push.WATCHER_STALE_S + 5, after=60)
-        self.assertEqual(len(self.downs()), 1, 'a job that only skipped covers nothing')
+        self.watch(None, after=60)                  # no ok_at: a skip is no success
+        self.assertEqual(self.worker.watcher_status(), {'state': 'down', 'age': None})
+        self.assertEqual(self.downs()[0].splitlines()[0],
+                         '[hub push] watcher down age:none route:pm attempt:1')
+
+    def test_a_job_that_goes_missing_is_none_and_down_pushed(self):
+        self.watch(10)
+        self.watch(block=False, after=60)
+        self.assertEqual(self.worker.watcher_status(), {'state': 'none', 'age': None})
+        self.assertEqual(len(self.downs()), 1)
 
     def test_the_default_job_reader_is_the_api_s_health_jobs(self):
+        self.worker.jobs = None
         self.api.jobs_status = lambda: {'session-watch': {'failures': 0, 'ok_at': self.t}}
-        self.watch(10)
-        self.watch(None, after=60)
-        self.assertEqual(self.downs(), [])
+        self.worker.watch()
+        self.assertEqual(self.worker.watcher_status(), {'state': 'up', 'age': 0})
+        self.t += 60
+        self.api.jobs_status = lambda: {}
+        self.worker.watch()
+        self.assertEqual(len(self.downs()), 1)
 
-    def test_a_job_reader_that_raises_covers_nothing(self):
+    def test_a_job_reader_that_raises_is_none(self):
+        self.watch(10)
+
         def broken():
             raise RuntimeError('boom')
         self.worker.jobs = broken
-        self.watch(10)
-        self.watch(None, after=60)
-        self.assertEqual(len(self.downs()), 1)
-
-    def test_a_heartbeat_that_goes_missing_is_down(self):
-        self.watch(10)
-        self.watch(None, after=60)
-        self.assertEqual(self.worker.watcher_status(), {'state': 'none', 'age': None})
-        self.assertEqual(self.downs()[0].splitlines()[0], '[hub push] watcher down age:none route:pm attempt:1')
-
-    def test_a_push_not_written_is_tried_on_the_schedule_until_fresh(self):
-        self.push.states['pm'] = push.NO_SESSION
-        self.watch(10)
-        self.watch(push.WATCHER_STALE_S + 1, after=60)
-        self.watch(push.WATCHER_STALE_S + 1, after=1)
-        self.assertEqual(len(self.downs()), 1, 'not due again at once')
-        self.assertEqual(self.worker.status()['last'], push.NO_SESSION)
-        self.watch(push.WATCHER_STALE_S + 1, after=push.SCHEDULE_S[0])
-        self.assertEqual(len(self.downs()), 2)
-        self.assertEqual([(u['kind'], u['id'], u['reason']) for u in self.undelivered()],
-                         [('watcher', 'down', push.NO_SESSION)] * 2)
-        self.watch(5, after=push.SCHEDULE_S[1])
-        self.watch(5, after=push.SCHEDULE_S[2])
-        self.assertEqual(len(self.downs()), 2, 'fresh again: acknowledged')
-
-    def test_a_reader_that_raises_is_none(self):
-        self.watch(10)
-
-        def broken():
-            raise OSError('locked')
-        self.worker.watcher = broken
         self.t += 60
         self.worker.watch()
         self.assertEqual(self.worker.watcher_status(), {'state': 'none', 'age': None})
         self.assertEqual(len(self.downs()), 1)
 
-    def test_poll_never_reads_the_heartbeat(self):
-        self.worker.watcher = lambda: self.fail('poll read the heartbeat')
+    def test_a_push_not_written_is_tried_on_the_schedule_until_healthy(self):
+        stale = push.pmwatch.SESSION_JOB_STALE_S + 1
+        self.push.states['pm'] = push.NO_SESSION
+        self.watch(10)
+        self.watch(stale, after=60)
+        self.watch(stale, after=1)
+        self.assertEqual(len(self.downs()), 1, 'not due again at once')
+        self.assertEqual(self.worker.status()['last'], push.NO_SESSION)
+        self.watch(stale, after=push.SCHEDULE_S[0])
+        self.assertEqual(len(self.downs()), 2)
+        self.assertEqual([(u['kind'], u['id'], u['reason']) for u in self.undelivered()],
+                         [('watcher', 'down', push.NO_SESSION)] * 2)
+        self.watch(5, after=push.SCHEDULE_S[1])
+        self.watch(5, after=push.SCHEDULE_S[2])
+        self.assertEqual(len(self.downs()), 2, 'healthy again: acknowledged')
+
+    def test_poll_never_reads_the_job_status(self):
+        self.worker.jobs = lambda: self.fail('poll read the job status')
         self.worker.poll()
 
-    def test_the_thread_reads_the_heartbeat(self):
+    def test_the_thread_reads_the_job_status(self):
         read = threading.Event()
 
         def reader():
             read.set()
-            return None
-        self.worker = push.PushWorker(self.store, self.api, self.push, self.folder, watcher=reader)
+            return {}
+        self.worker = push.PushWorker(self.store, self.api, self.push, self.folder, jobs=reader)
         self.worker.start()
         self.addCleanup(self.worker.stop, push.STOP_S)
-        self.assertTrue(read.wait(10), 'the running worker never read the heartbeat')
-
-    def test_the_default_reader_reads_pm_watchs_heartbeat_file(self):
-        state = os.path.join(self.root, 'pmw', 'state.json')
-        os.mkdir(os.path.dirname(state))
-        with open(state + '.beat', 'w', encoding='utf-8') as f:
-            json.dump({'pid': 3, 'beat': 123.0, 'stream': False, 'started': None}, f)
-        with mock.patch.object(push.pmwatch, 'load_config', lambda: {'state_file': state}):
-            got = REAL_HEARTBEAT()
-        self.assertEqual(got['beat'], 123.0)
+        self.assertTrue(read.wait(10), 'the running worker never read the job status')
 
 
 class ThreadTest(unittest.TestCase):
     def setUp(self):
-        no_watcher(self)
         self.addCleanup(lambda: self.assertEqual(httpfix.http_threads(), [],
                                                  'a listener thread outlived its test'))
         self.root = tempfile.mkdtemp(prefix='kit-hubpush-')
@@ -1644,6 +1623,33 @@ class AutoDoneTest(FiledPushCase):
         self.pick_up('kit')
         self.later(400)
         self.assert_not_done(qid)       # a standing rule is the PM's to log
+
+
+class HubAndPluginPushTest(PushCase):
+    """The hub's own pushes that replaced pm_watch's HUB and PLUGIN lines: `job hub stale-code`
+    (kitlib.hubsite.serve) and `job plugin-refresh behind` (kitlib.hubsite.plugin_job)."""
+
+    def jobs_sent(self):
+        return [t for t in self.push.to(push.PM_KEY) if t.startswith('[hub push] job ')]
+
+    def test_stale_code_tells_the_pm_the_owner_restart_step(self):
+        self.worker.job_event('hub', 'stale-code')
+        self.worker.send_jobs()
+        sent = self.jobs_sent()
+        self.assertEqual([t.splitlines()[0] for t in sent],
+                         ['[hub push] job hub stale-code route:pm attempt:1'])
+        self.assertIn(codestale.restart_step(), sent[0])
+
+    def test_behind_gives_the_refresh_command_for_each_why(self):
+        self.worker.job_event('plugin-refresh', 'behind', '0123456789ab:unmigrated')
+        self.worker.job_event('plugin-refresh', 'behind', '0123456789ab:unmigrated')
+        self.worker.send_jobs()
+        sent = self.jobs_sent()
+        self.assertEqual([t.splitlines()[0] for t in sent],
+                         ['[hub push] job plugin-refresh behind detail:0123456789ab:unmigrated '
+                          'route:pm attempt:1'])
+        self.assertIn('plugin_refresh.py" --migrate --apply', sent[0])
+        self.assertIn('plugin_refresh.py" --apply', sent[0])
 
 
 class UnblockedPushTest(PushCase):

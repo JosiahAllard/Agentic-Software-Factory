@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -21,7 +22,7 @@ from kitlib.hubclient import client as hubclient
 from kitlib.hubclient import errors, settings
 from kitlib.hubclient import token as hubtoken
 from tests.home import machine_config, pm_repo
-from tests.pmstart import HANDOFF_FAKE, keep_off_launcher_repos, keep_off_session_job
+from tests.pmstart import HANDOFF_FAKE, keep_off_launcher_repos
 
 NOW = datetime.datetime(2026, 10, 6, 9, 0)
 FAKES = dict(handoff=HANDOFF_FAKE, reminders={"read": lambda p: "[]"},
@@ -32,11 +33,9 @@ TOKEN = "secret_token_value_" + "x" * hubtoken.MIN_TOKEN
 
 def setUpModule():
     keep_off_launcher_repos()
-    keep_off_session_job()      # the watcher check asks no hub (the hub check is the one tested)
-    # the checklist must not read this machine's pm_data setting, foreground lock or heartbeat
+    # the checklist must not read this machine's pm_data setting or foreground lock
     for owner, name, value in ((pmstart, "pm_data_settings", lambda: None),
-                               (fglock, "read_live", lambda user32=None: 0),
-                               (pmstart, "read_heartbeat", lambda load=None: None)):
+                               (fglock, "read_live", lambda user32=None: 0)):
         p = mock.patch.object(owner, name, value)
         p.start()
         unittest.addModuleCleanup(p.stop)
@@ -115,54 +114,98 @@ class HubSiteTest(unittest.TestCase):
         self.assertIn('process the 1 pending item(s): python "%s" pending --for pm, then handle'
                       % pmstart.HUB_TOOL, out[1])
 
-    def test_push_up_with_a_live_watcher_is_one_plain_line_and_names_no_wait(self):
+    T = 1000000.0
+
+    def job(self, **block):
+        """GET health `jobs` holding the session-watch block `block` (a fresh healthy one by default)."""
+        return {"session-watch": dict({"every_s": 60, "runs": 4, "failures": 0,
+                                       "ok_at": self.T - 42}, **block)}
+
+    def line(self, health):
+        return pmstart.push_line(health, self.T)
+
+    def test_push_up_with_a_healthy_session_watch_is_one_plain_line_and_names_no_wait(self):
         health = {"ok": True, "push": {"state": "up", "last": "written", "undelivered": 0},
-                  "watcher": {"state": "up", "age": 42}}
-        out = site(FakeClient(health=health))
-        self.assertEqual(out[1], "hub: push up (last delivery to the PM: written, 0 undelivered); "
-                                 "watcher up (beat 42s ago)")
+                  "jobs": self.job()}
+        self.assertEqual(self.line(health),
+                         "hub: push up (last delivery to the PM: written, 0 undelivered); "
+                         "session watch up (last success 42s ago)")
+        live = dict(health, jobs=self.job(ok_at=time.time()))      # hub_site: the real clock
+        out = site(FakeClient(health=live))
+        self.assertTrue(out[1].startswith("hub: push up (last delivery to the PM: written, 0 "
+                                          "undelivered); session watch up (last success "), out[1])
         self.assertFalse(any("wait" in line.replace(pmstart.HUB_TOOL, "") for line in out), out)
 
-    def test_push_up_before_any_delivery_and_with_no_heartbeat_yet(self):
+    def test_push_up_before_any_delivery_and_a_session_watch_with_no_run_yet(self):
         health = {"ok": True, "push": {"state": "up", "last": None, "undelivered": 3},
-                  "watcher": {"state": "none", "age": None}}
-        self.assertEqual(site(FakeClient(health=health))[1],
+                  "jobs": self.job(runs=0, ok_at=None)}
+        self.assertEqual(self.line(health),
                          "hub: push up (last delivery to the PM: none yet, 3 undelivered); "
-                         "watcher none")
+                         "session watch starting (no run yet)")
+
+    def test_a_missing_or_unhealthy_session_watch_is_a_warn(self):
+        push_up = {"state": "up", "last": "written", "undelivered": 0}
+        for jobs, said in (
+                (None, "session watch none (this hub runs no session-watch job"),
+                ({}, "session watch none (this hub runs no session-watch job"),
+                ({"session-watch": "up"}, "session watch none ("),
+                (self.job(failures=3), "session watch down (last success 42s ago): read hub "
+                                       "health jobs.session-watch"),
+                (self.job(ok_at=self.T - 301), "session watch down (last success 301s ago)"),
+                (self.job(ok_at=None), "session watch down: read hub health jobs.session-watch"),
+                (self.job(runs=0, failures=1, ok_at=None), "session watch down: ")):
+            with self.subTest(jobs=jobs):
+                line = self.line({"ok": True, "push": push_up, "jobs": jobs})
+                self.assertTrue(line.startswith("hub: WARN push up (last delivery to the PM: "
+                                                "written, 0 undelivered); " + said), line)
+        line = self.line({"ok": True, "push": push_up, "jobs": self.job(failures=3)})
+        self.assertIn('a hub restart starts it again: python "%s" restart' % pmstart.HUB_TOOL, line)
+
+    def test_the_first_run_window_is_no_warn(self):
+        push_up = {"state": "up", "last": "written", "undelivered": 0}
+        line = self.line({"ok": True, "push": push_up, "jobs": self.job(runs=0, ok_at=None)})
+        self.assertFalse(line.startswith("hub: WARN"), line)
+        self.assertTrue(line.endswith("session watch starting (no run yet)"), line)
 
     def test_push_down_is_a_warn_naming_the_pending_read(self):
         health = {"ok": True, "push": {"state": "down", "last": "not-written", "undelivered": 2},
-                  "watcher": {"state": "down", "age": 900}}
-        line = site(FakeClient(health=health))[1]
+                  "jobs": self.job(ok_at=self.T - 900)}
+        line = self.line(health)
         self.assertTrue(line.startswith("hub: WARN push down (last delivery to the PM: not-written, "
-                                        "2 undelivered); watcher down (beat 900s ago)"), line)
+                                        "2 undelivered); session watch down (last success 900s "
+                                        "ago)"), line)
         self.assertIn('read python "%s" pending --for pm' % pmstart.HUB_TOOL, line)
         self.assertNotIn("wait", line.replace(pmstart.HUB_TOOL, ""))
 
     def test_no_push_worker_is_a_warn_that_nothing_arrives_by_itself(self):
-        for health in ({"ok": True}, {"ok": True, "push": None, "watcher": None},
-                       {"ok": True, "push": "up", "watcher": "up"}):
+        for health in ({"ok": True}, {"ok": True, "push": None, "jobs": self.job()},
+                       {"ok": True, "push": "up", "jobs": self.job()}):
             with self.subTest(health=health):
-                line = site(FakeClient(health=health))[1]
+                line = self.line(health)
                 self.assertTrue(line.startswith("hub: WARN push notifications are off"), line)
-                self.assertIn("watcher not read (no push worker)", line)
+                self.assertIn("; session watch ", line)
                 self.assertIn('pending --for pm', line)
 
     def test_server_values_outside_the_allow_list_never_reach_the_line(self):
         odd = "x@mail.invalid secret"
         health = {"ok": True, "push": {"state": odd, "last": odd, "undelivered": odd},
-                  "watcher": {"state": odd, "age": odd}}
-        line = site(FakeClient(health=health))[1]
+                  "jobs": {"session-watch": {"failures": odd, "runs": odd, "ok_at": odd}}}
+        line = self.line(health)
         self.assertNotIn(odd, line)
         self.assertTrue(line.startswith("hub: WARN push ? (last delivery to the PM: ?, ? undelivered); "
-                                        "watcher ? (beat ?s ago)"), line)
+                                        "session watch down: "), line)
         for bad in (True, -1, 1.5):
             health = {"ok": True, "push": {"state": "up", "last": "written", "undelivered": bad},
-                      "watcher": {"state": "up", "age": bad}}
+                      "jobs": self.job()}
             with self.subTest(bad=bad):
-                self.assertEqual(site(FakeClient(health=health))[1],
+                self.assertEqual(self.line(health),
                                  "hub: push up (last delivery to the PM: written, ? undelivered); "
-                                 "watcher up (beat ?s ago)")
+                                 "session watch up (last success 42s ago)")
+
+    def test_a_watcher_field_left_in_health_is_not_read(self):
+        health = {"ok": True, "push": {"state": "up", "last": "written", "undelivered": 0},
+                  "watcher": {"state": "up", "age": 1}}
+        self.assertIn("session watch none", self.line(health))
 
     def test_nothing_listening_is_hub_server_down(self):
         out = site(FakeClient(error=errors.NotRunning(4321)))

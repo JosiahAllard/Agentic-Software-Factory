@@ -9,8 +9,15 @@ import hashlib
 from .contracts import AdapterDescription, Capability, CONTRACT_VERSION
 from .hostpairs import HostPairs, REFUSED as HOST_PAIR_REFUSED
 from .messages import DeliveryError, MessageIntent, OutboundMessage, SenderAuthority, text_bytes, REPLY_OPERATION_PREFIX
-from .outbox import Outbox
+from .outbox import MAX_MESSAGES, Outbox
 from .pairing import PairingError, PairingStore
+
+
+def rotated(pending, cursor, limit):
+    """The next `limit` of `pending` after `cursor` (from the start when it is gone), wrapping
+    round: work that cannot move never starves the work listed after it."""
+    start = pending.index(cursor) + 1 if cursor in pending else 0
+    return (pending[start:] + pending[:start])[:limit]
 
 
 def _reply_refusal(error):
@@ -20,6 +27,25 @@ def _reply_refusal(error):
     if error.code in ('chat-not-observed', 'chat-live-binding-unverified'):
         return 'reply-chat-not-observed'
     return 'reply-route-not-selected'
+
+
+def _queued_refusal(pairings, error, *bindings):
+    """The final reason a guard refusal gives queued work, or None to leave it waiting.
+
+    A route turned off and a chat that is gone or replaced refuse for good. A failed live
+    check refuses this use only (PairingStore._live): the work stays queued or pending,
+    and its expiry still applies.
+    """
+    if error.code == 'chat-route-not-selected':
+        return 'chat-route-revoked'
+    if error.code != 'chat-not-observed':
+        return None
+    listed = {peer.identity.session_id: peer for peer in pairings.registered()}
+    for binding in bindings:
+        current = listed.get(binding.identity.session_id)
+        if current is not None and current != binding:
+            return 'chat-binding-changed'
+    return 'chat-not-observed'
 
 
 class CoreBroker:
@@ -35,6 +61,8 @@ class CoreBroker:
         self.pairings, self.outbox, self.adapters = pairings, outbox, dict(adapters)
         self._authorize, self._dispatch_check = authorize, dispatch_check
         self.host_pairs = host_pairs
+        # Only the dispatch worker promotes replies, so this needs no lock.
+        self._reply_cursor = None
 
     def _host_pair_allowed(self, message):
         return self.host_pairs is None or self.host_pairs.allowed(message.sender, message.recipient)
@@ -98,12 +126,22 @@ class CoreBroker:
                 except Exception:
                     verified = False
                 if not verified:
-                    raise DeliveryError('dispatch-context-unverified')
+                    return self._stay_queued(operation)
                 adapter = self._adapter(message)
                 reverse=self._reverse_selected(message)
                 return self.outbox.run_dispatch(operation, adapter.send,reverse_reply=reverse)
-        except PairingError:
-            return self.outbox.reject_queued(operation, 'chat-route-revoked-or-changed')
+        except PairingError as error:
+            reason = _queued_refusal(self.pairings, error, message.sender, message.recipient)
+        if reason is None:
+            return self._stay_queued(operation)
+        return self.outbox.reject_queued(operation, reason)
+
+    def _stay_queued(self, operation):
+        """Leave the message queued for a later pass, unless it has expired meanwhile."""
+        receipt = self.outbox.expire_queued(operation)
+        if receipt.state == 'queued':
+            raise DeliveryError('dispatch-context-unverified')
+        return receipt
 
     def _read(self, operation, proof):
         message = self.outbox.message(operation)
@@ -171,10 +209,20 @@ class CoreBroker:
 
     def promote_replies(self, limit=32):
         """Private worker recovery of already-authenticated pending reverse jobs."""
-        for operation in self.outbox.pending_replies(limit):
-            message=self.outbox.message(operation)
+        if type(limit) is not int or not 1<=limit<=MAX_MESSAGES:
+            raise DeliveryError('invalid-pending-limit')
+        pending=self.outbox.pending_replies(MAX_MESSAGES)  # Every pending link: bounded IDs only.
+        for operation in rotated(pending,self._reply_cursor,limit):
+            self._reply_cursor=operation
             try:
-                with self.pairings.selected_guard(message.recipient,message.sender):
-                    self.outbox.promote_reply(operation)
-            except PairingError:
-                self.outbox.suppress_reply(operation,'chat-route-revoked-or-changed')
+                message=self.outbox.message(operation)
+                if not self.outbox.expire_reply(operation):continue  # Expiry needs no live chat.
+                try:
+                    with self.pairings.selected_guard(message.recipient,message.sender):
+                        self.outbox.promote_reply(operation)
+                except PairingError as error:
+                    reason=_queued_refusal(self.pairings,error,message.recipient,message.sender)
+                    if reason is not None:self.outbox.suppress_reply(operation,reason)
+            except DeliveryError:
+                # This link stays pending for a later pass; the caller re-checks leadership.
+                continue

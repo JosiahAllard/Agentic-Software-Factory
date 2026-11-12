@@ -664,7 +664,7 @@ def _commit(req, lines):
     named = set(paths) | set(rendered)
     status_before = staged_status(root)
     heads = merge_heads(root) if opts['merge_fold'] else []
-    landed = landed_main(root, opts['remote'], opts['main_branch']) if heads else []
+    landed = landed_main(root, opts['remote'], opts['work_base']) if heads else []
     merged, merge_why = ownerrules.merge_owned(root, rules, set(status_before) - named, heads,
                                                landed)
     foreign = set(status_before) - named - merged
@@ -686,7 +686,7 @@ def _commit(req, lines):
         raise _Stop(REFUSED, foreign_refusal(foreign, merge_why, len(heads) == 1))
     # Only a sync merge is committed: a base sync_base.py would refuse is refused here too.
     err = unsynced_merge_refusal(root, heads or merge_heads(root), opts['remote'],
-                                 opts['main_branch'])
+                                 opts['work_base'])
     if err:
         raise _Stop(REFUSED, err)
     # A path given to another record by a narrowing pull (docs/commit.md "A narrowed record"):

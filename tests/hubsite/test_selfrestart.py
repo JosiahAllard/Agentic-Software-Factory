@@ -192,6 +192,7 @@ class RestartCase(Case):
         self.quiet = False
         self.at(selfrestart.GIVE_UP_S, NEW)
         self.assertTrue(self.w.stale)
+        self.assertFalse(self.w.definite, 'STILL_TRYING may still restart: no definite outcome')
         self.assertEqual(self.lines[-1][0], 'note')
         self.assertIn('has not restarted itself yet', self.lines[-1][1])
         n = len(self.lines)
@@ -224,6 +225,7 @@ class RestartCase(Case):
         self.assertFalse(self.w.stale)
         self.at(1, NEW)
         self.assertTrue(self.w.stale)
+        self.assertTrue(self.w.definite)
         log = os.path.join(self.tokens, selfrestart.LOG_NAME)
         self.assertEqual(self.lines[-1], ('error', selfrestart.NOT_RESTARTED
                                           % (selfrestart.LAUNCH_WAIT_S, log)))
@@ -237,6 +239,7 @@ class NotHereCase(Case):
         self.watcher()
         self.at(0, NEW)
         self.assertTrue(self.w.stale, 'the warning shows at once')
+        self.assertTrue(self.w.definite)
         self.assertEqual(self.lines, [('note', selfrestart.CHANGED),
                                       ('note', selfrestart.NOT_HERE % why)])
         for _ in range(3):
@@ -280,6 +283,7 @@ class FailureCase(Case):
         self.at(0, NEW)
         self.at(selfrestart.SETTLE_S, NEW)
         self.assertTrue(self.w.stale)
+        self.assertTrue(self.w.definite)
         self.assertEqual(self.lines[-1], ('error', selfrestart.CHECK_FAILED
                                           % 'exit 1: ImportError: x'))
         for _ in range(3):
@@ -291,6 +295,23 @@ class FailureCase(Case):
         self.at(1, NEWER)
         self.assertEqual(self.checked, [NEW, NEWER], 'newer code is tried')
         self.assertEqual(len(self.launched), 1)
+
+    def test_a_restarter_for_newer_code_that_hangs_after_a_failed_check_says_not_restarted(self):
+        self.check_says = (False, 'exit 1: ImportError: x')
+        self.watcher()
+        self.at(0, NEW)
+        self.at(selfrestart.SETTLE_S, NEW)          # CHECK_FAILED for NEW: the warning shows
+        self.check_says = (True, None)
+        self.at(1, NEWER)
+        self.at(selfrestart.SETTLE_S, NEWER)
+        self.at(1, NEWER)
+        self.assertEqual(len(self.launched), 1, 'NEWER passed and its restarter started')
+        self.at(selfrestart.LAUNCH_WAIT_S, NEWER)
+        log = os.path.join(self.tokens, selfrestart.LOG_NAME)
+        said = ('error', selfrestart.NOT_RESTARTED % (selfrestart.LAUNCH_WAIT_S, log))
+        self.assertEqual(self.lines[-1], said)
+        self.at(100, NEWER)
+        self.assertEqual(self.lines.count(said), 1, 'said once')
 
     def test_a_failed_check_of_superseded_code_posts_nothing_and_the_new_code_is_tried(self):
         self.check_says = (False, 'exit 1: ImportError: x')
@@ -324,6 +345,7 @@ class FailureCase(Case):
 
     def assert_launch_failed(self, why):
         self.assertTrue(self.w.stale)
+        self.assertTrue(self.w.definite)
         self.assertFalse(self.w.launched)
         if why is not None:
             self.assertEqual(self.lines[-1], ('error', selfrestart.LAUNCH_FAILED % why))

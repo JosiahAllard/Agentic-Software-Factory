@@ -69,7 +69,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/gate-run.md` | gate.py: commands, exit codes, steps, auto-detected gate, daemons, console windows | running or configuring the gate | kw: gate, steps, exit codes, commands, daemons, docs-only
 - `docs/gate-records.md` | gate.py: Gate-OK and Result records, gate budget, session cap, gate queue | a gate record, budget or queue | kw: gate, records, budget, queue, result, unchanged red
 - `docs/gate-rerun-checkout.md` | gate.py: stopping a gate, targeted rerun, the caller's checkout, stash guard, limits | stopping, rerunning or running a gate from another checkout | kw: gate, rerun, stash, caller checkout
-- `docs/gate-landing.md` | gate.py: landing, the landing queue, submitting, batch, folding | landing a branch | kw: gate, landing, submit, batch, queue
+- `docs/gate-landing.md` | gate.py: landing, the landing queue, submitting, batch, folding, the staging branch | landing a branch | kw: gate, landing, submit, batch, queue, staging
 - `docs/gate-landing-policy.md` | gate.py: strict paths, carrying a verdict, gate reuse, branch cleanup | a strict branch, a carried verdict, a reused gate | kw: gate, strict, carry, reuse, cleanup
 - `docs/guard.md` | shell guard and git hooks: the index of its pages | a command is refused | kw: guard, hooks, refusal, hub secrets
 - `docs/guard-core.md` | shell guard: output, refusal log, rule modes, hosts, parsing, state | reading a guard refusal or how the guard parses a line | kw: guard, refusal log, modes, hosts, parsing
@@ -104,12 +104,12 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/pm-first-run.md` | PM first run | the first PM session | kw: pm-first-run
 - `docs/plugin-source.md` | the plugin's source: export of pushed kit main, refresh, migrate | installing or refreshing the plugin | kw: plugin-source, plugin, plugin_refresh, export, pm-kit-hooks
 - `docs/pm-start.md` | PM session-start checklist | starting a PM session | kw: pm-start, checklist
-- `docs/pm-watch.md` | PM watcher | watching sessions | kw: pm-watch, watcher
 - `docs/preflight.md` | preflight (with its --board) and checkout guard | starting any task | kw: preflight, board, checkout
 - `docs/stray-restore.md` | discard a main-checkout stray a branch already holds byte for byte | the gate reports main-checkout-stray | kw: stray-restore, stray, main-checkout-stray, restore
 - `docs/redfirst.md` | redfirst | proving a test fails first | kw: redfirst, red
 - `docs/repo-checks.md` | forbidden, trailers, pieces | repo checks | kw: forbidden, trailers, pieces
 - `docs/review-pack.md` | review_pack | preparing a review | kw: review-pack, review
+- `docs/session-watch.md` | the hub's session-watch job, the one session watcher: its checks, config and limits | watching sessions | kw: session-watch, watcher, pmwatch, idle, remote, limit
 - `docs/shipping.md` | what ships | changing the shipped set | kw: shipping, ships
 - `docs/sync-base.md` | sync_base | main moved | kw: sync-base, merge
 - `docs/test-tools.md` | tool_deps, pytests, the time fence (kitlib.clock) and flaky tests | test selection | kw: flaky, flake, time-fence, clock, budget, tool_deps, pytests, tests
@@ -161,7 +161,6 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `tools/delegated.py` | run one operation of the owner's delegation list on the owner's order (`docs/delegations.md` "Running") | kw: delegated, delegations, run
 - `tools/pending.py` | pending steps (`docs/pending.md`) | kw: pending
 - `tools/launch.py` | launcher (`docs/launcher.md`) | kw: launch, launcher
-- `tools/pm_watch.py` | PM watcher (`docs/pm-watch.md`) | kw: pm_watch
 - `tools/daily_full.py` | nightly full run (`docs/daily-full.md`) | kw: daily_full
 - `tools/tool_deps.py` | tests a changed file selects (`docs/test-tools.md`) | kw: tool_deps
 - `tools/pytests.py` | test runner (`docs/test-tools.md`) | kw: pytests

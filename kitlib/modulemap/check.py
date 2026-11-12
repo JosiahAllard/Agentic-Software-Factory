@@ -13,6 +13,7 @@ import json
 import os
 import re
 
+import kitlib.config as kconfig
 from kitlib.git import checkout as gitcheckout
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs as gitrefs
@@ -219,7 +220,7 @@ def base_of(root, cfg, rev, map_path, ceilings_path):
     or the git reads fail."""
     notes = []
     if not rev:
-        rev, note = gitrefs.default_base(root, cfg.remote, cfg.main_branch)
+        rev, note = gitrefs.default_base(root, cfg.remote, kconfig.work_base(cfg))
         if note:
             notes.append('note: %s' % note)
         sha, why = gitrefs.resolve(rev, root)
@@ -272,7 +273,7 @@ def scope_base(root, cfg, rev):
     base is given and the default does not resolve."""
     if rev:
         return rev, []
-    rev, note = gitrefs.default_base(root, cfg.remote, cfg.main_branch)
+    rev, note = gitrefs.default_base(root, cfg.remote, kconfig.work_base(cfg))
     sha, why = gitrefs.resolve(rev, root)
     if not sha:
         raise MapError('no base (%s): pass --base' % why)

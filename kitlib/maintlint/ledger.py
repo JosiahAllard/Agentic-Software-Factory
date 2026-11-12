@@ -3,13 +3,13 @@
 or rule text leaves this module, so the page and result.json carry numbers and rulebook file names
 only. The module stands alone; dropping it drops the counts and their findings and nothing else.
 
-  counts(home, user_config)  `({'stale_cites': n, 'rules': {file: n}, 'over_budget': [file],
+  counts(home, user_config)  `({'stale_cites': n, 'rules': {file: n}, 'over_cap': [file],
                              'conflict_pairs': n, 'overrides': n}, notes)` or `(None, notes)`
                              when the machine names no ledger or it cannot be read
   stale_cites(texts, digest) the STANDING digest's citations of a retired or absent id
                              (kitlib.ledger.standing.problems, counted)
   rulebook_counts(books)     the last four counts, over kitlib.ledger.rulebook Books: the rules of
-                             each file, the files over their budget, the pairs of rules that
+                             each file, the files over rulebook.MAX_BYTES, the pairs of rules that
                              rulebook.conflicts finds sharing content words, and the repo rules
                              that override a shared rule
   findings(counts)           one count finding per count above 0 (overrides are information, not
@@ -30,9 +30,9 @@ def stale_cites(texts, digest_text):
 
 
 def rulebook_counts(books):
-    """`(rules, over_budget, conflict_pairs, overrides)` of the parsed `books` ({name: Book})."""
+    """`(rules, over_cap, conflict_pairs, overrides)` of the parsed `books` ({name: Book})."""
     rules = {n: len(b.rules) for n, b in books.items()}
-    over = [n for n, b in books.items() if len(b.rules) > b.budget]
+    over = [n for n, b in books.items() if rulebook.over_cap(b)]
     shared = {r.key for r in books[rulebook.SHARED].rules} if rulebook.SHARED in books else set()
     overrides = sum(1 for n, b in books.items() if n != rulebook.SHARED
                     for r in b.rules if r.key in shared)
@@ -74,7 +74,7 @@ def counts(home=None, user_config=_user_config):
     if errs:
         notes.append('ledger: %d rulebook error(s) (ledger.py check names them)' % len(errs))
     rules, over, pairs, overrides = rulebook_counts(books)
-    return {'stale_cites': stale_cites(texts, digest), 'rules': rules, 'over_budget': over,
+    return {'stale_cites': stale_cites(texts, digest), 'rules': rules, 'over_cap': over,
             'conflict_pairs': pairs, 'overrides': overrides}, notes
 
 
@@ -91,12 +91,13 @@ def findings(got):
                            '%d citation(s) in the STANDING digest of a retired or absent entry' % n,
                            '%s check   (the PM: it names each one; re-point the digest line or'
                            ' drop it)' % tool))
-    over = got.get('over_budget') or []
+    over = got.get('over_cap') or []
     if over:
-        out.append(Finding('ledger-over-budget', 'over_budget',
-                           '%d rulebook file(s) over their budget: %s' % (len(over), ', '.join(over)),
-                           '%s rules --all   (the PM: drop or merge rules with rule-drop, or raise'
-                           ' the Budget line with rule-set)' % tool))
+        out.append(Finding('ledger-over-cap', 'over_cap',
+                           '%d rulebook file(s) over their cap of %d bytes: %s'
+                           % (len(over), rulebook.MAX_BYTES, ', '.join(over)),
+                           '%s rules --all   (the PM: drop, merge or shorten rules with rule-drop'
+                           ' and add --rule)' % tool))
     n = got.get('conflict_pairs', 0)
     if n:
         out.append(Finding('ledger-rule-conflicts', 'conflict_pairs',

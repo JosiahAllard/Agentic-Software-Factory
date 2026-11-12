@@ -44,7 +44,8 @@ def build_parser():
     p.add_argument('--host', '--provider', dest='host', default=None,
                    help='the agent host, for the Co-Authored-By trailer (default: $PM_KIT_HOST, '
                         'else the hosts.json default); --provider is its old name, kept for one release')
-    p.add_argument('--base', help='the base branch (default: .kit.json "repo".main_branch)')
+    p.add_argument('--base', help='the base branch (default: the work base, .kit.json '
+                                     '"staging".branch when set, else "repo".main_branch)')
     p.add_argument('--no-wait', dest='wait', action='store_false',
                    help='do not wait for a landing in flight (.kit.json "landing".in_flight); '
                         'say so and go on')

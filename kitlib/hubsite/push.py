@@ -111,19 +111,19 @@ counts as UNCERTAIN.
 A try written to a session other than the PM's is told to the Api (Api.pushed): its items
 route to that key for a while with no wait open (kitlib.hubsite.api docstring "Routes").
 
-Watcher (the PM's pm_watch, docs/pm-watch.md): the thread reads its heartbeat (`watcher`, default
-watcher_heartbeat: kitlib.pmwatch's heartbeat file beside its state file) every WATCHER_POLL_S;
-poll() never does, watch() does once. A beat at most WATCHER_STALE_S old is 'up', an older one
-'down', none readable 'none'. When a watcher seen 'up' is no longer, one `watcher down` push goes
-to the PM alone, tried on the same schedule until a try is written or GIVE_UP_S passes; a fresh
-beat acknowledges one still owed, and only after a fresh beat can it fire again. Nothing fires
-for a watcher this worker never saw fresh. The hub's session-watch job stands in for the beat:
-at each read its health block (`jobs`, default Api.jobs_seen: GET health jobs) that
-kitlib.pmwatch.session_job_healthy counts as covering (not failing, a success at most
-SESSION_JOB_STALE_S old) is 'up' too, so a pm_watch that stepped aside or stopped while the job
-pushes its checks is no `watcher down`. watcher_status() -> {"state", "age"} (age in whole
-seconds of the beat, None with no beat; state 'up' also while the job covers) is the
-snapshot's and GET health's `watcher` (Api.watcher_seen).
+Watcher (the hub's session-watch job, kitlib.hubjobs.session_watch, docs/session-watch.md): the
+thread reads that job's health block (`jobs`, default Api.jobs_seen: GET health jobs) every
+WATCHER_POLL_S; poll() never does, watch() does once. A block that
+kitlib.pmwatch.session_job_healthy counts as watching (failures below SESSION_JOB_FAILS, a
+success at most SESSION_JOB_STALE_S old) is 'up', any other block 'down', and no block (no such
+job, an unreadable status) 'none'. When a job seen 'up' is no longer, one `watcher down` push
+goes to the PM alone, tried on the same schedule until a try is written or GIVE_UP_S passes; a
+healthy read acknowledges one still owed, and only after one can it fire again. Nothing fires
+for a job this worker never saw healthy (a first run that hangs: docs/session-watch.md "Limits").
+A job failing FAIL_PUSH times also pushes `job session-watch failing` (Jobs below): the two
+overlap, by design. watcher_status() -> {"state", "age"} (age in whole seconds since the job's
+last success, `ok_at`, None before one) is the snapshot's and GET health's `watcher`
+(Api.watcher_seen).
 
 Jobs (the hub's timed jobs, kitlib.hubsite.jobs): job_event(name, event, detail=None), on any
 thread, owes the PM one `job <name> <event>` push, with `detail:<detail>` after the event when
@@ -184,6 +184,7 @@ import time
 
 from kitlib import pmwatch
 from kitlib.config.user import HomeFenced
+from kitlib.hubclient import codestale
 from kitlib.hubclient.push import NO_SESSION, NOT_WRITTEN, PM_KEY, UNCERTAIN, WRITTEN, Sent, field
 from kitlib.hubsite.api import HUB_DONE_BY, OWNER_FROM, sessions_once
 from kitlib.hubsite import hublog, store
@@ -206,7 +207,19 @@ _CROSSOVER = 'The hub usage crossover job (hub health jobs.usage-crossover, usag
 # the PM's way back from a checkpoint ask: a crossing of the PM that ends without `crossed`
 _PM_RESUMES = (' When detail is pm or starts pm: (you, the PM), no crossing of yours is open now: '
                'the checkpoint message no longer holds, so resume your normal work.')
-JOB_EACH = {'unblocked': 'A hub timed job cleared a hold whose `until` condition was met: the '
+JOB_EACH = {'stale-code': 'The hub server (serve.py, job name hub) will not restart itself onto the '
+                          'hub code now on disk: ' + codestale.text() + '. It keeps its old code '
+                          'until the owner restarts it, or until a newer landing restarts it '
+                          'where its self-restart can still run; hub.log and GET health `code` '
+                          'say why. File the owner step above as a to-do; no reply is needed.',
+            'behind': 'The hub plugin-refresh job found the pm-kit plugin export not at kit main '
+                      'and did not refresh it. Detail is <main sha12>:<why>. no-export: there '
+                      'is no export yet; unmigrated: an account folder is not migrated to it; '
+                      'run python "<kit>/tools/plugin_refresh.py" --migrate --apply for either. '
+                      'behind: plugin.auto_refresh is off; run python '
+                      '"<kit>/tools/plugin_refresh.py" --apply. Hub health '
+                      'jobs.plugin-refresh.note gives the command in full. No reply is needed.',
+            'unblocked': 'A hub timed job cleared a hold whose `until` condition was met: the '
                          'record named in detail (<repo>:<ID>) is unblocked; `backlog.py show '
                          '<ID>` gives the commit. No reply is needed.',
             'approval-expired': 'A hub approval expired undecided, and the record it was bound to '
@@ -278,21 +291,12 @@ FILED_AS = ('pulled', 'freed', 'held')    # what a filed answer did to its recor
 EVENTS = ('answered', 'filed', 'standing', 'done', 'reopened', 'added', 'decided', 'expiring',
           'applied', 'unapplied', 'submitted', 'sent')
 EXPIRING_LEAD_S = 4 * 3600                  # before expires_at: an approved one's reminder
-WATCHER_STALE_S = 300                       # a heartbeat older than this: the watcher is down
-                                            # (kitlib.pmstart BEAT_STALE, the same rule)
-WATCHER_POLL_S = 30                         # between heartbeat reads on the thread
+WATCHER_POLL_S = 30                         # between session-watch status reads on the thread
 DONE_BY = HUB_DONE_BY                       # a question's done_by when this worker marked it done
 DONE_VIA = 'hub-push'                       # the `via` of that write
 # a delegation run line (kitlib.delegations.run run_line, `D-nnn` its schema.ID): not imported,
 # kitlib.delegations imports this package
 RUN_LINE = re.compile(r'run D-[0-9]{3,}(?: |\Z)')
-def watcher_heartbeat():
-    """The pm_watch heartbeat ({pid, beat, ...}) beside the state file pm_watch uses, or None
-    (kitlib.pmwatch.heartbeat_file, read_heartbeat)."""
-    state = pmwatch.load_config().get('state_file') or pmwatch.default_state_file()
-    return pmwatch.read_heartbeat(pmwatch.heartbeat_file(state))
-
-
 def approval_phase(doc, now):
     """'decided', 'expiring' or None: approval doc's phase at `now` (an aware datetime), module
     docstring."""
@@ -515,15 +519,14 @@ def guidance(kind, doc_id, event, recipient, entry=None):
 
 
 class PushWorker(object):
-    def __init__(self, store, api, push, folder, clock=None, log=None, watcher=None, jobs=None,
-                 pm_folder=None):
+    def __init__(self, store, api, push, folder, clock=None, log=None, jobs=None, pm_folder=None):
         self.store, self.api, self.push, self.folder = store, api, push, folder
         self.pm_folder = pm_folder or machine_pm_folder     # () -> the PM repository's folder name
         self._pm_folder_got = None      # its answer, read once (a failed read is tried again)
         self.clock = clock or time.time
-        self.watcher = watcher          # None: watcher_heartbeat, looked up at each read
         self.jobs = jobs                # None: the api's jobs_seen (GET health jobs), at each read
-        self._job_up = False            # the session-watch job covered at the latest read
+        self._job = None                # the session-watch block at the latest read, or None
+        self._job_up = False            # that block healthy (pmwatch.session_job_healthy)
         self.log = log or (lambda text: None)
         self._stop = threading.Event()
         self._thread = None
@@ -537,8 +540,7 @@ class PushWorker(object):
         self._last = None               # the latest deliver's state to the PM
         self._started = False           # start() finished: until then status() is 'down'
         self._status = {'state': 'up', 'last': None, 'undelivered': 0}
-        self._beat = None               # the latest heartbeat's beat (epoch seconds) or None
-        self._watched = None            # the clock of the latest heartbeat read, None before
+        self._watched = None            # the clock of the latest status read, None before
         self._armed = False             # seen 'up' since the last `watcher down` fired
         self._down = None               # the `watcher down` owed: {attempt, next_at, first_at}
         # job name (or a JOB_EACH event's (name, event, detail)) -> the job push owed:
@@ -623,42 +625,37 @@ class PushWorker(object):
         return out
 
     def watcher_status(self):
-        """{"state", "age"} of the PM's watcher at its latest read (module docstring "Watcher");
-        any thread."""
-        beat = self._beat
-        if beat is None:
-            return {'state': 'up' if self._job_up else 'none', 'age': None}
-        age = max(0, int(self.clock() - beat))
-        return {'state': 'up' if age <= WATCHER_STALE_S or self._job_up else 'down', 'age': age}
+        """{"state", "age"} of the hub's session-watch job at its latest read (module docstring
+        "Watcher"); any thread."""
+        block, up = self._job, self._job_up
+        if block is None:
+            return {'state': 'none', 'age': None}
+        ok = block.get('ok_at')
+        age = (max(0, int(self.clock() - ok))
+               if isinstance(ok, (int, float)) and not isinstance(ok, bool) else None)
+        return {'state': 'up' if up else 'down', 'age': age}
 
-    def _session_job_up(self, now):
-        """True when the hub's session-watch job covers pm_watch's checks (module docstring
-        "Watcher"). A reader that raises is False."""
+    def _session_job(self):
+        """The hub's session-watch health block, or None (no such job; a reader that raises)."""
         try:
             read = self.jobs or getattr(self.api, 'jobs_seen', None)
             blocks = read() if read is not None else None
             block = blocks.get(pmwatch.SESSION_JOB) if isinstance(blocks, dict) else None
-            return pmwatch.session_job_healthy(block, now)
-        except Exception as e:          # noqa: BLE001 - an unreadable job status covers nothing
+            return block if isinstance(block, dict) else None
+        except Exception as e:          # noqa: BLE001 - an unreadable job status is none
             self.log('push: session-watch status unreadable: %s' % type(e).__name__)
-            return False
+            return None
 
     def watch(self):
-        """Read the watcher's heartbeat and send the `watcher down` push when it is due (module
-        docstring "Watcher"): the thread's step every WATCHER_POLL_S, and a test's."""
+        """Read the session-watch job's status and send the `watcher down` push when it is due
+        (module docstring "Watcher"): the thread's step every WATCHER_POLL_S, and a test's."""
         now = self.clock()
         self._watched = now
-        try:
-            hb = (self.watcher or watcher_heartbeat)()
-            beat = hb.get('beat') if isinstance(hb, dict) else None
-            beat = beat if isinstance(beat, (int, float)) and not isinstance(beat, bool) else None
-        except Exception as e:          # noqa: BLE001 - an unreadable heartbeat is none
-            self.log('push: watcher heartbeat unreadable: %s: %s' % (type(e).__name__, e))
-            beat = None
-        self._beat = beat
-        self._job_up = self._session_job_up(now)
-        if (beat is not None and now - beat <= WATCHER_STALE_S) or self._job_up:
-            self._armed, self._down = True, None    # fresh: acknowledges a push still owed
+        block = self._session_job()
+        up = pmwatch.session_job_healthy(block, now)
+        self._job, self._job_up = block, up
+        if up:
+            self._armed, self._down = True, None    # healthy: acknowledges a push still owed
         elif self._armed:
             self._armed = False
             self._down = {'attempt': 0, 'next_at': now, 'first_at': None}
@@ -672,12 +669,15 @@ class PushWorker(object):
             return
         if down['next_at'] > now:
             return
-        age = 'none' if beat is None else str(int(now - beat))
+        age = self.watcher_status()['age']
         text = ('[hub push] watcher down age:%s route:%s attempt:%d\n'
-                'The PM watcher (pm_watch) has no fresh heartbeat and the hub session-watch job is '
-                'not covering it: it stopped or hung. Start it again (docs/pm-watch.md); a fresh '
-                'heartbeat acknowledges this push.'
-                % (field(age), field(PM_KEY), down['attempt'] + 1))
+                'The hub session-watch job, the one session watcher, was running and is no '
+                'longer: it failed %d times in a row or had no success for over %d s, so idle, '
+                'stopped, usage, background-failure and lock-notice events are not reaching you. '
+                'Read hub health jobs.session-watch (its error and note); a hub restart starts it '
+                'again. Its next success acknowledges this push.'
+                % (field('none' if age is None else str(age)), field(PM_KEY), down['attempt'] + 1,
+                   pmwatch.SESSION_JOB_FAILS, pmwatch.SESSION_JOB_STALE_S))
         sent = self._deliver(PM_KEY, text)
         self._last = sent.state
         down['attempt'] += 1

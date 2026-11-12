@@ -12,7 +12,7 @@ write two start notices and two end notices.
 Each notice is <dir>/<run id>-start.json or -end.json, an Action Hub inbox doc
 (docs/hub-records.md "Lock-window notices"): {id: "L-<run id>-start|end", title, text, at, repo, from,
 kind: "lock-window", run, phase}. The hub server lists them (kitlib.hubsite.derived.notices) and the
-PM watcher prints LOCKNOTICE for each new one (both through kitlib.pmwatch, which reads the folder
+hub session-watch job pushes LOCKNOTICE for each new one (both through kitlib.pmwatch, which reads the folder
 without importing the lock).
 A notice that cannot be written is said and never fails the run. A start notice once written
 stays: its end notice follows from the wrapper even when the run's record on disk cannot be

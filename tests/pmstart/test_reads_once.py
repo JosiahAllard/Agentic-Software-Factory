@@ -40,7 +40,7 @@ class ReadsOnceTest(unittest.TestCase):
                      memory={"check": lambda path, label=None: None, "folder": lambda top: None},
                      repo_prep={"prep": lambda path: []},
                      hub_site={"load": lambda: SET, "make_client": lambda port: FiledClient()},
-                     watcher={"now": 0}, foreground_lock={"read": lambda: 0})
+                     foreground_lock={"read": lambda: 0})
         fakes.update(over)
         with mock.patch.object(pmstart, "launcher_repos", counted("repos", {"a": GONE})), \
                 mock.patch.object(pmstart, "plugin_settings", counted("settings", None)), \
@@ -65,7 +65,7 @@ class ReadsOnceTest(unittest.TestCase):
             txt = pmstart.checklist({}, NOW, procs=[], pm_data=lambda: None, handoff=HANDOFF_FAKE,
                                     reminders={"read": lambda p: "[]"}, liveness={"read": lambda p: "{}"},
                                     repos={"a": GONE}, repo_prep={"prep": lambda p: []},
-                                    watcher={"beat": lambda: None, "now": 0}, foreground_lock={"read": lambda: 0})
+                                    foreground_lock={"read": lambda: 0})
         self.assertEqual(boom.call_count, 1)
         self.assertIn("- could not check the worktree sweep tasks: RuntimeError: no schtasks", txt)
         if taskread.platform.NAME != "linux":
@@ -74,8 +74,7 @@ class ReadsOnceTest(unittest.TestCase):
     def test_the_watch_config_loader_is_the_callers(self):
         load = mock.Mock(return_value={"state_file": GONE + "/s.json"})
         self.assertTrue(pmstart.filed_stamp_file(load).endswith("pm-start-last.json"))
-        self.assertIsNone(pmstart.read_heartbeat(load))
-        self.assertEqual(load.call_count, 2)
+        self.assertEqual(load.call_count, 1)
 
 
 if __name__ == "__main__":

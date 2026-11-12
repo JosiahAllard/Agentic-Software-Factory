@@ -54,7 +54,8 @@ SOURCES = (AUTO, CONFIG)
 STACKS = ('python', 'node', 'rust', 'go', 'dotnet')
 PRUNE = frozenset(['.git', 'node_modules', '.venv', 'venv', '__pycache__', 'target', 'bin', 'obj',
                    'dist', 'build', '.tox', '.mypy_cache', '.pytest_cache', '.ruff_cache'])
-MAX_READ = 50               # test files read for an `import pytest`
+LS_FILES_TAGS = 'HSM?'       # `ls-files -t --cached --others` tags: tracked H, S, M; untracked ?
+MAX_READ = 50              # test files read for an `import pytest`
 NO_REUSE = ['-nodeReuse:false', '-p:UseSharedCompilation=false']
 NPM_PLACEHOLDER = re.compile(r'no test specified')
 LINT = frozenset(['python-ruff', 'python-flake8', 'node-lint', 'node-typecheck', 'rust-fmt',
@@ -142,14 +143,24 @@ def checkout_files(root):
     """`(paths, read)` of the checkout at `root`: the files git tracks, plus the untracked ones it
     does not ignore that are under no PRUNE folder (an unignored virtualenv or node_modules is not
     the project's, and can be large); where git cannot list them, a walk that skips PRUNE folders
-    and any folder holding a `.git` of its own (a nested repository or worktree)."""
-    tracked, _ = cmd.run_text(['ls-files', '-z', '--cached'], root, strip=False)
-    others, _ = cmd.run_text(['ls-files', '-z', '--others', '--exclude-standard'], root,
-                             strip=False)
-    if tracked is None or others is None:
+    and any folder holding a `.git` of its own (a nested repository or worktree).
+
+    One git call lists both, each record tagged (`-t`): `? ` an untracked file, any other tag a
+    tracked one. A record not of that shape is no answer, so the walk lists the files instead."""
+    out, _ = cmd.run_text(['ls-files', '-z', '-t', '--cached', '--others', '--exclude-standard'],
+                          root, strip=False)
+    paths = set()
+    for rec in (out or '').split('\0'):
+        if not rec:
+            continue
+        tag, path = rec[:2], rec[2:]
+        if tag[:1] not in LS_FILES_TAGS or tag[1:] != ' ' or not path:
+            out = None
+            break
+        if tag != '? ' or not _pruned(path):
+            paths.add(path)
+    if out is None:
         return walk_files(root), reader(root)
-    paths = set(p for p in tracked.split('\0') if p)
-    paths.update(p for p in others.split('\0') if p and not _pruned(p))
     return sorted(paths), reader(root)
 
 

@@ -39,7 +39,8 @@ class Parser(argparse.ArgumentParser):
 def build_parser():
     p = Parser(prog='forbidden.py', description='Refuse a forbidden token (docs/repo-checks.md).')
     p.add_argument('-C', dest='root', default='.', help='the checkout to check (default .)')
-    p.add_argument('--base', default=None, help='default: .kit.json "repo".main_branch, else main, else master, as '
+    p.add_argument('--base', default=None, help='default: the work base (.kit.json "staging".branch when set), else '
+                   '"repo".main_branch, else main, else master, as '
                    '<remote>/<that> when it resolves (docs/gate-run.md "Default base")')
     p.add_argument('--worktree', action='store_true', help='compare the working tree, untracked files included')
     mode = p.add_mutually_exclusive_group()

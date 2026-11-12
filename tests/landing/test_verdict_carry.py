@@ -6,6 +6,8 @@ of tests/gate/fixtures.py GateRepoCase."""
 import contextlib
 import datetime
 import io
+import json
+import os
 import unittest
 
 from kitlib.landing import carry
@@ -228,6 +230,30 @@ class CarryCli(QueueCarryCase):
         self.assertEqual(code, 1)
         self.assertIn('NOT CARRIED: main as fetched (origin/main) cannot be read', out)
         self.assertIn('fetch first', out)
+        self.assertEqual(self.on_disk(), [queued])
+
+    def stage(self):
+        """Turn a staging branch on in the checkout's .kit.json (docs/gate-landing.md "Staging
+        branch")."""
+        with open(os.path.join(self.repo.root, '.kit.json'), encoding='utf-8') as f:
+            kit = json.load(f)
+        kit['staging'] = {'branch': 'staging'}
+        self.repo.write('.kit.json', json.dumps(kit, indent=1) + '\n')
+
+    def test_with_a_staging_branch_carry_checks_against_it(self):
+        _, reviewed, _, tip = self.synced()
+        self.repo.git('push', '-q', 'origin', 'main:refs/heads/staging')
+        self.stage()
+        code, out, err = self.run_tool('carry', '--branch', BRANCH)
+        self.assertEqual(code, 0, (out, err))
+        self.assertIn("unchanged against origin/staging %s;" % self.main[:10], out)
+
+    def test_with_a_staging_branch_not_fetched_carry_writes_nothing(self):
+        _, _, queued, _ = self.synced()
+        self.stage()
+        code, out, _ = self.run_tool('carry', '--branch', BRANCH)
+        self.assertEqual(code, 1)
+        self.assertIn('NOT CARRIED: main as fetched (origin/staging) cannot be read', out)
         self.assertEqual(self.on_disk(), [queued])
 
     def test_carry_names_its_branch(self):

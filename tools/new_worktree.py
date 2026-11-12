@@ -1,15 +1,17 @@
 """new_worktree.py: create a workstream's worktree in one call (docs/new-worktree.md).
 
-  new_worktree.py [-C DIR] <area>/<slug>                   a NEW branch off the main branch
+  new_worktree.py [-C DIR] <area>/<slug>                   a NEW branch off the work base
   new_worktree.py [-C DIR] --existing <area>/<slug>        an EXISTING branch, resumed
-                  [--base BRANCH]                          another base than the main branch
+                  [--base BRANCH]                          another base than the work base
                   [--base COMMIT | --approval hub:A-<n>]   a NEW branch at that commit, or at
                                                            the owner approval's base commit
                   [--no-wait]                              do not wait for a landing in flight
                   [--host NAME]                            that host's worktree folder
 
 -C names the repository by any of its work trees (default: here); the new worktree is always the
-MAIN checkout's. A thin entry point (ARCHITECTURE.md, Layers): it parses, calls
+MAIN checkout's. The work base is the main branch, or the staging branch when `.kit.json`
+"staging".branch is set: a new branch then starts at the pushed <remote>/<staging>
+(docs/gate-landing.md "Staging branch"). A thin entry point (ARCHITECTURE.md, Layers): it parses, calls
 kitlib.worktree.new, prints and exits. Exit codes: 0 made; 1 refused (nothing made); 2 usage, or
 the kit configuration was refused; 130 Ctrl+C.
 """
@@ -41,8 +43,9 @@ def parser():
     p.add_argument('branch', help='<area>/<slug>')
     p.add_argument('-C', dest='root', default='.', help='any work tree of the repository (default: here)')
     p.add_argument('--existing', action='store_true', help='resume a branch that exists')
-    p.add_argument('--base', help='the base branch (default: "repo".main_branch), or a full commit '
-                                  'hash a new branch starts at')
+    p.add_argument('--base', help='the base branch (default: the work base, "staging".branch when '
+                                  'set, else "repo".main_branch), or a full commit hash a new '
+                                  'branch starts at')
     p.add_argument('--approval', default=None, metavar='hub:A-<n>',
                    help="a new branch at the owner approval's base commit (a branch for the "
                         'hub to apply it on)')

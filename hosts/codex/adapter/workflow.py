@@ -96,13 +96,23 @@ def plan(coordinator, branch, item, session, model, paths, *, profile=None):
         cfg = load(main)
     except ConfigError as exc:
         raise ValueError(str(exc)) from exc
-    base, why = refs.resolve(cfg.main_branch, main)
+    base, why = refs.resolve(_start_ref(cfg), main)
     if not base:
         raise ValueError('base could not be read: ' + str(why))
     destination = worktrees_directory(cfg, HOST)
     worker = str((Path(main) / destination / branch.split('/', 1)[1]).resolve())
     return Task(cwd, worker, branch, item, session, model, base, paths, profile,
                 str(Path(main).resolve()), _creation_config(cfg))
+
+
+def _start_ref(cfg):
+    """The ref new_worktree starts a branch at (kitlib.worktree.new): the pushed
+    refs/remotes/<remote>/<staging> when a staging branch is set (docs/gate-landing.md "Staging
+    branch"), else the work base, which is then the main branch."""
+    from kitlib.config import staging_on, work_base
+    if staging_on(cfg):
+        return 'refs/remotes/%s/%s' % (cfg.remote, work_base(cfg))
+    return work_base(cfg)
 
 
 def _run(task, tool, args, role, cwd, host):
@@ -140,7 +150,7 @@ def prepare(task, coordinator_host):
     cfg = load(main)
     if _creation_config(cfg) != task.creation_config:
         raise Stopped('prepare', 'main creation configuration changed; no worktree was created')
-    base, why = refs.resolve(cfg.main_branch, main)
+    base, why = refs.resolve(_start_ref(cfg), main)
     if base != task.base:
         raise Stopped('prepare', 'base changed: ' + str(why or base))
     existing, why = refs.resolve(task.branch, task.coordinator, known=True)

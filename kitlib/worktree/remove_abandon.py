@@ -20,7 +20,7 @@ from kitlib.git import refs
 from . import holders
 from .holders import canon
 from .remove_checks import (ARCHIVE, base_commit, checked_out, dirty, dirty_refusal, failure, git,
-                            git_env, GitReadError, handle, ignored_reason, is_workstream,
+                            git_env, GitReadError, handle, ignored_reason, is_base, is_workstream,
                             kept_reflog, OK, open_ctx, REFUSED, registered_target, registrations,
                             same_name, unmoved)
 from .remove import (branch_slug, clear_disposable, delete_branch, git_remove, local_branch,
@@ -413,7 +413,7 @@ def abandon_branch(top, branch, why, cwd=None, today=None, tag=None):
 def _abandon_branch(ctx, branch, why, today, named=None):
     main, s = ctx.main, ctx.s
     up = s['upstream']
-    if same_name(branch, s['base']):
+    if is_base(branch, s):
         ctx.say('refused   %s is the main branch; nothing was tagged or deleted' % branch)
         return REFUSED
     tip, bad = local_branch(main, branch)

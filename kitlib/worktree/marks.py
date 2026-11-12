@@ -270,7 +270,7 @@ def mark(top, branch, why, cwd=None, liveness=None, environ=None, now=None):
         return _refuse(ctx, err)
     if tip is None:
         return _refuse(ctx, 'there is no local branch %s' % branch)
-    if remove_checks.same_name(branch, s['base']):
+    if remove_checks.is_base(branch, s):
         return _refuse(ctx, '%s is the main branch' % branch)
     try:
         listing = remove_checks.worktree_listing(main)

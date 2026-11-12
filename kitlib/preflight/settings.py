@@ -5,6 +5,7 @@ kitlib.config's schema checks each key's type; settings() adds what a type canno
 dir, so no dots), traps and engine prefixes are not blank, udp_ports is [low, high] with
 low <= high, and the defaults are filled in.
 """
+import kitlib.config as kconfig
 from kitlib.config import ConfigError
 from kitlib.git import cmd
 
@@ -44,10 +45,13 @@ def settings(cfg):
 
 
 def base_names(cfg, explicit=None):
-    """The base candidates: [explicit] when given, else ["repo".main_branch] when `.kit.json`
-    sets it, else ['main', 'master'] (the first that exists wins, pick_base)."""
+    """The base candidates: [explicit] when given, else [the staging branch] when `.kit.json`
+    sets "staging".branch (the work base, kitlib.config.work_base), else ["repo".main_branch]
+    when it sets that, else ['main', 'master'] (the first that exists wins, pick_base)."""
     if explicit:
         return [explicit]
+    if kconfig.staging_on(cfg):
+        return [kconfig.work_base(cfg)]
     if 'main_branch' in cfg.raw('repo'):
         return [cfg.main_branch]
     return ['main', 'master']

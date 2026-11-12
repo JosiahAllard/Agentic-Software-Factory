@@ -89,7 +89,8 @@ class HubApprovals(object):
     snapshot gives), then the hub verifying the approved blobs for the signed base, consumed
     (approvals.Verifier.verify). `client` and `repo` default to the machine's hub
     (kitlib.hubclient.settings) and the checkout's origin remote, `main` to main as last fetched
-    (refs/remotes/<remote>/<main branch> of the checkout's config); any failure to make one is a
+    (refs/remotes/<remote>/<main branch> of the checkout's config, or the staging branch main
+    names: approvals.landed_ref); any failure to make one is a
     refusal, never a pass. One instance reads each approval's document and each spent answer
     once."""
 
@@ -134,8 +135,7 @@ class HubApprovals(object):
             if ref is None:
                 try:
                     from kitlib import config as kconfig
-                    cfg = kconfig.load(root)
-                    ref = 'refs/remotes/%s/%s' % (cfg.remote, cfg.main_branch)
+                    ref = ap.landed_ref(root, kconfig.load(root))
                 except Exception as e:  # noqa: BLE001 - fail closed: no main is no approval
                     return 'main cannot be named: %s' % e
             sha, why = refs.resolve(ref, root, known=True)

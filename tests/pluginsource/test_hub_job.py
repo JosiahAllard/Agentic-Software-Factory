@@ -18,11 +18,13 @@ from tests.pluginsource import Kit
 WAIT_S = 10
 
 
-def ctx(stop=False):
+def ctx(stop=False, events=None):
+    """A run's Ctx; `events`, when given, gets each (word, detail) the run pushes."""
     ev = threading.Event()
     if stop:
         ev.set()
-    return jobs.Ctx(ev, lambda word: None)
+    told = events if events is not None else []
+    return jobs.Ctx(ev, lambda word, detail=None: told.append((word, detail)))
 
 
 class Child(object):
@@ -91,6 +93,84 @@ class JobCase(unittest.TestCase):
 
     def note(self, got):
         return got.note if isinstance(got, jobs.Skip) else got
+
+    def move_main(self):
+        """A new commit on the kit's origin/main tracking ref (a landing fetched): its sha."""
+        sha = self.k.repo.git('commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'landed')
+        self.k.repo.git('update-ref', 'refs/remotes/origin/main', sha)
+        return sha
+
+    def told(self, why, main=None):
+        return (plugin_job.BEHIND, '%s:%s' % ((main or self.main())[:12], why))
+
+
+class BehindPushTest(JobCase):
+    """The skips the owner must act on push the PM `behind`, once for each kit main
+    (kitlib/hubsite/plugin_job.py docstring; docs/hub-push.md "Timed jobs")."""
+
+    def test_no_export_pushes_behind_once_for_each_main(self):
+        events = []
+        job = self.job()
+        for _ in range(2):
+            self.assertIn('no export yet', self.note(job(ctx(events=events))))
+        self.assertEqual(events, [self.told('no-export')])
+        new = self.move_main()
+        job(ctx(events=events))
+        self.assertEqual(events[1:], [self.told('no-export', new)])
+        self.assertEqual(self.child.calls, [])
+
+    def test_a_folder_not_migrated_pushes_behind_unmigrated_once_for_each_main(self):
+        os.makedirs(self.k.root, exist_ok=True)
+        plugin_state.write_state(self.k.root, {'folders': {}})
+        events = []
+        job = self.job()
+        for _ in range(2):
+            self.assertIn('not migrated in', self.note(job(ctx(events=events))))
+        self.assertEqual(events, [self.told('unmigrated')])
+        new = self.move_main()
+        job(ctx(events=events))
+        self.assertEqual(events[1:], [self.told('unmigrated', new)])
+
+    def test_auto_refresh_off_and_behind_main_pushes_behind_once_for_each_main(self):
+        self.auto = False
+        self.k.seed_migrated(self.folders)
+        events = []
+        job = self.job()
+        for _ in range(2):
+            self.assertIn('plugin.auto_refresh is off', self.note(job(ctx(events=events))))
+        self.assertEqual(events, [self.told('behind')])
+        new = self.move_main()
+        job(ctx(events=events))
+        self.assertEqual(events[1:], [self.told('behind', new)])
+        self.assertEqual(self.child.calls, [])
+
+    def test_auto_refresh_off_at_main_pushes_none_for_a_folder_not_refreshed_or_a_copy_deferred(self):
+        self.k.seed_migrated(self.folders)
+        self.job()(ctx())                       # refreshed: the export at main, every rc 0
+        self.auto = False
+        state = plugin_state.read_state(self.k.root)
+        state['folders'][self.folders[0]]['rc'] = 1
+        plugin_state.write_state(self.k.root, state)
+        events = []
+        got = self.job()(ctx(events=events))
+        self.assertIn('not refreshed in', self.note(got))
+        state['folders'][self.folders[0]]['rc'] = 0
+        plugin_state.write_state(self.k.root, state)
+        plugin_state.set_pending(self.k.root, 'codex', 'codex: deferred: Codex is running')
+        got = self.job()(ctx(events=events))
+        self.assertIn('the codex copy deferred', self.note(got))
+        self.assertEqual(events, [], 'at main: nothing the owner must refresh to')
+
+    def test_behind_pushes_none_on_the_refresh_path(self):
+        self.k.seed_migrated(self.folders)
+        events = []
+        job = self.job()
+        self.assertEqual(job(ctx(events=events)), 'refreshed to %s' % self.main()[:12])
+        self.move_main()
+        self.child.code, self.child.lines = 1, ['FAILED: x']
+        with self.assertRaises(plugin_job.RefreshFailed):
+            job(ctx(events=events))
+        self.assertEqual(events, [], 'auto_refresh on: the job refreshes, the PM is not told')
 
 
 class PluginJobTest(JobCase):

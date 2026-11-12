@@ -90,6 +90,32 @@ class SnapshotTest(unittest.TestCase):
                          [("GONE", "closed by deletion"), ("SHUT", "closed in place")])
         self.assertTrue(c["items"][0]["d"].startswith("2026-10-06T10:00:00"))
 
+    def test_with_a_staging_branch_the_records_are_read_from_it_as_fetched(self):
+        # docs/gate-landing.md "Staging branch": records land on the staging branch, never on main
+        run(self.root, "checkout", "-q", "--detach")
+        write(self.root, "EX-STAGED.md", "id: EX-STAGED\nsummary: landed on staging\npriority: 1\n")
+        run(self.root, "add", "docs/backlog/EX-STAGED.md")
+        run(self.root, "commit", "-qm", "records: staged")
+        run(self.root, "update-ref", "refs/remotes/origin/staging", "HEAD")
+        run(self.root, "checkout", "-q", "main")
+        with open(os.path.join(self.root, ".kit.json"), "w") as f:
+            f.write('{"backlog": {"store": "main"}, "staging": {"branch": "staging"}}')
+        self.assertEqual(hubbacklog.landed_branch(self.root, hubbacklog.kit_json(self.root)),
+                         ("refs/remotes/origin/staging", "staging"))
+        b, _c = hubbacklog.snapshot("r", self.root, now=NOW)
+        self.assertEqual([i["id"] for i in b["items"]], ["EX-OPEN-1", "EX-OPEN-2", "EX-STAGED"])
+        with open(os.path.join(self.root, ".kit.json"), "w") as f:
+            f.write('{"backlog": {"store": "main"}}')
+        b, _c = hubbacklog.snapshot("r", self.root, now=NOW)
+        self.assertEqual([i["id"] for i in b["items"]], ["EX-OPEN-1", "EX-OPEN-2"])
+
+    def test_a_staging_branch_not_fetched_is_an_error_not_main_s_records(self):
+        with open(os.path.join(self.root, ".kit.json"), "w") as f:
+            f.write('{"backlog": {"store": "main"}, "staging": {"branch": "staging"}}')
+        with self.assertRaises(RuntimeError) as cm:
+            hubbacklog.snapshot("r", self.root, now=NOW)
+        self.assertIn("refs/remotes/origin/staging", str(cm.exception))
+
     def test_store_from_kit_json(self):
         with open(os.path.join(self.root, ".kit.json"), "w") as f:
             f.write('{"backlog": {"store": "elsewhere"}}')

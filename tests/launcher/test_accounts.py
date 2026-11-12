@@ -1,4 +1,4 @@
-"""Accounts: the launch folder, the headroom refusal, pick-account, and the usage report pm_watch parses."""
+"""Accounts: the launch folder, the headroom refusal, pick-account, and the usage report kitlib.pmwatch parses."""
 import datetime
 import os
 import unittest
@@ -267,7 +267,7 @@ class RestartPick(unittest.TestCase):
 
 
 class Usage(unittest.TestCase):
-    def test_the_lines_pm_watch_parses(self):
+    def test_the_lines_pmwatch_parses(self):
         h = Home(self, accounts=('1', '2', '3'))
         h.usage('1', five=(12.0, NOW + DAY / 24), week=(51, NOW + DAY), updated=NOW - datetime.timedelta(minutes=3))
         h.usage('2', five=(70, NOW - DAY), week=(30, NOW + DAY), updated=NOW - DAY)
@@ -303,7 +303,7 @@ class Usage(unittest.TestCase):
         self.assertEqual(pmwatch.usage_events(pmwatch.merge_usage(prev, got), got),
                          ['RESET account 1 (weekly 95% -> 0%)'])
 
-    def test_the_computed_line_parses_in_pm_watch_and_the_hub_page(self):
+    def test_the_computed_line_parses_in_pmwatch_and_the_hub_page(self):
         h = Home(self, accounts=('1',))
         h.usage('1', week=(100, NOW - 10 * DAY), updated=NOW - 12 * DAY)     # rolled across two weeks
         lines = usage.report(h.settings, NOW)
@@ -315,7 +315,7 @@ class Usage(unittest.TestCase):
         self.assertNotIn('five_reset', one)
 
     def test_a_passed_five_hour_reset_reads_reset_with_no_reading_after_it(self):
-        # The rule above is the weekly window's alone (pm_watch's RESET is weekly): a five-hour
+        # The rule above is the weekly window's alone (kitlib.pmwatch's RESET is weekly): a five-hour
         # window that reset after the file's last write still reads reset, as launch.py usage and
         # the hub Usage tab showed it before.
         h = Home(self, accounts=('1',))

@@ -7,6 +7,7 @@ Low-level design of `kitlib/config`. The high-level design is ARCHITECTURE.md ("
 - **`.kit.json` is a repository's whole kit configuration**, optional. `config.load` reads it and checks it whole against `config.schema`; an unknown key or a wrong type is an error with the key named. With no file, the defaults of docs/kit-json.md "With no file" apply.
 - **The schema is the documentation**: docs/kit-json.md is `schema.doc_lines()`, and a test keeps the two equal.
 - **Rules a branch is judged by are read from the base's committed file**, never the working tree: gate config, push rules, owner paths.
+- **The work base has one reader**: `config.work_base(cfg)`, the staging branch when `"staging".branch` is set, else the main branch. A tool that means the branch work merges onto or starts from asks it, never `main_branch`; a test names every other `main_branch` read outside `config` (docs/gate-landing.md "Staging branch"). The staging setting is read from `<remote>/<main>` alone (`load_at(..., staging_from=)`), never from the branch being merged onto.
 - **`config.owner`** is the one rule for owner-only paths and the owner's identity. Every tool asks it.
 - **`config.policy`** reads the kit's policy from config: heavy programs, roles, the kinds table, the repo hook module.
 - **The machine config** is the machine's own settings. It lives in the PM repository's `.pm-kit/` folder, found through the PM-repo pointer (a machine registry value on Windows, a file on Linux). `.kit.json` and env never override it. The kit holds no machine path.

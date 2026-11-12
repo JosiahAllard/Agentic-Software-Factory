@@ -358,6 +358,27 @@ class LocalAcceptance(fixtures.GateRepoCase):
         self.assertEqual(current.worker, self.task.worker)
         self.assertEqual(current.base, self.main)
 
+    def test_with_a_staging_branch_the_worktree_starts_at_the_pushed_staging_branch(self):
+        # docs/gate-landing.md "Staging branch": new_worktree starts at <remote>/<staging>
+        config = json.loads(Path(self.repo.root, '.kit.json').read_text(encoding='utf-8'))
+        config['staging'] = {'branch': 'staging'}
+        self.repo.write('.kit.json', json.dumps(config) + '\n')
+        main = self.repo.commit('staging on', '.kit.json')
+        self.repo.git('push', '-q', 'origin', 'main', '%s:refs/heads/staging' % main)
+        seed = self.repo.worktree('seed')
+        self.repo.write('staged.txt', 'on staging\n', root=seed)
+        staged = self.repo.commit('on staging', 'staged.txt', cwd=seed)
+        self.repo.git('push', '-q', 'origin', '%s:refs/heads/staging' % staged)
+        self.repo.git('fetch', '-q', 'origin')
+        task = W.plan(self.coordinator, 'codex/staged', 'PROBE', 'probe-session',
+                      'gpt-6.1-sol', ('value.txt',))
+        self.assertEqual(task.base, staged)
+        coordinator = LocalHost(self, 'coordinator', self.coordinator)
+        prepared = W.prepare(task, coordinator)
+        self.assertEqual(prepared['base'], staged)
+        self.assertEqual(self.repo.head(task.worker), staged)
+        self.assertEqual(self.repo.head(), main)
+
     def test_changed_main_creation_configuration_refuses_before_partial_creation(self):
         config = json.loads(Path(self.repo.root, '.kit.json').read_text(encoding='utf-8'))
         config['repo']['worktrees_by_host'] = {'codex': 'new-destination'}

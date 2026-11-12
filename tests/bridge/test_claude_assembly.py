@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -39,6 +40,19 @@ class ClaudeAssemblyTests(unittest.TestCase):
         self.assertFalse(adapter.channel._thread.is_alive())
         self.assertEqual(adapter.describe().capabilities,())
         self.assertEqual(set(self.registry.iterdir()),before)
+
+    def test_the_endpoint_asks_the_controllers_outbox_whether_an_operation_is_live(self):
+        (self.registry/('%d.json'%os.getpid())).unlink()
+        runtime=self.runtime()
+        try:
+            endpoint=self.controller.core.adapters['claude-peer'].channel
+            states={'open-op':'unknown','answered-op':'reply-received'}
+            def receipt(operation):
+                return SimpleNamespace(state=states[operation]) if operation in states else None
+            with patch.object(self.controller.outbox,'receipt',side_effect=receipt):
+                self.assertEqual([endpoint._broker_live(operation) for operation in
+                    ('open-op','answered-op','pruned-op')],[True,False,False])
+        finally: runtime.close()
 
     def test_failure_after_endpoint_publication_cleans_owned_registration(self):
         record=self.registry/('%d.json'%os.getpid())

@@ -53,7 +53,7 @@ def demand_text(fg_gpu, fg_cpu, mine):
 
 
 def alert(store, run, how, code, reason):
-    """alerts/<run id>.json for the PM's watcher (launcher/pm_watch.py prints BGFAIL)."""
+    """alerts/<run id>.json for the hub session-watch job (kitlib.pmwatch pushes BGFAIL)."""
     try:
         write_json(store.path("alerts", run.id + ".json"), {
             "id": run.id, "repo": run.rec["repo"], "slug": run.rec["slug"], "how": how,

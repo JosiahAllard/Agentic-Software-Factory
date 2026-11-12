@@ -3391,11 +3391,6 @@ class PushStatusTest(ApiCase):
 
     def setUp(self):
         super().setUp()
-        # a running worker reads the PM watcher's heartbeat; the default reader reads the
-        # machine's config (the home fence)
-        patcher = mock.patch.object(push, 'watcher_heartbeat', lambda: None)
-        patcher.start()
-        self.addCleanup(patcher.stop)
         self.api = api.Api(self.store, clock=CLOCK, session_keys=lambda: {'kit'})
         self.folder = tempfile.mkdtemp(prefix='kit-hubapi-push-')
         self.addCleanup(shutil.rmtree, self.folder, True)
@@ -3484,7 +3479,7 @@ class PushStatusTest(ApiCase):
         self.api.push_status = broken
         self.assertEqual(self.status(), {'state': 'down', 'last': 'RuntimeError', 'undelivered': None})
 
-    # the snapshot and health carry the PM watcher's heartbeat as the push worker read it
+    # the snapshot and health carry the hub's session-watch job as the push worker read it
     def seen(self, role=OWNER):
         return (self.ok('GET', '/snapshot', OWNER)['watcher'], self.ok('GET', '/health', role)['watcher'])
 
@@ -3492,20 +3487,22 @@ class PushStatusTest(ApiCase):
         self.api = api.Api(self.store, clock=CLOCK)
         self.assertEqual(self.seen(), (None, None))
 
-    def test_a_worker_says_the_heartbeats_state_and_age(self):
-        beat = [None]
-        self.worker = push.PushWorker(self.store, self.api, self.fake, self.folder,
-                                      clock=lambda: self.t[0], watcher=lambda: beat[0])
+    def test_a_worker_says_the_session_watch_jobs_state_and_age(self):
+        block = [None]
+        self.worker = push.PushWorker(
+            self.store, self.api, self.fake, self.folder, clock=lambda: self.t[0],
+            jobs=lambda: {} if block[0] is None else {'session-watch': block[0]})
         self.worker.begin()
         none = {'state': 'none', 'age': None}
         self.assertEqual(self.seen(), (none, none), 'never read')
-        beat[0] = {'pid': 1, 'beat': self.t[0] - 20, 'stream': False, 'started': None}
+        block[0] = {'failures': 0, 'ok_at': self.t[0] - 20}
         self.worker.watch()
         up = {'state': 'up', 'age': 20}
         self.assertEqual(self.seen(AGENT), (up, up))
-        self.t[0] += push.WATCHER_STALE_S
+        self.t[0] += push.pmwatch.SESSION_JOB_STALE_S
         self.worker.watch()
-        self.assertEqual(self.seen()[1], {'state': 'down', 'age': push.WATCHER_STALE_S + 20})
+        self.assertEqual(self.seen()[1],
+                         {'state': 'down', 'age': push.pmwatch.SESSION_JOB_STALE_S + 20})
 
     def test_a_status_that_raises_is_down_with_no_age(self):
         def broken():

@@ -116,16 +116,18 @@ class PairingStore:
             raise PairingError('protected-absolute-state-path-required')
         try:
             with self.path.open('xb'):
-                if prepare_new_file is not None:
-                    prepare_new_file(self.path)
-            new = True
+                pass
         except FileExistsError:
-            new = False
+            pass
         info = self.path.lstat()
         if (not stat.S_ISREG(info.st_mode) or self.path.is_symlink()
                 or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
                 or info.st_size > 8 * 1024 * 1024):
             raise PairingError('nonregular-or-oversized-state')
+        # An empty file is one whose first creation failed (prepare_new_file raised, or
+        # the process died before the schema commit): protect it again and create it.
+        if info.st_size == 0 and prepare_new_file is not None:
+            prepare_new_file(self.path)
         try:
             self._db = sqlite3.connect(str(self.path), timeout=1, isolation_level=None, check_same_thread=False)
             current = self.path.lstat()
@@ -133,6 +135,8 @@ class PairingStore:
                 raise PairingError('state-file-replaced')
             self._db.execute('PRAGMA synchronous=FULL')
             self._db.execute('PRAGMA max_page_count=2048')
+            # No pages: nothing was ever committed (a crashed first commit rolls back to none).
+            new = self._db.execute('PRAGMA page_count').fetchone()[0] == 0
             if new:
                 self._db.executescript('BEGIN IMMEDIATE;\n' + SCHEMA +
                     'PRAGMA application_id=%d; PRAGMA user_version=%d; COMMIT;' % (APPLICATION_ID, SCHEMA_VERSION))
@@ -386,8 +390,9 @@ class PairingStore:
                 raise PairingError('chat-not-observed')
             if sender_id == recipient_id:
                 raise PairingError('same-chat-selection')
-            for peer in (sender, recipient):
-                self._observed(peer)
+            if enabled:  # a disconnect grants nothing, so a chat between turns or closed can be stopped
+                for peer in (sender, recipient):
+                    self._observed(peer)
             return ChatSelection(sender.reference, recipient.reference, enabled, bidirectional)
 
     def _selection_peers(self, selection):
@@ -395,8 +400,9 @@ class PairingStore:
         peers = (by_ref.get(selection.sender_ref), by_ref.get(selection.recipient_ref))
         if any(peer is None for peer in peers):
             raise PairingError('selection-chat-changed')
-        for peer in peers:
-            self._observed(peer)
+        if selection.enabled:  # as in propose: only a connect needs both chats live
+            for peer in peers:
+                self._observed(peer)
         return peers
 
     def owner_select(self, selection, proof):

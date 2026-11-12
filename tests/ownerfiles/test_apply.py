@@ -3,6 +3,7 @@ the owner's approve on a real kitlib.hubsite.api commits the approved files on t
 request named, in its linked worktree, and consumes the approval with that commit; what cannot be
 applied stays approved with the reason; a failure after the branch moved puts everything back."""
 import datetime
+import json
 import os
 import shutil
 import tempfile
@@ -217,6 +218,34 @@ class TheOwnerRules(Case):
         self.assertIsNone(why)
         self.assertTrue(rules.is_locked('loose.txt'))
         self.assertTrue(rules.is_locked(PATH))
+
+    def fetched(self, ref, kit):
+        """A commit off the fixture's head writing `kit` as .kit.json, set as `ref` (as a fetch
+        leaves it); the main checkout back on main."""
+        self.repo.git('checkout', '-q', '--detach', self.head)
+        with open(os.path.join(self.repo.root, '.kit.json'), 'w', encoding='utf-8') as f:
+            json.dump(kit, f)
+        sha = self.repo.commit('config for ' + ref, '.kit.json')
+        self.repo.git('update-ref', ref, sha)
+        self.repo.git('checkout', '-q', 'main')
+        return sha
+
+    def test_with_a_staging_branch_they_are_the_staging_branch_s(self):
+        # docs/gate-landing.md "Staging branch": a landing merges onto the staging branch and
+        # reads its owner rules, with the staging setting main as fetched names
+        self.fetched('refs/remotes/origin/staging', {'owner': {'paths': ['extra.txt']}})
+        self.fetched('refs/remotes/origin/main', {'owner': {'paths': ['README.md']},
+                                                  'staging': {'branch': 'staging'}})
+        rules, why = consumer._owner_rules(self.wt, self.head)
+        self.assertIsNone(why)
+        self.assertTrue(rules.is_locked('extra.txt'))
+
+    def test_with_a_staging_branch_not_fetched_there_are_no_rules(self):
+        self.fetched('refs/remotes/origin/main', {'owner': {'paths': ['README.md']},
+                                                  'staging': {'branch': 'staging'}})
+        rules, why = consumer._owner_rules(self.wt, self.head)
+        self.assertIsNone(rules)
+        self.assertIn('the staging branch refs/remotes/origin/staging cannot be read', why)
 
     def test_a_main_checkout_off_its_main_branch_gives_no_rules(self):
         # no <remote>/<main> to read: the main checkout's HEAD is another branch, whose

@@ -5,36 +5,36 @@ description: Use as a coordinator when a builder reports its design (the design 
 
 # Coordinator: design and branch review
 
-No branch is built without an approved design; none reaches the land queue without your verdict. Green proves the project still works, not that the change is right, in scope or exercised. The checks are skill specialty-review's; this skill says who runs them and what follows.
+No build without approved design, no land queue without your verdict. Checks: skill specialty-review; here: who, after.
 
 ## A. Design review (before the build)
 
-1. The builder reports its design (skill builder, step 3), or your brief carried a design you wrote.
-2. Low risk, and no new module, class, public name or cross-package import: review it yourself against specialty-review "Design review". Otherwise a fresh analyst with skill `specialty-review`, design review; its tier by the "Reviewer model" rule (roster.md); its brief: the record, the builder's brief, the design, the design docs the profile's **Review** section names.
-3. APPROVE: continue the builder to build it. REVISE: send the findings, numbered; re-review the revision only. A design disagreement you cannot settle: to the owner, both positions stated fairly.
+1. Builder reports design (skill builder, step 3), or brief carried yours.
+2. Low risk, no new module, class, public name, cross-package import: yourself, per specialty-review "Design review". Else fresh analyst, skill `specialty-review`, design review; tier by "Reviewer model" (roster.md); brief: record, builder's brief, design, profile **Review** design docs.
+3. APPROVE: builder builds. REVISE: numbered findings; re-review revision only. Unsettled: owner, both positions fairly.
 
-No separate architecture review after the build: the code review checks the code against the approved design.
+No architecture review after build: code review checks approved design.
 
 ## B. Code review (after the build)
 
-1. Gather the brief, the approved design, the exact diff range, the author's touched-test results and log paths; `python <kit>/tools/review_pack.py -C <worktree> <branch>`.
-2. Scope, yourself: `git diff --stat <merge-base>..<branch>` against the brief. A file outside it is a finding before you read a line, unless the report names it as a fold-in (skill builder, design rule 7).
-3. Who reviews. Small (the profile's **Review** section; the kit's `.kit.json` `landing.self_review_max_lines`) and low risk: read every hunk yourself (docs and additive content: skim). Otherwise a fresh analyst with skill `specialty-review`, code review, never the author, its tier by the "Reviewer model" rule, after `python <kit>/tools/land.py -C <main checkout> <branch> --check-strict` (read-only; `STRICT`: a strong-tier reviewer and a lone landing). `verdict.py add` refuses a Medium or High-risk verdict you reviewed yourself, and your own read of a diff over that size.
-4. What to look for: specialty-review "Code review", steps 4-7: each Done-when item MET or UNMET, defects, thin and clean tests, copies and over-building.
-5. Only a flake on the repo's known-flake list (`--find flakes`) gets one rerun; any other failing run is real.
-6. Findings to the author by continuing that agent: numbered, file and symbol, each BLOCKING, FIX-HERE or NOTE. It fixes them, re-runs the touched tests; you re-review the fix only. After your verdict the author runs the one gate on the reviewed tip; any change after review, gate fixes included, is reviewed before landing.
-7. A finding that folds (skill builder, design rule 7): fixed on this branch, never filed. A follow-up only for work that does not fold and is worth doing (the record bar: skill backlog-ops step 2); `backlog.py add` files one whose scope overlaps the branch with a warning, the overlap in `## Found`.
-8. Verdict: LAND; LAND WITH FOLLOW-UP (the follow-up recorded, named with `--follow-up <ID>`; required when the reviewer reports a Done-when item UNMET); SEND BACK. Queue it with the branch, its full tip and the reviewed range (skill land-branch); a branch adding a new non-test source file or class also names its design review with `--design-reviewer-id`.
+1. Brief, approved design, exact diff range, touched-test results, log paths; `python <kit>/tools/review_pack.py -C <worktree> <branch>`.
+2. Scope, yourself: `git diff --stat <merge-base>..<branch>` vs brief. File outside: finding, unless report names fold-in (skill builder, design rule 7).
+3. Who reviews. Small (profile **Review**; kit's `.kit.json` `landing.self_review_max_lines`), low risk: every hunk yourself (docs, additive content: skim). Else fresh analyst, skill `specialty-review`, code review, never author, "Reviewer model" tier, after `python <kit>/tools/land.py -C <main checkout> <branch> --check-strict` (read-only; `STRICT`: strong-tier reviewer, lone landing). `verdict.py add` refuses self-reviewed Medium/High risk, and self-read diff over that size.
+4. Look for: specialty-review "Code review", steps 4-7: Done-when MET/UNMET, defects, thin clean tests, copies, over-building.
+5. Known-flake-list flake (`--find flakes`): one rerun; other failures real.
+6. Findings to author, same agent: numbered, file, symbol, BLOCKING/FIX-HERE/NOTE. Author fixes, re-runs touched tests; re-review fix only. After verdict: author's one gate on reviewed tip; later changes, gate fixes included, reviewed before landing.
+7. Folding finding (skill builder, design rule 7): fixed on branch, never filed. Follow-up: non-folding work only (record bar: skill backlog-ops step 2); `backlog.py add` warns on branch scope overlap: note in `## Found`.
+8. Verdict: LAND; LAND WITH FOLLOW-UP (recorded, `--follow-up <ID>`; required on reviewer's UNMET); SEND BACK. Queue with branch, full tip, reviewed range (skill land-branch); new non-test source file or class: `--design-reviewer-id`.
 
 ## Prevent, once
 
-- A defect class seen twice in honest use (never a probe or a reviewer's evasion form): prevent it once, at its cause, in this order: a guard in code (a fail-fast check, a test, a script that does the step); else the reference doc owning the area; only then one instruction line, a rule not a story, sharpening a line already there before adding one. A ratchet names the rule it enforces; delete it when its list reaches zero.
-- A CI change that only adds strictness (a pass-string grep, a test step, an assertion) for an approved plan item: ordinary work; review it as High risk and land it.
+- Defect class twice in honest use (not probe, reviewer's evasion form): prevent once at cause, in order: code guard (fail-fast check, test, step script); area reference doc; last, one instruction line (rule, not story; sharpen before adding). Ratchet names its rule; deleted at zero.
+- CI change only adding strictness (pass-string grep, test step, assertion), approved plan item: ordinary work, High-risk review, land.
 
 ## Never
 
-- Decide from green alone, or review your own implementation.
-- Write the repo's instruction files or tracked host config: owner-only; propose. Restate in a profile what the instructions or a reference doc already say.
-- Land a check removed, loosened, skipped or made optional without the owner's typed go.
+- Decide from green; review own implementation.
+- Write repo instruction files, tracked host config (owner-only: propose); restate instructions or reference docs in a profile.
+- Land a check removed, loosened, skipped, optional without owner's typed go.
 
-Details: `<kit>/docs/review-pack.md`; the coordinator role file, "The owner".
+Details: `<kit>/docs/review-pack.md`.

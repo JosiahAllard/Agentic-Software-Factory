@@ -13,11 +13,15 @@ With "daily_full".bisect set, a red run (red steps, not `infra`) is bisected for
 turned it red, inside the same tree lock, and the red it reproduced is filed as a backlog record
 (kitlib.dailyfull.bisect, kitlib.dailyfull.file; docs/daily-full.md "Bisect").
 
+With "staging".branch set on `<remote>/<main>`, a green run on the staging branch promotes the
+commit it tested to the main branch (kitlib.dailyfull.promote; docs/daily-full.md "Promotion").
+
 Output goes through `say(line)`; nothing here prints or exits.
 """
 import datetime
 import json
 import os
+import time
 
 from kitlib import gate as G
 from kitlib.config import load as load_config
@@ -25,6 +29,7 @@ import kitlib.config as kconfig
 from kitlib.config.types import ConfigError
 from kitlib.dailyfull import bisect as B
 from kitlib.dailyfull import file as filing
+from kitlib.dailyfull import promote as P
 from kitlib.fs.treelock import TreeBusy, TreeLock, TreeLockError, describe, lock_name
 from kitlib.gate import detect
 from kitlib.gate import runner
@@ -114,14 +119,21 @@ def tree_refusal(main, wt, git=git):
     return None
 
 
-def prepare(main, wt, ref, remote, git=git):
-    """`(sha, None)` with `wt` detached at `ref` after a fetch of `remote` (the worktree is added
-    the first time), or `(None, why)`. An existing `wt` is moved only past tree_refusal."""
+def fetch(main, remote, git=git):
+    """Why the fetch of `remote` failed, or None."""
+    rc, _, err = git(main, 'fetch', remote, '--quiet')
+    return None if rc == 0 else 'git fetch %s failed: %s' % (remote, err or 'exit %d' % rc)
+
+
+def prepare(main, wt, ref, remote, git=git, fetched=False):
+    """`(sha, None)` with `wt` detached at `ref` after a fetch of `remote` (none when `fetched`;
+    the worktree is added the first time), or `(None, why)`. An existing `wt` is moved only past
+    tree_refusal."""
     if same_path(wt, main):
         return None, tree_refusal(main, wt, git)
-    rc, _, err = git(main, 'fetch', remote, '--quiet')
-    if rc != 0:
-        return None, 'git fetch %s failed: %s' % (remote, err or 'exit %d' % rc)
+    why = None if fetched else fetch(main, remote, git)
+    if why:
+        return None, why
     if os.path.isdir(wt):
         why = tree_refusal(main, wt, git)
         if why:
@@ -192,7 +204,8 @@ def unchanged_since_green(out, sha):
     return None
 
 
-def run(main, cfg, out=None, stamp=None, say=_quiet, book_kw=None, git=git, force=False):
+def run(main, cfg, out=None, stamp=None, say=_quiet, book_kw=None, git=git, force=False,
+        if_due=False):
     """One daily full run of the repository whose main checkout is `main` (config `cfg`). Outcome
     codes: OK (green, or skipped by the lock), FAILED (a step red), USAGE (off, or the lock
     refused the call itself), REFUSED (the tree or its steps could not be readied), BUSY (another
@@ -202,7 +215,12 @@ def run(main, cfg, out=None, stamp=None, say=_quiet, book_kw=None, git=git, forc
     is written, on every exit, an exception included.
 
     Unless `force`, a ref at the commit the latest run that ran passed green is a recorded skip
-    (cause `unchanged`, exit OK): the result folders are the state, there is no other file."""
+    (cause `unchanged`, exit OK): the result folders are the state, there is no other file.
+
+    With staging on at `<remote>/<main>`, a green run, or that skip, promotes the commit tested
+    (kitlib.dailyfull.promote): a promotion that is neither done nor current is REFUSED.
+    `if_due` (staging on only) runs only when promote.due says so after the fetch, and a lock
+    refusal then records nothing; neither leaves a results folder."""
     s = settings(cfg, main)
     if not s['enabled']:
         return G.Outcome(G.USAGE, [OFF])
@@ -217,40 +235,79 @@ def run(main, cfg, out=None, stamp=None, say=_quiet, book_kw=None, git=git, forc
         except TreeLockError as e:
             lock, why = None, str(e)
     try:
-        return _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, why, force)
+        return _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, why, force, if_due)
     finally:
         if lock is not None:
             lock.release()
 
 
-def _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, lock_why, force=False):
+def _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, lock_why, force=False,
+              if_due=False):
     stamp = stamp or datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-    if out:
-        log_dir = os.path.join(out, stamp)
-        os.makedirs(log_dir, exist_ok=True)
-    else:                       # s['out'], or the shared temp's when it cannot be made
-        log_dir = runner.make_log_dir(cfg, main, place.repo_name(cfg, main), 'daily', stamp,
-                                      note=lambda t: say('daily: note: gate logs: %s' % t))
-        out = os.path.dirname(log_dir)      # the results folder this run is in, fallback included
     started = now_text()
+    at = {'dir': None, 'out': out}
+
+    def logs():                 # the stamp folder, made on first use
+        if at['dir'] is None:
+            if out:
+                at['dir'] = os.path.join(out, stamp)
+                os.makedirs(at['dir'], exist_ok=True)
+            else:               # s['out'], or the shared temp's when it cannot be made
+                at['dir'] = runner.make_log_dir(
+                    cfg, main, place.repo_name(cfg, main), 'daily', stamp,
+                    note=lambda t: say('daily: note: gate logs: %s' % t))
+                at['out'] = os.path.dirname(at['dir'])  # the results folder, fallback included
+        return at['dir']
 
     def error(code, why, sha=None):
+        log_dir = logs()
         write_result(log_dir, sha, started, [], why)
         return G.Outcome(code, ['daily: RED - %s' % why, 'logs: %s' % log_dir], log_dir=log_dir)
 
+    if not if_due:
+        logs()
     if lock is None:
         return error(G.REFUSED, 'the tree lock could not be taken: %s' % lock_why)
     if lock.took_over:
         say('daily: took over the tree lock from a run that is gone (%s)' % describe(lock.took_over))
-    sha, why = prepare(main, s['worktree'], s['ref'], cfg.remote, git=git)
+    here = same_path(s['worktree'], main)       # prepare refuses it, unfetched
+    why = None if here else fetch(main, cfg.remote, git)
+    if why:
+        return error(G.REFUSED, why)
+    staging = None
+    if not here:
+        two, why = P.staging_read(main, cfg, git)
+        if why:
+            return error(G.REFUSED, why)
+        if two is not None:         # the ref as <remote>/<main> sets staging, on or off
+            s = dict(s, ref=settings(two, main)['ref'])
+            staging = kconfig.work_base(two) if kconfig.staging_on(two) else None
+    if if_due:
+        if staging is None:
+            return G.Outcome(G.USAGE, ['REFUSED: --if-due needs staging on at %s/%s ("staging".'
+                                       'branch there; docs/daily-full.md "Promotion")' % (
+                                           cfg.remote, P.main_of(cfg))])
+        got, why = P.untested(main, cfg, staging, results(out or s['out']), git)
+        if why:
+            return error(G.REFUSED, why)
+        count, oldest = got
+        now = time.time()
+        if not P.due(count, oldest, now):
+            age = '' if oldest is None else ', oldest %.1f h' % ((now - oldest) / 3600.0)
+            return G.Outcome(G.OK, ['daily: NOT DUE (%d untested%s; due at %d, or at %g h) - '
+                                    'nothing recorded' % (count, age, P.DUE_COUNT, P.DUE_HOURS)])
+    log_dir = logs()
+    out = at['out']
+    sha, why = prepare(main, s['worktree'], s['ref'], cfg.remote, git=git, fetched=True)
     if why:
         return error(G.REFUSED, why)
     green_dir = None if force else unchanged_since_green(out, sha)
     if green_dir:
         reason = '%s is still %s, green in %s' % (s['ref'], sha[:10], green_dir)
-        write_skip(log_dir, started, reason, UNCHANGED)
-        return G.Outcome(G.OK, ['daily: SKIPPED (unchanged) - %s; --force runs it anyway' % reason,
-                                'logs: %s' % log_dir], log_dir=log_dir, skipped=UNCHANGED)
+        skip = write_skip(log_dir, started, reason, UNCHANGED)
+        more, code = _promote(s, cfg, skip, sha, staging, log_dir, git)
+        return G.Outcome(code, ['daily: SKIPPED (unchanged) - %s; --force runs it anyway' % reason]
+                         + more + ['logs: %s' % log_dir], log_dir=log_dir, skipped=UNCHANGED)
     try:
         tested = load_config(s['worktree'])           # the ref's own gate, as it would land
         chosen = plan(tested, s['worktree'], sha)
@@ -269,6 +326,9 @@ def _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, lock_why, force
             write_result(log_dir, sha, started, [], '; '.join(refused.lines))
             return G.Outcome(refused.code, refused.lines + ['logs: %s' % log_dir], log_dir=log_dir)
         reason = '; '.join(refused.lines)
+        if if_due and _drop_empty(log_dir):
+            return G.Outcome(G.OK, ['daily: SKIPPED (%s, --if-due) - %s; nothing recorded'
+                                    % (cause, reason)], skipped=cause)
         write_skip(log_dir, started, reason, cause)
         return G.Outcome(G.OK, ['daily: SKIPPED (%s) - %s' % (cause, reason), 'logs: %s' % log_dir],
                          log_dir=log_dir, skipped=cause)
@@ -281,8 +341,36 @@ def _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, lock_why, force
     if result['error']:
         line += ' - %s' % result['error']
     lines = [line] + _bisect(main, cfg, s, result, earlier, log_dir, say, kw, git)
-    return G.Outcome(G.FAILED if result['red'] else G.OK, lines + ['logs: %s' % log_dir],
-                     log_dir=log_dir, result=result)
+    code = G.FAILED if result['red'] else G.OK
+    if not result['red']:
+        more, code = _promote(s, cfg, result, sha, staging, log_dir, git)
+        lines += more
+    return G.Outcome(code, lines + ['logs: %s' % log_dir], log_dir=log_dir, result=result)
+
+
+def _drop_empty(log_dir):
+    """Remove the stamp folder `log_dir` when nothing was written in it: True when it is gone."""
+    try:
+        os.rmdir(log_dir)
+    except OSError:
+        return False
+    return True
+
+
+def _promote(s, cfg, record, sha, staging, log_dir, git):
+    """`(lines, code)` after a green run at `sha`, or the unchanged skip there: `record` (its
+    result.json) is rewritten with `promotion`. Staging off: `([], OK)`, the record untouched."""
+    if staging is None:
+        return [], G.OK
+    on = '%s/%s' % (cfg.remote, staging)
+    if s['ref'] != on:
+        p = {'status': 'off-staging', 'main': P.main_of(cfg), 'from': None, 'to': sha,
+             'why': '"daily_full".ref is %s, not the staging branch %s' % (s['ref'], on)}
+    else:
+        p = P.promote(s['worktree'], cfg, sha, staging, git)
+    record['promotion'] = p
+    _write(log_dir, record)
+    return [P.line(p)], G.OK if p['status'] in P.OK else G.REFUSED
 
 
 def _bisect(main, cfg, s, result, earlier, log_dir, say, kw, git):
@@ -379,4 +467,9 @@ def summary_lines(out, stale_hours, now=None):
             lines.append('            failed: %s %s' % (st.get('name'), st.get('log')))
     if last.get('error'):
         lines.append('            failed: %s' % last['error'])
+    tried = [r for r in every if isinstance(r.get('promotion'), dict)]
+    p = tried[-1]['promotion'] if tried else None
+    if p and p.get('status') not in P.OK:       # until a later promotion is done or current
+        lines.append('daily     PROMOTION %s at %s: %s' % (
+            str(p.get('status')).upper(), os.path.basename(tried[-1]['dir']), p.get('why') or '?'))
     return lines

@@ -3,6 +3,7 @@ tools/test_codemap.py; its KIT_REPO_ROOT case is dropped with the env override).
 import os
 import tempfile
 import unittest
+import warnings
 from unittest import mock
 
 from kitlib.docs import codemap
@@ -119,6 +120,14 @@ class Run(unittest.TestCase):
         self.assertEqual(codemap.run(not_repo, got.append, find='x'), 2)
         self.assertTrue(got[0].startswith('codemap: cannot list the files of'), got)
 
+    def test_the_top_view_counts_lines_as_scan_does(self):
+        self.repo.write('src/B.cs', 'class B {\n}\n// no final newline')
+        self.repo.commit('b', 'src/B.cs')
+        rc, got = self.lines()
+        row = next(l for l in got if '| ' in l and l.split('|')[0].split()[2] == 'src')
+        self.assertEqual(int(row.split()[1]), codemap.scan(self.repo.root, 'src/A.cs')[2]
+                         + codemap.scan(self.repo.root, 'src/B.cs')[2])
+
 
 class Symbol(unittest.TestCase):
     SRC = ('import os\n\n\nclass Box:\n    """A box."""\n\n    def open(self):\n        return 1\n\n'
@@ -166,3 +175,16 @@ class Symbol(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+    def test_a_name_only_in_a_string_or_comment_gives_no_hit(self):
+        self.repo.write('tools/c.py', '# ghost\nX = "def ghost(): pass"\n')
+        self.repo.commit('c', 'tools/c.py')
+        self.assertEqual(self.sym('ghost'), (1, ['codemap: symbol ghost not found']))
+
+    def test_an_invalid_escape_in_a_file_raises_no_syntax_warning(self):
+        self.repo.write('tools/d.py', 'import re\nP = re.compile("\\d")\nQ = "\\d"\n\n\ndef later():\n    pass\n')
+        self.repo.commit('d', 'tools/d.py')
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            rc, got = self.sym('later')
+        self.assertEqual((rc, [str(x.message) for x in w]), (0, []))

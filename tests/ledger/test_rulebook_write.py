@@ -48,6 +48,11 @@ class ConflictsTest(unittest.TestCase):
         self.assertEqual(got.hits[-1].words, ('refusal', 'report', 'verbatim'))
         self.assertGreater(got.hits[-1].score, 0)
 
+    def test_a_topic_matches_a_heading_by_its_key(self):
+        books = parsed(('kit', KIT.replace('## Machine', '## owner-files').replace('machine.lock', 'owner.lock')))
+        got = rulebook.conflicts(books, 'kit', 'Owner_files', 'owner.new', 'Zzz.')
+        self.assertIn(('same topic', 'owner.lock'), [(h.kind, h.rule.key) for h in got.hits])
+
     def test_topic_slug_and_word_ranking(self):
         got = rulebook.conflicts(self.books, 'kit', 'Hardware', 'machine.gpu',
                                  'Branches lands alone, batch.')
@@ -204,6 +209,24 @@ class WriteTest(WriteBase):
         with self.assertRaises(Refused):
             self.set(key='landing.r1', text='Word 1. ' * 41)
         self.assertEqual((self.read(self.log), self.read(self.kit_path())), (log, kit))
+
+    def test_a_set_is_refused_from_under_the_cap_to_one_byte_over_and_taken_on_it(self):
+        self.book('kit', big('kit', count=40))
+        old = rulebook.parse(self.read(self.kit_path()), 'kit')[0]
+        self.assertLess(rulebook.size(old), rulebook.MAX_BYTES)
+
+        def text_for(size):
+            # The rendered size is linear in the text: calibrate with one byte, then pad.
+            one = rulebook.size(rulebook.set_rule(old, 'landing.fast', 'Landing', 'x', (rid(4),))[0])
+            return 'x' * (1 + size - one)
+
+        log, kit = self.read(self.log), self.read(self.kit_path())
+        with self.assertRaises(Refused) as e:
+            self.set(text=text_for(rulebook.MAX_BYTES + 1))
+        self.assertIn('over its cap of 16384', str(e.exception))
+        self.assertEqual((self.read(self.log), self.read(self.kit_path())), (log, kit))
+        self.set(text=text_for(rulebook.MAX_BYTES))
+        self.assertEqual(rulebook.size(write.load_books(self.rules)['kit']), rulebook.MAX_BYTES)
 
     def test_an_over_cap_book_takes_a_set_no_larger_and_a_drop(self):
         self.book('kit', big('kit'))

@@ -5,7 +5,7 @@ description: Use as a coordinator or lander before queueing a branch for landing
 
 # Land a branch
 
-Landing: one machine-lock queue entry, before ordinary runs; merge onto main, gate, push, verify. Submit each LAND at once.
+Submit each LAND at once.
 
 ## 1. Queue the verdict
 
@@ -19,7 +19,7 @@ Main checkout; one bare background call; flags before `--submit`:
 
 `python <kit>/tools/land.py -C <main checkout> <branch> --expect-tip <reviewed tip> --reviewed-by <reviewer id> --wait-result --submit`
 
-- `--reviewed-by`: verdict's `reviewer_id` (Medium+: analyst's). Batch: `--expect-tip` + `--reviewed-by` per branch, same order; miscount: USAGE + `Instead:`; no verdict: REFUSED.
+- `--reviewed-by`: verdict's `reviewer_id` (Medium+: analyst's; never your own session). Batch: `--expect-tip` + `--reviewed-by` per branch, same order; miscount: USAGE + `Instead:`; no verdict: REFUSED.
 - Prints `REVIEW` lines, `SUBMITTED ... wait: ...` (missing: report), `RESULT`, JSON per branch; exit = landing's. Wait for host exit notice; no poll, sleep, Monitor (`<kit>/docs/gate-landing.md` "Submitting a landing", "Waiting in the same call").
 - Killed before `RESULT`: background `gate.py wait-result <branch> --tip <sha> --kind land -C <main checkout>` from `SUBMITTED`. Queue: `python <kit>/tools/land.py -C <main checkout> --queue`.
 - **Batches.** Queued submissions fold up to `"landing".batch_max` (default 5; 1: off); `FOLDED: ...`; may reorder. Profile **Landing** allows: several verdicts, same-tests or nested-tests branches only (`<kit>/docs/gate-landing.md` "Batch"); all or nothing. Strict, `.kit.json` branches: alone (`land.py --check-strict`).
@@ -34,16 +34,16 @@ Last line: `RESULT <verdict> land <branch> at <tip>: <line> (<log>)`.
 | `fail`, `CONFLICT ...: the author merges main` | no change | author merges main (skill branch-sync), re-review, gate, resubmit |
 | `fail`, `NOT LANDED: ...` | red gate/refused push; main untouched | send back with failing lines; main stray: `python <kit>/tools/stray_restore.py -C <main checkout>` |
 | `refused`, `busy`, `not-run`, `usage` | line says why | fix; PM only if owner must act |
-| `stuck`, `STUCK: ...` | lock held for owner | PM gets lines verbatim, `left:` too |
+| `stuck`, `STUCK: ...` | lock held for owner | PM gets lines verbatim, `left:` too; do nothing else |
 | `error` | exception/dead process | `land.py --queue` + log; then as `refused` |
 
-Verify separately, read-only: `git ls-remote origin <main>`; `git merge-base --is-ancestor <tip> origin/<main>`.
+Whatever the verdict, verify separately, read-only: `git ls-remote origin <main>`; `git merge-base --is-ancestor <tip> origin/<main>`.
 
 ## 4. After a landing
 
 - Records: last commit `Closes: <ID>` (slice: `Part-of: <ID>`); `land.py` closes/releases. First: owner decisions (quoted, dated) to decisions log; constraints beside code. Still open on main: coordinator closes (skill backlog-ops); lander reports.
 - Notices: `<merge>` from `LANDED <branch> on <main> at <merge>`, `<base>` from JSON `"base"`. Tell workstream `<W>` only if `git diff --name-only --no-renames <merge>...<W>` and `git diff --name-only --no-renames <base> <merge>` share a file; name the merge (skill branch-sync). PM: coordinator role's rule.
-- Cleanup: `land.py` removes branch, worktree, remote branch. `kept` lines, push verified: repo command (`--find cleanup`), else `python <kit>/tools/worktree_remove.py -C <main checkout> <worktree>`. "Filename too long"/"Permission denied": leave, report.
+- Cleanup: `land.py` removes branch, worktree, remote branch. `kept` lines, push verified: repo command (`--find cleanup`), else `python <kit>/tools/worktree_remove.py -C <main checkout> <worktree>`. "Filename too long"/"Permission denied": leave, report. Absolute paths only.
 - Test pinning files outside its module: map in gate selector (`--find gate`), else next landing reds.
 - New session: `land.py --queue`, record land results (skill session-handoff); never resubmit queued.
 
@@ -60,7 +60,7 @@ Optional: sections 2-3 + verify for its branch/batch; section 4 is coordinator's
 
 ## Never
 
-- Force-push; push other than main via landing; `git add -A`, `git commit -a`, others' changes; hand-close/amend records; `reset --hard`; `branch -D`/`--force`; `git worktree remove`/`git branch -d` from a worktree; land without verdict or on moved tip (unless `verdict.py carry`); jump queue, break a lock; `head` on native output (hides failure).
+- Force-push; push other than main via landing; `git add -A`, `git commit -a`, others' changes; hand-close/amend records; `reset --hard`; `branch -D`/`--force`; `git worktree remove`/`git branch -d` from a worktree; land without verdict or on moved tip (unless `verdict.py carry`); jump queue, break a lock; `head` on native output.
 - Lander also never: edits code, scenes, tests, CI; resolves conflicts; judges readiness; removes unnamed worktrees/files; adds unbriefed flags, modules, cleanup.
 
-Details: `<kit>/docs/gate-run.md` ("Commands", "Exit codes"), `<kit>/docs/gate-landing.md` ("Landing"), `<kit>/docs/gate-landing-policy.md` ("Branch cleanup"); `<kit>/docs/worktree-remove.md`.
+Details: `<kit>/docs/gate-run.md`, `<kit>/docs/gate-landing.md`, `<kit>/docs/gate-landing-policy.md`; `<kit>/docs/worktree-remove.md`.

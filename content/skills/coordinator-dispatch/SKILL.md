@@ -5,8 +5,6 @@ description: Use as a coordinator before any dispatch - pulling the record, the 
 
 # Coordinator: dispatch
 
-Roles named bare; host instructions map them to dispatch names.
-
 ## Before the agent starts
 
 - **Pull at dispatch**, never after: `python <kit>/tools/backlog.py -C <worktree> pull <ID>` (`--session <key>`: session-owned). Finished work on an unpulled record gone from the offer: pre-emption. Unpriced: refused; price first (skill backlog-pricing); builder never prices.
@@ -22,7 +20,7 @@ Roles named bare; host instructions map them to dispatch names.
 Fields:
 - Role: role; why raised (roster.md).
 - Record: ID, observed failure, done state; no unneeded machinery (option, tool, seam).
-- Design: design-doc section + "design first: report your design and wait for approval" (skill builder, step 3); small change: approved home, contract, files. Split or new class: never small; design (parts, one job each, dependency direction, net size) reviewed.
+- Design: design-doc section + "design first: report your design and wait for approval" (skill builder, step 3); small change: approved home, contract, files. Split or new class: never small, never set by docs; design (parts, one job each, dependency direction, net size) reviewed.
 - Read: exact files, sections, ranges, `path:Symbol` entries, code/tool/test extended; doc topics, never pasted rules. No paths: ~35 builder calls.
 - Scope: their files; others' files, whose.
 - Risk: level; risk-map path or why higher (unlisted no reason).
@@ -54,7 +52,7 @@ Rules:
 - Review hand-backs at once; same agent while cache warm (`<kit>/docs/ROSTER.md`: longer-window role). Profile's round count per artefact, then reseed from written summary; review analyst, long-context strong/deep coder: fresh. Never park a large-context agent for a small fix.
 - Busy agent may miss queued message: resend in full.
 - Background run dies with agent: replacement reads logs first; before resume/replace check its jobs, lock runs, ports, worktree.
-- Few long-running agents: each notification costs a full-context turn.
+- Few long-running agents.
 - **Agents that die together** (API error, usage limit): shared resources first (orphans, stale locks, ports, main vs remote); continue each with short summary, most valuable first. Usage limit: tell PM, wait.
 - Host planner may lack write tool: plan in report. Never assume one host's agents, tools, file names on another.
 

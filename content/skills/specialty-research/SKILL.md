@@ -7,13 +7,13 @@ description: Use when your brief says to load it - investigating code, infrastru
 
 Dispatch: analyst (the read type), never a worker type; reads only what the brief names, plus the repo's instructions and the docs they or the repo profile point to.
 
-No tour: short answer or few constraint-fitting options, each checked against carrying code, config, logs; failure reason beside success reason. Chosen option: worker, or docs-writer with skill `specialty-docs`.
+Short answer or few constraint-fitting options, each checked against carrying code, config, logs; failure reason beside success reason. Chosen option: worker, or docs-writer with skill `specialty-docs`.
 
 1. Inputs: narrow question ("which callers break if this signature changes", not "look at the gate"); settled constraints; reading; rejected options. No constraints: ask caller.
 2. Docs: `python <kit>/tools/doc_index.py -C <worktree> --find <topic>`, one section; never whole index.
 3. Seam first: function, tool, config key, registry touched, current behaviour; callers, failure paths, not just happy path; additive or shared logic; reused or removed piece.
 4. Audits: claim, falsifying check, command or path:line, result. Counts say what counted, excluded. Producing mechanism before items: design breeding items is the finding.
-5. Prior art: tool/game, what it does; read sources only. Range, then cut: kinds, not flavours; one-line why per cut.
+5. Prior art: tool/game, what it does; cite only sources you read. Range, then cut: kinds, not flavours; one-line why per cut.
 6. Against your favourite: each option's strongest objection (wrong fit, excess machinery, existing copy, regression, cost; concept: unfun, unbalanced).
 7. Label evidence (`../specialty-docs/doc-writing.md`, "Findings and doc edits"): "the code does X" (cited) vs "I expect Y" (run settles); recalled marked; preference never a finding.
 8. Fork: labelled proposed default; never invent owner questions.

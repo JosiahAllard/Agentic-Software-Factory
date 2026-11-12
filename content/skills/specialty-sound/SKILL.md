@@ -9,7 +9,7 @@ Dispatch: worker at least, senior-worker for design (a new sound or family with 
 
 `creative.md` (`../specialty-tech-art/creative.md` from this folder), `measuring.md` beside this file, first.
 
-**You cannot hear.** No hearing claims, no improvement from source strength: measurement or source only; owner is the ear. Listening model's verdict: cited evidence, not hearing.
+**You cannot hear.** No hearing claims, no improvement from source strength: measurement or source only. Listening model's verdict: cited evidence, not hearing.
 
 1. Inputs: sound/family by game id; event ("a hammer killing a player", not "a meaty thud"); FEEL block; replace or propose (default propose); live sources. No **Audio** direction (default profile has none): stop, say so.
 2. First, scratch sound brief per sound: event, what player must understand, frequency, mix neighbours.

@@ -10,7 +10,7 @@ description: Use when a load-sensitive or timing-dependent test fails intermitte
 3. Expiry AT budget: event never came; satisfied late: slow work. Duration vs nominal cost: ~34x = dropped event; ~1.3x (Windows' 15.6 ms timer granularity) = genuine slowness.
 4. Before a timeout change: deadline, nominal cost, polling cadence, machine load.
 5. Reproduce on unchanged base too (old failure vs regression), isolated scratch worktree.
-6. Branch vs base: interleaved paired runs, same window; sequential runs in different windows measure the machine.
+6. Branch vs base: interleaved paired runs, same window.
 7. Report exact failure, timings, sample counts; shared-machine runs labelled "shared machine". Heavy repeats: machine lock (skill machine-lock-run).
 
 ## Never

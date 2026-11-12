@@ -7,7 +7,7 @@ description: Use when your brief says to load it - reviewing, read-only, work yo
 
 Dispatch: analyst (the read type; the strong tier only by the "Reviewer model" rule in `<kit>/content/skills/coordinator-dispatch/roster.md`), never a worker type; reads the repo profile's **Risk map** and **Review** sections and `--find review`.
 
-Never own change; never fix. Brief names one job.
+Never own change; never fix.
 
 ## Design review (before the build)
 
@@ -18,7 +18,7 @@ Failed check = finding; `Checks:` id after name:
 2. **Reuse** (`reuse`). Already done somewhere (helper, tool, check, test setup, fixture, kitlib module a repo tool would fork): second copy BLOCKING.
 3. **Cause** (`cause`). Mechanism fixed once, one function covering cases; per-case/per-symptom patch BLOCKING.
 4. **Scope** (`scope`). Beyond brief's observed failure (option, config key, seam, single-implementation interface or base class, test-only public name/member, unobserved-problem hardening): FIX-HERE unless brief names it.
-5. **Size** (`size`). File/class past profile's size line, or taken past, unsplit; split growing code, not moving (parts sum above whole, cycle, new static/global mutable state, two-job part); new/grown constructor over 8 parameters.
+5. **Size** (`size`). File/class past profile's size line, or taken past, unsplit; split growing code, not moving (parts sum above about whole, cycle, new static/global mutable state, two-job part); new/grown constructor over 8 parameters.
 6. **Contract and tests** (`contract`). Changed interface, wire format, schema, stored data names every reader; tests extend existing, no copies; stale go.
 7. **Layering** (`layering`). New dependency direction, disallowed cross-package import, misplaced responsibility, god object, tangled control flow.
 

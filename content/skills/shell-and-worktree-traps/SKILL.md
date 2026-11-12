@@ -7,7 +7,7 @@ description: Use before running shell commands on the Windows or Linux machine (
 
 Both platforms; then only your platform's section.
 - Absolute paths; assigned worktree.
-- Script with paths, regexes, escapes: file (file-write tool), run by absolute path. No tool: small quoted-marker heredoc chunks (`<<'EOF'`, appended `>>`); one long heredoc fails "unexpected EOF looking for a matching quote", again on retry.
+- Script with paths, regexes, escapes: file (file-write tool), run by absolute path. No tool: small quoted-marker heredoc chunks (`<<'EOF'`, appended `>>`); one long heredoc fails, again on retry.
 - Shell probes: cwd scratch, never main checkout (stray stops every landing).
 - Line endings: committed blob, `git show <rev>:<path>`; `.gitattributes` normalises on commit.
 - Test output: tee to file, read it; never grep live (filters miss failures). Gate, locked run: no truncating reader.
@@ -22,11 +22,11 @@ Details: `<kit>/docs/worktree-remove.md`; `<kit>/docs/new-worktree.md`.
 
 ## Windows
 
-1. No shell in worktree being removed: `cd` holds handle; `git worktree remove` fails "Permission denied".
+1. No shell in worktree being removed: `git worktree remove` fails "Permission denied".
 2. Git Bash `grep -c $'\r'` matches every line: always-true CRLF test.
 3. Bash heredoc mangles backslash paths, `\\` to `\` in regexes, `\n`/`\0` to real newline/NUL in Python: use file.
-4. `[IO.File]::ReadAllText` / `WriteAllText`: relative path = PROCESS cwd (often main checkout), not `$PWD`; failed read `$null`, then empty stray written. File-edit tool or absolute path.
-5. `python - @'...'@`: here-string is an argument, not stdin; REPL loops, fills disk. Script file, or pipe it.
+4. `[IO.File]::ReadAllText` / `WriteAllText`: relative path = PROCESS cwd, not `$PWD`; failed read `$null`, then empty stray written. File-edit tool or absolute path.
+5. `python - @'...'@`: here-string is an argument, not stdin. Script file, or pipe it.
 6. ONE-object result: bare scalar, `.Count` = `$null`, `$x.Count -gt 0` passes silently. Wrap in `@()`.
 7. Test output also: `dotnet test --logger trx`.
 
@@ -43,10 +43,11 @@ Details: `<kit>/docs/worktree-remove.md`; `<kit>/docs/new-worktree.md`.
 4. Quote: `"$x"`, never bare `$x` (spaces, globs). `rm -rf $dir/`, `dir` unset = `rm -rf /`; `--preserve-root` catches only that, `$dir/*` nothing.
 5. Pipeline status = last command's: `cmd | tee log` green when `cmd` failed. `set -o pipefail`, or file + `$?`. Truncating reader (`head`): writer dies of SIGPIPE.
 6. cwd from sourced file, `cd`, subshell does not carry between tool calls: absolute paths, `git -C`.
-7. No `nohup`, bare `&` (survival depends on host shell tool): `run_in_background`.
+7. No `nohup`, bare `&`: `run_in_background`.
 8. Executable bit, symlinks as git recorded; no `cp -r`/`rm -rf` through symlink out of worktree.
 
 ### Never (Linux)
 
 - Kill by name: `pkill -f`, `killall`, `kill $(pgrep ...)`.
-- `sudo`, `chmod -R`, `rm -rf` on variable-built path.
+- `sudo`; `chmod -R` on a tree.
+- `rm -rf` on variable-built path.

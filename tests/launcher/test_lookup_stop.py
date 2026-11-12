@@ -1,6 +1,7 @@
 """Finding a session by its Remote Control name, and stopping one with its window."""
 import os
 import unittest
+from unittest import mock
 
 from kitlib.launcher import lookup, stop, window
 from tests.launcher.fakes import FakeHost, Home, session
@@ -30,6 +31,16 @@ class Lookup(unittest.TestCase):
         self.assertFalse(lookup.running_stem([session(1, 'demo-lane-a1')], 'demo'))
         self.assertTrue(lookup.running_stem([session(1, 'demo-a2-r3')], 'demo'))
         self.assertTrue(lookup.running_stem([session(1, 'demo-a1')], 'demo'))
+
+
+class LinuxScan(unittest.TestCase):
+    def test_a_scan_of_node_rows_reads_the_registry_once(self):
+        rows = [dict(session(i, 'x-a%d' % i), Name='node') for i in range(1, 6)]
+        with mock.patch.object(lookup.platform, 'NAME', 'linux'), \
+                mock.patch.object(lookup.registry, 'default_profile',
+                                  wraps=lookup.registry.default_profile) as loads:
+            lookup.launched(rows)
+        self.assertEqual(loads.call_count, 1)
 
 
 def rc_off(pid, name, parent=1):

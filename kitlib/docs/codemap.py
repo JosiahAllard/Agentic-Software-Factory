@@ -18,6 +18,7 @@ the extension and skip lists are the union every repository needs.
 import ast
 import os
 import re
+import warnings
 from collections import OrderedDict
 
 from kitlib.docs import budget
@@ -90,21 +91,38 @@ def scan(root, path):
     return types, members, n
 
 
-def symbols(root, path):
+def count_lines(root, path):
+    """Line count of `path` under `root` (what `scan` returns as its count), without the matchers;
+    0 when it cannot be read."""
+    try:
+        with open(os.path.join(root, path), encoding='utf-8', errors='replace') as fh:
+            return sum(1 for _ in fh)
+    except OSError:
+        return 0
+
+
+def symbols(root, path, name=None):
     """([(file, first line, last line, dotted name, kind)], None) of every Python def and class
     under `path` (a file or folder prefix; None = the whole tree); a file that does not parse is
-    skipped. `(None, why)` when git could not list the files."""
+    skipped. With `name`, a file whose text lacks its last dotted part is skipped unparsed.
+    `(None, why)` when git could not list the files."""
     fs, why = files(root)
     if fs is None:
         return None, why
     p = (path or '').replace('\\', '/').strip('/')
     found = []
+    word = (name or '').rsplit('.', 1)[-1]
     for f in fs:
         if not f.endswith('.py') or (p and f != p and not f.startswith(p + '/')):
             continue
         try:
             with open(os.path.join(root, f), encoding='utf-8', errors='replace') as fh:
-                tree = ast.parse(fh.read())
+                text = fh.read()
+            if word not in text:
+                continue
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', SyntaxWarning)
+                tree = ast.parse(text)
         except (OSError, SyntaxError, ValueError):
             continue
         stack = [(tree, '')]
@@ -125,7 +143,7 @@ def symbols(root, path):
 def show_symbol(root, out, name, path=None):
     """Print the numbered source of the one Python def/class `name` (or `Class.method`); 0, 1
     when it is not found or ambiguous (the matches listed), 2 when git could not list the files."""
-    found, why = symbols(root, path)
+    found, why = symbols(root, path, name)
     if found is None:
         out('codemap: cannot list the files of %s: %s' % (root, why))
         return 2
@@ -193,7 +211,7 @@ def run(root, out, dir=None, find=None, file=None, symbol=None, path=None):
     for f in fs:
         d = group(os.path.dirname(f) or '.')
         e = dirs.setdefault(d, [0, 0, []])
-        _types, _, n = scan(root, f)
+        n = count_lines(root, f)
         e[0] += 1
         e[1] += n
         e[2].append((n, os.path.basename(f)))

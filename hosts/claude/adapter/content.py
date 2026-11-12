@@ -35,10 +35,12 @@ generated-file line; plugin.json's description says it is rendered.
 
 render(content) also writes SESSION_SETTINGS_REL, the one settings file every launched session
 starts with (`claude --settings`, kitlib.launcher.sessionsettings; docs/launcher.md "Session
-settings"): `permissions.deny` holds SESSION_CUT minus the tool of every capability a role lists
+settings"): SESSION_KEYS (claude.ai connectors off, the HIDDEN_SKILLS bundled and SYNCED_SKILLS
+claude.ai-synced skills hidden from the model) and `permissions.deny`, SESSION_CUT minus the tool of every capability a role lists
 (session_settings). `capabilities: all` takes nothing back, or no tool would ever be cut. One file,
-not one per role, until a role needs a different one. mcp_deny_names() maps each MCP_SERVERS server
-to its deny entry, which `launch.py --mcp <server>` takes back for one session.
+not one per role, until a role needs a different one. mcp_deny_names() maps each MCP_SERVERS server,
+and each of the owner's USER_MCP servers, to its deny entry, which `launch.py --mcp <server>` takes
+back for one session.
 """
 import json
 
@@ -76,11 +78,27 @@ MCP_SERVERS = {'machine-lock': {'command': 'python', 'args': [PLUGIN_ROOT + '/mc
                'blender': {'command': 'python', 'args': [PLUGIN_ROOT + '/mcp/blender_server.py']}}
 
 
-# The tools and MCP servers every launched session starts without (session_settings): each a
-# permissions.deny entry, a bare tool name or an mcp__<server> name (mcp_deny_names gives the kit's).
-# ---- OWNER ANSWERS PENDING (which built-in tools; which connectors, and skill sync): the one
-# ---- place the shipped entries go; empty until the coordinator gives them.
-SESSION_CUT = ()
+# What every launched session starts with (session_settings; the owner's answers, 2026-11-12).
+# SESSION_CUT: the tools and MCP servers it starts without, each a permissions.deny entry, a bare
+# tool name or an mcp__<server> name; every mcp__ entry is one mcp_deny_names() gives, so
+# `launch.py --mcp <server>` can take it back. Artifact stays.
+SESSION_CUT = ('NotebookEdit', 'ReportFindings', 'ScheduleWakeup', 'SendFeedback', 'Workflow',
+               'mcp__plugin_pm-kit_blender', 'mcp__suno')
+# The owner's user-scope MCP servers (not the kit's) that --mcp can turn on: {server: deny entry}.
+USER_MCP = {'suno': 'mcp__suno'}
+# The bundled skills hidden from the model (still /name to the owner). Not artifact-design,
+# artifact-diagramming or artifact-capabilities: the Artifact tool, kept, says to load them.
+HIDDEN_SKILLS = ('claude-api', 'claude-in-chrome', 'code-review', 'dataviz', 'fewer-permission-prompts',
+                 'init', 'keybindings-help', 'loop', 'plugin-authoring', 'run', 'schedule',
+                 'security-review', 'simplify', 'update-config', 'workflow-authoring')
+# The claude.ai-synced skills, hidden the same way, by the name a session lists them under (sync
+# stays on: syncClaudeAiSkills false would move the account's synced skills away).
+SYNCED_SKILLS = tuple('anthropic-skills:' + name for name in (
+    'artifact-emulator', 'built-in-browser', 'chrome-browser', 'computer-use', 'deep-research', 'docs',
+    'docx', 'google-workspace', 'import-memory', 'morning', 'pdf', 'pptx', 'skill-creator', 'xlsx'))
+# The settings keys beside permissions.deny.
+SESSION_KEYS = {'disableClaudeAiConnectors': True,
+                'skillOverrides': {name: 'user-invocable-only' for name in HIDDEN_SKILLS + SYNCED_SKILLS}}
 
 
 def _json(data):
@@ -89,17 +107,20 @@ def _json(data):
 
 
 def mcp_deny_names():
-    """{server: its permissions.deny entry} of each MCP_SERVERS server: the plugin's tools are
-    mcp__plugin_<plugin>_<server>__<tool>, so the bare mcp__plugin_<plugin>_<server> covers them all."""
+    """{server: its permissions.deny entry} of each MCP_SERVERS server and USER_MCP server: the
+    plugin's tools are mcp__plugin_<plugin>_<server>__<tool>, so the bare mcp__plugin_<plugin>_<server>
+    covers them all; a user-scope server's are mcp__<server>__<tool>."""
     plugin = agentname.PREFIX.rstrip(':')
-    return {name: 'mcp__plugin_%s_%s' % (plugin, name) for name in sorted(MCP_SERVERS)}
+    names = {name: 'mcp__plugin_%s_%s' % (plugin, name) for name in sorted(MCP_SERVERS)}
+    names.update(USER_MCP)
+    return names
 
 
 def session_settings(content, cut=SESSION_CUT):
-    """The launched sessions' settings for `content`: {"permissions": {"deny": [...]}}, the entries
-    of `cut` in order, less the Claude tool of every capability a role lists."""
+    """The launched sessions' settings for `content`: SESSION_KEYS and {"permissions": {"deny":
+    [...]}}, the entries of `cut` in order, less the Claude tool of every capability a role lists."""
     kept = {TOOLS[c] for role in content.roles if not role.all_tools for c in role.capabilities if c in TOOLS}
-    return {'permissions': {'deny': [e for e in cut if e not in kept]}}
+    return dict(SESSION_KEYS, permissions={'deny': [e for e in cut if e not in kept]})
 
 
 def mcp_servers(platform='windows'):

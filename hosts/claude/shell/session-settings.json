@@ -1,5 +1,45 @@
 {
+  "disableClaudeAiConnectors": true,
+  "skillOverrides": {
+    "claude-api": "user-invocable-only",
+    "claude-in-chrome": "user-invocable-only",
+    "code-review": "user-invocable-only",
+    "dataviz": "user-invocable-only",
+    "fewer-permission-prompts": "user-invocable-only",
+    "init": "user-invocable-only",
+    "keybindings-help": "user-invocable-only",
+    "loop": "user-invocable-only",
+    "plugin-authoring": "user-invocable-only",
+    "run": "user-invocable-only",
+    "schedule": "user-invocable-only",
+    "security-review": "user-invocable-only",
+    "simplify": "user-invocable-only",
+    "update-config": "user-invocable-only",
+    "workflow-authoring": "user-invocable-only",
+    "anthropic-skills:artifact-emulator": "user-invocable-only",
+    "anthropic-skills:built-in-browser": "user-invocable-only",
+    "anthropic-skills:chrome-browser": "user-invocable-only",
+    "anthropic-skills:computer-use": "user-invocable-only",
+    "anthropic-skills:deep-research": "user-invocable-only",
+    "anthropic-skills:docs": "user-invocable-only",
+    "anthropic-skills:docx": "user-invocable-only",
+    "anthropic-skills:google-workspace": "user-invocable-only",
+    "anthropic-skills:import-memory": "user-invocable-only",
+    "anthropic-skills:morning": "user-invocable-only",
+    "anthropic-skills:pdf": "user-invocable-only",
+    "anthropic-skills:pptx": "user-invocable-only",
+    "anthropic-skills:skill-creator": "user-invocable-only",
+    "anthropic-skills:xlsx": "user-invocable-only"
+  },
   "permissions": {
-    "deny": []
+    "deny": [
+      "NotebookEdit",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "SendFeedback",
+      "Workflow",
+      "mcp__plugin_pm-kit_blender",
+      "mcp__suno"
+    ]
   }
 }

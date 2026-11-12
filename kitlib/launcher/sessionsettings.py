@@ -2,7 +2,8 @@
 "Session settings").
 
 The host's renderer writes one file into the kit (for Claude, hosts/claude/shell/session-settings.json:
-the tools and MCP servers every launched session starts without, as `permissions.deny`). kitlib never
+the tools and MCP servers every launched session starts without, as `permissions.deny`, beside other
+settings keys, which every file plan() gives keeps as they are). kitlib never
 imports a host, so tools/launch.py hands its kit-relative path, the deny entry of each MCP server and
 the stable kit in as a Spec, on the launcher Host (`session_spec`); a Host without one starts sessions
 with no --settings.

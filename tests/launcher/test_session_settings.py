@@ -1,7 +1,7 @@
 """The settings file a launched session starts with (docs/launcher.md "Session settings"):
 hosts.claude.adapter.content.session_settings, kitlib.launcher.sessionsettings, start's --settings
-and --mcp, and unlisted reading the path back. The shipped cut list waits on the owner, so every test
-here runs on a cut list of its own."""
+and --mcp, and unlisted reading the path back. The launch tests run on a cut list of their own, so the
+shipped one can change without them."""
 import json
 import os
 import shutil
@@ -38,7 +38,8 @@ class Render(unittest.TestCase):
     def test_a_capability_a_role_names_is_taken_back_and_all_takes_nothing(self):
         c = types.SimpleNamespace(roles=[role(['read', 'search']), role(all_tools=True)])
         got = claude_content.session_settings(c, CUT)
-        self.assertEqual(got, {'permissions': {'deny': ['NotebookEdit', HUB, BLENDER]}})
+        self.assertEqual(got, dict(claude_content.SESSION_KEYS,
+                                   permissions={'deny': ['NotebookEdit', HUB, BLENDER]}))
         c = types.SimpleNamespace(roles=[role(all_tools=True)])
         self.assertEqual(claude_content.session_settings(c, CUT)['permissions']['deny'], list(CUT))
 
@@ -49,9 +50,22 @@ class Render(unittest.TestCase):
         self.assertEqual(json.loads(out[claude_content.SESSION_SETTINGS_REL].decode('utf-8')),
                          claude_content.session_settings(kit, claude_content.SESSION_CUT))
 
-    def test_each_kit_server_has_its_plugin_deny_entry(self):
+    def test_each_kit_server_has_its_plugin_deny_entry_and_each_user_server_its_own(self):
         self.assertEqual(claude_content.mcp_deny_names(),
-                         {n: 'mcp__plugin_pm-kit_%s' % n for n in claude_content.MCP_SERVERS})
+                         dict({n: 'mcp__plugin_pm-kit_%s' % n for n in claude_content.MCP_SERVERS},
+                              suno='mcp__suno'))
+
+    def test_synced_skills_are_hidden_and_sync_is_left_on(self):
+        got = claude_content.session_settings(types.SimpleNamespace(roles=[]))
+        self.assertNotIn('syncClaudeAiSkills', got)        # false would move the account's synced skills away
+        self.assertIn('anthropic-skills:docx', claude_content.SYNCED_SKILLS)
+        for name in claude_content.SYNCED_SKILLS + claude_content.HIDDEN_SKILLS:
+            self.assertEqual(got['skillOverrides'][name], 'user-invocable-only', name)
+
+    def test_every_server_the_cut_denies_is_one_mcp_can_take_back(self):
+        servers = [e for e in claude_content.SESSION_CUT if e.startswith('mcp__')]
+        self.assertTrue(servers)
+        self.assertLessEqual(set(servers), set(claude_content.mcp_deny_names().values()))
 
 
 class Files(unittest.TestCase):

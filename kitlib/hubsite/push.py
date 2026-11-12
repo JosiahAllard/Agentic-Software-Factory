@@ -564,9 +564,9 @@ class PushWorker(object):
         whose item changed since fired afresh: start()'s first half, and a test's."""
         rev, docs = self.store.snapshot()
         self._rev = rev
-        self._fps = self._prints(docs)
+        now = self._at() if docs.get('approvals') else None     # one clock read: _fps and _fire
+        self._fps = self._prints(docs, now)
         self._outbox = self._load()
-        now = self._at() if docs.get('approvals') else None
         for key, entry in list(self._outbox.items()):
             now_fp = self._fps.get(key)
             if now_fp is None:
@@ -773,11 +773,12 @@ class PushWorker(object):
     def _round(self, changes):
         if changes.reset:
             rev, docs = self.store.snapshot()
-            fresh = self._prints(docs)
+            now = self._at() if docs.get('approvals') else None
+            fresh = self._prints(docs, now)
             for key, fp in fresh.items():
                 if fp != self._fps.get(key):
                     kind, doc_id = key.split(':', 1)
-                    self._fire(kind, doc_id, docs[_coll(kind)][doc_id], self._fps.get(key))
+                    self._fire(kind, doc_id, docs[_coll(kind)][doc_id], self._fps.get(key), now)
             for key in set(self._fps) - set(fresh):
                 self._before.pop(key, None)
                 self._drop(key)
@@ -832,13 +833,15 @@ class PushWorker(object):
             self._before.pop(key, None)
             self._drop(key)
             return
+        now = None
         if kind == 'approval':
             self._kinds[key] = doc.get('kind')
             self._superseded[key] = doc.get('superseded')
-        old, fp = self._fps.get(key), self._print(kind, doc)
+            now = self._at()            # one clock read: _fps and the entry's fingerprint agree
+        old, fp = self._fps.get(key), self._print(kind, doc, now)
         self._fps[key] = fp
         if fp != old:
-            self._fire(kind, doc_id, doc, old)
+            self._fire(kind, doc_id, doc, old, now)
 
     def _fire(self, kind, doc_id, doc, old, now_at=None):
         key = '%s:%s' % (kind, doc_id)
@@ -1171,9 +1174,11 @@ class PushWorker(object):
         if self._outbox.pop(key, None) is not None:
             self._dirty = True
 
-    def _acked(self, entry, recipient, doc):
-        """True when `recipient` has nothing more to hear of entry (module docstring)."""
-        if doc is None or self._print(entry['kind'], doc) != entry['fingerprint']:
+    def _acked(self, key, entry, recipient, doc):
+        """True when `recipient` has nothing more to hear of entry (module docstring). doc is
+        the item's `status` and `pm_ack` alone (_acks), None when it is gone; its fingerprint is
+        the one this round's events, _tick or a reset left in _fps."""
+        if doc is None or self._fps.get(key) != entry['fingerprint']:
             return True
         if entry['event'] == 'reopened' or entry['kind'] == 'approval':
             return False                # only a written try acknowledges it
@@ -1201,10 +1206,17 @@ class PushWorker(object):
         return picked
 
     def _acks(self):
+        # the fields an ack reads, one pick per collection: no whole document is copied, and
+        # no fingerprint is made again (_fps holds each item's, kept by _changed, _tick, resets)
+        ids = collections.defaultdict(list)
+        for entry in self._outbox.values():
+            ids[_coll(entry['kind'])].append(entry['id'])
+        got = {coll: self.store.pick(coll, these, ('status', 'pm_ack'))
+               for coll, these in ids.items()}
         for key, entry in list(self._outbox.items()):
-            doc = self.store.get(_coll(entry['kind']), entry['id'])
+            doc = got[_coll(entry['kind'])].get(entry['id'])
             for r in list(entry['recipients']):
-                if self._acked(entry, r, doc):
+                if self._acked(key, entry, r, doc):
                     if r == entry.get('done') and self._picked(entry, r):
                         entry['has_it'] = True      # the asker picked this answer up
                     del entry['recipients'][r]
@@ -1303,9 +1315,12 @@ class PushWorker(object):
         self._dirty = True
 
     # ------------------------------------------------------------------ files
-    def _prints(self, docs):
-        """Every item's fingerprint, and (kept for _tick) each approval's kind and `superseded` note."""
-        out, now = {}, (self._at() if docs.get('approvals') else None)
+    def _prints(self, docs, now=None):
+        """Every item's fingerprint (an approval's at `now`, the clock when None), and (kept for
+        _tick) each approval's kind and `superseded` note."""
+        out = {}
+        if now is None and docs.get('approvals'):
+            now = self._at()
         self._kinds, self._superseded = {}, {}
         for coll, kind in COLLECTIONS.items():
             for doc_id, d in docs.get(coll, {}).items():

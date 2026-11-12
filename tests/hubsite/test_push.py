@@ -301,6 +301,41 @@ class AckTest(PushCase):
         self.assertEqual(self.attempts('kit'), [1])
         self.assertEqual(self.attempts('pm'), [1, 2])
 
+    def test_a_quiet_round_reads_no_owed_item_whole_and_an_ack_or_a_log_still_ends_it(self):
+        # red proof: _acks reading each owed item whole (store.get) and fingerprinting it again
+        # every round, so a round's cost grows with the outbox (KIT-HUB-PUSH-OUTBOX-GROWTH)
+        qids = [self.ask(**{'from': 'kit'}) for _ in range(3)]
+        for qid in qids:
+            self.answer(qid)
+        tid = self.todo()
+        self.done(tid)
+        self.worker.poll()
+        self.pick_up('kit')
+        self.later(1)                   # the pick-up, which writes nothing, still ends kit's
+        self.assertEqual({k: sorted(e['recipients']) for k, e in self.worker._outbox.items()},
+                         dict([('question:%s' % q, ['pm']) for q in qids] + [('todo:' + tid, ['pm'])]))
+        whole, picked = [], []
+        real_get, real_pick = self.store.get, self.store.pick
+
+        def get(coll, doc_id):
+            whole.append((coll, doc_id))
+            return real_get(coll, doc_id)
+
+        def pick(coll, doc_ids, fields):
+            picked.append((coll, sorted(doc_ids), tuple(fields)))
+            return real_pick(coll, doc_ids, fields)
+        self.store.get, self.store.pick = get, pick
+        self.later(10)                  # nothing due, nothing written: a quiet round
+        del self.store.get, self.store.pick
+        self.assertEqual([w for w in whole if w[1]], [], 'a quiet round read an owed item whole')
+        self.assertEqual(sorted(picked), [('questions', sorted(qids), ('status', 'pm_ack')),
+                                          ('todos', [tid], ('status', 'pm_ack'))])
+        self.ack(tid)                   # a pm_ack and a log still acknowledge the PM
+        self.store.update('questions', qids[0], {'status': 'logged'})
+        self.later(10)
+        self.assertEqual(sorted(self.worker._outbox), sorted('question:%s' % q for q in qids[1:]))
+        self.assertEqual(self.attempts('pm'), [1, 1, 1, 1], 'nothing was sent again')
+
     def test_pm_ack_stops_the_pm(self):
         tid = self.todo()
         self.done(tid)

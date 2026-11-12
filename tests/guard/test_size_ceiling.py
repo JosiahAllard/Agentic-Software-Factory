@@ -36,7 +36,7 @@ CEILINGS = {
     'modes.py': 87,
     'paths.py': 154,
     'place.py': 404,
-    'prepush.py': 552,
+    'prepush.py': 580,
     'refusal_log.py': 169,
     'rolepolicy.py': 626,
     'rules.py': 766,

@@ -341,6 +341,22 @@ def verify_tested(root, commit, kind):
     return rec, None
 
 
+def verify_for_main(root, commit, main_sha):
+    """With a staging branch, the tested record that lets main move from `main_sha` to `commit`
+    (the pre-push guard's rule): a daily full record of `commit`, else a promotion record of it
+    whose `base` is `main_sha`, the main it replaces. `(record, None)` or `(None, why)`."""
+    rec, why = verify_tested(root, commit, 'daily')
+    if rec is not None:
+        return rec, None
+    made, made_why = verify_tested(root, commit, 'promotion')
+    if made is not None:
+        if made.get('base') == main_sha:
+            return made, None
+        made_why = 'the promotion record for %s was made on main %s, not %s' % (
+            commit[:12], (made.get('base') or 'none')[:12], (main_sha or '?')[:12])
+    return None, '%s; %s' % (why, made_why)
+
+
 def _input_keys(keys):
     """`keys` when it is None or {"schema": int, "steps": {name: {part: 64-hex}}}, else
     RecordError."""

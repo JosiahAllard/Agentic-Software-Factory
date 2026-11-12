@@ -19,11 +19,8 @@ lander):
   says. A remote main this clone lacks cannot be an ancestor of the pushed commit, so git
   cannot tell: refused too (fail closed). Git passes such a ref to the hook only when the push is
   forced (--force, a + refspec, --force-with-lease);
-- then, with a staging branch (read as for guarded_mains: <remote>/<main> as fetched), a push to
-  the main branch itself, whatever push_block says, needs a tested record of the pushed commit
-  (tested_record; kitlib.records.gate_ok verify_tested): a daily full record, or a promotion
-  record (of any mode it ran in) made on the main the push replaces (docs/gate-records.md
-  "Tested records"). A push to the staging branch is not asked;
+- then, with a staging branch, a push to main itself, push_block or not, needs a tested record
+  (kitlib.records.gate_ok.verify_for_main; docs/gate-records.md "Tested records");
 - then, when the repository sets repo.push_block, the pushed commit needs a gate-OK record, read by
   kitlib.records.gate_ok.verify_record: it must name a config_rev in the pushed commit's history and
   hash the gate config that commit holds. With a dev_drive only the record folder counts and a
@@ -465,29 +462,16 @@ def verify_record(root, sha):
 
 
 def tested_record(root, sha, remote_sha):
-    """With a staging branch, the record a push of `sha` to main needs (kitlib.records.gate_ok
-    verify_tested): a daily full record of `sha`, else a promotion record of `sha` made on
-    `remote_sha`, the main it replaces. `(record, None)` or `(None, why)`; any failure is a
-    refusal, as verify_record's."""
+    """kitlib.records.gate_ok.verify_for_main, as verify_record: any failure is a refusal."""
     try:
         from kitlib.records import gate_ok
-        rec, why = gate_ok.verify_tested(root, sha, 'daily')
-        if rec is not None:
-            return rec, None
-        made, made_why = gate_ok.verify_tested(root, sha, 'promotion')
-        if made is not None:
-            if made.get('base') == remote_sha:
-                return made, None
-            made_why = 'the promotion record for %s was made on main %s, not %s' % (
-                sha[:12], (made.get('base') or 'none')[:12], remote_sha[:12])
-        return None, '%s; %s' % (why, made_why)
+        return gate_ok.verify_for_main(root, sha, remote_sha)
     except Exception as e:
         return None, 'cannot read tested records: %s: %s' % (type(e).__name__, e)
 
 
 def tested_refusal(cfg, sha, remote_sha, why):
-    """The refusal of a push to main of `sha`, replacing `remote_sha`, with no tested record
-    (tested_record's `why`)."""
+    """A push to main of `sha` (replacing `remote_sha`) with no tested record."""
     staging = kconfig.work_base(cfg)
     return ('pre-push: refused, %s has no daily full record, and no promotion record made on '
             'main %s (%s). With the staging branch %s, main moves only to a commit a green daily '

@@ -59,7 +59,8 @@ def _approval(make, *args):
 
 
 def approvals_add(api, req):
-    """A new pending request. A file request may give `record` {repo, id} (_bound, checked
+    """A new pending request. A file request must name the `branch` it is applied on (new_doc
+    checks a given one, this a missing one); it may give `record` {repo, id} (_bound, checked
     last): the record waits on the owner until the approval is decided (park_item); an op
     request takes none."""
     from kitlib.ownerfiles import approvals as ap
@@ -75,6 +76,9 @@ def approvals_add(api, req):
     b = _fields(req, ('repo', 'title', 'head', 'files', 'reason', 'record', 'branch'))
     doc = _approval(ap.new_doc, b.get('repo'), b.get('title'), b.get('head'), b.get('files'),
                     _when(api.clock(), ''), b.get('reason'), b.get('branch'))
+    if 'branch' not in doc:
+        raise _invalid('a file request names the branch the hub applies it on (as kit/<slug>)',
+                       'branch')
     root = api.checkout(doc['repo'])
     if not root:
         raise _invalid('this machine has no checkout of %s' % doc['repo'], 'repo')
@@ -174,10 +178,6 @@ def approvals_consume(api, req):
     only by the hub's own apply (_applied): a `commit` here is refused, so an agent cannot spend
     one the owner approved and the hub has not applied."""
     from kitlib.ownerfiles import approvals as ap
-    if isinstance(req.body, dict) and 'commit' in req.body:
-        raise _invalid('a change approval is consumed only by the hub applying it (POST '
-                       'approvals/{id}/apply, the owner\'s); this route takes args_sha256, for '
-                       'an op approval', 'commit')
     b = _fields(req, ('args_sha256', 'if_version'), required=('args_sha256',))
     _pin(b, required=True)
     doc_id = req.params['id']

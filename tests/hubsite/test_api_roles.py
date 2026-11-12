@@ -235,7 +235,7 @@ def seed_skill_edit(store, status='draft'):
 MARK_BODY = {'fingerprint': FINDING['fingerprint'], 'status': 'dismissed'}
 ACT_BODY = {'kind': 'act', 'finding': FINDING['fingerprint']}
 SCHEDULE_BODY = {'task': 'maint-lint', 'repo': 'r', 'cadence': 'daily', 'at': '04:00'}
-ADD_BODY = {'repo': URL, 'title': 't', 'head': None,        # head: setUpModule
+ADD_BODY = {'repo': URL, 'title': 't', 'head': None, 'branch': 'kit/x',   # head: setUpModule
             'files': [{'path': 'new.md', 'base_blob': None, 'content': 'x\n'}]}
 
 

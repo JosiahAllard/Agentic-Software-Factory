@@ -3101,7 +3101,7 @@ class ApprovalRouteTest(ApiCase):
 
     def add(self, **kw):
         body = {'repo': self.URL, 'title': 'Edit the readme', 'head': self.repo.initial,
-                'files': self.files(), 'reason': 'asked for'}
+                'files': self.files(), 'reason': 'asked for', 'branch': 'kit/x'}
         body.update(kw)
         return self.ok('POST', '/approvals', AGENT, body)
 
@@ -3133,14 +3133,19 @@ class ApprovalRouteTest(ApiCase):
         files[0]['base_blob'] = approvals.blob_id('else\n')
         self.refused('invalid', 'files', 'POST', '/approvals', AGENT,
                      {'repo': self.URL, 'title': 't', 'head': self.repo.initial,
-                      'files': files})
+                      'files': files, 'branch': 'kit/x'})
 
     def test_a_repo_with_no_checkout_here_is_refused(self):
         self.refused('invalid', 'repo', 'POST', '/approvals', AGENT,
                      {'repo': 'https://github.com/Owner/Other', 'title': 't',
-                      'head': self.repo.initial, 'files': self.files()})
+                      'head': self.repo.initial, 'files': self.files(), 'branch': 'kit/x'})
         self.api = api.Api(self.store, clock=CLOCK)         # no checkout given: fails closed
         self.refused('invalid', 'repo', 'POST', '/approvals', AGENT,
+                     {'repo': self.URL, 'title': 't', 'head': self.repo.initial,
+                      'files': self.files(), 'branch': 'kit/x'})
+
+    def test_a_file_request_naming_no_branch_is_refused(self):
+        self.refused('invalid', 'branch', 'POST', '/approvals', AGENT,
                      {'repo': self.URL, 'title': 't', 'head': self.repo.initial,
                       'files': self.files()})
 

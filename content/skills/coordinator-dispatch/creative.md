@@ -1,6 +1,6 @@
 # Creative dispatches
 
-Read from skill `coordinator-dispatch`, "Creative dispatches".
+Read from skill `coordinator-dispatch`, "The brief".
 
 - Art that is code (skill `specialty-tech-art`), scripted 3D props (skill `specialty-3d-assets`)
   and scripted character rigs (skill `specialty-rigging`) go to senior-worker at least; sound

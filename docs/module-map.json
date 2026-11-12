@@ -676,6 +676,18 @@
    "why": "Install",
    "layer": "apps"
   },
+  "staging": {
+   "paths": [
+    "kitlib/staging"
+   ],
+   "why": "The staging branch promoted to main: the promotion run, its phase record and its move of main",
+   "layer": "work",
+   "same_layer": [
+    "dailyfull",
+    "gate",
+    "landing"
+   ]
+  },
   "strayrestore": {
    "paths": [
     "kitlib/strayrestore"
@@ -1936,6 +1948,12 @@
    "to": "records",
    "kind": "build",
    "why": "apps uses services"
+  },
+  {
+   "from": "hubjobs",
+   "to": "staging",
+   "kind": "build",
+   "why": "apps uses work"
   },
   {
    "from": "hubjobs",
@@ -3318,6 +3336,48 @@
    "why": "apps uses facts"
   },
   {
+   "from": "staging",
+   "to": "config",
+   "kind": "build",
+   "why": "work uses facts"
+  },
+  {
+   "from": "staging",
+   "to": "dailyfull",
+   "kind": "build",
+   "why": "same layer (work): staging's row names dailyfull"
+  },
+  {
+   "from": "staging",
+   "to": "fs",
+   "kind": "build",
+   "why": "work uses base"
+  },
+  {
+   "from": "staging",
+   "to": "gate",
+   "kind": "build",
+   "why": "same layer (work): staging's row names gate"
+  },
+  {
+   "from": "staging",
+   "to": "git",
+   "kind": "build",
+   "why": "work uses facts"
+  },
+  {
+   "from": "staging",
+   "to": "landing",
+   "kind": "build",
+   "why": "same layer (work): staging's row names landing"
+  },
+  {
+   "from": "staging",
+   "to": "records",
+   "kind": "build",
+   "why": "work uses services"
+  },
+  {
    "from": "strayrestore",
    "to": "fs",
    "kind": "build",
@@ -3730,6 +3790,12 @@
    "to": "stackskill",
    "kind": "build",
    "why": "entry uses apps"
+  },
+  {
+   "from": "tools",
+   "to": "staging",
+   "kind": "build",
+   "why": "entry uses work"
   },
   {
    "from": "tools",

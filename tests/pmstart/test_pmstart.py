@@ -16,7 +16,7 @@ from tests.home import temp_home
 from tests.pmstart import HANDOFF_FAKE, HUB_KEPT_OFF, keep_off_hub_site, keep_off_launcher_repos
 
 NOW = datetime.datetime(2026, 10, 6, 9, 0)
-CFG = {"pm_watch_cmd": "python launcher/pm_watch.py", "memory_dir": "M",
+CFG = {"memory_dir": "M",
        "reminders_file": "r.json", "sessions_file": "s.json"}
 
 
@@ -28,9 +28,6 @@ def setUpModule():
     global _orig_read_live
     _orig_read_live = fglock.read_live
     fglock.read_live = lambda user32=None: 0
-    global _orig_beat
-    _orig_beat = pmstart.read_heartbeat
-    pmstart.read_heartbeat = lambda load=None: None     # nor this machine's pm_watch heartbeat
     keep_off_launcher_repos()   # nor this machine's launcher.repos
     keep_off_hub_site()         # nor its hub key (the hub check; the home fence is not caught)
 
@@ -38,7 +35,6 @@ def setUpModule():
 def tearDownModule():
     pmstart.pm_data_settings = _orig_settings
     fglock.read_live = _orig_read_live
-    pmstart.read_heartbeat = _orig_beat
 
 
 def proc(name, cmd, exe=""):
@@ -78,160 +74,20 @@ class RulebooksCheckTest(unittest.TestCase):
         self.assertEqual(rows, ["- rulebooks (standing rules): unknown - the machine config cannot be read (see the machine config line)"])
 
 
-def wproc(pid, name="python.exe", cmd="python -u pm_watch.py"):
-    return {"Name": name, "CommandLine": cmd, "ProcessId": pid}
+class NoWatcherCheckTest(unittest.TestCase):
+    """pm_watch is retired: the hub's session-watch job is the one session watcher, and the hub
+    line says it (push_line). No check looks for a pm_watch process or heartbeat."""
 
-
-class WatcherTest(unittest.TestCase):
-    """watcher: alive by heartbeat plus pid (pmstart.BEAT_STALE); run in the background
-    without --stream, so a streaming one is a line (docs/pm-start.md)."""
-    T = 1000000.0
-
-    def run_it(self, procs, hb, cfg=CFG, job=None):
-        return pmstart.watcher(cfg, procs, beat=lambda: hb, now=self.T, job=lambda: job)
-
-    def test_a_covering_session_watch_job_counts_as_up(self):
-        job = {"failures": 0, "ok_at": self.T - 60, "every_s": 60}
-        self.assertEqual(self.run_it([], None, job=job), [], "no pm_watch at all, the job covers")
-        stale = {"pid": 42, "beat": self.T - pmstart.BEAT_STALE - 120, "stream": False}
-        self.assertEqual(self.run_it([wproc(42)], stale, job=job), [])
-        for bad in ({"failures": 3, "ok_at": self.T - 60}, {"failures": 0, "ok_at": None},
-                    {"failures": 0, "ok_at": self.T - 301}, None):
-            (s,) = self.run_it([], None, job=bad)
-            self.assertTrue(s.startswith("pm_watch.py is not running"), (bad, s))
-
-    def test_the_hub_is_not_asked_while_pm_watch_is_up(self):
-        hb = {"pid": 42, "beat": self.T - 30, "stream": False}
-        self.assertEqual(pmstart.watcher(CFG, [wproc(42)], beat=lambda: hb, now=self.T,
-                                         job=lambda: self.fail("asked the hub")), [])
-
-    def test_fresh_heartbeat_and_live_pid_is_running(self):
-        hb = {"pid": 42, "beat": self.T - 30, "stream": False}
-        self.assertEqual(self.run_it([wproc(42)], hb), [])
-
-    def test_stale_heartbeat_with_live_pid_says_it_stopped_polling(self):
-        hb = {"pid": 42, "beat": self.T - pmstart.BEAT_STALE - 120, "stream": False}
-        (s,) = self.run_it([wproc(42)], hb)
-        self.assertIn("pm_watch.py (pid 42) has not polled for 7m: stop that pid and start it in "
-                      "the background", s)
-        self.assertIn("python launcher/pm_watch.py", s)
-
-    def test_fresh_heartbeat_with_pid_gone_is_not_running(self):
-        hb = {"pid": 42, "beat": self.T - 10, "stream": False}
-        (s,) = self.run_it([wproc(43, name="code.exe")], hb)
-        self.assertEqual(s, "pm_watch.py is not running (it last polled 10s ago): start it in the "
-                            "background (it exits with its events; start it again at once, then "
-                            "handle them): python launcher/pm_watch.py")
-
-    def test_a_live_watcher_with_stream_says_it_never_exits(self):
-        hb = {"pid": 42, "beat": self.T - 30, "stream": True}
-        (s,) = self.run_it([wproc(42, cmd="python pm_watch.py --stream")], hb)
-        self.assertEqual(s, "pm_watch.py (pid 42) runs with --stream: it never exits, so a "
-                            "background run reports no event; stop that pid and start it in the "
-                            "background without --stream: python launcher/pm_watch.py")
-
-    def test_a_heartbeat_without_a_stream_field_counts_as_not_streaming(self):
-        self.assertEqual(self.run_it([wproc(42)], {"pid": 42, "beat": self.T - 30}), [])
-
-    def test_a_pm_watch_cmd_with_stream_is_kept_and_warned_about(self):
+    def test_a_leftover_pm_watch_cmd_adds_no_line(self):
         cfg = dict(CFG, pm_watch_cmd="python launcher/pm_watch.py --stream")
-        start, warn = self.run_it([], None, cfg)
-        self.assertTrue(start.startswith("pm_watch.py is not running: start it in the background"),
-                        start)
-        self.assertTrue(start.endswith(": python launcher/pm_watch.py --stream"),
-                        start)     # as configured, not rewritten
-        self.assertEqual(warn, "pm_start.pm_watch_cmd has --stream: a watcher started with it never "
-                               "exits, so a background run reports no event; remove --stream from "
-                               "pm_watch_cmd")
-        hb = {"pid": 42, "beat": self.T - 30, "stream": False}
-        self.assertEqual(self.run_it([wproc(42)], hb, cfg), [warn])  # even while one runs without
-        for ok in ("python w.py", "python w.py --branch a=b", "w.py --streams"):
-            self.assertEqual(self.run_it([wproc(42)], hb, dict(CFG, pm_watch_cmd=ok)), [])
-        self.assertEqual(len(self.run_it([wproc(42)], hb,
-                                         dict(CFG, pm_watch_cmd="w.py --stream --branch a=b"))), 1)
-
-    def test_a_reused_pid_started_at_another_time_is_not_the_watcher(self):
-        created = "2026-10-06T09:00:00.1234567+00:00"         # list_processes' CreationDate 'o' form
-        at = datetime.datetime(2026, 10, 6, 9, 0, tzinfo=datetime.timezone.utc).timestamp()
-        procs = [dict(wproc(42), Created=created)]
-        hb = {"pid": 42, "beat": self.T - 30, "stream": False, "started": at + 1}
-        self.assertEqual(self.run_it(procs, hb), [])                 # same start, within START_SLACK
-        (s,) = self.run_it(procs, dict(hb, started=at - 600))        # pid 42 is now another process
-        self.assertIn("running without a heartbeat", s)
-        # either start time unknown: the pid alone decides
-        self.assertEqual(self.run_it(procs, dict(hb, started=None)), [])
-        self.assertEqual(self.run_it([wproc(42)], hb), [])
-        self.assertEqual(self.run_it([dict(wproc(42), Created="garbled")], dict(hb, started=0.0)), [])
-
-    def test_the_heartbeat_start_time_matches_the_process_lists(self):
-        """pm_watch's own start time (kernel32), written as list_processes' CreationDate 'o' form
-        (local time with its offset), reads back as the same pid's start: a live watcher passes."""
-        from kitlib import pmwatch
-        started = pmwatch.own_start_time()
-        created = datetime.datetime.fromtimestamp(started).astimezone().isoformat()
-        procs = [dict(wproc(os.getpid()), Created=created)]
-        hb = {"pid": os.getpid(), "beat": self.T - 30, "stream": False, "started": started}
-        self.assertLessEqual(abs(pmstart._created(procs[0]) - started), pmstart.START_SLACK)
-        self.assertEqual(self.run_it(procs, hb), [])
-
-    def test_a_pm_watch_process_without_a_heartbeat_is_an_older_copy(self):
-        for hb in (None, {"pid": 7, "beat": self.T}):     # none, or another process's
-            (s,) = self.run_it([wproc(42, cmd="python launcher/pm_watch.py")], hb)
-            self.assertIn("running without a heartbeat", s)
-            self.assertIn("restart it in the background", s)
-
-    def test_nothing_running_gives_start_step(self):
-        # a non-python process mentioning pm_watch.py (e.g. an editor) does not count
-        (s,) = self.run_it([wproc(42, name="code.exe", cmd="code pm_watch.py")], None)
-        self.assertEqual(s, "pm_watch.py is not running: start it in the background (it exits with "
-                            "its events; start it again at once, then handle them): "
-                            "python launcher/pm_watch.py")
-
-    def test_no_line_names_monitor(self):
-        for hb, procs in ((None, []), ({"pid": 42, "beat": self.T - 10}, []),
-                          ({"pid": 42, "beat": self.T - 900}, [wproc(42)]), (None, [wproc(42)]),
-                          ({"pid": 42, "beat": self.T - 30, "stream": True}, [wproc(42)])):
-            for line in self.run_it(procs, hb, dict(CFG, pm_watch_cmd="w.py --stream")):
-                self.assertNotIn("Monitor", line)
-
-    def test_no_pm_watch_cmd_names_the_kits_command_without_stream(self):
-        cfg = dict(CFG)
-        del cfg["pm_watch_cmd"]
-        (s,) = self.run_it([], None, cfg)
-        tool = os.path.join(pmstart.KIT_ROOT, "tools", "pm_watch.py")
-        self.assertTrue(os.path.isfile(tool))
-        self.assertTrue(s.endswith(': python -u "%s"' % tool), s)
-        self.assertNotIn("--stream", pmstart.PM_WATCH_DEFAULT_CMD)
-
-    def test_the_configured_command_is_used_as_written(self):
-        (s,) = self.run_it([], None, dict(CFG, pm_watch_cmd="run the watcher"))
-        self.assertTrue(s.endswith("then handle them): run the watcher"), s)
-
-    def test_checklist_passes_the_watcher_fake(self):
-        hb = {"pid": 42, "beat": 0}
-        txt = pmstart.checklist(CFG, NOW, procs=[wproc(42)], watcher={"beat": lambda: hb, "now": 10},
+        txt = pmstart.checklist(cfg, NOW, procs=[proc("python.exe", "python pm_watch.py")],
                                 handoff=HANDOFF_FAKE, reminders={"read": lambda p: "[]"},
                                 liveness={"read": lambda p: "{}"})
-        self.assertNotIn("pm_watch.py", txt)
-
-    def test_read_heartbeat_reads_the_file_beside_pm_watchs_state(self):
-        from kitlib import pmwatch
-        with tempfile.TemporaryDirectory() as d:
-            cfgp = os.path.join(d, "config.json")
-            state = os.path.join(d, "st", "state.json")
-            with open(cfgp, "w", encoding="utf-8") as f:
-                json.dump({"pm_watch": {"state_file": state}}, f)
-            orig = pmwatch.load_config
-            pmwatch.load_config = lambda path=None: orig(cfgp)
-            try:
-                self.assertIsNone(_orig_beat())
-                pmwatch.write_heartbeat(pmwatch.heartbeat_file(state), 42, 5.0, True)
-                self.assertEqual(_orig_beat(), {"pid": 42, "beat": 5.0, "stream": True, "started": None,
-                                                  "yielded": False})
-                pmwatch.write_heartbeat(pmwatch.heartbeat_file(state), 42, 5.0, True, 3.5)
-                self.assertEqual(_orig_beat()["started"], 3.5)
-            finally:
-                pmwatch.load_config = orig
+        self.assertEqual(txt, pmstart.checklist(CFG, NOW, procs=[], handoff=HANDOFF_FAKE,
+                                                reminders={"read": lambda p: "[]"},
+                                                liveness={"read": lambda p: "{}"}))
+        self.assertNotIn("pm_watch", txt)
+        self.assertNotIn("could not check watcher", txt)
 
 
 class HandoffTest(unittest.TestCase):
@@ -379,8 +235,7 @@ class LivenessTest(unittest.TestCase):
 
 class ChecklistTest(unittest.TestCase):
     def test_all_pass(self):
-        procs = [proc("python.exe", "python pm_watch.py")]
-        txt = pmstart.checklist(CFG, NOW, procs=procs,
+        txt = pmstart.checklist(CFG, NOW, procs=[],
                                 handoff={"globber": lambda p: [], "exists": lambda p: True,
                                          "pm_repo": lambda c: "X:/pm"},
                                 reminders={"read": lambda p: "[]"},
@@ -397,7 +252,7 @@ class ChecklistTest(unittest.TestCase):
         self.assertIn(HUB_KEPT_OFF, txt)  # hub still ran
         for n in ("handoff", "reminders", "liveness"):
             self.assertIn("could not check %s:" % n, txt)
-        self.assertIn("pm_watch.py is not running", txt)  # no pm_watch_cmd: the kit's own command
+        self.assertNotIn("pm_watch", txt)       # no watcher check: the hub's session watch is the one
 
     def test_process_listing_failure_isolated(self):
         orig = listing.list_processes
@@ -409,7 +264,6 @@ class ChecklistTest(unittest.TestCase):
                                     handoff=HANDOFF_FAKE)
         finally:
             listing.list_processes = orig
-        self.assertIn("could not check watcher", txt)
         self.assertIn("could not check liveness", txt)
         self.assertIn(HUB_KEPT_OFF, txt)
 

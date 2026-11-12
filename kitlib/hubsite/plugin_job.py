@@ -5,8 +5,7 @@ refresh").
   PluginJob(home=None, ...)      its run(ctx): one check, and the refresh when it is due
 
 Every EVERY_S the job reads the kit's refs/remotes/<remote>/main and the export's state.json,
-as pm_watch's check does (kitlib.pluginsource.refresh poll), and runs `<kit>/tools/plugin_refresh.py
---apply` as a child process, waiting for it, when the export is behind that main, a migrated
+and runs `<kit>/tools/plugin_refresh.py --apply` as a child process, waiting for it, when the export is behind that main, a migrated
 account folder's last refresh at it did not go through, or a host copy step left its install
 pending (kitlib.pluginsource.state pending: Codex deferred while it ran). A child, not the library in this
 process: the hub keeps the code it started with, and a landing that changes the refresh must be
@@ -15,13 +14,20 @@ Codex copy too, except from a session PM_KIT_ROLE marks: docs/plugin-source.md "
 
 A run that does nothing returns jobs.Skip, which leaves the failure count alone: no tracking ref,
 no export yet, a folder not migrated, plugin.auto_refresh off, a live process holding refresh.pid
-(pm_watch's spawn, a refresh by hand), a child that found refresh.pid taken, or a retry not due.
+(a refresh by hand), a child that found refresh.pid taken, or a retry not due.
 A child that exits non-zero, or runs past REFRESH_TIMEOUT_S (then it is ended with every
 process it started), is a failure (jobs: its text in health, `failing` pushed at the third in a
 row); the same main is tried again RETRY_S after it failed, not sooner, and the runs between are
 skips (`waiting to retry`). A child that exits 0 with a host copy still pending is no failure,
 but it too is tried again only RETRY_S later. The child's output is
-appended to <export root>/refresh.log, the file pm_watch's spawn writes, under a header line.
+appended to <export root>/refresh.log, under a header line.
+
+The three skips the owner must act on push the PM BEHIND (`job plugin-refresh behind`, detail
+`<main sha12>:<why>`; docs/hub-push.md "Timed jobs"), once for each kit main: no export yet
+(why no-export) and a folder not migrated (unmigrated), both fixed by `--migrate --apply`, and
+plugin.auto_refresh off while the export is behind that main (behind), fixed by `--apply`. A
+folder not refreshed or a host copy deferred at that main pushes nothing: the job's own next
+refresh, or the owner's, is the fix. The refresh path, auto_refresh on, pushes nothing.
 """
 import datetime
 import os
@@ -41,6 +47,7 @@ RETRY_S = 1800
 REFRESH_TIMEOUT_S = 1800
 KILL_WAIT_S = 10                    # after a timeout's kill: the pipe's last bytes
 BUSY = 'a refresh is already running'
+BEHIND = 'behind'                   # the PM's push (push.JOB_EACH)
 
 
 class RefreshFailed(Exception):
@@ -121,6 +128,7 @@ class PluginJob(object):
         self.alive = alive
         self.clock = clock or time.time
         self._failed = None             # (main, at, text) of the last refresh that failed
+        self._told = None               # the kit main BEHIND was last pushed for
 
     def __call__(self, ctx):
         kit = self.kit or _kit()
@@ -132,10 +140,12 @@ class PluginJob(object):
             return jobs.Skip('no %s/%s tracking ref: nothing to check' % (s.remote, plugin_layout.MAIN))
         state = plugin_state.read_state(s.export_dir)       # StateError: a failure
         if state is None:
+            self._behind(ctx, main, 'no-export')
             return jobs.Skip('no export yet: %s' % plugin_layout.refresh_cmd(True))
         folders = list(self.folders())
         todo = plugin_state.unmigrated(state, folders)
         if todo:
+            self._behind(ctx, main, 'unmigrated')
             return jobs.Skip('not migrated in %s: %s' % (', '.join(todo), plugin_layout.refresh_cmd(True)))
         behind = state.get('sha') != main
         failed = [f for f in folders if _rc(state, f) != 0]
@@ -147,6 +157,8 @@ class PluginJob(object):
                 else 'not refreshed in %s' % ', '.join(failed) if failed
                 else 'the %s copy deferred' % ', '.join(deferred))
         if not s.auto_refresh:
+            if behind:
+                self._behind(ctx, main, 'behind')
             return jobs.Skip('%s; plugin.auto_refresh is off: %s' % (what, plugin_layout.refresh_cmd()))
         if plugin_refresh.lock_live(s.export_dir, self.alive):
             return jobs.Skip('%s; %s' % (what, BUSY))
@@ -177,6 +189,12 @@ class PluginJob(object):
             return 'refreshed to %s; %s' % (main[:12], text)
         self._failed = None
         return 'refreshed to %s' % main[:12]
+
+    def _behind(self, ctx, main, why):
+        """Push the PM BEHIND for `why` (module docstring), once for each kit main."""
+        if self._told != main:
+            self._told = main
+            ctx.event(BEHIND, '%s:%s' % (main[:12], why))
 
     def _refresh(self, kit, s):
         """(exit code, lines) of one child refresh, its output appended to <export root>/refresh.log."""

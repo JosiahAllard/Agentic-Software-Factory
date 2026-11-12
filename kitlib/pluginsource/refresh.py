@@ -1,12 +1,12 @@
 """The refresh (docs/plugin-source.md): one at a time under <root>/refresh.pid, an export of the
-remote's main, each account folder's plugin re-pointed at it, and pm_watch's check.
+remote's main, and each account folder's plugin re-pointed at it.
 
   RefreshLock                      <root>/refresh.pid, one refresh at a time
   refresh(...)                     the whole run tools/plugin_refresh.py makes (with copies, each
                                    host's own plugin copy too: tools/_host.py plugin_copies)
   ensure_export(kit, s)            an export the marketplace names, made when missing; no account touched
-  poll(kit, s, last, ...)          the pm_watch check: an event line per new main, and the spawn
-                                   of a refresh when plugin.auto_refresh is on
+  lock_live(root)                  a refresh holds refresh.pid now (the hub plugin-refresh job,
+                                   kitlib.hubsite.plugin_job, asks before it starts one)
 
 It writes under the export root and, for a refresh that went through, under each account's
 plugins cache (a host's plugin-copy step, which refresh is handed, writes that host's own copy);
@@ -14,14 +14,11 @@ it fetches nothing and takes no machine lock.
 """
 import json
 import os
-import subprocess
 import time
 
-from kitlib import platform as kitplatform
 from kitlib.fs import replace as fsreplace
 from kitlib.git import batch
 from kitlib.host import registry
-from kitlib.proc import job
 from kitlib.pluginsource import layout as plugin_layout
 from kitlib.pluginsource import export as plugin_export
 from kitlib.pluginsource import state as plugin_state
@@ -31,7 +28,6 @@ from kitlib.pluginsource import prune as plugin_prune
 PIDFILE = 'refresh.pid'
 LOGFILE = 'refresh.log'
 LOCK_GRACE_S = 10                    # an empty or unreadable refresh.pid younger than this is live
-_DETACHED = 0x00000008 | 0x00000200 if kitplatform.NAME == 'windows' else 0  # DETACHED_PROCESS, NEW_GROUP
 
 
 # ---------------------------------------------------------------- one refresh at a time
@@ -441,58 +437,3 @@ def _old_cache_lines(kit, sha, folders, out):
         'plugin_refresh.py --prune-caches lists what it would remove, docs/plugin-source.md "Old caches"):')
     for f in folders:
         out('  %s' % old_cache(f, base))
-
-
-def spawn_refresh(kit, root):
-    """Start tools/plugin_refresh.py --apply detached and windowless, its output in <root>/refresh.log.
-    Linux: in its own session, so a hangup or Ctrl-C that ends pm_watch does not end the refresh."""
-    from kitlib.schedtask import pythonw
-    os.makedirs(root, exist_ok=True)
-    linux = kitplatform.NAME == 'linux'
-    log = open(os.path.join(root, LOGFILE), 'ab')
-    try:
-        subprocess.Popen([pythonw.windowless(), os.path.join(kit, 'tools', 'plugin_refresh.py'), '--apply'],
-                         cwd=kit, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                         close_fds=True, creationflags=0 if linux else job.no_window_flags(_DETACHED),
-                         start_new_session=linux)
-    finally:
-        log.close()
-
-
-def poll(kit, s, last, spawn=None, alive=None, folders=None):
-    """One pm_watch check. Returns (lines, last): an event line the first time the kit's
-    refs/remotes/<remote>/main differs from the exported sha (`last` is the main last reported, so
-    the same sha is not reported twice), none when current. No export yet, or an account folder
-    (`folders`, default accounts.account_folders()) not migrated: the line names the migrate command
-    and auto_refresh starts nothing. Otherwise, with plugin.auto_refresh on, that first time also
-    starts a refresh (`spawn(kit, root)`), unless one holds refresh.pid already. No tracking ref:
-    nothing. Raises RefreshError when the tracking ref cannot be read and StateError when
-    state.json cannot, so pm_watch counts the failure."""
-    main, why = plugin_layout.tracking_main(plugin_layout.source_kit(kit), s.remote)
-    if main is None:
-        raise plugin_layout.RefreshError('cannot read %s/%s: %s' % (s.remote, plugin_layout.MAIN, why))
-    if not main:
-        return [], last
-    state = plugin_state.read_state(s.export_dir)
-    if state is not None and main == state.get('sha'):
-        return [], None
-    if main == last:
-        return [], last
-    todo = None if state is None else plugin_state.unmigrated(state, plugin_state._folders(folders))
-    if state is None or todo:
-        line = 'pm-kit plugin behind kit main %s: %s' % (main[:12], plugin_layout.refresh_cmd(True))
-        if s.auto_refresh:
-            line += (' (auto_refresh: not started: no export yet)' if state is None else
-                     ' (auto_refresh: not started: not migrated in %s)' % ', '.join(todo))
-        return [line], main
-    line = 'pm-kit plugin behind kit main %s: %s' % (main[:12], plugin_layout.refresh_cmd())
-    if s.auto_refresh:
-        if lock_live(s.export_dir, alive):
-            line += ' (auto_refresh: a refresh is already running)'
-        else:
-            try:
-                (spawn or spawn_refresh)(kit, s.export_dir)
-                line += ' (auto_refresh: started)'
-            except OSError as e:
-                line += ' (auto_refresh: could not start it: %s)' % e
-    return [line], main

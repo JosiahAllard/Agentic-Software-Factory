@@ -287,35 +287,5 @@ class ReadersTest(_Home):
         self.assertIn('could not check config: ConfigError', text)
 
 
-class BadLocationCliTest(_Home):
-    """The entry points over those readers say the machine config cannot be read and exit 2."""
-
-    def run_main(self, main, argv):
-        import contextlib
-        import io
-        err = io.StringIO()
-        with mock.patch.dict(os.environ, {'USERPROFILE': self.home, 'HOME': self.home}), \
-                contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
-            code = main(argv)
-        return code, err.getvalue()
-
-    def test_each_says_machine_config_and_exits_2(self):
-        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        d = os.path.join(root, 'tools')
-        if d not in sys.path:
-            sys.path.append(d)
-        import pm_watch
-        self.pointed()
-        self.put(self.pm_dir, 'not a folder')
-        self.put(self.new, {'pm_start': {'sessions_file': 's.json'},
-                            'machine_lock': {'notice': {'dir': self.home}}})
-        for name, main in (('pm_watch', pm_watch.main),):
-            with self.subTest(name):
-                code, err = self.run_main(main, [])
-                self.assertEqual(code, 2, err)
-                self.assertIn('machine config', err)
-                self.assertIn('not a folder', err)
-
-
 if __name__ == '__main__':
     unittest.main()

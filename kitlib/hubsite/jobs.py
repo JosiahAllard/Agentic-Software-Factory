@@ -41,7 +41,7 @@ import threading
 import time
 
 FIRST_S = 30            # a job's first run, after start: the hub serves before any job runs
-FAIL_PUSH = 3           # failures in a row that push `failing` (pm_watch's ERROR rule)
+FAIL_PUSH = 3           # failures in a row that push `failing` (kitlib.pmwatch's ERROR rule)
 ERROR_MAX = 300         # characters of a failure's text kept for health
 
 

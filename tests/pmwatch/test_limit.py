@@ -1,4 +1,4 @@
-"""The LIMIT check: a session stalled at its weekly usage limit, told from an idle one (docs/pm-watch.md
+"""The LIMIT check: a session stalled at its weekly usage limit, told from an idle one (docs/session-watch.md
 "Usage-limit stall"). The readers over real entries (usage_limit_entry.jsonl: line 1 a main session's,
 line 2 a subagent's), limit_events over fake records, and the check inside a Watcher."""
 import copy
@@ -388,7 +388,7 @@ class InWatcher(unittest.TestCase):
         rc = W.rc_check(self.sessions, lambda dirs: self.records, dirs=lambda: [],
                         ctime=lambda pid: 5, rc_pids=lambda: {},
                         accounts=lambda: FOLDERS)
-        return W.Watcher({}, [], lambda: self.usage, os.path.join(self.tmp.name, "none"),
+        return W.Watcher({}, lambda: self.usage, os.path.join(self.tmp.name, "none"),
                          self.sessions, lambda n: NOW, idle_poll=300, rc=rc, **kw)
 
     def limits(self, ev):
@@ -406,25 +406,19 @@ class InWatcher(unittest.TestCase):
         w = self.watcher()
         w.start(NOW)
         w.poll(NOW)
-        again = W.Watcher(w.s, [], lambda: self.usage, os.path.join(self.tmp.name, "none"),
+        again = W.Watcher(w.s, lambda: self.usage, os.path.join(self.tmp.name, "none"),
                           self.sessions, lambda n: NOW, rc=w.rc)
         self.assertEqual(self.limits(again.poll(NOW)), [])
 
-    def test_a_yielded_watcher_drops_the_line_and_keeps_the_state(self):
-        w = self.watcher(yield_to=lambda: True)
-        w.start(NOW)
-        self.assertEqual(self.limits(w.poll(NOW)), [])
-        self.assertEqual(len(w.s["limit_stalled"]), 1)
-
     def test_a_rc_check_without_limit_runs_no_limit_check(self):
-        w = W.Watcher({}, [], lambda: self.usage, "none", self.sessions, lambda n: NOW,
+        w = W.Watcher({}, lambda: self.usage, "none", self.sessions, lambda n: NOW,
                       rc=lambda lost: ([], []))
         self.assertIsNone(w.limit)
 
     def test_third_failure_in_a_row_is_an_error_line(self):
         def boom(fired, readings, now):
             raise OSError("registry unreadable")
-        w = W.Watcher({"usage": self.usage}, [], lambda: self.usage, "none", self.sessions,
+        w = W.Watcher({"usage": self.usage}, lambda: self.usage, "none", self.sessions,
                       lambda n: NOW, idle_poll=300, limit=boom)
         self.assertEqual(w.poll(NOW) + w.poll(NOW + 300), [])
         self.assertEqual(w.poll(NOW + 600), ["ERROR limit check: registry unreadable"])

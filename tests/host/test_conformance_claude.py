@@ -17,10 +17,9 @@ class ClaudeConformance(conformance.HostConformance, bridge_conformance.mixin('c
     HOST = 'claude'
     FIXTURES = os.path.join(HERE, 'claude', 'payloads.json')
     # Upper bounds: test_leaks counts every host's name file by file, exactly; this counts Claude's.
-    # tools/: the pm_watch seam, the launcher's account folders and the plugin refresh, each until
+    # tools/: the launcher's account folders and the plugin refresh, each until
     # its step-6 wave moves it behind the adapter.
     LEAK_ALLOWED = dict(ALLOWED, **CONTENT_ALLOWED, **{
-        'tools/pm_watch.py': 6,
         'tools/launch.py': 1,
         'tools/plugin_refresh.py': 3,
     })

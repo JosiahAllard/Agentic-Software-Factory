@@ -103,7 +103,7 @@ Notes on the table:
   again and again, on an item a creator holds and has not acknowledged.
 
 At each start, resume and compact the PM session-start checklist (docs/pm-start.md) says whether the
-server is up, how many items are pending, and the push and watcher state from `GET /api/v1/health`.
+server is up, how many items are pending, and the push and session-watch state from `GET /api/v1/health`.
 
 ### Who handles a pending item
 

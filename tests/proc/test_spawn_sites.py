@@ -136,12 +136,6 @@ HAZARD_EXEMPT = {
         1, 'a load node\'s forced command (optional/loadnode/loadnode.py serve, run by sshd on a '
            'Linux node, never on Windows) replaces itself with receive-pack for a push, so the '
            'receiving side reads and writes the ssh channel itself; there is no console to open'),
-    ('kitlib/pluginsource/refresh.py', '<module>', 'DETACHED_PROCESS'): (
-        1, '_DETACHED (DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP) is used by one start only, '
-           'Popen([pythonw(), plugin_refresh.py, ...]): pythonw is a GUI program that never gets '
-           'a console. The find is the bit in the constant definition; every use of the name '
-           '_DETACHED in a creationflags is followed, and one in a start that does not name '
-           'pythonw is reported on its own'),
     ('kitlib/platform/windows/console.py', '<module>', 'CREATE_NEW_CONSOLE'): (
         2, 'the CreateProcess hook itself: it defines the bit and reads it in CONSOLE_CHOICE to '
            'leave a caller\'s own console choice alone; it never asks for one'),

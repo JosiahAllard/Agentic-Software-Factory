@@ -1,4 +1,4 @@
-"""CLAUDE-SPECIFIC SEAM of kitlib.pmwatch (ARCHITECTURE "Host split").
+"""CLAUDE-SPECIFIC SEAM of kitlib.pmwatch, the hub session-watch job's checks (ARCHITECTURE "Host split").
 
 Everything here knows how Claude Code lays out its files: the ~/.claude* config folders, their
 projects/<folder>/<id>.jsonl transcripts with subagent transcripts under <id>/, the
@@ -14,7 +14,7 @@ import json
 import os
 
 # The kit modules of Claude's own that the watcher's checks import late (kitlib.pmwatch.preload):
-# the PLUGIN check's account folder refresh, after the first difference.
+# the launcher's account reads (kitlib.pmwatch account_folders, for the LIMIT and REMOTE checks).
 PRELOAD = ("kitlib.launcher.accounts",)
 
 TAIL_BYTES = 64 * 1024              # newest_entry reads this much: a limit entry is about 1.5 KB

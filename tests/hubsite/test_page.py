@@ -476,7 +476,7 @@ class StateTest(unittest.TestCase):
                          "No PM is listening; one last asked 3 h ago.")
         self.assertEqual(say(None), "")
 
-    def test_the_pm_line_counts_push_delivery_and_says_the_watchers_heartbeat(self):
+    def test_the_pm_line_counts_push_delivery_and_says_the_hubs_session_watch(self):
         seen = {"waited": "2026-10-07T11:30:00Z", "pulled": None, "waiting": 0}
         up, down = {"state": "up", "last": "written", "undelivered": 0}, {"state": "down", "last": "uncertain", "undelivered": 1}
         say = lambda p, w: js("pmSeenText(items.seen, %s, items.push, items.watcher)" % NOW_MS,  # noqa: E731
@@ -484,11 +484,13 @@ class StateTest(unittest.TestCase):
         self.assertEqual(say(up, None), "Push delivery reaches the PM.")
         self.assertEqual(say(down, None), "No PM is listening; one last asked 30 min ago.")
         self.assertEqual(say(None, None), "No PM is listening; one last asked 30 min ago.")
-        self.assertEqual(say(up, {"state": "up", "age": 40}), "Push delivery reaches the PM. The PM's watcher is running.")
+        self.assertEqual(say(up, {"state": "up", "age": 40}), "Push delivery reaches the PM. The hub's session watch is running.")
         self.assertEqual(say(up, {"state": "down", "age": 1800}),
-                         "Push delivery reaches the PM. The PM's watcher has stopped: its last heartbeat is 30 min old.")
+                         "Push delivery reaches the PM. The hub's session watch has had no success for 30 min.")
+        self.assertEqual(say(up, {"state": "down", "age": None}),
+                         "Push delivery reaches the PM. The hub's session watch has had no recent success.")
         self.assertEqual(say(down, {"state": "none", "age": None}),
-                         "No PM is listening; one last asked 30 min ago. No PM watcher heartbeat is found.")
+                         "No PM is listening; one last asked 30 min ago. No session watch runs on this hub.")
         got = js("hubState(items)", snapshot(watcher={"state": "down", "age": 400}))
         self.assertEqual(got["watcher"], {"state": "down", "age": 400})
         self.assertIsNone(js("hubState(items)", snapshot())["watcher"])
@@ -1437,12 +1439,12 @@ class DomTest(unittest.TestCase):
                                            "push": "Push delivery is down (last try: not-written); 2 items undelivered."})
         self.assertEqual(dom(body, snapshot(collections=LISTS))["push"], "Push notifications are off on this hub server.")
 
-    def test_the_pm_line_says_the_watcher_has_stopped(self):
+    def test_the_pm_line_says_the_session_watch_has_no_success(self):
         got = dom("""
             await start();
             return text($("#pmseen"));
         """, snapshot(collections=LISTS, watcher={"state": "down", "age": 600}))
-        self.assertIn("watcher has stopped", got)
+        self.assertIn("The hub's session watch has had no success for 10 min.", got)
 
     def test_an_empty_to_pm_queue_says_to_add_first(self):
         hint = "Nothing is queued. Write your message below and press Add, then Send all."

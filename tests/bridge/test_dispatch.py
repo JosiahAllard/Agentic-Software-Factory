@@ -161,6 +161,32 @@ class DispatchTests(unittest.TestCase):
         self.assertEqual((receipt.state, receipt.reason), ('expired', 'queued-expiry'))
         self.assertEqual(self.adapter.calls, [])
 
+    def test_a_waiting_message_writes_nothing_until_its_expiry_is_due(self):
+        self.admit('never')  # No expiry.
+        self.admit('later', expires_at=self.now + 10)
+        self.live.pop('b')
+        with patch.object(self.store, '_write', wraps=self.store._write) as write:
+            for operation in ('never', 'later', 'never', 'later'):
+                with self.assertRaisesRegex(DeliveryError, 'dispatch-context-unverified'):
+                    self.core.dispatch_once(operation)
+            self.assertEqual(write.call_count, 0, 'each 0.2 s pass of a waiting message would fsync')
+            self.now += 20
+            self.assertEqual(self.core.dispatch_once('later').state, 'expired')
+            self.assertEqual(write.call_count, 1)
+
+    def test_a_message_failing_its_dispatch_check_still_expires(self):
+        self.admit(expires_at=self.now + 10)
+        self.allowed, self.now = False, self.now + 20
+        self.assertEqual(self.core.dispatch_once('op').reason, 'queued-expiry')
+
+    def test_a_reply_link_waiting_on_its_reader_writes_nothing_until_due(self):
+        self.pending_replies(1)
+        self.live.pop('a')
+        with patch.object(self.store, '_write', wraps=self.store._write) as write:
+            self.core.promote_replies()
+            self.core.promote_replies()
+            self.assertEqual(write.call_count, 0, 'each 0.2 s pass of a waiting link would fsync')
+
     def pending_replies(self, count, sender=None):
         """Dispatch `count` messages whose reply links stay pending: a real event-capacity
         failure in the reverse job's savepoint (outbox._try_queue_reply)."""

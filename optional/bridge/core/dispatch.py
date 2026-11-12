@@ -13,6 +13,13 @@ from .outbox import MAX_MESSAGES, Outbox
 from .pairing import PairingError, PairingStore
 
 
+def rotated(pending, cursor, limit):
+    """The next `limit` of `pending` after `cursor` (from the start when it is gone), wrapping
+    round: work that cannot move never starves the work listed after it."""
+    start = pending.index(cursor) + 1 if cursor in pending else 0
+    return (pending[start:] + pending[:start])[:limit]
+
+
 def _reply_refusal(error):
     """A disabled reverse route and a chat no longer observed live are different refusals."""
     if error.code == 'chat-route-not-selected':
@@ -205,10 +212,7 @@ class CoreBroker:
         if type(limit) is not int or not 1<=limit<=MAX_MESSAGES:
             raise DeliveryError('invalid-pending-limit')
         pending=self.outbox.pending_replies(MAX_MESSAGES)  # Every pending link: bounded IDs only.
-        cursor=self._reply_cursor
-        start=pending.index(cursor)+1 if cursor in pending else 0
-        # Rotate as dispatch_pending does, so links that cannot move never starve later ones.
-        for operation in (pending[start:]+pending[:start])[:limit]:
+        for operation in rotated(pending,self._reply_cursor,limit):
             self._reply_cursor=operation
             try:
                 message=self.outbox.message(operation)

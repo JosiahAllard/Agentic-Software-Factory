@@ -415,10 +415,21 @@ class Outbox:
         self._event(db,operation,'expired')
         return True
 
+    def _due(self, expires):
+        """Whether an expiry may have come, read with no write: a clock reading _write would
+        refuse also counts, so _write's own clock check decides it."""
+        if expires is None:return False
+        now=self._clock()
+        return type(now) not in (int,float) or not math.isfinite(now) or now>=expires
+
     def expire_queued(self, operation):
         """End a queued message past its expiry; the receipt, expired or still queued. Core
-        runs it when the message must wait, so a wait never outlives the expiry."""
+        runs it when the message must wait, so a wait never outlives the expiry. It writes only
+        once the expiry is due: a message waiting between turns costs no commit per pass."""
         with self._lock:
+            row=self._row(operation)
+            if row is None:raise DeliveryError('unknown-operation')
+            if row['state']!='queued' or not self._due(row['expires']):return self._receipt(row)
             with self._write() as (db,now):
                 row=self._row(operation)
                 if row is None:raise DeliveryError('unknown-operation')
@@ -631,8 +642,12 @@ class Outbox:
     def expire_reply(self, operation):
         """Suppress a pending reply link past its expiry, with no route guard: True while it
         stays pending. Core runs it before the guard, so a chat failing its live check never
-        keeps an expired link."""
+        keeps an expired link. It writes only once the expiry is due."""
         with self._lock:
+            self._ready()
+            link=self._reply_link(operation)
+            if link is None or link['state']!='pending':return False
+            if not self._due(link['expires']):return True
             with self._write() as (db,now):
                 link=self._reply_link(operation)
                 if link is None or link['state']!='pending':return False

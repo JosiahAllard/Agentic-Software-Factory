@@ -133,8 +133,10 @@ class ControllerTests(unittest.TestCase):
 
     def test_a_chat_the_store_withdrew_frees_its_enrollment_slot(self):
         for index in range(126): self._enroll('live-%d'%index)
+        self.controller._launched['live-0']=('test-sender',None,None)
         self.controller.pairs.withdraw('live-0')  # Still answering, but no longer listed.
         self._enroll_with_room('next')
+        self.assertNotIn('live-0',self.controller._launched)  # Its launch record went with it.
         self.assertIn('next',{peer.identity.session_id for peer in self.controller.pairs.registered()})
 
     def test_state_is_persisted_and_new_owner_can_recover_without_replaying_completed_work(self):

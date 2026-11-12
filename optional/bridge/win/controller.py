@@ -14,7 +14,7 @@ from optional.bridge import registry
 from optional.bridge.win.evidence import regular
 from optional.bridge.win.leader import ServiceLeader
 from optional.bridge.core.callers import CallProofs
-from optional.bridge.core.dispatch import CoreBroker
+from optional.bridge.core.dispatch import CoreBroker,rotated
 from optional.bridge.core.messages import DeliveryError,SenderAuthority,launch_mark
 from optional.bridge.core.mcp import Server
 from optional.bridge.core.outbox import Outbox,MAX_MESSAGES,MAX_PENDING
@@ -185,8 +185,7 @@ class Controller:
         self._require()  # Promotion keeps going past an error; lost leadership still stops here.
         pending=self.outbox.pending(MAX_PENDING)  # Bounded IDs only, no bodies.
         with self._lock: cursor=self._pending_cursor
-        start=pending.index(cursor)+1 if cursor in pending else 0
-        batch=(pending[start:]+pending[:start])[:limit]
+        batch=rotated(pending,cursor,limit)
         receipts=[]
         for operation in batch:
             self._require()

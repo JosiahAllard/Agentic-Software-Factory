@@ -212,6 +212,24 @@ class AgentFilesTest(unittest.TestCase):
         self.assertEqual([t.strip() for t in fm.get("tools", "").split(",")],
                          ["Read", "Edit", "Write", "Grep", "Glob"])
 
+    def test_builders_get_the_owners_tool_set(self):
+        """The owner's builder tool set (KIT-BASELINE-CONTEXT): no dispatch, PowerShell, Artifact,
+        owner questions, agent list or hub and lock MCP tools; files, Bash, skills and the task
+        tools; WebFetch on every builder but the weak-worker."""
+        absent = {"Agent", "PowerShell", "Artifact", "AskUserQuestion", "ListAgents"}
+        present = {"Read", "Edit", "Write", "Grep", "Glob", "Bash", "Skill", "ToolSearch", "Monitor",
+                   "TaskStop", "SendMessage"}
+        for name, web_fetch in (("worker", True), ("weak-worker", False), ("strong-worker", True),
+                                ("senior-worker", True)):
+            with self.subTest(agent=name):
+                tools = {t.strip() for t in frontmatter((AGENTS / (name + ".md")).read_text(
+                    encoding="utf-8")).get("tools", "").split(",")}
+                self.assertEqual(tools & absent, set())
+                self.assertEqual([t for t in tools if t.startswith(("mcp__plugin_pm-kit_hub",
+                                                                    "mcp__plugin_pm-kit_machine-lock"))], [])
+                self.assertLessEqual(present, tools)
+                self.assertEqual("WebFetch" in tools, web_fetch)
+
     def test_builder_roles_point_to_the_bulk_helper_rule(self):
         """Each role that may hand bulk work to the helper names the rule, and the rule exists."""
         skill = AGENTS.parents[3] / "content" / "skills" / "builder" / "SKILL.md"

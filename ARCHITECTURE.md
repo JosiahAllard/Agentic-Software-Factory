@@ -93,7 +93,7 @@ The kit is Python on the standard library, for Windows and Linux. It runs from i
 | Package | Owns | Same layer | Design |
 |---|---|---|---|
 | `machinesetup`, `stackskill`, `kitcmd`, `pmdata` | Install: set up a machine, a repository's committed setup, a stack's skills, the `kit` command, making the PM-data branch (`pmdata` holds only its `init`; the record is in `config`). | `machinesetup` uses `stackskill`, `autotasks` | install |
-| `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `agentstart` | The PM watcher and the session starts: the checks and context each kind of session is given. | `pmwatch` uses `machinesetup`, `autotasks`; `pmstart` uses `pmwatch`, `machinesetup`, `autotasks`; `coordinatorstart` uses `pmwatch`, `pmstart`, `machinesetup`, `autotasks`; `hoststart` uses `pmwatch`, `pmstart`, `coordinatorstart`, `machinesetup`, `autotasks`; `agentstart` uses `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `machinesetup`, `autotasks` | sessions |
+| `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `agentstart` | The session checks (run by the hub's session-watch job) and the session starts: the checks and context each kind of session is given. | `pmwatch` uses `machinesetup`, `autotasks`; `pmstart` uses `pmwatch`, `machinesetup`, `autotasks`; `coordinatorstart` uses `pmwatch`, `pmstart`, `machinesetup`, `autotasks`; `hoststart` uses `pmwatch`, `pmstart`, `coordinatorstart`, `machinesetup`, `autotasks`; `agentstart` uses `pmwatch`, `pmstart`, `coordinatorstart`, `hoststart`, `machinesetup`, `autotasks` | sessions |
 | `autotasks` | The automatic tasks the hub schedules. | - | hub |
 | `maintlint` | The maintenance lint. | - | checks |
 | `redfirst` | Red-first evidence runs. | - | tests |

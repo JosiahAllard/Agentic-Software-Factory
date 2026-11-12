@@ -38,12 +38,17 @@ ALLOWED = {
     'kitlib/backlog/pull_branch.py:main_branches':
         (1, "a pull may not record the store's main branch (a published branch name)"),
     'kitlib/commit/run.py:_commit': (1, LANDER_MAIN + ' (main_checkout_error)'),
+    'kitlib/dailyfull/promote.py:main_of':
+        (1, 'the branch a promotion moves and the one the staging setting is read from: main '
+            'itself, never the work base'),
     'kitlib/gate/runner.py:merged_tip':
         (1, 'neither the main branch nor the work base is gated as a branch'),
     'kitlib/guard/backlogrole.py:_landed':
         (1, "the landed trust is a script as the local main writes it; a staging tip is not trusted"),
     'kitlib/guard/prepush.py:<module>': (1, MAIN),
     'kitlib/guard/prepush.py:_default_mains': (1, MAIN),
+    'kitlib/guard/prepush.py:check':
+        (1, 'with a staging branch, a push to the main branch itself needs a tested record'),
     'kitlib/guard/prepush.py:_exclude':
         (1, 'a push that creates its branch is judged against the published main'),
     'kitlib/guard/rules_gitjail.py:lander_forms':
@@ -72,7 +77,6 @@ ALLOWED = {
     'kitlib/machinesetup/repo.py:Setup.report': (1, NEW_REPO),
     'kitlib/ownerfiles/apply.py:_owner_rules':
         (3, "the main checkout's branch, and " + STAGING_FROM + ' (the rules are the base\'s)'),
-    'kitlib/ownerfiles/approvals.py:landed_ref': (1, STAGING_FROM),
     'kitlib/pmdata/init.py:_check_data_config': (2, PMDATA),
     'kitlib/pmdata/init.py:_check_names': (2, PMDATA),
     'kitlib/pmdata/init.py:_check_unshared': (2, PMDATA),

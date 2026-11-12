@@ -33,7 +33,7 @@ class FakeService:
     def __init__(self):
         self.frames=[]
 
-    def __call__(self,target,frame):
+    def __call__(self,target,frame, *, timeout):
         self.frames.append(json.loads(json.dumps(frame)))
         message=frame['request']
         if 'id' not in message: return {'protocol':1,'response':None}
@@ -108,7 +108,7 @@ class FrontendFrameTests(unittest.TestCase):
 
 class FrontendFailureCauseTests(unittest.TestCase):
     def run_failing(self,error,message):
-        def request(target,frame):
+        def request(target,frame, *, timeout):
             raise error
         output=io.BytesIO()
         line=json.dumps(message).encode()+bytes([10])

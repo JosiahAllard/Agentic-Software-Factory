@@ -23,7 +23,7 @@ or equivalent) load on top of this file and win any disagreement.
 3. The hub is the local site: run `python <kit>/tools/hub.py pending --for pm` once to see what
    waits, and process it. Run no background hub wait: the hub pushes each answer and done to-do
    to the session it is for as a `[hub push]` message (<kit>/docs/hub-push.md "Push
-   notifications"). The checklist's push line says whether push and the watcher are up; while
+   notifications"). The checklist's push line says whether push and the hub's session watch are up; while
    push is down or off, read `pending --for pm` again by hand. An answer to a coordinator's question or a coordinator's to-do goes to that coordinator while it can be
    reached; it falls to you when the coordinator is gone or has not acked within 30 minutes
    (<kit>/docs/hub-pm.md "Who handles a pending item"). You log the ruling of every unbound answer, every standing rule
@@ -87,9 +87,11 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
   [--until <ISO time>]`, `--clear` when it ends (<kit>/docs/hub-fill.md "PM hold and usage").
 - Price a backlog record, and decide a coordinator's close of an owner- or PM-priced one, by
   skill `backlog-pricing`.
-- Watch the sessions with `python <kit>/tools/pm_watch.py` in the background, without `--stream`
-  (<kit>/docs/pm-watch.md): it exits with its events; start it again at once, then handle them,
-  so its heartbeat stays fresh. A stuck or silent session is asked once, then reported.
+- The hub's session-watch job watches the sessions and pushes you each event (idle, stopped,
+  usage, remote, limit, a failed background run, a lock notice; <kit>/docs/session-watch.md). Run no
+  watcher of your own. A `watcher down` push, or a session watch the checklist says is down, means
+  no event reaches you: read hub health `jobs.session-watch`, and file the owner a to-do to restart
+  the hub. A stuck or silent session is asked once, then reported.
 - Skills name a role bare and the kit's folder as `<kit>`: here a role is dispatched as
   pm-kit:coordinator is, and `<kit>` is the kit folder your session's kit header names.
 

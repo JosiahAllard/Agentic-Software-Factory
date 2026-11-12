@@ -16,7 +16,9 @@ Pure functions over text; kitlib.ledger.write reads and writes the file.
 import os
 import re
 
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from kitlib import kitroot
+
+KIT_ROOT = kitroot.root()
 TEMPLATE = os.path.join(KIT_ROOT, 'templates', 'common', 'LEDGER.md')
 
 PROVS = ('typed', 'selected', 'relayed-from-terminal', 'delegated')

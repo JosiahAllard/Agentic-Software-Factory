@@ -3,8 +3,7 @@ no home or folders given, a lookup refuses the fenced home instead of listing th
 folders and reading the machine config."""
 import unittest
 
-from kitlib.pluginsource import (
-    layout as plugin_layout, state as plugin_state, refresh as plugin_refresh)
+from kitlib.pluginsource import layout as plugin_layout, state as plugin_state
 from kitlib.config import user
 from kitlib.launcher import accounts
 from tests.home import fence_decoy
@@ -26,8 +25,8 @@ class AccountFoldersFenceTest(unittest.TestCase):
         self.assertTrue(accounts.is_default(a, k.home))
 
 
-class PollFenceTest(unittest.TestCase):
-    """The incident: pm_watch's and pm_start's plugin checks with folders left None."""
+class CurrentLinesFenceTest(unittest.TestCase):
+    """The incident: pm_start's plugin check with folders left None."""
 
     def setUp(self):
         self.k = Kit(self)
@@ -35,12 +34,6 @@ class PollFenceTest(unittest.TestCase):
         (self.two,) = self.k.folders('.claude-two')
         self.k.seed_migrated([self.two])
         fence_decoy(self)
-
-    def test_poll_without_folders_is_refused(self):
-        with self.assertRaises(user.HomeFenced):
-            plugin_refresh.poll(self.k.kit, self.s, None)
-        self.assertEqual(plugin_refresh.poll(self.k.kit, self.s, None, folders=[self.two])[0][0][:22],
-                         'pm-kit plugin behind k')
 
     def test_current_lines_without_folders_is_refused(self):
         with self.assertRaises(user.HomeFenced):

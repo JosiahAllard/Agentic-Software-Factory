@@ -32,6 +32,22 @@ def _worktree_line(w):
     return '%s  %s %s' % (w.path, head, where)
 
 
+def _base_line(cfg, explicit, base, b, ob):
+    """The `base` line. A staging work base (no --base) is its pushed tip alone: a landing never
+    writes a local staging branch, so there is no local one to compare (docs/gate-landing.md
+    "Staging branch"). Else the local base and `<remote>/<base>`, equal or DIFFERENT."""
+    remote = cfg.remote
+    if not explicit and kconfig.staging_on(cfg):
+        return 'base      %s/%s @ %s' % (remote, base, (
+            '%s (the staging branch: its pushed tip)' % ob if ob else
+            '? (UNKNOWN - not fetched or not pushed: use --fetch, then tell the coordinator)'))
+    # `b and b == ob`, not `b == ob`: when NEITHER ref was read both are '' and compare equal, and
+    # the line would report `(equal)` from two readings that were never taken.
+    return 'base      %s @ %s | %s/%s @ %s %s' % (
+        base, b or '?', remote, base, ob or '?',
+        '(equal)' if b and b == ob else '(DIFFERENT - use --fetch, then tell the coordinator)')
+
+
 def report(top, cfg, kit_root, base=None, fetch=False, lock_reader=lockline.read_snapshot,
            home=None):
     """The report's lines for the work tree whose top level is `top`. `cfg` is its loaded
@@ -52,9 +68,7 @@ def report(top, cfg, kit_root, base=None, fetch=False, lock_reader=lockline.read
     out.append('branch    %s @ %s' % (branch or '?', _git(top, 'rev-parse', '--short', 'HEAD') or '?'))
     # `b and b == ob`, not `b == ob`: when NEITHER ref was read both are '' and compare equal, and
     # the line would report `(equal)` from two readings that were never taken.
-    out.append('base      %s @ %s | %s/%s @ %s %s' % (
-        base, b or '?', remote, base, ob or '?',
-        '(equal)' if b and b == ob else '(DIFFERENT - use --fetch, then tell the coordinator)'))
+    out.append(_base_line(cfg, explicit, base, b, ob))
     behind = None
     measure = st.measure_rev(cfg, base, b, ob, explicit)
     if branch != base:

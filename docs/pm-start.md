@@ -4,7 +4,7 @@
 `additionalContext`; logic `kitlib/pmstart`). A hook cannot call tools, so it lists steps for the
 PM. It always exits 0; a failed check becomes one "could not check X: reason" line.
 
-Checks: standing rules, the machine config (`configcheck`), eng_review flags, the rulebooks (one `rulebooks` line: the rules folder, each book with its rule count, and `ledger.py rules --all`, or `none` when no ledger or no book is there, or `unknown` when the machine config cannot be read; `kitlib.pmstart` `rulebook_lines`, docs/ledger.md "Rulebooks"), the hub, `pm_watch.py` running, the hand-off file ("Hand-off file"), reminders due, and coordinators not running (no host session process, the images `hosts.json` names, with the exact, case-sensitive `--remote-control` name, as `kitlib/launcher/lookup.py`), then the sections below in order, with `worktree_sweep` between `cdrive` and `console_tasks`; each such line names the
+Checks: standing rules, the machine config (`configcheck`), eng_review flags, the rulebooks (one `rulebooks` line: the rules folder, each book with its rule count, and `ledger.py rules --all`, or `none` when no ledger or no book is there, or `unknown` when the machine config cannot be read; `kitlib.pmstart` `rulebook_lines`, docs/ledger.md "Rulebooks"), the hub (with the hub's session watch), the hand-off file ("Hand-off file"), reminders due, and coordinators not running (no host session process, the images `hosts.json` names, with the exact, case-sensitive `--remote-control` name, as `kitlib/launcher/lookup.py`), then the sections below in order, with `worktree_sweep` between `cdrive` and `console_tasks`; each such line names the
 `launch.py start --session <key> --account <n>` that starts it (docs/launcher.md). A repository in sessions.json with no live `consultant-<repo>` session (and no consultant entry of its own) gets one `consultant-<repo> is not running: launch.py consultant --repo <repo> --repo-path <folder>` line, the folder from the machine config's `launcher.repos` or `<its checkout>` when it is not there (`kitlib.pmstart` `_consultants_missing`; no config switch). `<n>` is the account
 this PM session runs on (`kitlib.pmstart` `current_account`), not the entry's stored one, so the PM
 launches every coordinator, the kit's included, from whatever account it started on; when that
@@ -27,15 +27,23 @@ wait. The lines:
 list); a `hub: WARN this hub server is running older code than the hub code now on disk. Owner step:
 restart the Action Hub: python "<hub.py>" restart ...` line when the server's health `code` says
 so (docs/hub-serving.md "Stale code"; none from a hub that gives no `code`); when `<k>` is above 0, a line to process the items (`hub.py pending --for pm`); then the push line
-(`kitlib.pmstart` `push_line`), from the health answer's `push` and `watcher` (docs/hub-push.md
-"Push notifications"). No session runs a background `hub.py wait`: each reads `hub.py pending`
+(`kitlib.pmstart` `push_line`), from the health answer's `push` (docs/hub-push.md
+"Push notifications") and its `jobs` block of the `session-watch` job (docs/session-watch.md). No session runs a background `hub.py wait`: each reads `hub.py pending`
 once at start, and the hub pushes every answer and done to-do to the session that owns it. The
-push line is `hub: push up (last delivery to the PM: <last>, <n> undelivered); watcher <state>
-(beat <s>s ago)` while push is up; `hub: WARN push down (...); ...` when it is down, and `hub:
+push line is `hub: push up (last delivery to the PM: <last>, <n> undelivered); session watch
+<state>` while push is up; `hub: WARN push down (...); ...` when it is down, and `hub:
 WARN push notifications are off on this server, ...` when the hub runs no push worker (`push`
 null), each naming `hub.py pending --for pm` to read by hand. `<last>` is `none yet` before the
-first delivery; the beat part is left out when the hub has read no heartbeat (`watcher none`), and
-`watcher not read (no push worker)` stands when the health answer has no `watcher`.
+first delivery. The session watch part (`kitlib.pmstart` `_session_watch`) is one of:
+`session watch up (last success <s>s ago)` while the job is healthy (`kitlib.pmwatch`
+`session_job_healthy`: fewer than 3 failures in a row and a success at most 300 s old);
+`session watch starting (no run yet)` while its block shows no finished run and no failure (the
+first 30 s after the hub starts); `session watch down (last success <s>s ago): read hub health
+jobs.session-watch (its error and note); a hub restart starts it again: python "<hub.py>"
+restart` otherwise; and `session watch none (...)` when health names no `session-watch` job. Up
+and starting keep the line plain while push is up; down and none make it `hub: WARN`. A
+`starting` that never ends (a first run that hangs) is not bounded: health gives no uptime
+(docs/session-watch.md "Limits"). The health answer's `watcher` field is not read.
 Every value is checked against the states the hub gives (`?` otherwise), so no server text
 reaches the line. The `wait` verb stays for a caller that wants it. Failures, each one line:
 - Nothing listens: `hub: hub server down (nothing listens on port <n>): start it with python
@@ -57,19 +65,8 @@ reaches the line. The `wait` verb stays for a caller that wants it. Failures, ea
   part); the `hub` key holds no token.
 - A machine config that cannot be read at all, or whose check fails with no `hub` key in it: `hub:
   the machine config could not be read (<exception class>)`.
-No token or server message reaches a line. `pm_watch.py` counts as running when its
-heartbeat (docs/pm-watch.md "Stream mode and heartbeat") is at most 5 minutes old
-(`kitlib.pmstart` `BEAT_STALE`) and names the pid of a running `python` process whose command line
-holds `pm_watch.py` and that started at the time the heartbeat records (within 2 seconds,
-`START_SLACK`; skipped when either start time is unknown), so a reused pid does not count.
-It also counts as running while the hub's session-watch job covers its checks (docs/pm-watch.md
-"Hub session-watch job").
-Otherwise the line says whether it stopped polling, is an older copy with no heartbeat, or is not
-running, and gives the command to start it in the background (docs/pm-watch.md: it exits with its
-events, and the PM starts it again at once, then handles them). A running watcher whose heartbeat
-says it streams gets a line to restart it without `--stream`, and a `pm_watch_cmd` with `--stream`
-gets a line too: a streaming watcher never exits, so a background run of it reports no event. The
-configured command is printed as written, never changed. The last check, always on and with no config key (after `console_tasks`, below), is the live foreground lock timeout (docs/windows-token-leak.md): a line while it is not 0, with the command the owner runs in their own PowerShell window. Code: `kitlib/pmstart/fglock.py`.
+No token or server message reaches a line. No check looks for a watcher process: the hub's
+session-watch job is the one session watcher (docs/session-watch.md). The last check, always on and with no config key (after `console_tasks`, below), is the live foreground lock timeout (docs/windows-token-leak.md): a line while it is not 0, with the command the owner runs in their own PowerShell window. Code: `kitlib/pmstart/fglock.py`.
 
 ## Filed answers
 
@@ -84,7 +81,7 @@ worker on the record) is pushed to its asker, or the record's coordinator, not t
 (docs/hub-push.md "Push notifications"), so this line is where the PM sees the ones still unread. It is information,
 not a step.
 - The stamp: `pm-start-last.json`, `{"at": <ISO time with its offset>}`, in the folder of the
-  pm_watch state file (the `pm_watch` config's `state_file`, else
+  session watch's state file (the `pm_watch` config's `state_file`, else
   `kitlib.pmwatch.default_state_file`; `filed_stamp_file`). The path is worked out only when the
   hub is up. A stamp that is missing, unreadable or holds a time with no offset counts as
   24 hours before now (`FILED_FALLBACK`).
@@ -241,7 +238,6 @@ The machine config (docs/kit-json.md "Machine config keys"), key `pm_start`; wit
 
 ```json
 {"pm_start": {
-  "pm_watch_cmd": "python -u \"<kit>/tools/pm_watch.py\"",
   "memory_dir": "<repo drive>/Agent-memory/<pm-repo>",
   "handoff_file": "HANDOFF.md",
   "reminders_file": "<config-dir>/reminders.json",
@@ -262,10 +258,8 @@ The machine config (docs/kit-json.md "Machine config keys"), key `pm_start`; wit
   and until the file is fixed the new reminders are handed over again each run. The checklist's `reminders` check is unchanged.
 - `sessions_file`: `{"<key>": {"name": "<remote-control name>", "repo": "<repo>"}}`; an entry
   with `autostart: false` is not checked.
-- `pm_watch_cmd`: the command the watcher line prints, as written (docs/pm-watch.md), run in the
-  background; with `--stream` the checklist adds a line saying so (a streaming watcher never
-  exits). Unset, it is the kit's own `python -u "<kit>/tools/pm_watch.py"` (`kitlib.pmstart`
-  `PM_WATCH_DEFAULT_CMD`).
+- `pm_watch_cmd` (retired): the standalone watcher is gone; a config still setting the key is
+  ignored without a word. The owner removes it.
 - `eng_review` (optional, list of strings): the owner's design-review flags
   (docs/engineering-rulings.md), printed each start so the PM sends matching ENG questions (from
   a consultant or a coordinator) to the hub. Empty or absent prints nothing; a value that is not

@@ -3,14 +3,18 @@
   daily_full.py [-C DIR] [--out DIR] [--stamp S] [--force]
                                                   run every non-manual gate step on the ref,
                                                   unless it passed green at this commit already
+  daily_full.py [-C DIR] --if-due [--out DIR]      with staging on: run only when enough has
+                                                  landed untested, and only if the machine lock
+                                                  grants a slot now
   daily_full.py [-C DIR] --plan                    print what would run; run nothing
   daily_full.py [-C DIR] --summary [--out DIR]     print the status lines from the recorded runs
 
 A thin entry point: it parses, calls kitlib.dailyfull, prints and exits. It refuses unless
-`.kit.json` "daily_full".enabled is true. The kit never schedules it.
-Exit: 0 green, or skipped by the machine lock (recorded); 1 a step red; 2 usage, or off;
-4 the worktree or its gate could not be readied (recorded red); 5 another run holds the tree
-(nothing touched or recorded); a lock usage code passes through.
+`.kit.json` "daily_full".enabled is true. The kit never schedules it. With staging on, a green
+run promotes the commit it tested to the main branch (docs/daily-full.md "Promotion").
+Exit: 0 green, or skipped by the machine lock (recorded), or not due; 1 a step red; 2 usage, or
+off; 4 the worktree or its gate could not be readied (recorded red), or a promotion was not made;
+5 another run holds the tree (nothing touched or recorded); a lock usage code passes through.
 """
 import argparse
 import os
@@ -19,6 +23,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kitlib import dailyfull as D                                   # noqa: E402
+from kitlib.dailyfull import promote as P                           # noqa: E402
 from kitlib import gate as G                                        # noqa: E402
 from kitlib.config import load as load_config                             # noqa: E402
 from kitlib.config.types import ConfigError                         # noqa: E402
@@ -36,6 +41,8 @@ def parse_args(argv):
     mode = p.add_mutually_exclusive_group()
     mode.add_argument('--plan', action='store_true', help='print the steps; run nothing')
     mode.add_argument('--summary', action='store_true', help='print the recorded runs\' status')
+    mode.add_argument('--if-due', action='store_true',
+                      help='staging on: run only when due, and only on a slot granted now')
     p.add_argument('--out', help='the results folder (default <gate log dir>/daily)')
     p.add_argument('--force', action='store_true',
                    help='run even when the ref is the commit the last run passed green at')
@@ -54,7 +61,13 @@ def summary_lines(root=None):
     status lines of the repository at `root` (default: here)."""
     main, cfg = load(root or os.getcwd())
     s = D.settings(cfg, main)
-    return D.summary_lines(s['out'], s['stale_hours'])
+    return D.summary_lines(s['out'], s['stale_hours']) + behind(main, cfg)
+
+
+def behind(main, cfg):
+    """The local-main lag line in staging mode (read-only), as a list."""
+    line = P.local_behind(main, cfg, D.git)
+    return [line] if line else []
 
 
 def main(argv=None, book_kw=None):
@@ -69,7 +82,7 @@ def main(argv=None, book_kw=None):
         return G.USAGE
     s = D.settings(cfg, top)
     if a.summary:
-        for line in D.summary_lines(a.out or s['out'], s['stale_hours']):
+        for line in D.summary_lines(a.out or s['out'], s['stale_hours']) + behind(top, cfg):
             say(line)
         return G.OK
     if not s['enabled']:
@@ -86,8 +99,10 @@ def main(argv=None, book_kw=None):
             say('REFUSED: %s' % e)
             return G.REFUSED
         return G.OK
+    if a.if_due:            # now or never: a busy machine is a skip, and background runs yield
+        book_kw = dict(book_kw or {}, no_wait=True)
     out = D.run(top, cfg, out=a.out, stamp=a.stamp, say=say, book_kw=book_kw,
-                force=a.force)
+                force=a.force, if_due=a.if_due)
     for line in out.lines:
         say(line)
     return out.code

@@ -1,4 +1,4 @@
-"""kitlib.hubjobs.session_watch: pm_watch's checks as a hub timed job."""
+"""kitlib.hubjobs.session_watch: kitlib.pmwatch's checks as a hub timed job."""
 import json
 import os
 import shutil
@@ -63,9 +63,6 @@ class Base(unittest.TestCase):
         with open(os.path.join(self.alerts, run_id + '.json'), 'w', encoding='utf-8') as f:
             json.dump({'id': run_id, 'reason': reason}, f)
 
-    def beat(self, at):
-        W.write_heartbeat(W.heartbeat_file(self.state), 4242, at, False)
-
 
 class Baseline(Base):
     def test_first_run_is_silent_and_saves_own_state(self):
@@ -75,7 +72,7 @@ class Baseline(Base):
         self.assertEqual(self.pushed, [])
         self.assertEqual(note, 'no events yet')
         self.assertTrue(os.path.exists(self.state + SW.STATE_SUFFIX))
-        self.assertFalse(os.path.exists(self.state))  # pm_watch's own file is never written
+        self.assertFalse(os.path.exists(self.state))  # the config's state_file itself is never written
 
     def test_idle_pushes_once_then_not_again(self):
         self.host.mtimes['coord-a'] = T0
@@ -157,57 +154,16 @@ class Pushes(Base):
         self.assertEqual(SW.push_of(['a', 'b', 'c']), ('events', '3'))
 
 
-class YieldsToPmWatch(Base):
-    def test_live_pm_watch_gets_no_push_but_state_advances(self):
+class NoPmWatchHold(Base):
+    def test_a_fresh_pm_watch_heartbeat_left_beside_the_state_file_holds_no_push(self):
         j = self.job()
         j(self.ctx())
-        self.alert('r1')
-        self.now += 60
-        self.beat(self.now - 10)
-        out = j(self.ctx())
-        self.assertIsInstance(out, jobs.Skip)
-        self.assertIn('pm_watch is live (pid 4242): 1 event(s)', out.note)
-        self.assertEqual(self.pushed, [])
-        self.now += SW.LIVE_S + 60                  # pm_watch stopped: the job takes over
-        j(self.ctx())
-        self.assertEqual(self.pushed, [])           # r1 was pm_watch's, never pushed late
-        self.alert('r2')
-        self.now += 60
-        j(self.ctx())
-        self.assertEqual(self.pushed, [('bgfail', 'r2')])
-
-    def test_a_fresh_beat_that_yielded_does_not_hold_the_push(self):
-        j = self.job()
-        j(self.ctx())
-        W.write_heartbeat(W.heartbeat_file(self.state), 4242, self.now - 10, False, yielded=True)
-        self.alert('r1')
-        self.now += 60
-        j(self.ctx())
-        self.assertEqual(self.pushed, [('bgfail', 'r1')], 'a pm_watch that stepped aside is not waited for')
-
-    def test_a_fresh_beat_not_yielded_or_from_an_older_pm_watch_holds_the_push(self):
-        j = self.job()
-        j(self.ctx())
-        hb = W.heartbeat_file(self.state)
-        W.write_heartbeat(hb, 4242, self.now - 10, False, yielded=False)
-        self.alert('r1')
-        self.now += 60
-        self.assertIsInstance(j(self.ctx()), jobs.Skip)
-        with open(hb, 'w', encoding='utf-8') as f:  # an older pm_watch: no "yielded" field
+        with open(self.state + '.beat', 'w', encoding='utf-8') as f:     # a retired pm_watch's
             json.dump({'pid': 4242, 'beat': self.now - 10, 'stream': False, 'started': None}, f)
-        self.alert('r2')
-        self.now += 60
-        self.assertIsInstance(j(self.ctx()), jobs.Skip)
-        self.assertEqual(self.pushed, [])
-
-    def test_stale_heartbeat_does_not_hold_the_push(self):
-        j = self.job()
-        j(self.ctx())
-        self.beat(self.now - SW.LIVE_S - 1)
         self.alert('r1')
         self.now += 60
         j(self.ctx())
-        self.assertEqual(self.pushed, [('bgfail', 'r1')])
+        self.assertEqual(self.pushed, [('bgfail', 'r1')], 'the job is the one session watcher')
 
 
 class Failures(Base):

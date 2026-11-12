@@ -15,7 +15,7 @@ from kitlib.gate import gitstatus, stash
 from kitlib.git import cmd, refs, repo
 
 
-PUSH_TIMEOUT = 600      # seconds
+TREE_TIMEOUT = 600      # seconds: the landing tree's checkout, `worktree add` and `worktree remove`
 MERGE_TIMEOUT = 300
 TREE_NAME = '_landing'   # the landing tree's folder, under the config's worktrees_dir
 # Its git worktree lock reason, kept verbatim across the move to kitlib.landing: prepare_tree
@@ -168,6 +168,15 @@ class Merge(object):
         sha, _ = refs.resolve('HEAD', self.tree)
         return sha
 
+    def tree_parents(self):
+        """(first parent, second parent) of the landing tree's HEAD, read by one git launch; (None,
+        None) when HEAD is not a merge (git exits 128 naming HEAD^2) or git gives no answer."""
+        out, _ = cmd.run_text(['rev-parse', 'HEAD^1', 'HEAD^2'], self.tree)
+        got = out.split('\n') if out else []
+        if len(got) == 2 and all(refs.is_sha(s) for s in got):
+            return got[0], got[1]
+        return None, None
+
     def prepare_tree(self):
         """Step 5b: the landing tree (self.tree) detached at the base, nothing else in it. Made
         the first time (`git worktree add --detach --lock`); reused when it is clean (a checkout of
@@ -198,7 +207,7 @@ class Merge(object):
         if why:
             return self.add_tree(why)
         r = self.git('checkout', '--quiet', '--detach', self.expect_main, cwd=tree,
-                     timeout=PUSH_TIMEOUT)
+                     timeout=TREE_TIMEOUT)
         entries, _ = gitstatus.status(tree)
         if r.rc == 0 and self.tree_head() == self.expect_main and entries == []:
             return None
@@ -231,7 +240,7 @@ class Merge(object):
         if why is not None:
             self.git('worktree', 'unlock', tree)     # not locked any more: git says so, no matter
             if os.path.isdir(tree):
-                self.git('worktree', 'remove', '--force', '--force', tree, timeout=PUSH_TIMEOUT)
+                self.git('worktree', 'remove', '--force', '--force', tree, timeout=TREE_TIMEOUT)
             else:
                 self.git('worktree', 'prune')        # the gone tree's registration
             if os.path.isdir(tree):
@@ -244,7 +253,7 @@ class Merge(object):
         else:
             os.makedirs(os.path.dirname(tree), exist_ok=True)
         r = self.git('worktree', 'add', '--detach', '--lock', '--reason', TREE_LOCK, tree,
-                     self.expect_main, timeout=PUSH_TIMEOUT)
+                     self.expect_main, timeout=TREE_TIMEOUT)
         if r.rc != 0:
             return 'git worktree add %s failed: %s' % (tree, r.err or 'exit %s' % r.rc)
         entries, err = gitstatus.status(tree)
@@ -270,8 +279,7 @@ class Merge(object):
                          cwd=self.tree)
             if r.rc == 0:
                 head = self.tree_head()
-                first, _ = cmd.run_text(['rev-parse', 'HEAD^1'], self.tree)
-                second, _ = cmd.run_text(['rev-parse', 'HEAD^2'], self.tree)
+                first, second = self.tree_parents()
                 if not head or first != prev or second != t:
                     return G.Outcome(G.FAILED, [
                         'NOT LANDED: the merge of %s reported success, and HEAD of the landing tree '

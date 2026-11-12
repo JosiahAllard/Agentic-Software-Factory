@@ -1,15 +1,15 @@
 """The one place that says a running hub server needs a restart because hub code newer than it has
 landed (docs/hub-serving.md "Stale code"). The server knows its own start stamp
 (kitlib/hubsite/serve.py Hub._watch_code), so it alone decides `stale`; GET health and GET
-snapshot carry `code` = state(stale), and the PM checklist, the pm_watch HUB event and the
-page's banner read that object through notice(). Nothing here restarts anything. A server run by
+snapshot carry `code` = state(stale), and the PM checklist and the page's banner read that object
+through notice(); a server that will not restart itself pushes the PM `job hub stale-code`
+(kitlib.hubsite.serve, with text() in kitlib.hubsite.push JOB_EACH). Nothing here restarts anything. A server run by
 its scheduled task restarts itself (kitlib/hubsite/selfrestart.py) and shows `stale` only when
 it does not: no task, a failed self-check or a restart that did not happen; the restart is then
 the owner's."""
-import os
+from kitlib import kitroot
 
-HUB_TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))), 'tools', 'hub.py')
+HUB_TOOL = kitroot.tool('hub')
 
 
 def restart_step(tool=None):

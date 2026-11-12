@@ -38,7 +38,6 @@ from kitlib.worktree import remove, remove_checks
 from kitlib.worktree import sweep as wsweep
 from kitlib.worktree.holders import canon
 
-PUSH_TIMEOUT = 300      # seconds
 DELETED, REMOVED, ABSENT, KEPT, SKIPPED = 'deleted', 'removed', 'absent', 'kept', 'skipped'
 WOULD_DELETE, WOULD_REMOVE = 'would-delete', 'would-remove'
 HEAD = 'cleanup   '
@@ -82,10 +81,11 @@ def _first_refusal(lines):
 
 
 def _delete_remote(root, remote, branch, sha, git_env):
-    """None when `branch` is gone from `remote`, else why it is still there."""
+    """None when `branch` is gone from `remote`, else why it is still there. The delete runs
+    with cmd.NETWORK_ENV: a remote that wants credentials fails it rather than prompting."""
     ref = 'refs/heads/%s' % branch
     r = cmd.call(['push', '--quiet', '--force-with-lease=%s:%s' % (ref, sha), remote, ':' + ref],
-                 root, timeout=PUSH_TIMEOUT, env=git_env)
+                 root, timeout=cmd.PUSH_TIMEOUT, env=cmd.with_network_env(git_env))
     now, why = refs.ls_remote(remote, ref, root)
     if now == '':
         return None

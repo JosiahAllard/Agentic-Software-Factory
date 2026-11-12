@@ -163,6 +163,28 @@ class TheBase(Fixture):
         out = self.run_preflight('--base', full)[1]
         self.assertIn('base      %s @ %s | origin/%s @ ?' % (full, self.head, full), out)
 
+    def test_a_staging_base_is_its_pushed_tip_alone(self):
+        # a landing never writes a local staging branch: no '?' for it, and never DIFFERENT
+        self.git('update-ref', 'refs/remotes/origin/staging', 'HEAD')
+        self.config(staging={'branch': 'staging'})
+        out = self.run_preflight()[1]
+        self.assertEqual(self.line(out, 'base '), 'base      origin/staging @ %s (the staging '
+                         'branch: its pushed tip)' % self.head)
+        self.assertNotIn('DIFFERENT', out)
+
+    def test_a_staging_base_not_fetched_is_unknown(self):
+        self.config(staging={'branch': 'staging'})
+        self.short = True
+        out = self.run_preflight()[1]
+        self.assertIn('base      origin/staging @ ? (UNKNOWN - not fetched or not pushed: use '
+                      '--fetch, then tell the coordinator)', out)
+
+    def test_an_explicit_base_with_staging_on_is_as_before(self):
+        self.config(staging={'branch': 'staging'})
+        out = self.run_preflight('--base', 'master')[1]
+        self.assertIn('base      master @ %s | origin/master @ %s (equal)' % (self.head, self.head),
+                      out)
+
     def test_a_base_git_would_read_as_an_option_is_a_usage_error(self):
         code, out = self.run_preflight('--base=-x')
         self.assertEqual(code, 2, out)

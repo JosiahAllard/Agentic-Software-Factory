@@ -183,7 +183,7 @@ def load(home=None, environ=None, kit=None):
 
 def kit_root():
     """The checkout this module is in."""
-    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return kitroot.root()
 
 
 LIVE_ROOT_ENV = 'KIT_LIVE_ROOT'      # set by kitlib.gate.pin for a tool it runs from an export

@@ -101,9 +101,9 @@ The sidebar's foot (when the hub was read, then the PM line and the push line) s
 listening: "A PM is listening." while a PM holds a `wait` open, else "Push delivery reaches the PM."
 while the snapshot's `push` state is `up` and its `last` is `written`, else when one last asked;
 another session's wait `--for` its own key does not count (`Api.seen`). With a push worker running,
-the line ends with the PM watcher's heartbeat from the snapshot's `watcher` field: "The PM's watcher is
-running.", "The PM's watcher has stopped: its last heartbeat is <age> old." or "No PM watcher
-heartbeat is found." (`pmSeenText`). On a phone the header also shows a "PM listening" or "No PM
+the line ends with the hub's session watch from the snapshot's `watcher` field (docs/session-watch.md):
+"The hub's session watch is running.", "The hub's session watch has had no success for <age>." (or
+"... has had no recent success." with no age) or "No session watch runs on this hub." (`pmSeenText`). On a phone the header also shows a "PM listening" or "No PM
 listening" pill. A second line gives the push status from the snapshot's `push` field: "Push delivery
 is up" or "is down" (with the state of the latest try to the PM), how many items are undelivered, or
 "Push notifications are off on this hub server." when no worker runs. The page reads everything at once

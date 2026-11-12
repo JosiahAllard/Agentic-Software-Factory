@@ -144,7 +144,13 @@ nominates no channel, and the other halves keep working.
   5 seconds. The sender and task root are never tool arguments.
 - **Durable outbox** (`core/outbox.py`, `core/dispatch.py`). Admission persists the whole body
   before any send. The operation id is deduplicated against its full original context. Dispatch
-  re-attests both live bindings and the route, then writes inside a fenced transaction. A failure
+  re-attests both live bindings and the route, then writes inside a fenced transaction. A chat
+  failing its live check keeps the message queued for a later pass, and its expiry still applies; a
+  route turned off refuses it (`chat-route-revoked`), a chat observed with a different binding
+  refuses it (`chat-binding-changed`), and a chat no longer listed refuses it
+  (`chat-not-observed`). A pending reply return follows the same rules and expires the same way
+  without a live check. A state file left empty by a failed first creation is created again on
+  the next start. A failure
   after the write, or a malformed receipt, becomes `unknown`. A refusal before the write keeps
   the adapter's code as its reason when the code is an identifier, and `native-before-write`
   otherwise. `unknown`, `held` and dispatched operations are never resent. After a restart, work
@@ -174,7 +180,11 @@ nominates no channel, and the other halves keep working.
 
   JSON identity claims grant nothing. Helpers run in job objects and are killed as a tree. A
   restarted service is rejoined by replaying only the frontend's initialize handshake; a tool call
-  is never replayed.
+  is never replayed. The frontend gives a tool frame 10 s for its reply (`TOOL_CALL_SECONDS`), and
+  each handshake frame 5 s. A Codex call's first observe reads the chat's rollout whole: about 1 s
+  for 40 MB, measured, and about 6.5 s for the largest rollout the observer accepts (256 MB).
+  10 s is also the limit of `run_worker` and of the rpc helper's reply read, so raising it means
+  raising all three.
 - **Launch mark** (`mcp_frontend.py`, `win/frontend.py`, `Controller.launched`). A session the kit
   launched carries its kind in `PM_KIT_ROLE` (`kitlib/host/sessionmark.py`). The frontend reads it once,
   at start, so a later change to the session's environment reaches no frame. It sends the mark

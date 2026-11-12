@@ -1,6 +1,6 @@
 """The layer rule (ARCHITECTURE.md "Hosts"): kitlib never imports a host folder or an optional
 package. Every import statement under kitlib/ is read with ast, function-level ones included, so a
-late import cannot slip past. tools/ may import a host (tools/pm_watch.py does); kitlib may not."""
+late import cannot slip past. tools/ may import a host; kitlib may not."""
 import ast
 import os
 import unittest

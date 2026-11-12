@@ -215,6 +215,22 @@ class Overlap(unittest.TestCase):
             self.assertEqual(code, overlap.CANNOT, (bad, out))
             self.assertIn('printed %r, not a ref line' % bad, out)
 
+    def test_a_base_and_branch_the_branch_list_holds_are_not_resolved_again(self):
+        """The tips come from for-each-ref's list: no `rev-parse` of the base or the branch."""
+        real, asked = cmd.call, []
+
+        def call(args, cwd, **kw):
+            if args[0] == 'rev-parse':
+                asked.append(args[-1])
+            return real(args, cwd, **kw)
+        with mock.patch.object(cmd, 'call', call):
+            code, out = self.look(branch='kit/c', base='refs/remotes/origin/main')
+        self.assertEqual(code, overlap.OVERLAP, out)
+        self.assertIn('base      refs/remotes/origin/main (%s)'
+                      % self.tip('origin/main')[:10], out)
+        self.assertEqual([a for a in asked if a.startswith(('refs/remotes/origin/main', 'kit/c'))],
+                         [])
+
     def test_git_failing_mid_run_cannot_answer(self):
         real = cmd.run
 

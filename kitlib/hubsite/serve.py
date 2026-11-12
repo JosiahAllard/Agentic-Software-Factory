@@ -182,6 +182,7 @@ from .store import HubError, Store, StoreBusy
 
 CLOSE_TIMEOUT_S = 10            # each step of the clean close
 STALE_CODE = codestale.text()   # the console line; GET health's `code` and the page say it too
+STALE_JOB, STALE_EVENT = 'hub', 'stale-code'    # the PM's push of it (push.JOB_EACH)
 CODE_LOOK_S = 30                # at most one look at the hub code's files in this many seconds
 POLL_S = 0.5                    # run()'s wait between two looks at `stop` (and at Ctrl+C)
 TUNNEL_OFF_NOTE = 'the tunnel listener is off: %s'
@@ -554,6 +555,7 @@ class Hub(object):
         self._clean = None
         self._seen = ('', '')               # the sync failure watch() last logged
         self._stale = False                 # watch() said the code is newer than this process
+        self._told_pm = False               # the PM was owed the stale-code push (_tell_pm)
         try:
             self._code = code_stamp(self._folders)
         except Exception:                   # noqa: BLE001 - no stamp, no stale look
@@ -615,7 +617,8 @@ class Hub(object):
     def _watch_code(self):
         """At most every CODE_LOOK_S: the code stamp to the self-restart (selfrestart.Watcher,
         made at the first look that finds the code changed), then STALE_CODE, once, when it
-        says the stale warning shows."""
+        says the stale warning shows, and the PM's push (_tell_pm) at its first definite outcome
+        (selfrestart module docstring) or a look that raised."""
         if self._code is None:
             return
         at = time.monotonic()
@@ -636,9 +639,21 @@ class Hub(object):
         except Exception as e:      # noqa: BLE001 - the warning shows, the server goes on
             self._say('the self-restart look failed: %s: %s' % (type(e).__name__, e))
             self.self_restart.stale = True
+            self._tell_pm()                 # the self-restart cannot run: definite too
         if self.self_restart.stale and not self._stale:
             self._stale = True
             self._say(STALE_CODE)
+        if self.self_restart.definite:
+            self._tell_pm()
+
+    def _tell_pm(self):
+        """Owe the PM the stale-code job push (docs/hub-push.md "Timed jobs"), once per process;
+        a hub with no push worker owes nothing."""
+        if self._told_pm:
+            return
+        self._told_pm = True
+        if self.push is not None:
+            self.push.job_event(STALE_JOB, STALE_EVENT)
 
     def _quiet(self):
         """True when no request is in flight on any listener (its counted waits aside: they end

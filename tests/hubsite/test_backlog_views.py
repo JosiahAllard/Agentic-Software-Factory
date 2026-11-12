@@ -857,13 +857,13 @@ class Fetching(unittest.TestCase):
     def test_two_readers_of_a_slow_repo_start_one_read(self):
         v, arrived, real = self.one(), threading.Semaphore(0), None
         v.reuse_s = 0                                           # nothing is reused for its age
-        real = v._lock
+        real = v._wait_read
 
-        def lock(name):
+        def wait(name):
             arrived.release()
             return real(name)
 
-        v._lock = lock
+        v._wait_read = wait
         self.opener.hold_read = threading.Event()
         got, errors = [], []
 
@@ -877,8 +877,7 @@ class Fetching(unittest.TestCase):
         threads[0].start()
         self.assertTrue(self.opener.reading.acquire(timeout=WAIT))      # the first is inside its read
         threads[1].start()
-        for _ in threads:
-            self.assertTrue(arrived.acquire(timeout=WAIT))              # the second is at the lock
+        self.assertTrue(arrived.acquire(timeout=WAIT))  # the second, with no held entry, waits
         self.opener.hold_read.set()
         for t in threads:
             t.join(WAIT)
@@ -887,6 +886,83 @@ class Fetching(unittest.TestCase):
         self.assertEqual(got[0], got[1])
         v.get()                                                         # a later reader reads
         self.assertEqual(self.opener.calls, [("/one", False)] * 2)
+
+    def held_then_slow(self):
+        """A Views of /one read once, whose next plain read waits on opener.hold_read."""
+        v = self.one()
+        v.reuse_s = 0
+        v.get()
+        self.assertTrue(self.opener.reading.acquire(timeout=WAIT))
+        self.opener.hold_read = threading.Event()
+        return v
+
+    def test_a_reader_finding_a_read_running_gets_the_held_entry_and_the_read_follows(self):
+        v = self.held_then_slow()
+        before = v._held["one"][2]
+        got, errors = [], []
+
+        def hold():
+            try:
+                got.append(v.get())
+            except BaseException as exc:        # a thread cannot fail a test
+                errors.append(repr(exc))
+
+        holder = threading.Thread(target=hold, daemon=True)
+        holder.start()
+        self.assertTrue(self.opener.reading.acquire(timeout=WAIT))      # the holder is reading
+        entry = v.get()["repos"][0]
+        self.assertEqual({k: entry[k] for k in before}, before,
+                         "answered at once, from the held entry")
+        opened = (None, "backlog", True)        # what a round's fetch opened
+        self.assertEqual(v._read("one", "/one", self.clock(), opened), before, "the same")
+        v.get()                                 # a plain ask after it keeps the round's store
+        self.assertEqual(v._again, {"one": (opened,)})
+        self.opener.hold_read.set()
+        holder.join(WAIT)
+        self.assertEqual(([holder.is_alive()], errors), ([False], []))
+        self.assertEqual(self.opener.calls, [("/one", False)] * 2, "no read of the callers' own")
+        self.assertEqual(v._reads["one"], 3, "the holder read again with the round's store")
+        self.assertEqual((v._busy, v._again), ({}, {}))
+        self.assertIsNotNone(v._held["one"][1])
+
+    def test_the_holder_reads_again_at_most_again_max_times_and_leaves_its_entry_unstamped(self):
+        v = self.one()
+        v.reuse_s = 0
+        v.get()
+        self.opener.on_read = v.get             # every read is asked for again while it runs
+        v.get()
+        self.opener.on_read = None
+        self.assertEqual(len(self.opener.calls), 2 + backlog.AGAIN_MAX)
+        self.assertIsNone(v._held["one"][1], "still asked past the cap: the next get() reads")
+        v.reuse_s = 5
+        v.get()
+        self.assertEqual(len(self.opener.calls), 3 + backlog.AGAIN_MAX)
+        v.get()
+        self.assertEqual(len(self.opener.calls), 3 + backlog.AGAIN_MAX, "stamped: reused")
+
+    def test_a_request_made_as_the_read_ends_is_read_by_the_holder(self):
+        # the request lands after the holder's read and before it takes _guard to end the hold:
+        # it is never lost between the two
+        v = self.one()
+        v.reuse_s = 0
+        v.get()
+        armed, asked = [], []
+        real = v.clock
+
+        def clock():
+            if armed:                           # the holder's stamp, just after its read
+                del armed[:]
+                t = threading.Thread(target=lambda: asked.append(v.get()), daemon=True)
+                t.start()
+                t.join(WAIT)
+            return real()
+
+        v.clock = clock
+        self.opener.on_read = lambda: armed.append(True) if not asked else None
+        v.get()
+        self.assertEqual(len(asked), 1, "the request was answered at once")
+        self.assertEqual(self.opener.calls, [("/one", False)] * 3)
+        self.assertEqual((v._busy, v._again), ({}, {}))
 
     def test_a_clock_that_went_back_reads_again(self):
         v = self.one()

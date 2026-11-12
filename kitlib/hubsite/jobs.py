@@ -10,7 +10,8 @@ plugin refresh (kitlib.hubsite.plugin_job, docs/plugin-source.md "Hub refresh").
       .stop(timeout)                         ask every thread to end and join them: True when all
                                              ended in `timeout` (None: wait)
       .status()                              {name: health block} (below); any thread
-      .run_now(name)                         one run on the caller's thread (tests): False when
+      .run_now(name)                         one run on the caller's thread (the refile job's
+                                             kick, kitlib.hubsite.refile; tests): False when
                                              that job is running already
 
 A job's `run(ctx)` gets a Ctx: `ctx.stop`, the event the close sets (a long job looks at it
@@ -32,7 +33,8 @@ success (None before one), `error` the last failure's text while `failures` is n
 (else None).
 
 Nothing here knows any job: each is a module of the hubjobs package that gives a Job, found by
-its makers(), which the server is handed (hubjobs.machine_sources, Sources.jobs). The existing
+its makers(), which the server is handed (hubjobs.machine_sources, Sources.jobs), but the hub's
+own refile job, which serve.build makes over its Api (kitlib.hubsite.refile). The existing
 timers (the git sync, the backlog views, the push worker) are not jobs.
 """
 import threading

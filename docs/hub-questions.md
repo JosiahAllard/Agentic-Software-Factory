@@ -79,14 +79,15 @@ never touches a park), one held on the owner by hand with no owner line (`held`:
 own end, and the filed answer still ends it), one that has the line already (`already`) or one that is
 gone (`gone`). The outcome is the question's `park`. The hub server parks off the request
 (`Api.park_later`, a daemon thread, `serve._park_later`). A park that fails there is an `error` line
-of the hub's log (`<qid>: record not parked: <code>`), and one whose code is `store`, `unavailable` or
-`internal` is made again by `questions file` ("Filing the answer").
+of the hub's log (`<qid>: record not parked: <code>`), and one whose code is `store`, `busy`,
+`unavailable` or `internal` is made again by the hub's refile job while the ask is still asking
+("Filing the answer").
 
 Withdrawing or deleting an open bound question, or an edit that rebinds or unbinds it, drops its line
 from the old record (`unpark_item`, `recordwrite` `withdraw`); the last owner line unblocks the
 record with the reason `ask withdrawn`, and a rebind then parks the new record. A drop that fails is
-logged (`<qid>: record not unparked: <code>`) and swept at the next hub start or the next `questions
-file` call without an id. A question asked with `class` whose `refs` name a pulled record is stored
+logged (`<qid>: record not unparked: <code>`) and swept by the refile job's full pass: at hub start,
+or after a `questions file` call without an id. A question asked with `class` whose `refs` name a pulled record is stored
 with a `refs-pulled-record` warning, field `refs`: ask it with `--record` so the hub parks the record.
 
 An agent's to-do and a file approval bind and park the same way, with the same checks and outcomes,
@@ -97,8 +98,8 @@ any to-do edit and an `op` approval take no `record` (`invalid`, field `record`)
 `unblock-conditions` job ends the hold when the to-do is done or the approval is decided, approved or
 denied (docs/hub-push.md "Push notifications"); withdrawing or deleting the item drops its line. An approval that
 expires undecided keeps its line, and the job pushes the PM `approval-expired`; the requester may
-then withdraw it. `questions file` makes a failed park again and sweeps a gone item's line for all
-three kinds. Known limits: a hub restart pushes an expired approval's line again, and a reopened to-do
+then withdraw it. The refile job makes a failed park again and its full pass sweeps a gone item's
+line, for all three kinds. Known limits: a hub restart pushes an expired approval's line again, and a reopened to-do
 does not park its record again.
 
 #### Binding the open questions
@@ -151,29 +152,49 @@ The hub files the owner's answer to a bound question into the record itself, in 
 When step 2 fails the question stays `answered`, so it stays pending for the PM, and gains `filing` `{at,
 code, message}`: `not_found` (the record is completed or gone), `invalid` (the store refused the answer)
 and `no_store` (the repository's `.kit.json` names no `"backlog".store`, so the hub may write none) leave
-the answer to the PM, who handles it as an unbound one; `store` and `unavailable` say the hub tries
-again. Every code is tried again by the next filing call below, which files the answer once what made it
-fail is mended (a record reopened, a store named). `message` is a fixed phrase (`FILING_SAYS`), never the
-store's text, which can name a path; only an answer route that files in its own call (below) carries
-that text, to the local owner, in its `filing`. A retry that fails the same way (the code and phrase `filing` already has) writes nothing and
+the answer to the PM, who handles it as an unbound one; `store`, `busy` (another local writer held
+the backlog store's write lock past the hub's 5 s wait, docs/backlog.md "The store write lock") and
+`unavailable` say the hub tries again, and the refile job below does so on its own. A final code is
+tried again only by the job's full pass and by a `questions file` call, which file the answer once what
+made it fail is mended (a record reopened, a store named). `message` is a fixed phrase (`FILING_SAYS`),
+never the store's text, which can name a path; the refile job writes that text to the hub's log (the
+owner's), and an answer route that files in its own call (below) carries it, to the local owner, in its
+`filing`. A retry that fails the same way (the code and phrase `filing` already has) writes nothing and
 keeps the first `at`, so it moves no version an asker's `--if-version` holds. A mark (step 3, or
 `filing`) whose pin no longer holds writes nothing: the question was answered again, logged or marked
 done meanwhile, and the call that moved it does its own filing.
 
-Every answered, bound question not filed yet is filed again by `hub.py questions file [Q-1]` (`POST
-/api/v1/questions/file`, agent, optional `{id}`; it answers `{filed, failed, parked, unparked,
-park_failed, orphan_hand_lines}`) and once at each hub start, on a thread after the listeners start
-(`Hub._refile`, which logs each failure as a note), whatever code its last filing failed with. A crash
-after step 1 or after step 2 is mended there. An unbound question is never filed: the PM logs it as
-before. `filed` lists the ids filed and `failed` `[{id, code, message}]`. The same call parks each open
-bound question whose park is not made yet (`parked`, ids); a park not made, or one whose mark was not
-written, is in `park_failed` `[{id, code, message}]`. Without `id` it also sweeps every repository's
-owner `question:Q-n answered` lines (`_sweep_asks`, read with no fetch): a line the hub wrote (the
-body says `asked as Q-n on the Action Hub`) whose question is gone, or now bound to another record or
-none, is dropped as a withdraw drops it (`unparked` `[{id, record, unblocked}]`; a drop that fails is
-in `park_failed`). A line a person wrote is never dropped: one whose question is gone is listed in
-`orphan_hand_lines` `[{repo, id, q}]` and logged at start (`<repo>:<ID>: owner line cites missing
-Q-n`), for the PM to clear by hand.
+The hub's refile job (`kitlib.hubsite.refile`, job `refile`, every 30 s, its first run 5 s after
+start, docs/hub-push.md "Push notifications", timed jobs) files again. Its first run is the full pass: every answered, bound question
+not filed yet is filed, whatever code its last filing failed with, and every open bound ask whose park
+is not made yet is parked (a question, a to-do, an approval). It also sweeps every repository's owner
+`question:Q-n answered` lines (`_sweep_asks`, read with no fetch): a line the hub wrote (the body says
+`asked as Q-n on the Action Hub`) whose question is gone, or now bound to another record or none, is
+dropped as a withdraw drops it (a drop that fails is logged, `<qid>: record not unparked: <why>`). A
+line a person wrote is never dropped: one whose question is gone is logged (`<repo>:<ID>: owner line
+cites missing Q-n`), for the PM to clear by hand. A crash after step 1 or after step 2 is mended there.
+An unbound question is never filed: the PM logs it as before.
+
+Each later run does only what is due: a filing or park that failed with a code to retry (`store`,
+`busy`, `unavailable`, `internal`), on an ask still asking, and an answered bound question with no
+`filing` and no `filed_at` whose answer is 5 minutes old (its filing off the request never marked it).
+An id that failed waits 30 s, doubled after each failure up to 15 minutes, before it is due again; the
+wait is kept in memory, keyed on the answer's `at`, so a new answer starts it afresh and a hub restart
+forgets it. Once a write on a repository answers `busy`, the rest of that repository's ids wait for the
+next run. Each failure is a `note` line of the hub's log with the store's own text (`<qid> not filed
+(<code>): <text>`, `<qid>: record not parked (<code>): <phrase>`); the question keeps the fixed phrase.
+A run with nothing due is skipped.
+
+`hub.py questions file [Q-1]` (`POST /api/v1/questions/file`, agent, optional `{id}`) queues work for
+that job and returns at once: `{ok: true, queued: [id]}` (`QUEUED Q-1`) or `{ok: true, queued: "all"}`
+(`QUEUED all`); an id that names no question is refused `not_found` and queues nothing. A queued id is filed and parked whatever its wait; `all` makes the job run its whole
+full pass again, the withdraw sweep included. The job runs at once on a thread of its own; when a run is
+going already, that run makes one more pass. A request that lands after a running pass's last check
+waits for the next run, up to 30 s: a delay, never a loss. The outcome is in the question's `filing`
+and `park` and in the hub's log, never in the reply. An `Api` with no refile job (the library's callers,
+the tests) files in the call and answers `{filed, failed, parked, unparked, park_failed,
+orphan_hand_lines}` as before: `filed` lists the ids filed, `failed` and `park_failed` `[{id, code,
+message}]`, `unparked` `[{id, record, unblocked}]`, `orphan_hand_lines` `[{repo, id, q}]`.
 
 The hub server files off the answer's request (`Api.file_later`, set by `serve.build`: steps 2 and 3 on a
 daemon thread, `serve._file_later`), since step 2 fetches and pushes the backlog store, which can take
@@ -189,7 +210,7 @@ filed: false, moved: true}`), and its `status`, `version` and `revision` are tho
 
 An answered, bound question not filed is neither logged nor marked done (`questions log`, `questions
 done`, `_unfiled`): while its last code may still file (every code outside `FINAL_FILING`, such as
-`store`, `unavailable` and `internal`, or no filing yet) both are refused `invalid`, field `filing`: file
+`store`, `busy`, `unavailable` and `internal`, or no filing yet) both are refused `invalid`, field `filing`: file
 it first. For a final code (`not_found`, `invalid`, `no_store`) they need `--unfiled "<why>"` (body
 `unfiled`), refused `invalid`, field `unfiled`, when absent or blank; the why is kept as `unfiled_why`.
 `unfiled` on any other question is refused the same way.

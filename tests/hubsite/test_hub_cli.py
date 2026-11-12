@@ -2283,6 +2283,19 @@ class RecordArgumentCase(CliCase):
         self.assertTrue(self.sent[-1][0].endswith('/questions/bind'))
         self.assertEqual(self.sent[-1][1], {'from': 'pm', 'apply': True})
 
+    def test_questions_file_says_what_a_running_hub_queued_for_its_refile_job(self):
+        for argv, answer, lines in (
+                ((), {'ok': True, 'queued': 'all'}, ['QUEUED all']),
+                (('Q-1000',), {'ok': True, 'queued': ['Q-1000']}, ['QUEUED Q-1000']),
+                ((), {'ok': True, 'filed': [], 'failed': []}, ['nothing to file'])):
+            with self.subTest(argv=argv):
+                self.ask = lambda port, method, path, token=None, body=None, *m, _a=answer, **kw: (
+                    self.sent.append((path, body)) or (200, _a))
+                code, out, err = self.run_asking('questions', 'file', *argv)
+                self.assertEqual((code, err, out.splitlines()), (0, '', lines))
+                self.assertTrue(self.sent[-1][0].endswith('/questions/file'))
+                self.assertEqual(self.sent[-1][1], {'id': argv[0]} if argv else {})
+
 
 class ArgumentCase(CliCase):
     VERBS =(('questions',), ('questions', 'add', '--title', 't'),

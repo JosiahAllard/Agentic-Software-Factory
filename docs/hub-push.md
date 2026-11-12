@@ -122,7 +122,10 @@ store's git push (the `push` setting).
   `kitlib.hubjobs.machine_sources`, which hands the makers to `servesources.machine_sources(jobs=)`. The
   machine's server runs them all, a scratch store (`--store`) none; one whose module
   will not import or whose `make` raises is a start-up note and the hub serves without it. The plugin
-  refresh is one (docs/plugin-source.md "Hub refresh"). At a job's third failure in a row the worker
+  refresh is one (docs/plugin-source.md "Hub refresh"). The server adds one job of its own, `refile`
+  (`kitlib.hubsite.refile`, every 30 s, made by `serve.build` before the makers' jobs whenever the hub has a
+  backlog view), which files bound answers and parks bound asks again (docs/hub-questions.md
+  "Filing the answer"). At a job's third failure in a row the worker
   pushes the PM once `[hub push] job <name> failing route:pm attempt:<k>`, and `... recovered` at its
   next success (`job_event`). `usage-crossover`, `coord-restart` and `fill-watch` list processes with a 15 s timeout
   (`coord_restart.PROC_TIMEOUT_S`; the session start keeps 4 s); a listing that still times out is a `Skip`

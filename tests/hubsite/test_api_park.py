@@ -9,7 +9,7 @@ import functools
 import threading
 import unittest
 
-from kitlib.hubsite import api, serve
+from kitlib.hubsite import api, jobs, refile, serve
 from kitlib.ownerfiles import approvals
 from kitlib.hubsite.api import AGENT, OWNER
 from kitlib.hubsite.store import HubError
@@ -199,16 +199,10 @@ class ParkTest(ApiCase):
 
     def test_the_hub_start_logs_a_hand_line_on_a_missing_question(self):
         said = []
-
-        class Timer(object):
-            def start(self):
-                pass
         self.views.asks = [self.line('Q-404', parked=False)]
-        hub = serve.Hub(None, self.store, self.api, self.views, None, [], None, Timer(), [],
-                        log=lambda level, text: said.append((level, text)),
-                        code=serve.code_folders())
-        hub._refile()
-        self.assertEqual(said, [('note', 'kit:EX-1: owner line cites missing Q-404')])
+        job = refile.Refile(self.api, log=said.append)
+        job.run(jobs.Ctx(threading.Event(), lambda *a: None))     # the full pass of hub start
+        self.assertEqual(said, ['kit:EX-1: owner line cites missing Q-404'])
 
     def test_a_park_whose_mark_was_not_written_is_not_listed_parked(self):
         self.views.fail = HubError('store', 'C:\\work is busy', '')

@@ -56,6 +56,9 @@ from kitlib.git import defaults as gitdefaults
 from kitlib.git import repo as gitrepo
 from kitlib.ownerfiles import rules as ownerrules
 
+# Every refusal that starts with this is transient (a git read failed: retry); none other does.
+TRANSIENT_PREFIX = 'pre-push: refused, cannot '
+
 ZERO = '0' * 40
 FIXED_MAIN = kschema.SECTIONS['repo']['main_branch'].default
 
@@ -309,7 +312,7 @@ def secrets_refusal(root, lines, name):
         if remotes is None:
             remotes, why = _remote_names(root)
             if remotes is None:
-                return ('pre-push: refused, cannot read the remotes to check what %s sends for this '
+                return (TRANSIENT_PREFIX + 'read the remotes to check what %s sends for this '
                         'machine\'s secrets (%s).' % (local_ref, why))
         what = '%s (%s)' % (local_ref, local_sha[:12])
         has, why = _remote_has(root, remote_sha, name, remotes)
@@ -319,7 +322,7 @@ def secrets_refusal(root, lines, name):
                                      '--diff-filter=ACMRT', '--format=commit %H', local_sha, '--not'] +
                                     has + ['--'], root)
         if out is None:
-            return ('pre-push: refused, cannot list the files %s sends to check them for this '
+            return (TRANSIENT_PREFIX + 'list the files %s sends to check them for this '
                     'machine\'s secrets (%s).' % (what, why))
         commit = ''
         for row in out.splitlines():
@@ -340,7 +343,7 @@ def leak_refusal(root, lines, name, url=None):
     hook argument (the remote's name, or the URL for a push by URL), `url` its second."""
     common, why = gitrepo.common_dir(root)
     if common is None:
-        return ('pre-push: refused, cannot find the git directory to look for %s (%s).'
+        return (TRANSIENT_PREFIX + 'find the git directory to look for %s (%s).'
                 % (pmdata.FILE_NAME, why))
     try:
         record = pmdata.read(common)
@@ -356,7 +359,7 @@ def leak_refusal(root, lines, name, url=None):
                 % (record.root[:12], path))
     remotes, why = _remote_urls(root)
     if remotes is None:
-        return ('pre-push: refused, cannot read the remotes to tell whether %s is the private '
+        return (TRANSIENT_PREFIX + 'read the remotes to tell whether %s is the private '
                 'remote %s (%s).' % (name, record.remote, why))
     private = _private(record, remotes, name, url)
     data_ref = 'refs/heads/' + record.branch
@@ -397,14 +400,14 @@ def leak_refusal(root, lines, name, url=None):
                        record.root[:12], name, record.remote))
         pushed, why = _pushed_objects(root, local_sha, remote_sha, name, remotes)
         if pushed is None:
-            return ('pre-push: refused, cannot list the objects %s pushes to check them against '
+            return (TRANSIENT_PREFIX + 'list the objects %s pushes to check them against '
                     'the PM data branch (%s).' % (what, why))
         if not pushed:
             continue
         if not data:
             objects, why = _data_objects(root, record)
             if objects is None:
-                return ('pre-push: refused, cannot list the PM data branch\'s objects to check %s '
+                return (TRANSIENT_PREFIX + 'list the PM data branch\'s objects to check %s '
                         'against them (%s).' % (what, why))
             data.append(objects)
         shared = sorted(pushed & set(data[0]))
@@ -516,7 +519,7 @@ def not_fast_forward(root, local_sha, remote_sha, main):
     if ff:
         return None
     if ff is None:
-        return ('pre-push: refused, cannot tell whether %s is a fast-forward of %s %s (%s). '
+        return (TRANSIENT_PREFIX + 'tell whether %s is a fast-forward of %s %s (%s). '
                 'Fetch, merge %s into it, then push again; never force-push %s.'
                 % (local_sha[:12], main, remote_sha[:12], why.strip(), main, main))
     return ('pre-push: refused, %s is not a fast-forward of %s %s. Merge %s into it, then '

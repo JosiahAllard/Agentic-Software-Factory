@@ -2,14 +2,17 @@
 a push to main needs a gate-OK record for the pushed commit when the base config sets
 repo.push_block, whoever pushes; a branch push never does; deleting main is refused. A forced
 non-fast-forward push to main is refused whatever push_block says."""
+import ast
 import json
 import os
 import shutil
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
+from kitlib import config as kconfig
 from kitlib.config import pmdata
 from kitlib.guard import context, prepush
 from kitlib.ownerfiles import rules as ownerrules
@@ -494,6 +497,53 @@ class EntryTest(unittest.TestCase):
     def test_the_hook_prefers_python_when_both_exist(self):
         res = self.run_hook('python', 'python3')
         self.assertEqual((res.returncode, res.stdout.strip()), (7, 'shim-python'))
+
+
+class TransientPrefixTest(unittest.TestCase):
+    """prepush.TRANSIENT_PREFIX starts every transient refusal (a git read failed: retrying can
+    pass) and no final one, so a caller (staging advance) can tell them apart."""
+    SHA = 'a' * 40
+    OLD = 'b' * 40
+    CFG = SimpleNamespace(work_base='staging', main_branch='main', remote='origin',
+                          owner_rules=lambda: kconfig.OwnerRules())
+
+    def literals(self):
+        with open(prepush.__file__, encoding='utf-8') as f:
+            tree = ast.parse(f.read())
+        found = [n.value for n in ast.walk(tree)
+                 if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                 and n.value.startswith('pre-push: refused')]
+        uses = [n for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id == 'TRANSIENT_PREFIX'
+                and isinstance(n.ctx, ast.Load)]
+        return found, uses
+
+    def test_the_prefix_is_built_once_and_no_final_refusal_says_cannot(self):
+        found, uses = self.literals()
+        self.assertEqual(prepush.TRANSIENT_PREFIX, 'pre-push: refused, cannot ')
+        rest = [s for s in found if s != prepush.TRANSIENT_PREFIX]
+        self.assertTrue(rest)
+        self.assertEqual([s for s in rest if s.startswith('pre-push: refused, cannot')], [])
+        self.assertGreaterEqual(len(uses), 7)
+
+    def test_a_fast_forward_git_cannot_tell_is_transient(self):
+        with mock.patch.object(prepush.refs, 'is_fast_forward', return_value=(None, 'git failed')):
+            msg = prepush.not_fast_forward('.', self.SHA, self.OLD, 'main')
+        self.assertTrue(msg.startswith(prepush.TRANSIENT_PREFIX), msg)
+
+    def test_a_check_of_owner_paths_git_cannot_run_is_transient(self):
+        with mock.patch.object(prepush.kconfig, 'load_at', side_effect=kconfig.ConfigError('x')), \
+                mock.patch.object(prepush.ownerrules, 'violations', return_value=(None, 'git failed')):
+            why = prepush.owner_refusal('.', self.CFG, self.SHA, '0' * 40, None)
+        self.assertTrue(('pre-push: refused, %s.' % why).startswith(prepush.TRANSIENT_PREFIX), why)
+
+    def test_final_refusals_are_not_transient(self):
+        with mock.patch.object(prepush.refs, 'is_fast_forward', return_value=(False, None)):
+            final = [prepush.not_fast_forward('.', self.SHA, self.OLD, 'main')]
+        final.append(prepush.tested_refusal(self.CFG, self.SHA, self.OLD,
+                                            'cannot read tested records: OSError: boom'))
+        for msg in final:
+            self.assertTrue(msg.startswith('pre-push: refused, '), msg)
+            self.assertFalse(msg.startswith(prepush.TRANSIENT_PREFIX), msg)
 
 
 if __name__ == '__main__':

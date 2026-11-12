@@ -356,18 +356,20 @@ class ValidateTest(StoreCase):
     def test_the_configured_names_are_asked_only_for_a_repo_tag_and_once_a_write(self):
         s = self.open()
         asked = []
-        s.known_repos = lambda: asked.append(1) or ['Gamerepo']
+        # each ask notes whether the store's mutex was held: the names read config and run git
+        s.known_repos = lambda: asked.append(s._mutex.locked()) or ['Gamerepo']
         s.put('repos', 'alpha', {'name': 'alpha'})
         s.add('todos', {'status': 'open', 'title': 't', 'from': 'you'})
         s.add('questions', question(repo='all'))
         self.assertEqual(asked, [], 'a write with no repo tag asked for the names')
         q = s.add('questions', question(repo='gamerepo'))
         self.assertEqual(q.warnings, [])
-        self.assertEqual(asked, [1], 'the check before and after the change asks once')
-        # a stored repo tag elsewhere does not make another document's write ask
+        self.assertEqual(len(asked), 1, 'the check before and after the change asks once')
+        # a stored repo tag elsewhere does not make another document's write ask; the stored
+        # tag of the document written does
         s.add('todos', {'status': 'open', 'title': 't', 'from': 'you'})
         s.update('questions', q.id, {'title': 'changed'})
-        self.assertEqual(len(asked), 2)
+        self.assertEqual(asked, [False, False], 'the names were asked under the mutex')
 
     def test_an_s_ref_is_checked(self):
         s = self.open()
@@ -579,6 +581,16 @@ class PendingTest(StoreCase):
         self.assertEqual(store.pending_items(docs), [
             store.Pending('question', 'Q-1', 't', 'pm', '1', 'kit', 'filed')])
 
+    def test_pending_reads_the_pending_collections_alone(self):
+        # a filtered wait reads pending again only after a write to one of them (apiread)
+        class Reads(dict):
+            def get(self, coll, *default):
+                read.add(coll)
+                return dict.get(self, coll, *default)
+        read = set()
+        store.pending_items(Reads())
+        self.assertEqual(read, set(store.PENDING_COLLECTIONS))
+
     def test_the_store_lists_and_clears_pending(self):
         s = self.open()
         s.add('stories', {'status': 'submitted', 'repo': 'pm', 'title': 't', 'story': 's'})
@@ -596,15 +608,17 @@ class SnapshotTest(StoreCase):
         self.qid = s.add('questions', question(standing={'rule': 'r'}, **{'class': 'go'})).id
         return s
 
-    def copied(self, s, *args, **kw):
-        """The snapshot, and every top-level document deepcopy was handed while it was taken."""
+    def copied(self, s, *args, read='snapshot', **kw):
+        """The read (snapshot by default), and every top-level value deepcopy was handed while
+        it was taken; a copy made with the store's mutex held fails the test."""
         seen, real = [], store.copy.deepcopy
 
         def deepcopy(x, *a):
+            self.assertFalse(s._mutex.locked(), 'a copy was made with the mutex held')
             seen.append(x)
             return real(x, *a)
         with mock.patch.object(store.copy, 'deepcopy', deepcopy):
-            got = s.snapshot(*args, **kw)
+            got = getattr(s, read)(*args, **kw)
         return got, seen
 
     def test_the_whole_snapshot_is_every_collection_as_before(self):
@@ -629,6 +643,20 @@ class SnapshotTest(StoreCase):
         self.assertEqual(seen, [s._docs['to_pm']])
         docs['to_pm']['P-001']['text'] = 'changed'
         self.assertEqual(s.get('to_pm', 'P-001')['text'], 'note', 'a copy, not the store')
+        for read, args in (('docs', ('to_pm',)), ('get', ('to_pm', 'P-001'))):
+            got, seen = self.copied(s, *args, read=read)    # with the mutex free, as snapshot
+            self.assertEqual((got, len(seen)), (seen[0], 1), read)
+
+    def test_newest_keeps_the_last_ids_and_copies_only_them(self):
+        s = self.open()
+        for n in range(1, 12):              # L-1 .. L-11: L-10 and L-11 sort last by number
+            s.put('landings', 'L-%d' % n, {'repo': 'pm', 'branch': 'b', 'tip': 'a' * 40,
+                                           'main': 'b' * 40})
+        (_, docs), seen = self.copied(s, ('landings', 'to_pm'), newest={'landings': 3})
+        self.assertEqual(sorted(docs['landings'], key=store.hubvalidate.natural),
+                         ['L-9', 'L-10', 'L-11'])
+        self.assertEqual(docs['to_pm'], {})
+        self.assertEqual(seen[0], {k: s._docs['landings'][k] for k in ('L-9', 'L-10', 'L-11')})
 
     def test_pick_copies_the_named_fields_of_the_named_documents(self):
         s = self.filled()

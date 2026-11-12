@@ -22,10 +22,21 @@ second open, in this process or another, raises StoreBusy naming the holder. A d
 is already gone, so the next open succeeds; `took_over` is the record it left. Inside the process
 one mutex serialises every write and read.
 
+Stored documents are never changed in place: a write stores a new dict (update builds it from a
+shallow copy of the old one and a deep copy of the change), and every read hands out a copy. So a
+read takes a shallow copy of each collection's {id: document} under the mutex and deep-copies the
+documents after releasing it, and nothing slow runs under the mutex: a write's check reads the
+written document alone, and the PM's repo names (known_repos, which reads config and can run
+git) are asked before the mutex is taken. Code that changes a stored document in place breaks
+every read's copy.
+
 A write, in this order (add, put, update, delete):
+  0. when the change or the stored document has a repo tag (hubvalidate.repo_tag; the stored one
+     read without the mutex, as a hint), ask known_repos;
   1. take the mutex;
   2. check: schema.check, then kitlib.hubvalidate.validate(after, only={rel}) on the documents
-     with the change applied, the way kitlib.backlog.store.check_change does. A new `error`, or a
+     with the change applied, the way kitlib.backlog.store.check_change does (known_repos is
+     asked here, once, only when the hint missed a tag the check judges). A new `error`, or a
      new finding whose code is in REFUSED, refuses the write (HubError invalid); new `warn`
      findings come back as Result.warnings. Findings the document already had never block. A
      delete is not validated;
@@ -61,7 +72,8 @@ instead.
 pending(): the owner input nobody has handled yet (design section 4): answered questions,
 submitted stories, sent to_pm items, to-dos that are done or added by the owner without
 pm_ack, and approvals the owner decided that are not consumed (approval_decided), read at the
-store's clock.
+store's clock. PENDING_COLLECTIONS names the collections it reads: a write to any other leaves
+it as it was.
 
 Nothing here prints, parses arguments or exits.
 """
@@ -90,6 +102,9 @@ TMP_SUFFIX = '.tmp'
 # Q-978 from before the store, whose counter had fallen below them; new questions start at
 # Q-1000 so no id the ledger cites is given again (an owner ruling).
 ID_FLOOR = {'Q': 1000}
+# the collections pending_items reads (and Store.pick, for the api's pending, reads questions): a
+# write to any other cannot change what is pending (kitlib.hubsite.apiread._wait_for)
+PENDING_COLLECTIONS = ('questions', 'stories', 'to_pm', 'todos', 'approvals', 'skill_edits')
 
 Result = collections.namedtuple('Result', 'id version revision warnings')
 Event = collections.namedtuple('Event', 'rev collection id op status')
@@ -301,23 +316,31 @@ class Store(object):
         with self._mutex:
             self._check_open()
             d = self._docs.get(coll, {}).get(doc_id)
-            return copy.deepcopy(d)
+        return copy.deepcopy(d)         # with the mutex free: no document changes in place
 
     def docs(self, coll):
         """A copy of {id: document} for coll."""
         with self._mutex:
             self._check_open()
-            return copy.deepcopy(self._docs.get(coll, {}))
+            held = dict(self._docs.get(coll, {}))
+        return copy.deepcopy(held)
 
-    def snapshot(self, colls=None, skip=()):
-        """(revision, {collection: {id: document}}), copied under one hold of the mutex. Only
-        the collections the caller reads are copied: `colls` (None: every one) less `skip`; a
-        name the store does not hold is left out."""
+    def snapshot(self, colls=None, skip=(), newest=None):
+        """(revision, {collection: {id: document}}) as of one hold of the mutex. Only the
+        collections the caller reads are copied: `colls` (None: every one) less `skip`; a name
+        the store does not hold is left out. `newest` ({collection: n}, n > 0) keeps only the n
+        documents of that collection whose ids sort last (hubvalidate.natural), cut before the
+        copy."""
         with self._mutex:
             self._check_open()
             names = self._docs if colls is None else colls
-            return self._revision, {c: copy.deepcopy(self._docs[c]) for c in names
-                                    if c in self._docs and c not in skip}
+            rev = self._revision
+            held = {c: dict(self._docs[c]) for c in names if c in self._docs and c not in skip}
+        for c, n in (newest or {}).items():
+            if c in held:
+                ids = sorted(held[c], key=hubvalidate.natural)
+                held[c] = {k: held[c][k] for k in ids[max(0, len(ids) - n):]}
+        return rev, {c: copy.deepcopy(v) for c, v in held.items()}
 
     def pick(self, coll, doc_ids, fields):
         """{id: {field: a copy of its value}} of the named top-level fields of the documents of
@@ -389,6 +412,10 @@ class Store(object):
                                        or not isinstance(if_version, int) or if_version < 0):
             raise HubError('invalid', 'if_version must be a whole number, not %r' % (if_version,),
                            'if_version')
+        names = []                      # the PM's repo names, asked before the mutex (step 0)
+        if op != 'delete' and (hubvalidate.repo_tag(fields) or hubvalidate.repo_tag(
+                self._docs.get(coll, {}).get(doc_id))):
+            names.append(self.known_repos())
         with self._mutex:
             self._check_open()
             counters = dict(self._counters)
@@ -423,7 +450,7 @@ class Store(object):
                     new.pop(k, None)
                 new['version'] = _version(cur) + 1
                 new['updated_at'] = self.clock()
-                warnings = self._validate(coll, doc_id, new)
+                warnings = self._validate(coll, doc_id, new, names)
             rev = self._revision + 1
             try:
                 _replace(os.path.join(self.root, META_NAME),
@@ -450,18 +477,18 @@ class Store(object):
             self._cond.notify_all()
             return Result(doc_id, _version(new), rev, warnings)
 
-    def _validate(self, coll, doc_id, new):
+    def _validate(self, coll, doc_id, new, names):
         """The new warn findings for writing new as coll/doc_id; HubError invalid on a schema
-        error, a new hubvalidate error or a new finding whose code is in REFUSED."""
+        error, a new hubvalidate error or a new finding whose code is in REFUSED. names: [the
+        repo names] when _write asked for them before the mutex, else []."""
         errors = schema.check(coll, new, doc_id)
         if errors:
             raise HubError('invalid', '; '.join(f.message for f in errors), errors[0].field)
         rel = '%s/%s' % (coll, doc_id)
-        names = []
 
         def known():
             # asked by hubvalidate only when this document's repo tag is checked, and once a
-            # write: a write with no repo tag never runs known_repos (its git) under the mutex
+            # write; here, under the mutex, only when _write's unlocked hint missed the tag
             if not names:
                 names.append(self.known_repos())
             return names[0]

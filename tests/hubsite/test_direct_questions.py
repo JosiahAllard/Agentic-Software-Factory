@@ -8,7 +8,7 @@ import threading
 import time
 import unittest
 
-from kitlib.hubsite import api
+from kitlib.hubsite import api, store
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import Store
 
@@ -231,6 +231,39 @@ class WaitForTest(DirectCase):
                          ([mine], False, False))
         # the changes are all of them since `since`, the other session's answer too
         self.assertIn(theirs, [c['id'] for c in got['changes']])
+
+    def test_a_filtered_wait_reads_pending_again_only_after_a_write_pending_reads(self):
+        reads, real_pending, real_pick = [], self.store.pending, self.store.pick
+
+        def pending():
+            reads.append(1)
+            return real_pending()
+
+        def pick(coll, *a):
+            self.assertIn(coll, store.PENDING_COLLECTIONS, 'pending reads a collection it '
+                                                           'does not name')
+            return real_pick(coll, *a)
+        self.store.pending, self.store.pick = pending, pick
+        for key in ('kit', 'pm'):           # the PM's wait reads the routes too
+            with self.subTest(key=key):
+                qid = self.ask(**{'from': key})
+                out = {}
+                t = threading.Thread(target=lambda: out.update(got=self.wait(20, **{'for': key})))
+                t.start()
+                self.addCleanup(t.join, 30)
+                time.sleep(0.3)
+                before = len(reads)
+                for _ in range(3):          # the inbox is no pending collection
+                    self.store.add('inbox', {'text': 'x'})
+                time.sleep(0.3)
+                self.assertTrue(t.is_alive())
+                self.assertEqual(len(reads), before, 'an inbox write read pending again')
+                self.answer(qid)
+                t.join(10)
+                self.assertEqual(self.ids(out['got']['pending']), [qid])
+                self.assertGreater(len(reads), before)
+                self.ok('POST', '/questions/%s/log' % qid, AGENT,
+                        {'if_version': self.store.get('questions', qid)['version']})
 
     def test_a_wait_for_kit_that_times_out_says_so_even_after_other_writes(self):
         since = self.store.revision

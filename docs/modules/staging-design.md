@@ -32,7 +32,7 @@ Low-level design of `kitlib/staging`: the promotion of a staging branch to the m
 2. **A fetch**, then the staging setting `<remote>/<main>` writes. Off: USAGE.
 3. **Recovery.** An attempt in a live phase (record.LIVE) is moved on from that phase ("Phases and recovery"), and the run ends there.
 4. **Due?** (`changes.due`): `"staging".promote_after_landings` untested commits (default 4), or the oldest of them `promote_after_hours` old (default 6); never with none. `--force` skips only this check.
-5. **Held?** A tip that already ended in a hold (record.HOLDS: red, refused, diverged, error) is never tested again: a new landing on staging, or the owner, moves it on. M not an ancestor of S ends `diverged`.
+5. **Held?** A tip that already ended in a hold (record.HOLDS: red, refused, diverged, failed, error) is never tested again, so a tip that keeps failing is not gated on every hub tick ("Errors" says how a hold is cleared). M not an ancestor of S ends `diverged`.
 6. **The gate**: `kitlib.gate.runner.merged_gate(main, cfg_at_M, M, full, slug 'promote', tree <worktrees_dir>/promote)`, the tree made with `dailyfull.prepare` at S. The gate and hook config are M's, as a landing reads them. `full` (every step in full) when M..S changes the gate's config (`gate.reuse.config_hits`) or git cannot list the change, as at a landing. The slot is booked now or never (`BOOK`: the lock's `no_wait`), so a detached run never waits out a hub tick and background runs never queue behind it. A machine-lock refusal (busy, timeout, reserved, hold, no lock) is a skip that records nothing; the next tick asks again. FAILED ends `red`; any other refusal (`NO_STEP` included) ends `error`; a gate that tested another commit than S ends `error`.
 7. **The promotion record** of S on M (`write_record`: `gate_ok.record_tested_pass(kind 'promotion', base=M, config_rev=M, source, full)`). Not written: the attempt ends `failed` and main is never pushed.
 8. **The attempt** starts at `tested` and `advance.Mover` moves it on.
@@ -55,7 +55,7 @@ Fields (schema 1): `schema`, `via` (`promotion`), `sha` (S), `base` (M, full has
 | `behind` | end | Main moved after the test; S is tested again next time |
 | `refused` | end, hold | The pre-push guard refused the push |
 | `diverged` | end, hold | Main has commits the staging branch lacks |
-| `failed` | end | The push could not be made or verified in `PUSH_TRIES` tries, or the promotion record was not written |
+| `failed` | end, hold | The push could not be made or verified in `PUSH_TRIES` tries, or the promotion record was not written |
 | `error` | end, hold | The gate refused to run at S, or tested another commit, or M's config cannot be read |
 
 Records are written atomically, and only by the process holding the promote lock (the hub job's `announced` mark included).
@@ -64,9 +64,10 @@ Records are written atomically, and only by the process holding the promote lock
 
 `Mover.advance(attempt)` moves a live attempt on until it ends or waits. A recovering run calls the same thing, so recovery is the normal path from that phase.
 
-- **tested.** Fetch and read M again. Still the attempt's base: take the landing lock, then push. M moved to an ancestor of S: `behind` (retested next time). M already holds S: `done`. M elsewhere: `diverged`. M cannot be read: the attempt stays `tested` (the next run tries again).
-- **The landing lock.** `LandingLock.take` refuses at once while anyone holds it (it has no queue), so the mover polls every `LOCK_POLL_S` (5 s) up to `LOCK_WAIT_S` (900 s). A holder `kitlib.proc` says is gone is broken (`break_lock`, which refuses while a merge is in progress). Not given in time: the attempt stays at its phase and the next run tries again. It is held to the end and released on every exit, an exception included.
-- **pushing.** `dailyfull.promote.promote`: a fetch; `current` (no push) when main already holds S; else the one plain push, read back with `ls-remote`. Never a raw push and never a force. `promoted` or `current`: `pushed`. Git's output carrying the kit pre-push hook's refusal (`pre-push: refused`): `refused`, at once and with no retry. `diverged`: `diverged`. `off-staging`: `behind`. Any other failure is pushed again, up to `PUSH_TRIES` (3) in all with `PUSH_PAUSE_S` (15 s) between; then `failed`. A recovered `pushing` counts the tries made before.
+- **tested.** Fetch and read M again. Still the attempt's base: take the landing lock, then fetch and read M once more under it, and push only if it is still the base: the lock wait can be long, and the daily run's own promotion moves main without the landing lock. M moved to an ancestor of S: `behind` (retested next time). M already holds S: `done`. M elsewhere: `diverged`. M cannot be read: the attempt stays `tested` (the next run tries again).
+- **pushing (recovered).** The same read of M under the landing lock: still the base, the push is made again; M already holds S (the dead run's push landed): `pushed`; else `behind` or `diverged` as above, never a push that the guard would refuse.
+- **The landing lock.** `LandingLock.take` refuses at once while anyone holds it (it has no queue), so the mover polls every `LOCK_POLL_S` (5 s) up to `LOCK_WAIT_S` (900 s). A holder `kitlib.proc` says is gone is broken (`break_lock`, which refuses while a merge is in progress), except a stuck landing's (lock phase `stuck`): that is cleared by hand only, the lander's own rule (`Lander.held_by`), so the attempt stays at its phase at once, without waiting. Not given in time: the attempt stays at its phase and the next run tries again. It is held to the end and released on every exit, an exception included.
+- **pushing.** `dailyfull.promote.promote`: a fetch; `current` (no push) when main already holds S; else the one plain push, read back with `ls-remote`. Never a raw push and never a force. `promoted` or `current`: `pushed`. Git's output carrying the kit pre-push hook's refusal (`pre-push: refused`): `refused`, at once and with no retry, except a refusal that says only that the hook could not read what it judges by (`advance.TRANSIENT`, `pre-push: refused, cannot ...`: the remotes, git's ancestry, an object list), which counts as a failed push below. `diverged`: `diverged`. `off-staging`: `behind`. Any other failure is pushed again, up to `PUSH_TRIES` (3) in all with `PUSH_PAUSE_S` (15 s) between; then `failed`. A recovered `pushing` counts the tries made before.
 - **pushed.** The main checkout's local main is fast-forwarded where that is safe (`kitlib.landing.push.sync_checkout`, the landing's own step; the main checkout's HEAD is always main), then `done`. A sync that cannot be made is a WARNING line with the `git merge --ff-only` to run; it never undoes the move.
 
 There is no `synced` phase: `pushed` goes straight to `done` once the sync has been tried.
@@ -86,7 +87,11 @@ The promote lock (in the git common dir), the attempts folder, the promotion's o
 
 ## Errors
 
-A step before the gate that cannot be made (the fetch, the staging read, the tree) is REFUSED with nothing recorded. Every attempt that starts ends in one of the phases above, and a hold stops promotion at that tip until a new landing or the owner moves it on. Exit codes: 0 done, behind, not due or a skip; 1 red; 2 usage or off; 4 held, diverged, refused, failed or error; 5 busy.
+A step before the gate that cannot be made (the fetch, the staging read, the tree) is REFUSED with nothing recorded. Every attempt that starts ends in one of the phases above, and a hold stops promotion at that tip; the hub job announces it once.
+
+How a hold is cleared: a new staging tip (any landing) is a fresh attempt, tested from the start. `red`, `diverged`, `failed` and `error` need nothing else (the landing carries the fix, or the cause was passing). `refused` needs the owner's action first: the refusal line in the attempt's `why` names what the guard refused, and a new tip would meet the same refusal until that is dealt with. To retry the same tip, the owner deletes that attempt's folder (`<gate log base>/promote/<stamp>-<sha10>/`); nothing else clears a hold, and `--force` skips only the due check.
+
+Exit codes: 0 done, behind, not due or a skip; 1 red; 2 usage or off; 4 held, diverged, refused, failed or error; 5 busy.
 
 ## Gaps
 

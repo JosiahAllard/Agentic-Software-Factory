@@ -22,11 +22,13 @@ class Cfg:
 
 
 class FakeGit:
-    """fetch answers `fetch`; rev-parse of origin/main answers `main`; merge-base --is-ancestor
+    """fetch answers `fetch`; rev-parse of origin/main answers `main` (a list: one answer per
+    read, the last one repeating, for a main that moves between reads); merge-base --is-ancestor
     answers from `ancestors` ({(a, b)}: a is an ancestor of b; each sha its own)."""
 
     def __init__(self, main=BASE, ancestors=(), fetch=(0, '', '')):
-        self.main, self.fetch = main, fetch
+        self.mains = list(main) if isinstance(main, list) else [main]
+        self.fetch = fetch
         self.ancestors = set(ancestors)
         self.calls = []
 
@@ -35,7 +37,8 @@ class FakeGit:
         if args[0] == 'fetch':
             return self.fetch
         if args[0] == 'rev-parse':
-            return (0, self.main, '') if self.main else (1, '', 'no such ref')
+            main = self.mains.pop(0) if len(self.mains) > 1 else self.mains[0]
+            return (0, main, '') if main else (1, '', 'no such ref')
         if args[:2] == ('merge-base', '--is-ancestor'):
             a, b = args[2], args[3]
             return (0, '', '') if a == b or (a, b) in self.ancestors else (1, '', '')
@@ -43,8 +46,10 @@ class FakeGit:
 
 
 class FakeLock:
-    """LandingLock's surface: take() raises the queued Busy/LockError values, then gives a token;
-    every call goes into `log` (shared, so a test can order it against other events)."""
+    """LandingLock's surface: take() raises the queued Busy/LockError values (a Busy carries the
+    holder's record, its landing phase among it), then gives a token; holder_state answers
+    `dead`; break_lock, like the real one, looks at no phase. Every call goes into `log`
+    (shared, so a test can order it against other events)."""
 
     def __init__(self, log, busy=(), dead=False, breaks=True):
         self.log, self.busy, self.dead, self.breaks = log, list(busy), dead, breaks
@@ -76,8 +81,8 @@ class FakeLock:
         self.log.append(('release',))
 
 
-def busy(token=None):
-    return LL.Busy({'token': token, 'pid': 7, 'branches': ['kit/x'], 'phase': 'gate'})
+def busy(token=None, phase='gate'):
+    return LL.Busy({'token': token, 'pid': 7, 'branches': ['kit/x'], 'phase': phase})
 
 
 class Case(unittest.TestCase):
@@ -170,16 +175,65 @@ class FromTested(Case):
         self.assertEqual(self.log, [])
 
 
+class Rechecked(Case):
+    """Main is read again once the landing lock is held: the wait can be long, and the daily
+    run's own promotion moves main without that lock."""
+
+    def test_main_moved_on_during_the_lock_wait_ends_behind_with_no_push(self):
+        self.answers = ['promoted']
+        self.lock.busy = [busy('t1')]
+        a = self.attempt('tested')
+        git = FakeGit(main=[BASE, MID], ancestors={(MID, S), (BASE, MID)})
+        lines = self.mover(git).advance(a)
+        self.assertEqual(a.phase, 'behind', lines)
+        self.assertEqual([c[0] for c in git.calls if c[0] == 'fetch'], ['fetch', 'fetch'])
+        self.assertFalse(any(e[0] == 'promote' for e in self.log), self.log)
+        self.assertEqual(self.log[-1], ('release',))
+        self.assertIn('moved from %s to %s' % (BASE[:10], MID[:10]), a.rec['why'])
+
+    def test_main_given_commits_the_tip_lacks_during_the_wait_is_diverged(self):
+        self.answers = ['promoted']
+        a = self.attempt('tested')
+        lines = self.mover(FakeGit(main=[BASE, OTHER])).advance(a)
+        self.assertEqual(a.phase, 'diverged', lines)
+        self.assertFalse(any(e[0] == 'promote' for e in self.log))
+
+    def test_main_that_cannot_be_read_under_the_lock_stays_tested(self):
+        self.answers = ['promoted']
+        a = self.attempt('tested')
+        git = FakeGit(main=[BASE, ''])
+        lines = self.mover(git).advance(a)
+        self.assertEqual(a.phase, 'tested', lines)
+        self.assertFalse(any(e[0] == 'promote' for e in self.log))
+        self.assertEqual(self.log[-1], ('release',))
+
+
 class FromLater(Case):
-    def test_from_pushing_the_push_is_made_again_and_never_rechecks_the_base(self):
+    def test_from_pushing_on_the_same_base_the_push_is_made_again(self):
         self.answers = ['current']
         a = self.attempt('pushing', tries=1)
-        git = FakeGit(main=OTHER)               # a recheck would end it diverged
+        git = FakeGit()
         lines = self.mover(git).advance(a)
         self.assertEqual(a.phase, 'done', lines)
         self.assertEqual(a.rec['tries'], 2)
-        self.assertFalse(any(c[0] == 'fetch' for c in git.calls))
         self.assertEqual(self.synced, [S])
+        self.assertEqual([e[0] for e in self.log],
+                         ['take', 'phase', 'promote', 'sync', 'release'])
+
+    def test_from_pushing_with_main_holding_the_tip_only_the_sync_is_left(self):
+        a = self.attempt('pushing', tries=1)
+        lines = self.mover(FakeGit(main=OTHER, ancestors={(S, OTHER)})).advance(a)
+        self.assertEqual(a.phase, 'done', lines)
+        self.assertEqual(self.phases(a)[-3:], ['pushing', 'pushed', 'done'])
+        self.assertFalse(any(e[0] == 'promote' for e in self.log))
+        self.assertEqual(self.synced, [S])
+
+    def test_from_pushing_with_main_given_other_commits_is_diverged_with_no_push(self):
+        a = self.attempt('pushing', tries=1)
+        lines = self.mover(FakeGit(main=OTHER)).advance(a)
+        self.assertEqual(a.phase, 'diverged', lines)
+        self.assertFalse(any(e[0] == 'promote' for e in self.log))
+        self.assertEqual(self.synced, [])
 
     def test_from_pushed_only_the_sync_is_left(self):
         a = self.attempt('pushed')
@@ -220,6 +274,33 @@ class Pushes(Case):
         self.assertEqual(self.synced, [])
         self.assertIsNone(self.lock.held)
         self.assertIn('refused', R.HOLDS)
+
+    def test_a_pre_push_refusal_that_could_not_read_is_tried_again_then_failed(self):
+        self.answers = ['push']
+        a = self.attempt('tested')
+        for cannot in ('pre-push: refused, cannot read the remotes to tell whether origin is the '
+                       'private remote',
+                       'pre-push: refused, cannot tell whether %s is a fast-forward of origin '
+                       'main' % S):
+            a = self.attempt('tested')
+            self.sleeps = []
+            with mock.patch.object(P, '_push', return_value=(1, cannot + '\nerror: failed')) as p:
+                lines = self.mover().advance(a)
+            self.assertEqual(a.phase, 'failed', lines)
+            self.assertEqual(p.call_count, A.PUSH_TRIES)
+            self.assertEqual(self.sleeps, [A.PUSH_PAUSE_S] * (A.PUSH_TRIES - 1))
+            self.assertIn(cannot, a.rec['why'])
+            self.assertTrue(cannot.startswith(A.TRANSIENT))
+        self.assertFalse(A.TRANSIENT.startswith('pre-push: refused, main'))
+
+    def test_a_transient_refusal_then_a_landed_push_is_done(self):
+        a = self.attempt('tested')
+        said = iter([(1, 'pre-push: refused, cannot list the objects'), (0, 'ok')])
+        self.answers = ['push', 'promoted']
+        with mock.patch.object(P, '_push', side_effect=lambda *x: next(said)):
+            self.mover().advance(a)
+        self.assertEqual(a.phase, 'done')
+        self.assertEqual(a.rec['tries'], 2)
 
     def test_pushes_are_bounded_then_failed(self):
         self.answers = ['not-promoted']
@@ -294,6 +375,29 @@ class LandingLock(Case):
         self.assertIn(('break',), self.log)
         self.assertTrue(any('broke the landing lock' in l for l in lines), lines)
         self.assertEqual(self.sleeps, [])
+
+    def test_a_stuck_landing_is_never_broken_and_the_attempt_stays_at_its_phase(self):
+        for phase in ('tested', 'pushing'):
+            self.log[:] = []
+            self.answers = ['promoted']
+            self.lock = FakeLock(self.log, busy=[busy('t1', phase='stuck')] * 1000, dead=True)
+            a = self.attempt(phase, tries=1)
+            lines = self.mover().advance(a)
+            self.assertEqual(a.phase, phase, lines)
+            self.assertNotIn(('break',), self.log)
+            self.assertFalse(any(e[0] in ('promote', 'release') for e in self.log), self.log)
+            self.assertEqual(self.sleeps, [])       # no wait on what only a person clears
+            self.assertIn('WAITING at %s' % phase, lines[-1])
+            self.assertIn('stuck', lines[-1])
+
+    def test_a_stuck_record_after_a_busy_one_still_stops_the_wait(self):
+        self.answers = ['promoted']
+        self.lock = FakeLock(self.log, busy=[busy('t1'), busy('t1', phase='stuck')], dead=True,
+                             breaks=False)
+        a = self.attempt('tested')
+        self.mover().advance(a)
+        self.assertEqual(a.phase, 'tested')
+        self.assertEqual(self.log.count(('break',)), 1)     # the first, not the stuck one
 
     def test_a_dead_holder_that_cannot_be_broken_is_waited_on(self):
         self.answers = ['promoted']

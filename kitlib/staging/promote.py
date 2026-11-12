@@ -15,7 +15,8 @@ green writes S's promotion record and moves main to S (kitlib.staging.advance). 
      (advance.Mover): this run does nothing else.
   4. Due? (kitlib.staging.changes: "staging".promote_after_landings untested landings, or the
      oldest promote_after_hours old; `force` skips only this check.) Not due: OK, nothing recorded.
-  5. S already ended in a hold (record.HOLDS: red, refused, diverged, error): never tested again.
+  5. S already ended in a hold (record.HOLDS: red, refused, diverged, failed, error): never
+     tested again; a new staging tip is a fresh attempt.
      M not an ancestor of S: an attempt that ends diverged.
   6. The gate, its slot booked now or never (BOOK: no_wait). A machine-lock refusal (busy,
      timeout, reserved, hold, no lock): a skip, nothing recorded (the next hub tick asks again). FAILED: ends red. Any other refusal: ends error.

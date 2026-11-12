@@ -24,7 +24,10 @@ Phases: tested (green, its record written) -> pushing -> pushed (main is S on th
 behind (main moved since the test: tested again next time), refused (the pre-push guard refused
 the push), diverged (main holds commits the staging branch lacks), failed (the push could not be
 made or verified in PUSH_TRIES tries, or the tested record could not be written), error (the gate
-refused to run on the tip). HOLDS never test the same tip again; ANNOUNCE get one hub item each.
+refused to run on the tip). HOLDS never test the same tip again (failed among them, so a tip
+whose push or record keeps failing is not gated again on every hub tick): a new staging tip is a
+fresh attempt, and a refused one waits for the owner's action as well. ANNOUNCE get one hub item
+each.
 
 The records are written atomically (kitlib.fs.atomic) and only by the run holding the promote
 lock (kitlib.staging.promote.lock_for), the hub job's `announced` mark included.
@@ -40,7 +43,7 @@ FILE = 'promote.json'
 DIR = 'promote'
 LIVE = ('tested', 'pushing', 'pushed')
 ENDS = ('done', 'red', 'behind', 'refused', 'diverged', 'failed', 'error')
-HOLDS = ('red', 'refused', 'diverged', 'error')
+HOLDS = ('red', 'refused', 'diverged', 'failed', 'error')
 ANNOUNCE = ('red', 'refused', 'diverged', 'failed', 'error')
 
 

@@ -18,6 +18,7 @@ from kitlib.staging import advance as A
 from kitlib.staging import promote as SP
 from kitlib.staging import record as R
 from kitlib.gate import runner
+from kitlib.records import gate_ok, place
 from tests.dailyfull.test_promote import StagingCase
 from tests.realgit import real_git
 from tests.staging.test_advance import FakeLock
@@ -63,8 +64,9 @@ class Case(StagingCase):
 
     def run_promote(self, force=True, **kw):
         kw.setdefault('gate', self.gate)
+        kw.setdefault('mover', self.mover)
         return SP.run(self.main_dir, self.cfg(), force=force, book_kw=self.book_kw,
-                      record=self.record, mover=self.mover, **kw)
+                      record=self.record, **kw)
 
     def attempts(self):
         where = SP.folder(self.cfg(), self.main_dir)
@@ -223,6 +225,38 @@ class EndsAndHolds(Case):
         self.assertIn('the store is read-only', a.rec['why'])
         self.assertNotIn('take', [e[0] for e in self.log])
 
+    def test_a_failed_tip_is_held_and_never_gated_again_until_a_new_tip(self):
+        tip = self.land()
+        self.record_error = 'the store is read-only'
+        self.run_promote()
+        self.assertEqual(self.gates, 1)
+        self.record_error = None
+        out = self.run_promote(gate=self.no_gate)
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('HELD - %s ended failed' % tip[:10], out.lines[0])
+        self.assertEqual(len(self.attempts()), 1)
+        self.assertEqual(SP.look(self.main_dir, self.cfg(), lambda a: None,
+                                 clock=lambda: time.time() + 7 * HOUR)[0], 'idle')
+        self.land()                             # a new staging tip is a fresh attempt
+        out = self.run_promote()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual((self.gates, self.attempts()[-1].phase), (2, 'done'))
+
+    def test_a_push_that_keeps_failing_is_held_and_not_pushed_again(self):
+        tip = self.land()
+
+        def mover(main, cfg, staging, git, say):
+            return A.Mover(main, cfg, staging, git, say=say, lock=self.lock, sync=self.sync,
+                           sleep=lambda s: None,
+                           promote=lambda *a, **k: {'status': 'not-promoted', 'why': 'offline',
+                                                    'main': 'main', 'from': None, 'to': tip})
+        out = self.run_promote(mover=mover)
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertEqual(self.attempts()[-1].phase, 'failed')
+        out = self.run_promote(gate=self.no_gate, mover=mover)
+        self.assertIn('HELD - %s ended failed' % tip[:10], out.lines[0])
+        self.assertEqual((self.gates, len(self.attempts())), (1, 1))
+
     def test_a_machine_lock_refusal_is_a_skip_that_records_nothing(self):
         self.land()
 
@@ -319,6 +353,45 @@ class Recovery(Case):
         self.land()
         self.run_promote(gate=self.no_gate)
         self.assertEqual(self.gates, 0)
+
+
+class WriteRecord(Case):
+    def test_the_promotion_record_is_asked_of_record_tested_pass_with_its_base(self):
+        base, tip = self.remote_main(), self.land()
+        cfg = self.cfg()
+        out = G.Outcome(G.OK, [], source='config', results=[
+            {'name': 'unit', 'status': 'PASS', 'seconds': 1.5},
+            {'name': 'lint', 'status': 'REUSED', 'seconds': 0.0}])
+        seen = []
+
+        def stub(main, sha, kind, gate_config, kit, repo, started, steps, **kw):
+            seen.append(dict(main=main, sha=sha, kind=kind, gate_config=gate_config, kit=kit,
+                             repo=repo, started=started, steps=steps, **kw))
+        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=stub):
+            for full in (False, True):
+                SP.write_record(self.main_dir, tip, base, cfg, '2026-11-12T04:00:00Z', out, full)
+        self.assertEqual([s['full'] for s in seen], [False, True])
+        s = seen[0]
+        self.assertEqual((s['main'], s['sha'], s['kind']), (self.main_dir, tip, 'promotion'))
+        self.assertEqual((s['base'], s['config_rev']), (base, base))
+        self.assertEqual(s['gate_config'], gate_ok.gate_config(cfg))
+        self.assertEqual(s['kit'], runner.kit_identity())
+        self.assertEqual(s['repo'], place.repo_name(cfg, self.main_dir))
+        self.assertEqual((s['started'], s['source']), ('2026-11-12T04:00:00Z', 'config'))
+        self.assertEqual(s['steps'], [{'name': 'unit', 'result': 'pass', 'seconds': 1.5},
+                                      {'name': 'lint', 'result': 'reused', 'seconds': 0.0}])
+
+    def test_a_missing_or_raising_record_tested_pass_is_record_not_written(self):
+        out = G.Outcome(G.OK, [], results=[])
+        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=None):
+            with self.assertRaisesRegex(SP.RecordNotWritten, 'no gate_ok.record_tested_pass'):
+                SP.write_record(self.main_dir, 'a' * 40, 'b' * 40, self.cfg(), 'x', out, False)
+
+        def boom(*a, **k):
+            raise OSError('read-only')
+        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=boom):
+            with self.assertRaisesRegex(SP.RecordNotWritten, '^OSError: read-only$'):
+                SP.write_record(self.main_dir, 'a' * 40, 'b' * 40, self.cfg(), 'x', out, False)
 
 
 class PromoteLock(Case):

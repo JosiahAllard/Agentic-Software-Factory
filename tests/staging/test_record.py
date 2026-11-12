@@ -52,7 +52,7 @@ class Phases(Case):
         self.assertIn('red', R.HOLDS)
         self.assertNotIn('refused', R.LIVE)
         self.assertNotIn('behind', R.HOLDS)
-        self.assertNotIn('failed', R.HOLDS)
+        self.assertIn('failed', R.HOLDS)
         self.assertTrue(set(R.HOLDS) <= set(R.ANNOUNCE))
 
     def test_a_record_that_cannot_be_written_is_a_record_error(self):
@@ -95,7 +95,7 @@ class Reading(Case):
 
     def test_held_is_a_hold_at_that_sha_only(self):
         R.start(self.dir, S1, BASE, 'behind', stamp='20261112-000001')
-        R.start(self.dir, S2, BASE, 'failed', stamp='20261112-000002')
+        R.start(self.dir, S2, BASE, 'done', stamp='20261112-000002')
         found = R.attempts(self.dir)
         self.assertIsNone(R.held(found, S1))
         self.assertIsNone(R.held(found, S2))

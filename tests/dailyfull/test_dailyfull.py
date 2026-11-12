@@ -18,7 +18,7 @@ from kitlib.dailyfull import promote as P
 from kitlib.gate import runner
 from kitlib.git import cmd as gitcmd
 from kitlib.lock import store as lockstore
-from kitlib.records import place
+from kitlib.records import gate_ok, place
 from tests.gate import fixtures
 from tests.home import temp_home
 
@@ -412,6 +412,58 @@ class StagingOffIsToday(Case):
         before = self.remote_main()
         self.plain(self.run_daily())
         self.assertEqual(self.remote_main(), before)
+
+class DailyRecord(Case):
+    """write_daily_record against a stub of gate_ok.record_tested_pass (the gaps branch's)."""
+    KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test'}, 'staging': {'branch': 'staging'}}
+    RAN = [{'name': 'unit', 'status': 'PASS', 'seconds': 1.0},
+           {'name': 'lint', 'status': 'SKIP', 'seconds': 0.0}]
+
+    def test_the_daily_record_is_asked_with_main_as_fetched_for_its_base(self):
+        self.repo.git('fetch', '-q', 'origin')
+        base = self.repo.git('rev-parse', 'refs/remotes/origin/main').strip()
+        sha = self.repo.git('rev-parse', 'HEAD').strip()
+        cfg = self.cfg()
+        seen = []
+
+        def stub(main, sha_, kind, gate_config, kit, repo, started, steps, **kw):
+            seen.append(dict(main=main, sha=sha_, kind=kind, gate_config=gate_config, kit=kit,
+                             repo=repo, started=started, steps=steps, **kw))
+        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=stub):
+            why = D.write_daily_record(self.main_dir, sha, cfg, '2026-11-12T04:00:00Z',
+                                       self.RAN, self.main_dir)
+        self.assertIsNone(why)
+        s, = seen
+        self.assertEqual((s['main'], s['sha'], s['kind']), (self.main_dir, sha, 'daily'))
+        self.assertEqual((s['base'], s['config_rev']), (base, sha))
+        self.assertNotIn('full', s)
+        self.assertEqual(s['gate_config'], gate_ok.gate_config(cfg))
+        self.assertEqual(s['repo'], place.repo_name(cfg, self.main_dir))
+        self.assertEqual(s['started'], '2026-11-12T04:00:00Z')
+        self.assertEqual(s['steps'], [{'name': 'unit', 'result': 'pass', 'seconds': 1.0},
+                                      {'name': 'lint', 'result': 'skip', 'seconds': 0.0}])
+        self.assertTrue(s['source'])
+
+    def test_a_main_that_cannot_be_read_is_no_base(self):
+        seen = []
+        git = lambda *a, **k: (1, '', 'no such ref')
+        with mock.patch.object(gate_ok, 'record_tested_pass', create=True,
+                               new=lambda *a, **k: seen.append(k)):
+            D.write_daily_record(self.main_dir, 'a' * 40, self.cfg(), 'x', [], self.main_dir,
+                                 git=git)
+        self.assertIsNone(seen[0]['base'])
+
+    def test_a_missing_or_raising_record_tested_pass_is_why_not(self):
+        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=None):
+            why = D.write_daily_record(self.main_dir, 'a' * 40, self.cfg(), 'x', [], self.main_dir)
+        self.assertIn('no gate_ok.record_tested_pass', why)
+
+        def boom(*a, **k):
+            raise OSError('read-only')
+        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=boom):
+            why = D.write_daily_record(self.main_dir, 'a' * 40, self.cfg(), 'x', [], self.main_dir)
+        self.assertEqual(why, 'OSError: read-only')
+
 
 class StagingRunCase(Case):
     KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test'}, 'staging': {'branch': 'staging'}}

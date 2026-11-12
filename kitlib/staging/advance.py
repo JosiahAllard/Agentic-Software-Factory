@@ -5,16 +5,21 @@ Mover(...).advance(attempt) takes an attempt in one of record.LIVE and moves it 
 or has to wait; a run that finds an attempt a dead run left (kitlib.staging.promote) calls the same
 thing, so a recovery is the normal path from that phase:
 
-  tested    `<remote>/<main>` is fetched. Still the attempt's base: the landing lock is taken
-            (below), then pushing. Main moved on to an ancestor of the tip: behind (tested again
-            next time). Main holds the tip already: done. Main has commits the tip lacks: diverged.
-            The landing lock not given in time: still tested (the next run tries again).
-  pushing   kitlib.dailyfull.promote.promote: a fetch, `current` when main holds the tip already,
-            else the one plain push (never forced, never past the pre-push hook) read back with
-            ls-remote. promoted or current: pushed. The pre-push guard refusing (REFUSED_MARK in
-            git's output: the kit hook's own refusal): refused, never tried again. diverged:
-            diverged; off-staging: behind. A push that failed otherwise, or a main that cannot be
-            read after it: tried again PUSH_TRIES times in all, then failed.
+  tested    `<remote>/<main>` is fetched (`_based`). Still the attempt's base: the landing lock
+            is taken (below), and main is fetched and checked again under it, since the wait
+            can be long and the daily run's own promotion moves main without that lock. Main
+            moved on to an ancestor of the tip: behind (tested again next time). Main holds the
+            tip already: done. Main has commits the tip lacks: diverged. The landing lock not
+            given in time, or main not readable: still tested (the next run tries again).
+  pushing   (a dead run's push) the same check under the landing lock, main holding the tip
+            already being pushed; then kitlib.dailyfull.promote.promote: a fetch, `current` when
+            main holds the tip already, else the one plain push (never forced, never past the
+            pre-push hook) read back with ls-remote. promoted or current: pushed. The pre-push
+            guard refusing (REFUSED_MARK in git's output: the kit hook's own refusal): refused,
+            never tried again, unless the refusal is one of TRANSIENT (the hook could not read
+            what it judges by), which is a failed push. diverged: diverged; off-staging: behind.
+            A push that failed otherwise, or a main that cannot be read after it: tried again
+            PUSH_TRIES times in all, then failed.
   pushed    main is the tip on the remote: the main checkout's local main is fast-forwarded where
             that is safe (`sync`, kitlib.landing.push.sync_checkout), then done. Its warnings are
             lines; they never undo the move.
@@ -23,7 +28,8 @@ The landing lock (kitlib.records.landing.LandingLock, with this process's pid) i
 the push to the end, so no landing is mid-merge while the main checkout's main moves. take()
 refuses at once while anyone holds it, so it is polled every LOCK_POLL_S up to `lock_wait_s`;
 a holder kitlib.proc says is gone is broken (break_lock, which refuses while a merge is in
-progress). The caller has released its machine-lock slot before advance is called: the gate's
+progress), except a stuck landing's (phase STUCK): that one is cleared by hand only, as the
+lander's own rule says (kitlib.landing.lander held_by), so the attempt stays at its phase. The caller has released its machine-lock slot before advance is called: the gate's
 slot is never held while waiting on a landing.
 
 Git reads go through the caller's `git(cwd, *args)` (kitlib.dailyfull.git). Nothing here prints.
@@ -39,6 +45,10 @@ PUSH_PAUSE_S = 15           # between them
 LOCK_WAIT_S = 900           # how long the landing lock is waited for
 LOCK_POLL_S = 5
 REFUSED_MARK = 'pre-push: refused'      # the kit pre-push hook's refusal (kitlib.guard.prepush)
+# Its refusals that say only that the hook could not read what it judges by (a remote list, git's
+# ancestry, an object list): a failed push, tried again, never a refused hold.
+TRANSIENT = REFUSED_MARK + ', cannot '
+STUCK = 'stuck'             # a landing that stopped half-way (kitlib.records.landing PHASES)
 
 
 def _quiet(_line):
@@ -80,12 +90,11 @@ class Mover(object):
         """Move attempt `a` on from its phase until it ends or waits: the lines to say."""
         lines = []
         try:
-            if a.phase == 'tested':
-                if not self._still_based(a, lines):
-                    return lines
+            if a.phase == 'tested' and not self._based(a, lines):
+                return lines            # no wait for the landing lock when there is nothing to push
             if not self._take(a, lines):
                 return lines
-            if a.phase in ('tested', 'pushing'):
+            if a.phase in ('tested', 'pushing') and self._based(a, lines):
                 self._push(a, lines)
             if a.phase == 'pushed':
                 more = self.sync(self.main, self.cfg, a.sha)
@@ -111,9 +120,11 @@ class Mover(object):
     def _anc(self, a, b):
         return self.git(self.main, 'merge-base', '--is-ancestor', a, b)[0] == 0
 
-    def _still_based(self, a, lines):
-        """Phase tested: True when `<remote>/<main>` is still the attempt's base; else the attempt
-        ends (behind, done or diverged), or stays tested when main cannot be read."""
+    def _based(self, a, lines):
+        """Phase tested or pushing: True when `<remote>/<main>`, fetched now, is still the
+        attempt's base. Else the attempt moves on: main holding the tip already is done (tested)
+        or pushed (pushing: a dead run's push landed); behind or diverged otherwise; or it stays
+        at its phase when main cannot be read."""
         now, why = self._main_now()
         if now is None:
             lines.append('promote: WAITING - %s; the next run tries again' % why)
@@ -122,8 +133,13 @@ class Mover(object):
         if now == base:
             return True
         if self._anc(sha, now):
-            a.set('done', why='%s/%s already holds %s' % (self.cfg.remote, m, sha[:10]))
-            lines.append('promote: nothing to do - %s' % a.rec['why'])
+            held = '%s/%s already holds %s' % (self.cfg.remote, m, sha[:10])
+            if a.phase == 'pushing':
+                a.set('pushed', why=held)
+                lines.append('promote: PUSHED - %s' % held)
+            else:
+                a.set('done', why=held)
+                lines.append('promote: nothing to do - %s' % held)
         elif self._anc(now, sha):
             a.set('behind', why='%s/%s moved from %s to %s after the test' % (
                 self.cfg.remote, m, (base or '?')[:10], now[:10]))
@@ -151,9 +167,9 @@ class Mover(object):
                 a.set('pushed', why=p['why'])
                 lines.append(P.line(p).replace('daily: ', 'promote: '))
                 return
-            if REFUSED_MARK in said:
-                a.set('refused', why=next(l.strip() for l in said.splitlines()
-                                          if REFUSED_MARK in l))
+            refusal = next((l.strip() for l in said.splitlines() if REFUSED_MARK in l), None)
+            if refusal is not None and TRANSIENT not in refusal:
+                a.set('refused', why=refusal)
                 lines.append('promote: REFUSED by the pre-push guard - %s; promotion is held '
                              'until the owner acts' % a.rec['why'])
                 return
@@ -165,12 +181,13 @@ class Mover(object):
                 a.set('behind', why=p['why'])
                 lines.append('promote: BEHIND - %s; tested again next time' % p['why'])
                 return
+            why = refusal or p['why']
             if a.rec['tries'] >= PUSH_TRIES:
-                a.set('failed', why='%d pushes: %s' % (a.rec['tries'], p['why']))
+                a.set('failed', why='%d pushes: %s' % (a.rec['tries'], why))
                 lines.append('promote: FAILED - %s' % a.rec['why'])
                 return
             lines.append('promote: push %d of %d did not land (%s); trying again' % (
-                a.rec['tries'], PUSH_TRIES, p['why']))
+                a.rec['tries'], PUSH_TRIES, why))
             self.sleep(self.push_pause_s)
 
     # ---------------------------------------------------------------- the landing lock
@@ -188,6 +205,12 @@ class Mover(object):
                 return True
             except LL.Busy as e:
                 rec = e.record or {}
+                if rec.get('phase') == STUCK:
+                    lines.append('promote: WAITING at %s - the landing lock is held by a stuck '
+                                 'landing (%s), which is cleared by hand only, as its STUCK '
+                                 'report says; the next run tries again' % (a.phase,
+                                                                          LL.describe(rec)))
+                    return False
                 if rec.get('token') and self.lock.holder_state(rec) == 'dead':
                     broke, why = self.lock.break_lock()
                     if broke:

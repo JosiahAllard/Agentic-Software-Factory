@@ -11,6 +11,7 @@ from kitlib.config.load import Config
 from kitlib.gate import detect, runner
 from kitlib.gate import steps as S
 from tests import gitfixture
+from tests.realgit import real_git
 
 PY_TEST = 'import unittest\n\nclass T(unittest.TestCase):\n    def test_a(self):\n        pass\n'
 
@@ -219,29 +220,67 @@ class Several(Tree):
         return detect.walk_files(self.root), detect.reader(self.root)
 
 
+@real_git('ls-files -t on what only real git lists: a nested repository, an unmerged path, '
+          'an ignored file added by force')
 class Files(Tree):
     def test_the_walk_skips_build_folders_and_nested_repositories(self):
         self.write({'a.py': '', 'sub/b.py': '', 'node_modules/c.js': '', '.git/HEAD': '',
                     'nested/.git': 'gitdir: x', 'nested/d.py': '', 'obj/e.cs': ''})
         self.assertEqual(detect.walk_files(self.root), ['a.py', 'sub/b.py'])
 
-    def test_the_checkout_listing_is_gits_when_it_answers(self):
+    def test_the_checkout_listing_is_one_git_call_when_it_answers(self):
         self.write({'tests/test_a.py': PY_TEST, 'ignored/test_b.py': PY_TEST})
         with mock.patch.object(detect.cmd, 'run_text',
-                               return_value=('tests/test_a.py\0Cargo.toml\0', None)) as git:
+                               return_value=('H tests/test_a.py\0? Cargo.toml\0', None)) as git:
             paths, read = detect.checkout_files(self.root)
         self.assertEqual(paths, ['Cargo.toml', 'tests/test_a.py'])
-        self.assertEqual(git.call_args[0][0][:2], ['ls-files', '-z'])
+        self.assertEqual(git.call_count, 1)
         self.assertEqual(read('tests/test_a.py'), PY_TEST)
         self.assertIsNone(read('Cargo.toml'))         # listed but not on disk
 
     def test_untracked_files_under_build_folders_are_not_listed_tracked_ones_are(self):
-        answers = {'--cached': 'bin/test_tool.py\0tests/test_a.py\0',
-                   '--others': '.venv/lib/test_x.py\0node_modules/p/package.json\0new_test.py\0'}
-        with mock.patch.object(detect.cmd, 'run_text',
-                               side_effect=lambda args, *a, **k: (answers[args[2]], None)):
+        out = ('H bin/test_tool.py\0S tests/test_a.py\0M c.txt\0M c.txt\0? .venv/lib/test_x.py\0'
+               '? node_modules/p/package.json\0? new_test.py\0')
+        with mock.patch.object(detect.cmd, 'run_text', return_value=(out, None)):
             paths, _ = detect.checkout_files(self.root)
-        self.assertEqual(paths, ['bin/test_tool.py', 'new_test.py', 'tests/test_a.py'])
+        self.assertEqual(paths, ['bin/test_tool.py', 'c.txt', 'new_test.py', 'tests/test_a.py'])
+
+    def test_a_record_that_is_not_a_tagged_path_is_no_answer(self):
+        self.write({'go.mod': 'module x\n'})
+        for out in ('tests/test_a.py\0', 'H\0', 'H \0', 'x a.py\0', 'H\ta.py\0',
+                    '? new.py\0Ha.py\0'):
+            with self.subTest(out=out):
+                with mock.patch.object(detect.cmd, 'run_text', return_value=(out, None)):
+                    paths, _ = detect.checkout_files(self.root)
+                self.assertEqual(paths, ['go.mod'])
+
+    def test_real_gits_listing(self):
+        # One `ls-files -t` call on real git: tracked files (an ignored one added by force, one
+        # under node_modules, an unmerged one once), untracked unignored ones under no PRUNE folder
+        # (a nested repository as its folder), and nothing ignored.
+        r = gitfixture.TempRepo()
+        self.addCleanup(r.cleanup)
+        r.write('.gitignore', 'node_modules/\nign.txt\n')
+        r.write('c.txt', 'base\n')
+        r.commit('base', '.gitignore', 'c.txt')
+        r.git('checkout', '-q', '-b', 'side')
+        r.write('c.txt', 'side\n')
+        r.commit('side', 'c.txt')
+        r.git('checkout', '-q', 'main')
+        r.write('c.txt', 'main\n')
+        for rel in ('a.py', 'ign.txt', 'node_modules/kept.js'):
+            r.write(rel, 'x\n')
+        r.git('add', '-f', 'c.txt', 'a.py', 'ign.txt', 'node_modules/kept.js')
+        r.git('commit', '-q', '-m', 'main')
+        r.git('merge', '-q', '--no-edit', 'side', check=False)          # conflicts on c.txt
+        for rel in ('new.py', 'node_modules/x.js', '.venv/lib/y.py', 'ign.txt.bak'):
+            r.write(rel, 'x\n')
+        r.git('init', '-q', 'nested')
+        r.write('nested/d.py', 'x\n')
+        self.assertIn('UU c.txt', r.git('status', '--porcelain'))
+        paths, _ = detect.checkout_files(r.root)
+        self.assertEqual(paths, ['.gitignore', 'README.md', 'a.py', 'c.txt', 'ign.txt', 'ign.txt.bak',
+                                 'nested/', 'new.py', 'node_modules/kept.js'])
 
     def test_with_no_git_answer_the_folder_is_walked(self):
         self.write({'go.mod': 'module x\n'})

@@ -189,10 +189,17 @@ def _patch(run, a, b):
 
 def _same_diff(run, reviewed, tip, base):
     """The sha256 of the tip's normalized patch against its merge base with `base`; _No unless
-    it is the reviewed one (the module docstring, 3)."""
+    it is the reviewed one (the module docstring, 3). Each rev's tree is listed once: the two
+    merge bases are often the same commit."""
     old_base, new_base = _merge_base(run, reviewed, base), _merge_base(run, tip, base)
-    old = _changed(_blobs(run, old_base), _blobs(run, reviewed))
-    new = _changed(_blobs(run, new_base), _blobs(run, tip))
+    listed = {}
+
+    def blobs(rev):
+        if rev not in listed:
+            listed[rev] = _blobs(run, rev)
+        return listed[rev]
+    old = _changed(blobs(old_base), blobs(reviewed))
+    new = _changed(blobs(new_base), blobs(tip))
     said = "the branch's own diff against main is not the one reviewed"
     if set(old) != set(new):
         gone, came = sorted(set(old) - set(new)), sorted(set(new) - set(old))

@@ -15,7 +15,7 @@ from kitlib.gate import gitstatus, stash
 from kitlib.git import cmd, refs, repo
 
 
-PUSH_TIMEOUT = 600      # seconds
+TREE_TIMEOUT = 600      # seconds: the landing tree's checkout, `worktree add` and `worktree remove`
 MERGE_TIMEOUT = 300
 TREE_NAME = '_landing'   # the landing tree's folder, under the config's worktrees_dir
 # Its git worktree lock reason, kept verbatim across the move to kitlib.landing: prepare_tree
@@ -207,7 +207,7 @@ class Merge(object):
         if why:
             return self.add_tree(why)
         r = self.git('checkout', '--quiet', '--detach', self.expect_main, cwd=tree,
-                     timeout=PUSH_TIMEOUT)
+                     timeout=TREE_TIMEOUT)
         entries, _ = gitstatus.status(tree)
         if r.rc == 0 and self.tree_head() == self.expect_main and entries == []:
             return None
@@ -240,7 +240,7 @@ class Merge(object):
         if why is not None:
             self.git('worktree', 'unlock', tree)     # not locked any more: git says so, no matter
             if os.path.isdir(tree):
-                self.git('worktree', 'remove', '--force', '--force', tree, timeout=PUSH_TIMEOUT)
+                self.git('worktree', 'remove', '--force', '--force', tree, timeout=TREE_TIMEOUT)
             else:
                 self.git('worktree', 'prune')        # the gone tree's registration
             if os.path.isdir(tree):
@@ -253,7 +253,7 @@ class Merge(object):
         else:
             os.makedirs(os.path.dirname(tree), exist_ok=True)
         r = self.git('worktree', 'add', '--detach', '--lock', '--reason', TREE_LOCK, tree,
-                     self.expect_main, timeout=PUSH_TIMEOUT)
+                     self.expect_main, timeout=TREE_TIMEOUT)
         if r.rc != 0:
             return 'git worktree add %s failed: %s' % (tree, r.err or 'exit %s' % r.rc)
         entries, err = gitstatus.status(tree)

@@ -90,8 +90,29 @@ class CleanupCase(fixtures.GateRepoCase):
 class AfterLanding(CleanupCase):
     def test_a_clean_landing_removes_all_three(self):
         wt, tip = self.pushed('feature', {'a.py': 'x = 1\n'})
-        out = self.lander(BRANCH, self.main, tip, summary='add a').run()
+        for k in cmd.NETWORK_ENV:       # the session may set them: the landing must set its own
+            os.environ.pop(k, None)
+            self.env.pop(k, None)
+        real, seen = cmd.spawner(), []
+
+        def run(argv, cwd=None, input=None, timeout=None, env=None):
+            seen.append(([str(a) for a in argv[1:]], dict(env or {})))
+            return real(argv, cwd=cwd, input=input, timeout=timeout, env=env)
+        with mock.patch.object(cmd, '_run', side_effect=run):
+            out = self.lander(BRANCH, self.main, tip, summary='add a').run()
         got = self.assert_landed(out)
+        # the landing's push and the remote-branch delete fail rather than wait on a credential
+        # prompt; a git child that is neither a push nor a network read keeps the user's prompts
+        pushes = [(a, e) for a, e in seen if cmd.subcommand(a) == 'push']
+        self.assertEqual([a[-1] for a, _ in pushes],
+                         ['%s:refs/heads/main' % out.merge, ':refs/heads/' + BRANCH], seen)
+        for a, e in pushes:
+            self.assertEqual((e.get('GIT_TERMINAL_PROMPT'), e.get('GCM_INTERACTIVE')),
+                             ('0', 'never'), a)
+        others = [(a, e) for a, e in seen
+                  if cmd.subcommand(a) not in ('push',) + cmd.NETWORK_READS]
+        self.assertIn('merge', [cmd.subcommand(a) for a, _ in others])
+        self.assertEqual([a for a, e in others if 'GIT_TERMINAL_PROMPT' in e], [])
         self.assertTrue(out.lines[-1].startswith('LANDED kit/feature on main'), out.lines)
         self.assertEqual(self.remote_main(), out.merge)
         self.assertEqual(self.on_remote(BRANCH), '')            # the remote branch is gone

@@ -124,10 +124,12 @@
                  forced. Someone pushed <remote>/<main> to a commit without the merge while the
                  gate ran: the push is refused, NOT LANDED (FAILED, `nothing landed`), the lock
                  released; so is a push git refuses (exit 1 with git's own `! [rejected]` or
-                 `! [remote rejected]` line, PUSH_REFUSED) while <remote>/<main> is the base,
-                 and a push that never connected (push_never_connected: exit 128, only
-                 `fatal: unable to access '<url>': ` with a curl connect error,
-                 PUSH_NEVER_CONNECTED) unless <remote>/<main> shows the merge
+                 `! [remote rejected]` line, cmd.PUSH_REFUSED) while <remote>/<main> is the
+                 base, and a push that never connected (cmd.push_never_connected: exit 128,
+                 only `fatal: unable to access '<url>': ` with a curl connect error,
+                 cmd.PUSH_NEVER_CONNECTED) unless <remote>/<main> shows the merge. The push
+                 runs with cmd.NETWORK_ENV: a remote that wants credentials makes git exit
+                 at once, not wait on a prompt nobody sees
   10 verify      `git ls-remote` must show the merge on <remote>/<main>; then the tracking ref
                  is fetched, the main checkout's main brought to the merge (sync_main: a
                  fast-forward when HEAD is on main, main has nothing of its own and no local
@@ -170,10 +172,10 @@ OK` line appears only in a landing that LANDED (a green merged gate that is not 
 reworded).
 
 STUCK is only a push that may have landed and cannot be told: interrupted, timed out, died (exit
-128, except a push that never connected, push_never_connected: NOT LANDED), ended with exit 1 without git's refusal line (no message: a git ended from outside,
+128, except a push that never connected, cmd.push_never_connected: NOT LANDED), ended with exit 1 without git's refusal line (no message: a git ended from outside,
 refs.KILLED_SHAPE; or only a stray warning) or reported done while <remote>/<main> is still the
 base, or with <remote>/<main> unreadable. A push git refused (exit 1 with git's own `! [rejected]`
-or `! [remote rejected]` line, PUSH_REFUSED) while <remote>/<main> is still the base published
+or `! [remote rejected]` line, cmd.PUSH_REFUSED) while <remote>/<main> is still the base published
 nothing: NOT LANDED (FAILED), the lock released, as on a red merged gate. The landing lock stays held at phase
 `stuck` so no other landing starts on top of it, and the message says what is left and the
 commands that clear it. Nothing is ever reset: the main checkout was never merged into.
@@ -362,10 +364,11 @@ class Lander(Checks, Merge, MergedGate, Push, After):
     def pairs(self):
         return list(zip(self.branches, self.tips))
 
-    def git(self, *args, timeout=cmd.GIT_TIMEOUT, cwd=None):
+    def git(self, *args, timeout=cmd.GIT_TIMEOUT, cwd=None, env=None):
         """git `args` in `cwd` (default the main checkout); the landing tree's commands pass
-        cwd=self.tree."""
-        r = cmd.call(list(args), cwd or self.root, timeout=timeout, env=self.git_env)
+        cwd=self.tree. `env` None: self.git_env (the push passes cmd.with_network_env's)."""
+        r = cmd.call(list(args), cwd or self.root, timeout=timeout,
+                     env=self.git_env if env is None else env)
         return r
 
     def ref(self, name):
@@ -375,7 +378,8 @@ class Lander(Checks, Merge, MergedGate, Push, After):
     @property
     def checkout_branch(self):
         """The main checkout's branch: the main branch, always. A landing onto a staging branch
-        never moves it (the promotion is its only writer; docs/gate-landing.md "Staging branch")."""
+        never moves it; the main branch moves on the remote only when staging is promoted
+        (docs/gate-landing.md "Staging branch")."""
         return self.cfg.main_branch
 
     @property

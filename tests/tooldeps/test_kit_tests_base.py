@@ -419,9 +419,10 @@ class BothTiers(unittest.TestCase):
         text = out.getvalue()
         self.assertEqual(rc, 0, text)
         self.assertEqual(sorted(u for f, u in started if f == '1'), sorted(MODULES), text)
-        self.assertEqual([u for f, u in started if f == '0'],
-                         ['tests.landing.test_land_x.A', 'tests.landing.test_land_x.B',
-                          'tests.git.test_g'], text)
+        # Two pool threads start the units, so only the set is fixed, not the order.
+        self.assertEqual(sorted(u for f, u in started if f == '0'),
+                         ['tests.git.test_g', 'tests.landing.test_land_x.A',
+                          'tests.landing.test_land_x.B'], text)
         self.assertIn('kit_tests [real git]: split by class: tests.landing.test_land_x '
                       '(2 classes)\n', text)
         self.assertNotIn('kit_tests [fake git]: split by class', text)

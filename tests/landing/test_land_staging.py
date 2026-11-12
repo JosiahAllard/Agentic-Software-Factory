@@ -191,5 +191,48 @@ class StuckOnStaging(_Stuck, StagingCase):
         self.assertEqual(len(cmds), 4, cmds)           # fetch, check, branch -r, break
         self.assert_cleared(out, cmds)
 
+    def landed(self):
+        """A green landing onto staging, and its lander, whose clear steps are then read."""
+        _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        lander = self.lander(BRANCH, self.main, tip)
+        out = lander.run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        return lander, out.merge
+
+    def test_a_staging_tip_this_checkout_cannot_place_never_asks_to_move_main(self):
+        lander, merge = self.landed()
+        left = lander.leftovers()
+        left['pushed'] = '1' * 40                      # a staging tip this clone lacks
+        steps = lander.clear_steps(left)
+        self.assertEqual(len(steps), 1, steps)          # check_first
+        text, cmds = steps[0]
+        self.assertIn('origin/%s is at 1111111111, which this checkout cannot place against the '
+                      'merge %s' % (STAGING, merge[:10]), text)
+        self.assertIn('If the fetch failed, the list is stale: stop here. If the list names '
+                      'origin/%s, the merge is landed: nothing in the main checkout is to be moved '
+                      '(a landing onto the staging branch %s never moves main; only a promotion '
+                      'does); go to the last step. If it does not' % (STAGING, STAGING), text)
+        self.assertNotIn('do not move', text)
+        self.assertNotIn('by hand', text)
+        self.assertEqual(len(cmds), 2, cmds)            # fetch, branch -r --contains
+
+    def test_a_lagging_tracking_ref_and_main_s_own_commit_on_staging(self):
+        lander, merge = self.landed()
+        self.repo.write('own.txt', 'own\n')
+        own = self.repo.commit('main checkout own commit', 'own.txt')   # local main moves alone
+        self.repo.git('update-ref', 'refs/remotes/origin/%s' % STAGING, self.main)   # lags
+        left = lander.leftovers()
+        self.assertEqual((left['main'], left['pushed'], left['tracking']), (own, merge, self.main))
+        self.assertEqual(left['extra'], [])             # main is not the base: not "on top"
+        steps = lander.clear_steps(left)                # on_origin_steps
+        self.assertEqual(steps[0], (
+            'the tracking ref origin/%s is at %s, not %s as on origin: fetch it, so the next '
+            'landing starts from it' % (STAGING, self.main[:10], merge[:10]),
+            ['git -C "%s" fetch origin' % self.repo.root]))
+        self.assertNotIn('break_lock refuses', '\n'.join(t for t, _ in steps))
+        with mock.patch.object(type(lander), 'staging', new_callable=mock.PropertyMock,
+                               return_value=False):     # the control: off staging they count
+            self.assertEqual([l[:40] for l in lander.leftovers()['extra']], [own])
+
 if __name__ == '__main__':
     unittest.main()

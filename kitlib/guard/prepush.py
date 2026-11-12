@@ -56,9 +56,7 @@ from kitlib.git import defaults as gitdefaults
 from kitlib.git import repo as gitrepo
 from kitlib.ownerfiles import rules as ownerrules
 
-# Every refusal that starts with this is transient (a git read failed: retry); none other does.
-TRANSIENT_PREFIX = 'pre-push: refused, cannot '
-
+TRANSIENT_PREFIX = 'pre-push: refused, cannot '  # every transient refusal (a read failed), no final one
 ZERO = '0' * 40
 FIXED_MAIN = kschema.SECTIONS['repo']['main_branch'].default
 
@@ -465,10 +463,12 @@ def verify_record(root, sha):
 
 
 def tested_record(root, sha, remote_sha):
-    """kitlib.records.gate_ok.verify_for_main, as verify_record: any failure is a refusal."""
+    """gate_ok.verify_for_main: a read failure (OSError, gate_ok.Unreadable) is transient."""
     try:
         from kitlib.records import gate_ok
         return gate_ok.verify_for_main(root, sha, remote_sha)
+    except OSError as e:
+        return None, TRANSIENT_PREFIX + 'read the tested records of %s (%s); push again.' % (sha[:12], e)
     except Exception as e:
         return None, 'cannot read tested records: %s: %s' % (type(e).__name__, e)
 
@@ -555,7 +555,8 @@ def check(root, lines, gate_ok=None, remote='origin', url=None, tested=None):
         if cfg is not None and kconfig.staging_on(cfg) and main == cfg.main_branch:
             rec, why = tested(root, local_sha, remote_sha)
             if rec is None:
-                return False, tested_refusal(cfg, local_sha, remote_sha, why)
+                return False, why if why.startswith(TRANSIENT_PREFIX) else tested_refusal(
+                    cfg, local_sha, remote_sha, why)
         if cfg is None or not cfg.push_block:
             continue
         rec, why = gate_ok(root, local_sha)

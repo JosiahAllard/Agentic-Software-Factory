@@ -6,6 +6,7 @@ record, or a promotion record made on the main it replaces; docs/gate-records.md
 records")."""
 import json
 import os
+from unittest import mock
 
 from kitlib.guard import prepush
 from kitlib.records import gate_ok
@@ -101,11 +102,18 @@ class LandedOnStaging(StagingRepo):
 
 
 class TestedRecordGuard(LandedOnStaging):
-    """With staging on, main moves only to a commit with a tested record."""
+    """With staging on, main moves only to a commit with a tested record. A record that is missing,
+    invalid or made on another main is a final refusal; one that cannot be read is transient
+    (prepush.TRANSIENT_PREFIX: a retry may pass)."""
 
-    def test_a_push_to_main_with_no_tested_record_is_refused(self):
+    def refused(self, transient):
         ok, msg = self.to_main()
         self.assertFalse(ok)
+        self.assertEqual(msg.startswith(prepush.TRANSIENT_PREFIX), transient, msg)
+        return msg
+
+    def test_a_push_to_main_with_no_tested_record_is_refused(self):
+        msg = self.refused(transient=False)
         self.assertIn('%s has no daily full record, and no promotion record made on main %s'
                       % (self.tip[:12], self.main[:12]), msg)
         self.assertIn('no daily full record for %s' % self.tip, msg)
@@ -129,14 +137,12 @@ class TestedRecordGuard(LandedOnStaging):
         with self.assertRaises(gate_ok.RecordError):
             self.record(self.tip, 'daily', full=False)
         self.record(self.tip, 'daily', full=False, forged=True)
-        ok, msg = self.to_main()
-        self.assertFalse(ok)
+        msg = self.refused(transient=False)
         self.assertIn('the daily full record for %s is not from a --full run' % self.tip, msg)
 
     def test_a_promotion_record_counts_only_on_the_main_it_was_made_on(self):
         self.record(self.tip, 'promotion', base=self.with_kit)     # made on an older main
-        ok, msg = self.to_main()
-        self.assertFalse(ok)
+        msg = self.refused(transient=False)
         self.assertIn('was made on main', msg)
         self.record(self.tip, 'promotion', base=self.main)
         self.assertEqual(self.to_main(), (True, None))
@@ -156,6 +162,37 @@ class TestedRecordGuard(LandedOnStaging):
         ok, msg = self.to_main()
         self.assertFalse(ok)
         self.assertIn('names no mode it ran in', msg)
+
+    def test_a_record_file_that_cannot_be_read_is_a_transient_refusal(self):
+        path = gate_ok.record_path(self.repo.root, self.tip, 'daily')
+        os.makedirs(path)                            # open() fails: not a missing file
+        msg = self.refused(transient=True)
+        self.assertIn('pre-push: refused, cannot read the tested records of %s (cannot read %s'
+                      % (self.tip[:12], path), msg)
+        self.assertIn('; push again.', msg)
+        os.rmdir(path)                               # the read clears: the retry passes
+        self.record(self.tip, 'daily')
+        self.assertEqual(self.to_main(), (True, None))
+
+    def test_git_failing_to_read_a_record_s_commit_is_a_transient_refusal(self):
+        self.record(self.tip, 'daily')
+        with mock.patch.object(gate_ok.refs, 'tree_of', return_value=(None, 'git ended')):
+            msg = self.refused(transient=True)
+        self.assertIn('cannot read the tree of %s: git ended' % self.tip, msg)
+        real = gate_ok.refs.is_ancestor
+
+        def is_ancestor(a, d, cwd):                  # only the record's config_rev check fails
+            return (None, 'git ended') if (a, d) == (self.tip, self.tip) else real(a, d, cwd)
+        with mock.patch.object(gate_ok.refs, 'is_ancestor', side_effect=is_ancestor):
+            msg = self.refused(transient=True)       # config_rev is known; git gave no answer
+        self.assertIn('cannot tell whether config_rev %s is in the history of %s: git ended'
+                      % (self.tip, self.tip), msg)
+        self.assertEqual(self.to_main(), (True, None))
+
+    def test_a_reader_bug_is_a_final_refusal(self):
+        with mock.patch.object(gate_ok, 'verify_for_main', side_effect=ValueError('bug')):
+            msg = self.refused(transient=False)
+        self.assertIn('(cannot read tested records: ValueError: bug)', msg)
 
     def test_a_push_to_the_staging_branch_needs_no_tested_record(self):
         line = 'refs/heads/staging %s refs/heads/staging %s' % (self.tip, self.main)

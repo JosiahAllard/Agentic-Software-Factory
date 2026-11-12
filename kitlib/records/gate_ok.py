@@ -124,6 +124,11 @@ class NoRecordFolder(RecordError):
     """There is no record folder: the machine config sets no dev_drive, or cannot be read."""
 
 
+class Unreadable(OSError):
+    """A strict read (verify's `strict`) could not read a record file or ask git what checking it
+    needs: a failure a retry may clear, unlike a missing, invalid or mismatched record."""
+
+
 def utc(when=None):
     return (when or datetime.datetime.now(datetime.timezone.utc)).strftime('%Y-%m-%dT%H:%M:%SZ')
 
@@ -310,28 +315,28 @@ def gate_config_at(root, rev):
     return gate_config(kconfig.load_at(root, rev))
 
 
-def verify_record(root, commit, kind=None):
+def verify_record(root, commit, kind=None, strict=False):
     """verify() with the gate config read from the record's own `config_rev` (the commit
     whose `.kit.json` the gate ran with): `(record, None)` or `(None, why)`. A record's .git copy
     counts only when there is no record folder (no dev_drive; read). `kind`: the tested record's
-    folder (KINDS) instead of the gate-OK record's."""
+    folder (KINDS) instead of the gate-OK record's. `strict`: as verify's."""
     def config_at(rev):
         try:
             return gate_config_at(root, rev)
         except ConfigError as e:
             raise RecordError('the gate config at %s: %s' % (rev[:10], e))
-    return verify(root, commit, config_at=config_at, kind=kind)
+    return verify(root, commit, config_at=config_at, kind=kind, strict=strict)
 
 
-def verify_tested(root, commit, kind):
+def verify_tested(root, commit, kind, strict=False):
     """`(record, None)` when `commit` has a tested record of `kind` (one of KINDS) that
     verify_record takes, else `(None, why)`. A daily record must be a --full pass (full_of, mode
     "full"); a promotion record must have a known mode (mode_of: "full", "select" or "docs", what
     the promotion's selection ran). The caller checks anything more the kind needs (a promotion's
-    `base`)."""
+    `base`). `strict`: as verify's."""
     if kind not in KINDS:
         return None, 'no record kind %r: the kinds are %s' % (kind, ', '.join(sorted(KINDS)))
-    rec, why = verify_record(root, commit, kind)
+    rec, why = verify_record(root, commit, kind, strict=strict)
     if rec is None:
         return None, why
     if kind == 'daily' and (not full_of(rec) or mode_of(rec) != 'full'):
@@ -344,11 +349,12 @@ def verify_tested(root, commit, kind):
 def verify_for_main(root, commit, main_sha):
     """With a staging branch, the tested record that lets main move from `main_sha` to `commit`
     (the pre-push guard's rule): a daily full record of `commit`, else a promotion record of it
-    whose `base` is `main_sha`, the main it replaces. `(record, None)` or `(None, why)`."""
-    rec, why = verify_tested(root, commit, 'daily')
+    whose `base` is `main_sha`, the main it replaces. `(record, None)` or `(None, why)`; a record
+    file or git that cannot be read raises Unreadable (verify's `strict`), which a retry may clear."""
+    rec, why = verify_tested(root, commit, 'daily', strict=True)
     if rec is not None:
         return rec, None
-    made, made_why = verify_tested(root, commit, 'promotion')
+    made, made_why = verify_tested(root, commit, 'promotion', strict=True)
     if made is not None:
         if made.get('base') == main_sha:
             return made, None
@@ -497,14 +503,17 @@ def record_tested_pass(root, rev, kind, gate_config, kit, repo_name, started_utc
     return write(root, rec, kind), rec
 
 
-def _load(path):
-    """`(record, None)`, `(None, 'none')` when there is no file, or `(None, why)`."""
+def _load(path, strict=False):
+    """`(record, None)`, `(None, 'none')` when there is no file, or `(None, why)`; `strict`: a
+    file that is there and cannot be read raises Unreadable."""
     try:
         with open(path, encoding='utf-8') as f:
             rec = json.load(f)
     except FileNotFoundError:
         return None, 'none'
     except OSError as e:
+        if strict:
+            raise Unreadable('cannot read %s: %s' % (path, e))
         return None, 'cannot read %s: %s' % (path, e)
     except ValueError as e:
         return None, '%s is not a gate-OK record: %s' % (path, e)
@@ -513,43 +522,46 @@ def _load(path):
     return rec, None
 
 
-def read(root, commit, kind=None):
+def read(root, commit, kind=None, strict=False):
     """`(record, None)`, `(None, 'none')` when there is no record, or `(None, why)` when the file
     is there and cannot be read as one. The record folder's file; only when there is no record
-    folder (no dev_drive), the .git copy (legacy_path). `kind`: a tested record's folder."""
+    folder (no dev_drive), the .git copy (legacy_path). `kind`: a tested record's folder.
+    `strict`: as _load's."""
     try:
         old = legacy_path(root, commit, kind)
     except RecordError as e:
         return None, str(e)
     try:
-        return _load(record_path(root, commit, kind))
+        return _load(record_path(root, commit, kind), strict)
     except NoRecordFolder:
         # Kept for load nodes set up without a dev_drive (docs/load-nodes.md).
-        return _load(old)
+        return _load(old, strict)
     except RecordError as e:
         return None, str(e)
 
 
-def verify(root, commit, gate_config=None, config_at=None, kind=None):
+def verify(root, commit, gate_config=None, config_at=None, kind=None, strict=False):
     """`(record, None)` when `commit` has a gate-OK record git still agrees with, else
     `(None, why)`. `gate_config` given: the record's hash must be that config's. `config_at` given
     (a callable: full hash -> the gate config that commit holds; it may raise RecordError): the
     record's `config_rev` must be a full hash in `commit`'s history and the record's hash must be
-    config_at(config_rev)'s. `kind`: a tested record's folder (KINDS) instead."""
+    config_at(config_rev)'s. `kind`: a tested record's folder (KINDS) instead. `strict`: a record
+    file, or git (the commit's tree and author, config_rev's ancestry), that cannot be read raises
+    Unreadable instead of giving `(None, why)`."""
     if not refs.is_sha(commit):
         resolved, why = refs.resolve(commit, root) if isinstance(commit, str) else (None, None)
         if not resolved:
             return None, 'cannot resolve %r: %s' % (commit, why)
         commit = resolved
-    rec, why = read(root, commit, kind)
+    rec, why = read(root, commit, kind, strict)
     if rec is None:
         return None, ('no %s record for %s' % (LABELS.get(kind, kind), commit)) if why == 'none' \
             else why
-    why = _check(root, commit, rec, gate_config, config_at)
+    why = _check(root, commit, rec, gate_config, config_at, strict)
     return (None, why) if why is not None else (rec, None)
 
 
-def _check(root, commit, rec, gate_config=None, config_at=None):
+def _check(root, commit, rec, gate_config=None, config_at=None, strict=False):
     """Why the record `rec` (a dict) filed under the full hash `commit` is not one git still
     agrees with, or None: verify()'s checks, shared with import_record()."""
     missing = [k for k in KEYS if k not in rec]
@@ -564,6 +576,8 @@ def _check(root, commit, rec, gate_config=None, config_at=None):
     try:
         _, tree, author = _facts(root, commit)
     except RecordError as e:
+        if strict:                  # the pushed commit is here: git failed to answer
+            raise Unreadable(str(e))
         return str(e)
     if rec['tree'] != tree:
         return 'the record for %s names tree %s; git says %s' % (commit, rec['tree'], tree)
@@ -576,6 +590,9 @@ def _check(root, commit, rec, gate_config=None, config_at=None):
         if not refs.is_sha(rev):
             return 'the record for %s names no config_rev (%r)' % (commit, rev)
         inside, why = refs.is_ancestor(rev, commit, root)
+        if inside is None and strict and refs.resolve(rev, root)[0]:  # a known rev: git failed
+            raise Unreadable('cannot tell whether config_rev %s is in the history of %s: %s'
+                             % (rev, commit, why))
         if inside is not True:
             return 'the record for %s names config_rev %s, which is not in its history%s' % (
                 commit, rev, ': %s' % why if why else '')

@@ -76,22 +76,26 @@ class Outbox:
             raise DeliveryError('protected-absolute-state-path-required')
         try:
             with self.path.open('xb'):
-                if prepare_new_file is not None:
-                    prepare_new_file(self.path)
-            new = True
+                pass
         except FileExistsError:
-            new = False
+            pass
         info = self.path.lstat()
         if (not stat.S_ISREG(info.st_mode) or self.path.is_symlink()
                 or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
                 or info.st_size > 128 * 1024 * 1024):
             raise DeliveryError('nonregular-or-oversized-state')
+        # An empty file is one whose first creation failed (prepare_new_file raised, or
+        # the process died before the schema commit): protect it again and create it.
+        if info.st_size == 0 and prepare_new_file is not None:
+            prepare_new_file(self.path)
         try:
             self._db = sqlite3.connect(str(self.path), timeout=1, isolation_level=None, check_same_thread=False)
             self._db.row_factory = sqlite3.Row
             current = self.path.lstat()
             if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino) or self.path.is_symlink():
                 raise DeliveryError('state-file-replaced')
+            # No pages: nothing was ever committed (a crashed first commit rolls back to none).
+            new = self._db.execute('PRAGMA page_count').fetchone()[0] == 0
             self._schema=self._db.execute('PRAGMA user_version').fetchone()[0]
             if not new and (self._db.execute('PRAGMA application_id').fetchone()[0] != APPLICATION_ID
                             or self._schema not in (1,2,SCHEMA_VERSION)):
@@ -405,6 +409,33 @@ class Outbox:
                     self._event(db, operation, 'refused')
             return self.receipt(operation)
 
+    def _expire_queued(self, db, operation, message, now):
+        if message.expires_at is None or now<message.expires_at:return False
+        db.execute("UPDATE messages SET state='expired',last_confirmed='expired',reason='queued-expiry' WHERE id=?",(operation,))
+        self._event(db,operation,'expired')
+        return True
+
+    def _due(self, expires):
+        """Whether an expiry may have come, read with no write: a clock reading _write would
+        refuse also counts, so _write's own clock check decides it."""
+        if expires is None:return False
+        now=self._clock()
+        return type(now) not in (int,float) or not math.isfinite(now) or now>=expires
+
+    def expire_queued(self, operation):
+        """End a queued message past its expiry; the receipt, expired or still queued. Core
+        runs it when the message must wait, so a wait never outlives the expiry. It writes only
+        once the expiry is due: a message waiting between turns costs no commit per pass."""
+        with self._lock:
+            row=self._row(operation)
+            if row is None:raise DeliveryError('unknown-operation')
+            if row['state']!='queued' or not self._due(row['expires']):return self._receipt(row)
+            with self._write() as (db,now):
+                row=self._row(operation)
+                if row is None:raise DeliveryError('unknown-operation')
+                if row['state']=='queued':self._expire_queued(db,operation,self._message(row),now)
+            return self.receipt(operation)
+
     def run_dispatch(self, operation, send, *, reverse_reply=False):
         """Durable intent/reservation first; native callback runs outside SQL.
 
@@ -419,9 +450,7 @@ class Outbox:
                 if row['state']!='queued':return self._receipt(row)
                 if db.execute('SELECT 1 FROM refusals WHERE root=?',(message.task_root,)).fetchone():
                     self._refuse_root(db,message.task_root);return self.receipt(operation)
-                if message.expires_at is not None and now>=message.expires_at:
-                    db.execute("UPDATE messages SET state='expired',last_confirmed='expired',reason='queued-expiry' WHERE id=?",(operation,))
-                    self._event(db,operation,'expired');return self.receipt(operation)
+                if self._expire_queued(db,operation,message,now):return self.receipt(operation)
                 self._reserve_events(db,row,dispatch=True)
                 db.execute("UPDATE messages SET state='dispatching',dispatch_epoch=? WHERE id=?",(self._epoch,operation))
                 self._event(db,operation,'dispatching')
@@ -600,11 +629,29 @@ class Outbox:
                 link=self._reply_link(operation)
                 if parent is None or link is None or link['state']!='pending':return
                 self._message(parent)
-                reason=None
-                if now>=link['expires']:reason='reply-delivery-expired'
-                elif db.execute('SELECT 1 FROM refusals WHERE root=?',(parent['root'],)).fetchone():reason='task-root-refused'
-                if reason:db.execute("UPDATE reply_deliveries SET state='suppressed',reason=? WHERE parent=?",(reason,operation))
+                if self._expire_link(db,operation,link,now):return
+                if db.execute('SELECT 1 FROM refusals WHERE root=?',(parent['root'],)).fetchone():
+                    db.execute("UPDATE reply_deliveries SET state='suppressed',reason=? WHERE parent=?",('task-root-refused',operation))
                 else:self._try_queue_reply(db,parent)
+
+    def _expire_link(self, db, operation, link, now):
+        if now<link['expires']:return False
+        db.execute("UPDATE reply_deliveries SET state='suppressed',reason=? WHERE parent=?",('reply-delivery-expired',operation))
+        return True
+
+    def expire_reply(self, operation):
+        """Suppress a pending reply link past its expiry, with no route guard: True while it
+        stays pending. Core runs it before the guard, so a chat failing its live check never
+        keeps an expired link. It writes only once the expiry is due."""
+        with self._lock:
+            self._ready()
+            link=self._reply_link(operation)
+            if link is None or link['state']!='pending':return False
+            if not self._due(link['expires']):return True
+            with self._write() as (db,now):
+                link=self._reply_link(operation)
+                if link is None or link['state']!='pending':return False
+                return not self._expire_link(db,operation,link,now)
 
     def suppress_reply(self, operation, reason):
         identifier(reason)

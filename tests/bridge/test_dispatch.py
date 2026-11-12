@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 from optional.bridge.core.contracts import AdapterDescription, Capability
 from optional.bridge.core.dispatch import CoreBroker
@@ -128,14 +129,107 @@ class DispatchTests(unittest.TestCase):
     def test_revoke_queued_route_prevents_native_write(self):
         self.admit()
         self.select(False)
-        self.assertEqual(self.core.dispatch_once('op').state, 'refused')
+        receipt = self.core.dispatch_once('op')
+        self.assertEqual((receipt.state, receipt.reason), ('refused', 'chat-route-revoked'))
         self.assertEqual(self.adapter.calls, [])
 
     def test_identity_drift_prevents_native_write(self):
         self.admit()
-        self.live['b'] = replace(self.b, permission_revision=2)
-        self.assertEqual(self.core.dispatch_once('op').state, 'refused')
+        changed = replace(self.b, permission_revision=2)
+        self.live['b'] = changed
+        self.pairings.observe(changed)
+        receipt = self.core.dispatch_once('op')
+        self.assertEqual((receipt.state, receipt.reason), ('refused', 'chat-binding-changed'))
         self.assertEqual(self.adapter.calls, [])
+
+    def test_a_failed_live_check_keeps_the_message_queued_until_the_chat_answers(self):
+        self.admit()
+        self.live.pop('b')  # The route stays selected; b is between turns.
+        with self.assertRaisesRegex(DeliveryError, 'dispatch-context-unverified'):
+            self.core.dispatch_once('op')
+        receipt = self.store.receipt('op')
+        self.assertEqual((receipt.state, receipt.reason), ('queued', None))
+        self.assertEqual(self.adapter.calls, [])
+        self.live['b'] = self.b
+        self.assertEqual(self.core.dispatch_once('op').state, 'reply-received')
+
+    def test_a_queued_message_waiting_on_a_failed_live_check_still_expires(self):
+        self.admit(expires_at=self.now + 10)
+        self.live.pop('b')
+        self.now += 20
+        receipt = self.core.dispatch_once('op')
+        self.assertEqual((receipt.state, receipt.reason), ('expired', 'queued-expiry'))
+        self.assertEqual(self.adapter.calls, [])
+
+    def test_a_waiting_message_writes_nothing_until_its_expiry_is_due(self):
+        self.admit('never')  # No expiry.
+        self.admit('later', expires_at=self.now + 10)
+        self.live.pop('b')
+        with patch.object(self.store, '_write', wraps=self.store._write) as write:
+            for operation in ('never', 'later', 'never', 'later'):
+                with self.assertRaisesRegex(DeliveryError, 'dispatch-context-unverified'):
+                    self.core.dispatch_once(operation)
+            self.assertEqual(write.call_count, 0, 'each 0.2 s pass of a waiting message would fsync')
+            self.now += 20
+            self.assertEqual(self.core.dispatch_once('later').state, 'expired')
+            self.assertEqual(write.call_count, 1)
+
+    def test_a_message_failing_its_dispatch_check_still_expires(self):
+        self.admit(expires_at=self.now + 10)
+        self.allowed, self.now = False, self.now + 20
+        self.assertEqual(self.core.dispatch_once('op').reason, 'queued-expiry')
+
+    def test_a_reply_link_waiting_on_its_reader_writes_nothing_until_due(self):
+        self.pending_replies(1)
+        self.live.pop('a')
+        with patch.object(self.store, '_write', wraps=self.store._write) as write:
+            self.core.promote_replies()
+            self.core.promote_replies()
+            self.assertEqual(write.call_count, 0, 'each 0.2 s pass of a waiting link would fsync')
+
+    def pending_replies(self, count, sender=None):
+        """Dispatch `count` messages whose reply links stay pending: a real event-capacity
+        failure in the reverse job's savepoint (outbox._try_queue_reply)."""
+        event = self.store._event
+        def full(db, operation, state, epoch=None):
+            if operation.startswith('bridge-reply-'):
+                raise DeliveryError('event-capacity')
+            return event(db, operation, state, epoch)
+        operations = []
+        for index in range(count):
+            operation = '%s-%d' % (sender.identity.session_id if sender else 'a', index)
+            if sender is None:
+                self.admit(operation)
+            else:
+                self.proofs[b'other-caller-proof'] = SenderAuthority(sender, self.root)
+                self.core.admit(operation, self.b, 'private test message', b'other-caller-proof')
+            with patch.object(self.store, '_event', side_effect=full):
+                self.assertEqual(self.core.dispatch_once(operation).state, 'reply-received')
+            self.assertEqual(self.store.reply_delivery(operation)['state'], 'pending')
+            operations.append(operation)
+        return operations
+
+    def test_reply_links_stuck_on_a_failed_live_check_never_starve_a_later_one(self):
+        # A batch of 2 stands for the worker's 32: a full batch of stuck links comes first.
+        stuck = self.pending_replies(2)
+        self.pairings.owner_select(self.pairings.propose('c', 'b'), b'test-owner-proof')
+        later = self.pending_replies(1, sender=self.c)[0]
+        self.live.pop('a')  # Each stuck link's reader, a, is between turns.
+        self.core.promote_replies(2)
+        self.assertEqual({self.store.reply_delivery(op)['state'] for op in stuck}, {'pending'})
+        self.assertEqual(self.store.reply_delivery(later)['state'], 'pending')
+        self.core.promote_replies(2)
+        self.assertEqual(self.store.reply_delivery(later)['state'], 'queued')
+        self.assertEqual({self.store.reply_delivery(op)['state'] for op in stuck}, {'pending'})
+
+    def test_reply_links_past_expiry_expire_without_a_live_reader(self):
+        links = self.pending_replies(3)  # More than one batch of 2.
+        self.live.pop('a')
+        self.now += 3601
+        self.core.promote_replies(2)
+        self.core.promote_replies(2)
+        self.assertEqual({(self.store.reply_delivery(op)['state'], self.store.reply_delivery(op)['reason'])
+                          for op in links}, {('suppressed', 'reply-delivery-expired')})
 
     def test_unverified_caller_and_dispatch_context_fail_closed(self):
         with self.assertRaisesRegex(DeliveryError, 'caller-context-unverified'):

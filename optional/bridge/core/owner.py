@@ -256,7 +256,8 @@ class OwnerControls:
         sender,recipient=by_ref.get(sender_ref),by_ref.get(recipient_ref)
         if sender is None or recipient is None: raise PairingError('visible-chat-changed')
         # A connect the host-pair rule refuses in either asked direction writes nothing. A
-        # disconnect still goes through: removing a direction grants nothing.
+        # disconnect still goes through: removing a direction grants nothing, so it needs both
+        # chats listed, live or not (propose and owner_select skip the live check for it).
         if enabled is not False and (not self._allowed(sender,recipient)
                 or bidirectional and not self._allowed(recipient,sender)):
             raise PairingError(HOST_PAIR_REFUSED)

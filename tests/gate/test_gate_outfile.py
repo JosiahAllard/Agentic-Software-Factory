@@ -18,6 +18,7 @@ import tempfile
 import time
 import shutil
 import unittest
+from unittest import mock
 
 from kitlib import gate as G
 from kitlib.gate import steps
@@ -90,6 +91,10 @@ class Claim(unittest.TestCase):
             other.write('a line\n')
         with open(self.path, encoding='utf-8') as f:
             self.assertEqual(f.read(), 'a line\n')
+
+    def test_off_windows_a_disk_file_claims_nothing(self):
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            self.assertEqual(outfile().claim(self.handle()), (None, None, None))
 
     def test_no_disk_file_claims_nothing(self):
         self.assertEqual(outfile().claim(io.StringIO()), (None, None, None))

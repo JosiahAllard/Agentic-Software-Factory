@@ -113,6 +113,10 @@ class LinuxWindow(Base):
         patch = mock.patch('kitlib.platform.NAME', 'linux')
         patch.start()
         self.addCleanup(patch.stop)
+        # anchor_socket asks os.getuid on linux; Windows has none: give it one.
+        patch = mock.patch.object(os, 'getuid', create=True, return_value=1000)
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def bash_rows(self, text, pid, name):
         parent = {'Name': 'bash', 'ProcessId': pid + 1, 'ParentProcessId': 1,

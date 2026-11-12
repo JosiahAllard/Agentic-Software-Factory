@@ -244,7 +244,7 @@ class Host(object):
         with os.fdopen(fd, 'w', newline='\n') as f:
             f.write(text)
         os.chmod(tmp, mode)
-        if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        if platform.NAME == 'linux' and os.geteuid() == 0:
             os.chown(tmp, 0, 0)
         os.replace(tmp, path)
 

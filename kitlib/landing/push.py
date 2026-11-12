@@ -5,7 +5,6 @@ is Lander.__init__'s.
 """
 
 import os
-import re
 
 from kitlib import gate as G
 from kitlib.backlog import at_landing
@@ -19,44 +18,14 @@ from kitlib.records import gate_ok
 from kitlib.records import landing
 from kitlib.records import place
 from kitlib.landing.checks import _what
-from kitlib.landing.merge import MERGE_TIMEOUT, PUSH_TIMEOUT, _paths
+from kitlib.landing.merge import MERGE_TIMEOUT, _paths
 
 
-# git's own ref status line for a push it refused (transport.c; untranslated, and kitlib.git.cmd
-# runs git under LC_ALL=C): `! [rejected]` decided before sending (non-fast-forward, fetch first),
-# `! [remote rejected]` the remote's answer (a hook declined). `failed to push some refs` alone is
-# not one: git prints it for any failed push, a status report lost after the upload included
-PUSH_REFUSED = ('! [rejected] ', '! [remote rejected] ')
-# git's line for a push over HTTP(S) that never connected (exit 128, nothing else on stderr):
-# `fatal: unable to access '<url>': <curl's error>`, which git dies with only when its first
-# request, the ref discovery (remote-curl.c discover_refs), fails, before any pack is sent; with
-# curl's error one that only a connection never made gives: `Could not resolve host: <host>` (or
-# `proxy`), `Failed to connect to <host>:<port>` or `<host> port <port>` (curl 8 adds `after <n>
-# ms`; the reason after `: ` is the OS's or curl's, as `Connection refused`, `Timed out`, `Could
-# not connect to server`), `Connection timed out after <n> milliseconds` and `Resolving timed out
-# after <n> milliseconds` (curl's connect timeout in those states, before any request is sent).
-# git 2.55.0.windows.5 with libcurl 8.21.0 printed the first two forms, `<host>:<port> after <n>
-# ms: Could not connect to server` for both a refused port and a timed-out connect. Every other
-# curl error (a reset, a TLS failure, `Operation timed out`) came after the connection: STUCK
-PUSH_NEVER_CONNECTED = re.compile(
-    r"fatal: unable to access '[^']*': (?:"
-    r"Could not resolve (?:host|proxy): \S+"
-    r"|Failed to connect to \S+(?::\d+| port \d+)(?: after \d+ ms)?: [^:]+"
-    r"|(?:Connection|Resolving) timed out after \d+ milliseconds"
-    r")\Z")
 STEP_CMD = '    $ '      # a STUCK clear step's command line starts with this
 
 
 class _Stuck(Exception):
     pass
-
-
-def push_never_connected(rc, err):
-    """Whether a push that ended with exit `rc` and stderr `err` never connected to the remote,
-    so no byte of it can have reached it: git died (exit 128) and every line it printed is
-    PUSH_NEVER_CONNECTED. Any other line, a later-phase one included, or any other exit: False."""
-    lines = [l.strip() for l in (err or '').splitlines() if l.strip()]
-    return rc == 128 and bool(lines) and all(PUSH_NEVER_CONNECTED.match(l) for l in lines)
 
 
 class Push(object):
@@ -87,15 +56,17 @@ class Push(object):
         else why nothing landed (NOT LANDED: the record could not be written, the remote's main
         moved on while the gate ran, so the push was refused, or git refused the push, exit 1
         with git's own ref status line `! [rejected] ...` or `! [remote rejected] ...`
-        (PUSH_REFUSED), with the remote's main still the base; or the push never connected,
-        push_never_connected, with the remote's main anything but the merge or a commit holding
-        it, unreadable included). _Stuck when the push may have
+        (cmd.PUSH_REFUSED), with the remote's main still the base; or the push never connected,
+        cmd.push_never_connected, with the remote's main anything but the merge or a commit
+        holding it, unreadable included). _Stuck when the push may have
         landed and git cannot tell (ls-remote unreadable, or a remote main this checkout cannot
         place), or when any other push did not land on a remote main still at the base or absent:
         exit 0, no exit (timed out), exit 1 without that line (no message: a git ended from
         outside, refs.KILLED_SHAPE; a stray warning; a bare `failed to push some refs`) or exit
         128 (git died: a connection dropped after the upload may still be applied on the
-        remote)."""
+        remote). The push runs with cmd.NETWORK_ENV (cmd.with_network_env): a remote that wants
+        credentials makes git exit at once instead of waiting on a prompt nobody sees, and that
+        exit is judged as above like any other."""
         main_b, remote = self.base_branch, self.cfg.remote
         try:
             path = self.write_record(started, results)
@@ -107,15 +78,15 @@ class Push(object):
         self.lock.set_phase(self.token, 'push')
         self.phase = 'push'
         r = self.git('push', '--quiet', remote, '%s:refs/heads/%s' % (self.merge, main_b),
-                     timeout=PUSH_TIMEOUT)
+                     timeout=cmd.PUSH_TIMEOUT, env=cmd.with_network_env(self.git_env))
         pushed, why = refs.ls_remote(remote, 'refs/heads/%s' % main_b, self.root)
         how = 'exited 0' if r.rc == 0 else 'failed (%s)' % (r.err or 'exit %s' % r.rc)
         lines = [l.strip() for l in (r.err or '').splitlines() if l.strip()]
         said = ' | '.join(lines)
-        unconnected = push_never_connected(r.rc, r.err)
+        unconnected = cmd.push_never_connected(r.rc, r.err)
 
         def never_connected(state):
-            # git died before connecting (PUSH_NEVER_CONNECTED): no byte reached the remote, so
+            # git died before connecting (cmd.PUSH_NEVER_CONNECTED): no byte reached the remote, so
             # the merge, made only here, is not on it whatever ls-remote read (in an outage it
             # fails the same way). A remote main that is or holds the merge still counts as landed
             return ('the push of the merge %s never connected to %s (%s), and %s/%s %s; nothing '
@@ -143,10 +114,10 @@ class Push(object):
                     return never_connected('is still the base %s' % self.expect_main[:10]
                                            if pushed == self.expect_main else
                                            'is %s' % (pushed[:10] or 'absent'))
-                refused = any(l.startswith(PUSH_REFUSED) for l in lines)
+                refused = any(l.startswith(cmd.PUSH_REFUSED) for l in lines)
                 if r.rc == 1 and refused and pushed == self.expect_main:
-                    # git ran to the end and printed the ref's refusal (PUSH_REFUSED): nothing was
-                    # published. Exit 1 without it (no message: a git ended from outside,
+                    # git ran to the end and printed the ref's refusal (cmd.PUSH_REFUSED): nothing
+                    # was published. Exit 1 without it (no message: a git ended from outside,
                     # refs.KILLED_SHAPE; or only a stray warning) and exit 128 (git died) may have
                     # gone after the upload, which the remote may still apply after this
                     # ls-remote: STUCK
@@ -175,8 +146,8 @@ class Push(object):
         changes (a local edit elsewhere is carried). Else nothing in the main checkout moves, and
         a WARNING says why and how to bring it there. [] or [WARNING lines]; never raises git's
         failures. A landing onto a staging branch moves nothing in the main checkout: its main is
-        not the base, and the promotion is its only writer (docs/gate-landing.md "Staging
-        branch")."""
+        not the base, and a landing never moves it; the main branch moves on the remote only when
+        staging is promoted (docs/gate-landing.md "Staging branch")."""
         self.synced = True
         if self.staging:
             return []

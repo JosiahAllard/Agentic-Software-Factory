@@ -77,14 +77,19 @@ class Plan(unittest.TestCase):
         self.assertEqual(got["r-big"]["start"], NOW + 500)
         self.assertEqual(got["r-small"]["start"], NOW)
 
-    def resource_head(self, held_at):
+    def resource_head(self, held_at, child_held_at=None):
         # H holds cores 2-3 and resource LAND (expect 1000). W, the head, needs the 2 cores free
         # now (0-1) and LAND, so LAND alone puts it off; W2 names LAND too; T, a long 2-core
-        # run, is behind both.
-        h = holder("r-h", [2, 3], held_at, 1000)
+        # run, is behind both. With child_held_at, H holds core 3 only and C, a run nested in
+        # H that names LAND too (kitlib.lock.run.book), holds core 2 (expect 200).
+        h = holder("r-h", [2, 3] if child_held_at is None else [3], held_at, 1000)
         h["resource"] = LAND
-        return self.plan([h, land("r-w", 2, 100, 2), land("r-w2", 1, 100, 3),
-                          waiter("r-t", 2, 2000, 4)])
+        kids = []
+        if child_held_at is not None:
+            kids = [dict(holder("r-c", [2], child_held_at, 200, ticket=2), parent="r-h",
+                         resource=LAND)]
+        return self.plan([h, *kids, land("r-w", 2, 100, 3), land("r-w2", 1, 100, 4),
+                          waiter("r-t", 2, 2000, 5)])
 
     def test_a_head_put_off_by_an_overrun_resource_holder_leaves_free_cores_to_backfill(self):
         # H is overrun, so its end (now + 500) slides on every pass: W plans no slots at that
@@ -99,6 +104,14 @@ class Plan(unittest.TestCase):
     def test_a_head_put_off_by_an_on_time_resource_holder_keeps_its_cores(self):
         # H is on time (ends at now + 900): W keeps cores 0-1 from then, so T waits for H.
         got = self.resource_head(NOW - 100)
+        self.assertEqual((got["r-w"]["start"], got["r-w"]["cores"]), (NOW + 900, [0, 1]))
+        self.assertFalse(got["r-t"]["now"])
+        self.assertEqual(got["r-t"]["start"], NOW + 900)
+
+    def test_an_overrun_nested_holder_does_not_free_the_cores_of_a_head_its_on_time_parent_sets(self):
+        # C is overrun (its end, now + 100, slides) but H, on time, lets LAND go last at now +
+        # 900: that fixed end sets W's start, so W keeps cores 0-1 from then and T waits for H.
+        got = self.resource_head(NOW - 100, child_held_at=NOW - 5000)
         self.assertEqual((got["r-w"]["start"], got["r-w"]["cores"]), (NOW + 900, [0, 1]))
         self.assertFalse(got["r-t"]["now"])
         self.assertEqual(got["r-t"]["start"], NOW + 900)

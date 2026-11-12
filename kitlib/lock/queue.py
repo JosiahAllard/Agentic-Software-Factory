@@ -19,8 +19,8 @@ Planning (plan) gives each waiting entry, in queue order, the earliest time what
 for its whole expected time, around what holders and runs planned ahead of it take. A run may
 start ahead of its turn only when it ends before every run ahead of it is planned to start
 (backfill), but for a run ahead whose start its resource alone put off: that one keeps out only
-the runs naming its resource, and keeps no slots when that resource's holder is overrun. How long
-a holder still holds is holder_end.
+the runs naming its resource, and keeps no slots when the holder that lets that resource go last
+is overrun. How long a holder still holds is holder_end.
 
 Wait causes: plan also gives each waiting entry not planned now its why and by, a short code
 for what kept it from starting now and its blocker (plan's docstring). wait_cause turns one look at
@@ -307,10 +307,12 @@ def plan(L, q, now=None):
     starts (backfill), unless it is own_turn, or that one's start was put off by its resource
     alone (its slots were free at an earlier time; it is not parked): such a start bars only the
     entries naming that resource, and the rest plan around its slots, or take them when that
-    start follows a time the resource alone kept it from and a holder of the resource is overrun
+    start follows a time the resource alone kept it from and the holder of the resource with the
+    latest holder_end (the one that sets that start; a tie counts as overrun) is overrun
     (holder_overrun: its end slides on every pass, so slots kept there would sit idle; the
     entry keeps its place, start and resource order, and may then wait for cores once the
-    resource is free). A run waiting on its
+    resource is free). An overrun holder that lets the resource go sooner, such as a nested run
+    under an on-time parent holding it too, does not. A run waiting on its
     `within` bars a run behind it from its within slots only (barrier_guard): that one may start
     first on slots outside them. A parked entry (holds not its own leave it too little now) is
     planned from clear_at, around avoid_after, so no run behind it passes it."""
@@ -364,10 +366,12 @@ def plan(L, q, now=None):
                  | {s for s, _g, _o in starts if s > t0})
         held_by_rsc = False         # an earlier time had its slots free and only its resource not
         by_rsc = False              # so had the time tried last
-        # A resource whose holder is overrun ends at a guess that slides on every pass.
-        slid = rsc is not None and not e.get("parked") and any(
-            holder_overrun(x.get("held_at"), x.get("expect_s"), now)
-            for x in resource_holders(q, e))
+        # A resource whose last holder to let it go is overrun ends at a guess that slides on
+        # every pass; on a tie, the overrun one counts as last.
+        last = max(((holder_end(x.get("held_at"), entry_expect(x), now),
+                     holder_overrun(x.get("held_at"), x.get("expect_s"), now))
+                    for x in resource_holders(q, e)), default=None)
+        slid = rsc is not None and not e.get("parked") and last is not None and last[1]
         for t in sorted(times):
             prev_rsc, by_rsc = by_rsc, False
             barred = {p: set() for p in POOLS}

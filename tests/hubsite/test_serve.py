@@ -1262,6 +1262,9 @@ class ReasonCase(ServeCase):
         class Push(object):
             def job_event(self, name, event, detail=None):
                 owed.append((name, event, detail))
+
+            def stop(self, wait):
+                return True
         hub.push = Push()
         return owed
 
@@ -1289,7 +1292,6 @@ class ReasonCase(ServeCase):
             self.assertIn(('error', 'the self-restart look failed: RuntimeError: broken look'),
                           self.lines)
             self.assertEqual(owed, [(serve.STALE_JOB, serve.STALE_EVENT, None)], 'once a process')
-            hub.push = None
         hub.close()
 
     def test_a_restart_still_being_tried_pushes_no_stale_code(self):
@@ -1306,7 +1308,6 @@ class ReasonCase(ServeCase):
             self.assertIn(('error', serve.STALE_CODE), self.lines)
             self.assertFalse(hub.self_restart.definite)
             self.assertEqual(owed, [])
-            hub.push = None
         hub.close()
 
     def warned(self):
@@ -1446,7 +1447,6 @@ class ReasonCase(ServeCase):
             self.assertEqual(owed, [(serve.STALE_JOB, serve.STALE_EVENT, None)],
                              'a look that raises is definite: pushed once')
             self.assertFalse(hub.self_restart.definite, "serve never sets the Watcher's flag")
-            hub.push = None
         hub.close()
 
     def test_health_and_snapshot_say_when_the_hub_code_on_disk_is_newer(self):

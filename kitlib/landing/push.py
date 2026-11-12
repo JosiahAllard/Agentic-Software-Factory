@@ -342,8 +342,7 @@ class Push(object):
         head = self.tree_head()
         if not head or head == prev or not nxt:
             return lines
-        first, _ = cmd.run_text(['rev-parse', 'HEAD^1'], tree)
-        second, _ = cmd.run_text(['rev-parse', 'HEAD^2'], tree)
+        first, second = self.tree_parents()
         if first == prev and second == nxt:
             self.merges.append(head)
             self.merge = head

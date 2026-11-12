@@ -168,6 +168,15 @@ class Merge(object):
         sha, _ = refs.resolve('HEAD', self.tree)
         return sha
 
+    def tree_parents(self):
+        """(first parent, second parent) of the landing tree's HEAD, read by one git launch; (None,
+        None) when HEAD is not a merge (git exits 128 naming HEAD^2) or git gives no answer."""
+        out, _ = cmd.run_text(['rev-parse', 'HEAD^1', 'HEAD^2'], self.tree)
+        got = out.split('\n') if out else []
+        if len(got) == 2 and all(refs.is_sha(s) for s in got):
+            return got[0], got[1]
+        return None, None
+
     def prepare_tree(self):
         """Step 5b: the landing tree (self.tree) detached at the base, nothing else in it. Made
         the first time (`git worktree add --detach --lock`); reused when it is clean (a checkout of
@@ -270,8 +279,7 @@ class Merge(object):
                          cwd=self.tree)
             if r.rc == 0:
                 head = self.tree_head()
-                first, _ = cmd.run_text(['rev-parse', 'HEAD^1'], self.tree)
-                second, _ = cmd.run_text(['rev-parse', 'HEAD^2'], self.tree)
+                first, second = self.tree_parents()
                 if not head or first != prev or second != t:
                     return G.Outcome(G.FAILED, [
                         'NOT LANDED: the merge of %s reported success, and HEAD of the landing tree '

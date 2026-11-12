@@ -255,6 +255,12 @@ class Pure(unittest.TestCase):
         self.assertEqual(budget.sizes_from(listing), {'a b.md': 12})
         self.assertEqual(budget.sizes_from(''), {})
 
+    def test_paths_from_lists_every_entry_in_listing_order(self):
+        listing = ('100644 blob %s     12\tz b.md\x00160000 commit %s       -\tsub\0'
+                   '100644 blob %s     7\tline\nbreak.md\0' % ('1' * 40, '3' * 40, '2' * 40))
+        self.assertEqual(budget.paths_from(listing), ['z b.md', 'sub', 'line\nbreak.md'])
+        self.assertEqual(budget.paths_from(''), [])
+
     def test_sizes_from_keeps_non_ascii_quote_and_newline_names_raw(self):
         listing = '\x00'.join(
             ['100644 blob %s     7\tdocs/café ü.md' % ('1' * 40),
@@ -1270,15 +1276,21 @@ class FailedGitReads(BudgetRepo):
         self.assertIn('git exit 128: fatal: cannot list tree', out)
 
     def test_failed_size_listing_names_the_git_error(self):
+        """The head's one listing (names and sizes), then the base's sizes."""
         self.size(GOTCHAS, 100)
-        with self.failing(lambda a: a[:3] == ('ls-tree', '-r', '--long'), stderr='fatal: bad ref'):
-            code, out = self.run_budget()
-        self.assertEqual(code, 2, out)
-        self.assertIn('cannot list the sizes at HEAD (git exit 128: fatal: bad ref)', out)
+        long_ = ('ls-tree', '-r', '--long', '-z')
+        for at_head, said in ((True, 'cannot list HEAD (git exit 128: fatal: bad ref)'),
+                              (False, 'cannot list the sizes at master (git exit 128: fatal: bad ref)')):
+            with self.subTest(at_head=at_head):
+                with self.failing(lambda a: a[:4] == long_ and (a[4] == 'HEAD') == at_head,
+                                  stderr='fatal: bad ref'):
+                    code, out = self.run_budget()
+                self.assertEqual(code, 2, out)
+                self.assertIn(said, out)
 
     def test_an_empty_listing_refuses_rather_than_passing(self):
         self.size(GOTCHAS, 100)
-        with self.failing(lambda a: a[:2] == ('ls-tree', '-r') and '--name-only' in a, 0, '', ''):
+        with self.failing(lambda a: a[:2] == ('ls-tree', '-r') and a[-1] == 'HEAD', 0, '', ''):
             code, out = self.run_budget()
         self.assertEqual(code, 2, out)
         self.assertIn('git exit 0, but it listed no file', out)
@@ -1361,6 +1373,17 @@ class DocBudgetGitCalls(RepoCase):
         small = self.calls(2)
         large = self.calls(8)
         self.assertEqual(small, large, 'git calls: 2 docs -> %s, 8 docs -> %s' % (small, large))
+
+    def test_a_committed_head_is_listed_by_one_ls_tree(self):
+        """Its names and sizes come from one `ls-tree -r --long` listing."""
+        self.build(2)
+        patcher, calls = self.counting()
+        with patcher:
+            code, out = self.run_budget('--head', 'phase/x', '--report')
+        self.assertEqual(code, 0, out)
+        self.assertIn('docs/d1.md', out)
+        self.assertEqual([a for a in calls if a[0] == 'ls-tree' and a[-1] == 'phase/x'],
+                         [('ls-tree', '-r', '--long', '-z', 'phase/x')])
 
 
 if __name__ == '__main__':

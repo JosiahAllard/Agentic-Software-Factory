@@ -148,6 +148,17 @@ def inside(top, path):
     return rel.replace(os.sep, '/')
 
 
+ROOT_BUILD = {GRADLE: ('settings.gradle.kts', 'settings.gradle', 'build.gradle.kts', 'build.gradle'),
+              DOTNET: ('*.csproj', '*.fsproj', '*.vbproj')}
+
+
+def root_files(top, runner):
+    """The build files of a `runner` module or project at the top of the tree `top` (sorted
+    names): what a record scopes for it, since no scope member names the tree itself."""
+    return sorted({os.path.basename(p) for pat in ROOT_BUILD.get(runner, ())
+                   for p in glob.glob(os.path.join(glob.escape(top), pat)) if os.path.isfile(p)})
+
+
 def _under(top, rel):
     return os.path.join(top, *rel.split('/')) if rel else top
 

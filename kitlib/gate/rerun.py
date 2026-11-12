@@ -434,17 +434,6 @@ def cover_step(res, cwd_rel, top, since):
     return entry
 
 
-def cwd_rel(top, cwd):
-    """A step directory `cwd` relative to the tree `top` ('' for the top, '/'-separated), or None
-    when it is outside the tree."""
-    rel = os.path.relpath(os.path.abspath(cwd or top), os.path.abspath(top))
-    if rel == os.curdir:
-        return ''
-    if rel.startswith(os.pardir) or os.path.isabs(rel):
-        return None
-    return rel.replace(os.sep, '/')
-
-
 def record_red(top, cfg, head, base, started, results, chosen, log_dir, full):
     """Write the red run of a failed whole gate of `head`, --full when `full` else default-mode
     (the runner has checked the tree was clean, HEAD unmoved and the stash empty): its path.
@@ -453,7 +442,7 @@ def record_red(top, cfg, head, base, started, results, chosen, log_dir, full):
         commit, tree, author = gate_ok._facts(top, head)
     except gate_ok.RecordError as e:
         raise RerunError(str(e))
-    cwds = {s.name: cwd_rel(top, s.cwd) for s in chosen}
+    cwds = {s.name: reports.inside(top, s.cwd or top) for s in chosen}
     rec = {'kind': RED, 'commit': commit, 'tree': tree, 'author': author, 'base': base,
            'config_rev': commit, 'full': bool(full),
            'gate_config': gate_ok.config_hash(gate_ok.gate_config(cfg)),
@@ -903,20 +892,29 @@ def add_line(top, branch, head, classes):
     on filing it (skill builder, step 10). The summary is a short title, within plan_edit.SUMMARY_MAX
     (the class, cut to 60 characters, and the tip); the failing test ids go into the
     not-folded reason, which the record keeps in its body's `## Found` section. A gradle or
-    dotnet class's scope is its module or project folder (`scope`). Inside the double quotes a
-    `"` or backquote becomes `'` and a `$` (a nested JVM class) `.`, so no shell reads them."""
+    dotnet class's scope is its module or project folder (`scope`); one at the tree root (scope
+    '') takes its build files there (reports.root_files), or `none` when it has none. Each scope
+    member is its own quoted `--scope` (backlog.py takes one member a flag). Inside the double
+    quotes a `"` or backquote becomes `'` and a `$` (a nested JVM class) `.`, so no shell reads
+    them."""
     def plain(text):
         return text.replace('"', "'").replace('`', "'").replace('$', '.')
+
+    def scopes_of(c):
+        if c.get('scope') is None:
+            return [scope_of(top, c['cls'])]
+        return [c['scope']] if c['scope'] else reports.root_files(top, c.get('runner')) or ['none']
     ids = [t for c in classes for t in c['ids']]
     cls = classes[0]['cls'].split('.')[-1]
     name = re.sub(r'[^A-Za-z0-9]+', '-', cls).strip('-').upper()
-    scopes = sorted({c.get('scope') or scope_of(top, c['cls']) for c in classes})
+    scopes = sorted({s for c in classes for s in scopes_of(c)})
     more = ' and %d more' % (len(classes) - 1) if len(classes) > 1 else ''
-    return ('%s add FLAKE-%s --summary "flaky: %s%s in gate.py at %s" --scope %s '
+    return ('%s add FLAKE-%s --summary "flaky: %s%s in gate.py at %s" %s '
             '--found-on %s --why-not-folded "a flake outside this branch\'s story; it failed in '
             'gate.py and passed its targeted rerun: %s"'
             % (kitroot.command('backlog', top), name[:40] or 'TEST', plain(cls[:60]), more,
-               head[:10], ','.join(scopes), branch or 'none', plain(', '.join(ids))))
+               head[:10], ' '.join('--scope "%s"' % plain(s) for s in scopes), branch or 'none',
+               plain(', '.join(ids))))
 
 
 def rerun_gate(root, slug=None, log_dir=None, say=None, book_kw=None):

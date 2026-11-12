@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -330,11 +331,32 @@ class AddLine(unittest.TestCase):
                     'ids': ['pkg.Foo$Inner.it says "no" to `x`']},
                    {'cls': 'tests.gate.test_none.Case', 'ids': ['tests.gate.test_none.Case.t']}]
         add = rerun.add_line(os.getcwd(), BRANCH, 'a' * 40, classes)
-        self.assertIn('--scope app/api,tests ', add)
+        # one quoted --scope a member: backlog.py takes one a flag, and no comma in one
+        self.assertIn(' --scope "app/api" --scope "tests" --found-on ', add)
         quoted = re.findall(r'"([^"]*)"', add.split(' add ', 1)[1])
-        self.assertEqual(len(quoted), 2, add)
-        self.assertIn("pkg.Foo.Inner.it says 'no' to 'x'", quoted[1])
+        self.assertEqual(len(quoted), 4, add)
+        self.assertIn("pkg.Foo.Inner.it says 'no' to 'x'", quoted[3])
         self.assertFalse(any(ch in add for ch in '$`'), add)
+
+    def test_a_module_at_the_tree_root_scopes_its_build_files_there(self):
+        d = tempfile.mkdtemp(prefix='kit-rerun-')
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        for name in ('build.gradle.kts', 'settings.gradle.kts', 'App.Tests.csproj', 'README.md'):
+            with open(os.path.join(d, name), 'w', encoding='utf-8') as f:
+                f.write('x\n')
+        for runner, want in (
+                ('gradle', ' --scope "build.gradle.kts" --scope "settings.gradle.kts" --found-on '),
+                ('dotnet', ' --scope "App.Tests.csproj" --found-on ')):
+            with self.subTest(runner):
+                add = rerun.add_line(d, BRANCH, 'a' * 40, [
+                    {'cls': 'pkg.FooTest', 'runner': runner, 'scope': '', 'ids': ['pkg.FooTest.t']}])
+                self.assertIn(want, add)
+        empty = tempfile.mkdtemp(prefix='kit-rerun-')
+        self.addCleanup(shutil.rmtree, empty, ignore_errors=True)
+        add = rerun.add_line(empty, BRANCH, 'a' * 40, [
+            {'cls': 'pkg.FooTest', 'runner': 'gradle', 'scope': '', 'ids': ['pkg.FooTest.t']}])
+        self.assertIn(' --scope "none" --found-on ', add)
+        self.assertNotIn('"tests"', add)
 
 
 class ReportSteps(unittest.TestCase):
@@ -528,7 +550,7 @@ class Flake(RerunCase):
         add = out.lines[-1].strip()
         # the id it proposes is FLAKE- and the failing test's class name
         self.assertIn(' add FLAKE-%s ' % ID.split('.')[-2].upper(), add)
-        self.assertIn('--scope flaky_mod.py', add)
+        self.assertIn('--scope "flaky_mod.py"', add)
         self.assertIn('--found-on %s' % BRANCH, add)
         # the summary is a title `backlog.py add` takes; the test id goes in the reason
         summary = re.search(r'--summary "([^"]*)"', add).group(1)
@@ -748,7 +770,7 @@ class GradleStep(RerunCase):
         self.assertEqual(out.code, G.OK, out.lines + out.said)
         self.assertTrue(out.lines[0].startswith('RERUN FLAKE'), out.lines)
         self.assertIn(' add FLAKE-%s ' % GRADLE_ID.split('.')[-2].upper(), out.lines[-1])
-        self.assertIn('--scope mod ', out.lines[-1])
+        self.assertIn(' --scope "mod" --found-on ', out.lines[-1])
         self.assertTrue(any(s.startswith('PASS  pkg.FooTest at the tip, from the gradle reports')
                             for s in out.said), out.said)
         rr = self.loaded(tip)[1][0]
@@ -770,6 +792,20 @@ class GradleStep(RerunCase):
         self.assertEqual([c['ids'] for c in rr['classes']], [{GRADLE_ID: 'failure'}])
         self.assertIn('%s failed on this tip and failed twice' % GRADLE_ID,
                       rerun.twice_refusal(self.repo.root, tip, self.main))
+
+    def test_a_passing_rerun_whose_reports_do_not_show_the_id_passed_is_real(self):
+        # the step passes, but its XML predates the rerun's start (stale): the red id is not
+        # shown passed, so the rerun is REAL, not a FLAKE on the step's status alone
+        wt, tip = self.work('once')
+        self.red(wt)
+        with mock.patch.object(rerun, 'since_of', lambda stamp: time.time() + 3600):
+            out = self.rerun(wt)
+        self.assertEqual(out.code, G.FAILED, out.lines + out.said)
+        self.assertTrue(out.lines[0].startswith('RERUN REAL'), out.lines)
+        rr = self.loaded(tip)[1][0]
+        self.assertEqual([s['status'] for s in rr['steps'] if s['name'] == 'gradle'], ['PASS'])
+        self.assertEqual([(c['ids'], c['tip']) for c in rr['classes']],
+                         [({GRADLE_ID: 'not run'}, 'fail')])
 
     def test_a_gradle_failure_that_is_not_failing_tests_is_not_rerun(self):
         wt, tip = self.work('compile')
@@ -797,7 +833,7 @@ class DotnetStep(RerunCase):
                          ([(DOTNET_ID, 'proj')], []))
         out = self.rerun(wt)
         self.assertEqual(out.code, G.OK, out.lines + out.said)
-        self.assertIn('--scope proj ', out.lines[-1])
+        self.assertIn(' --scope "proj" --found-on ', out.lines[-1])
         rr = self.loaded(tip)[1][0]
         self.assertEqual([(c['runner'], c['ids']) for c in rr['classes']],
                          [('dotnet', {DOTNET_ID: 'ok'})])

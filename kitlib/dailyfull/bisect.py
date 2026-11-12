@@ -42,6 +42,7 @@ import re
 from kitlib.config import load as load_config
 from kitlib.config.types import ConfigError
 from kitlib.gate import detect
+from kitlib.gate import reports
 from kitlib.gate import rerun
 from kitlib.gate import runner
 from kitlib.gate import steps as S
@@ -204,7 +205,7 @@ class Prober(object):
         by = {s.name: s for s in chosen}
         runs = []                           # (red step name, class entry)
         for n in names:
-            rel = rerun.cwd_rel(self.wt, by[n].cwd)
+            rel = reports.inside(self.wt, by[n].cwd or self.wt)
             if rel is None:
                 return None, [], 'red step %s at %s runs outside the tree' % (n, sha[:10])
             entry = dict(self.covers[n],

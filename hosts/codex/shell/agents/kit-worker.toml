@@ -14,7 +14,6 @@ follow it: design first, then build, test, commit and report.
 - Before editing, trace the callers of what you change and its failure paths; one the brief did not
   foresee goes in your design.
 - A review or test-only brief: return findings or PASS/FAIL and edit nothing.
-- Bulk menial reads or mechanical bulk writes: the helper role (skill builder, \"Bulk work to the helper\").
 
 ## Moves and renames
 

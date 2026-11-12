@@ -89,12 +89,14 @@ def _plugin_deny(server):
 USER_MCP = {'suno': 'mcp__suno'}
 # SESSION_CUT: the tools and MCP servers it starts without, each a permissions.deny entry, a bare
 # tool name or an MCP server's entry from _plugin_deny or USER_MCP, so mcp_deny_names() gives it
-# and `launch.py --mcp <server>` can take it back. Artifact stays.
-SESSION_CUT = ('NotebookEdit', 'ReportFindings', 'ScheduleWakeup', 'SendFeedback', 'Workflow',
+# and `launch.py --mcp <server>` can take it back. Artifact is the PM's alone: the PM never starts
+# with these settings (kitlib.launcher.start gives a PM role none).
+SESSION_CUT = ('Artifact', 'NotebookEdit', 'ReportFindings', 'ScheduleWakeup', 'SendFeedback', 'Workflow',
                _plugin_deny('blender'), USER_MCP['suno'])
-# The bundled skills hidden from the model (still /name to the owner). Not artifact-design,
-# artifact-diagramming or artifact-capabilities: the Artifact tool, kept, says to load them.
-HIDDEN_SKILLS = ('claude-api', 'claude-in-chrome', 'code-review', 'dataviz', 'fewer-permission-prompts',
+# The bundled skills hidden from the model (still /name to the owner); the artifact-* ones go with
+# the Artifact tool, which says to load them.
+HIDDEN_SKILLS = ('artifact-capabilities', 'artifact-design', 'artifact-diagramming',
+                 'claude-api', 'claude-in-chrome', 'code-review', 'dataviz', 'fewer-permission-prompts',
                  'init', 'keybindings-help', 'loop', 'plugin-authoring', 'run', 'schedule',
                  'security-review', 'simplify', 'update-config', 'workflow-authoring')
 # The claude.ai-synced skills, hidden the same way, by the name a session lists them under (sync
@@ -122,8 +124,10 @@ def mcp_deny_names():
 
 def session_settings(content, cut=SESSION_CUT):
     """The launched sessions' settings for `content`: SESSION_KEYS and {"permissions": {"deny":
-    [...]}}, the entries of `cut` in order, less the Claude tool of every capability a role lists."""
+    [...]}}, the entries of `cut` in order, less the Claude tool of every capability a role lists.
+    An MCP server's deny entry is never taken back by a role: only `launch.py --mcp` lifts it."""
     kept = {TOOLS[c] for role in content.roles if not role.all_tools for c in role.capabilities if c in TOOLS}
+    kept -= set(mcp_deny_names().values())
     return dict(SESSION_KEYS, permissions={'deny': [e for e in cut if e not in kept]})
 
 
@@ -138,6 +142,8 @@ TOOLS = {
     'monitor': 'Monitor', 'tool-search': 'ToolSearch', 'skill': 'Skill', 'ask-owner': 'AskUserQuestion',
     'cron-create': 'CronCreate', 'cron-list': 'CronList', 'cron-delete': 'CronDelete',
     'web-search': 'WebSearch', 'web-fetch': 'WebFetch',
+    # an agent's tools: list takes a whole MCP server as mcp__<server>__* (a bare mcp__<server> matches none)
+    'mcp-blender': _plugin_deny('blender') + '__*', 'mcp-suno': USER_MCP['suno'] + '__*',
 }
 # The tokens whose Claude value no hosts.json field holds.
 TOKENS = {

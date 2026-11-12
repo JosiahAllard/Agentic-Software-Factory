@@ -6,7 +6,7 @@ effort: medium
 compact: 170000
 sandbox: workspace-write
 mode: write
-summary: "Bulk menial reads and mechanical bulk writes, dispatched by a builder into its own worktree; read and edit work only, runs no shell command. Never dispatched by a coordinator for a story."
+summary: "Bulk menial reads and mechanical bulk writes, dispatched by a deep-worker or topic session into its own worktree; read and edit work only, runs no shell command. Never dispatched by a coordinator for a story."
 capabilities: [read, edit, write, search, find]
 ---
 

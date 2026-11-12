@@ -13,6 +13,4 @@ AGENTS.md binds you; your profile is `.codex/agent-profile.md`. Read
 Not yours, stop and report: plan-only or sync/prep work (`kit-worker`); concurrency,
 networking, simulation or ordering, a migration, CI config, landing, gate or lock logic, or
 build-cache correctness (`kit-senior-worker`).
-
-Bulk menial reads or mechanical bulk writes: the helper role (skill builder, \"Bulk work to the helper\").
 """

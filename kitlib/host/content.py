@@ -72,6 +72,7 @@ CAPABILITIES = (
     'read', 'edit', 'write', 'search', 'find', 'bash', 'powershell', 'worktree', 'enter-worktree', 'artifact',
     'dispatch', 'message', 'list-agents', 'stop-task', 'monitor', 'tool-search', 'skill',
     'ask-owner', 'cron-create', 'cron-list', 'cron-delete', 'web-search', 'web-fetch',
+    'mcp-blender', 'mcp-suno',
 )
 # The tokens a body or description may hold (docs/content.md "Tokens"). Three take an argument
 # (ARG_TOKENS): `{{agent:<role>}}` the name the host dispatches a role by, `{{model:<tier>}}` the

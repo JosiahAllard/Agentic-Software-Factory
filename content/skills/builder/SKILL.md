@@ -49,11 +49,11 @@ Answer first. Confirmed vs inferred; branch, commits; test lines per claim (gate
 
 ## Dispatching a subagent
 
-Brief: role, scope, worktree, branch, resources, validation. Writer in your worktree, never host checkout. Planner may lack writes. Before resuming: check what it left running. No cross-host assumptions.
+Deep-worker and topic only; a dispatched builder has no dispatch tool. Brief: role, scope, worktree, branch, resources, validation. Writer in your worktree, never host checkout. Planner may lack writes. Before resuming: check what it left running. No cross-host assumptions.
 
 ## Bulk work to the helper
 
-Only if `<kit>/docs/ROSTER.md` light tier is cheaper.
+Deep-worker and topic only. Only if `<kit>/docs/ROSTER.md` light tier is cheaper.
 - Read: >1,000-line file, 20+ file search, tree listing.
 - Write: one mechanical change, 10+ files or 100+ lines; scripts stay yours.
 - Brief: worktree, files, exact change; hands off meanwhile. Re-read cited lines, read diff, test, commit yourself.

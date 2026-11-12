@@ -3,6 +3,8 @@ land.py --submit and gate.py land --submit append one land_submit event once a s
 taken, and none when it is not; backlog.py appends one backlog event after a write it published.
 With the log off they write nothing. Run in process: the submission itself is stubbed."""
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -102,6 +104,32 @@ class BacklogWrites(TempAgentFolder):
     def test_with_the_log_off_a_write_writes_nothing_here(self):
         self.add()
         self.assertEqual(os.listdir(self.temp), [])
+
+
+class TestsLeaveTheLiveLogAlone(TempAgentFolder):
+    """A test run directly from a coordinator session (its name and a log on in the environment)
+    writes nothing to that log: tests/__init__.py drops the session's variables (docs/test-tools.md
+    "Session fence")."""
+
+    def child(self, *args):
+        env = dict(os.environ, **self.env)
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        return subprocess.run([sys.executable] + list(args), cwd=root, env=env, capture_output=True,
+                              text=True, timeout=300)
+
+    def test_the_land_follow_submit_path_leaves_the_log_unchanged(self):
+        f = self.turn_on()
+        with open(f.events, 'rb') as fh:
+            before = fh.read()
+        r = self.child('-m', 'unittest',
+                       'tests.landing.test_land_follow.TheTool.test_a_plain_submit_is_unchanged')
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        with open(f.events, 'rb') as fh:
+            self.assertEqual(fh.read(), before)
+
+    def test_importing_tests_drops_the_session_variables(self):
+        r = self.child('-c', 'import os, tests; print(os.environ.get(%r))' % sessionmark.SESSION_NAME_ENV)
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, 'None'), r.stdout + r.stderr)
 
 
 if __name__ == '__main__':

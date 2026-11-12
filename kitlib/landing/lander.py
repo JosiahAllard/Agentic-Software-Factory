@@ -373,12 +373,47 @@ class Lander(Checks, Merge, MergedGate, Push, After):
         return sha
 
     @property
+    def checkout_branch(self):
+        """The main checkout's branch: the main branch, always. A landing onto a staging branch
+        never moves it (the promotion is its only writer; docs/gate-landing.md "Staging branch")."""
+        return self.cfg.main_branch
+
+    @property
+    def base_branch(self):
+        """The branch this landing merges onto and pushes: the work base (kitlib.config.work_base),
+        the staging branch when `"staging".branch` is set, else the main branch."""
+        return kconfig.work_base(self.cfg)
+
+    @property
+    def staging(self):
+        """True when the base is a staging branch, not the main checkout's main branch."""
+        return self.base_branch != self.checkout_branch
+
+    def main_tracking(self):
+        """refs/remotes/<remote>/<main>: where the staging setting is read (read_staging, follow)."""
+        return 'refs/remotes/%s/%s' % (self.cfg.remote, self.checkout_branch)
+
+    def read_staging(self, head):
+        """The first read's staging setting from <remote>/<main> as last fetched, over the main
+        checkout's own (kitlib.config.overlay_staging), when that ref is another commit than
+        `head`. A config there that cannot be read leaves the checkout's own setting. follow()
+        reads <remote>/<main> again after the fetch, and refuses on such a config, but only when
+        the base the fetch finds is not the commit the config was read at (onto_origin); when it
+        is, the landing goes on with the checkout's own setting."""
+        src = self.ref(self.main_tracking())
+        if src and src != head:
+            try:
+                kconfig.overlay_staging(self.cfg, src)
+            except ConfigError:
+                pass
+
+    @property
     def main_ref(self):
-        return 'refs/heads/%s' % self.cfg.main_branch
+        return 'refs/heads/%s' % self.checkout_branch
 
     @property
     def origin_ref(self):
-        return 'refs/remotes/%s/%s' % (self.cfg.remote, self.cfg.main_branch)
+        return 'refs/remotes/%s/%s' % (self.cfg.remote, self.base_branch)
 
     def fetch(self):
         r = self.git('fetch', '--quiet', '--no-tags', self.cfg.remote, timeout=FETCH_TIMEOUT)
@@ -421,6 +456,7 @@ class Lander(Checks, Merge, MergedGate, Push, After):
             self.cfg = kconfig.load_at(self.root, head)
         except ConfigError as e:
             return 'the config of main %s: %s' % (head[:10], e)
+        self.read_staging(head)
         self.expect_main = head     # until step 5 moves it to <remote>/<main>
         return self.config_refusal()
 
@@ -428,15 +464,15 @@ class Lander(Checks, Merge, MergedGate, Push, After):
         """The refusals self.cfg decides (main branch checked out, batch_max, the branches):
         None or a refusal."""
         current, why = refs.current_branch(self.root)
-        if current != self.cfg.main_branch:
+        if current != self.checkout_branch:
             return 'the main checkout is on %s, not %s' % (current or why or '(detached HEAD)',
-                                                         self.cfg.main_branch)
+                                                         self.checkout_branch)
         most = self.cfg.section('landing')['batch_max']
         if len(self.branches) > most:
             return 'a batch of %d branches is more than "landing".batch_max (%d)' % (
                 len(self.branches), most)
         for b in self.branches:
-            if b == self.cfg.main_branch:
+            if b in (self.base_branch, self.checkout_branch):
                 return 'the branch to land is %s itself' % b
             if not self.ref('refs/heads/%s' % b):
                 return 'no branch %s in this repository' % b
@@ -604,7 +640,7 @@ class Lander(Checks, Merge, MergedGate, Push, After):
                         'where it took the lock, so its push most likely landed and only the main '
                         'checkout\'s fast-forward was skipped. Not broken, because %s. Then land '
                         'again: the next landing breaks it itself; or break it with: %s' % (
-                            landing.describe(rec), self.cfg.remote, self.cfg.main_branch,
+                            landing.describe(rec), self.cfg.remote, self.base_branch,
                             origin[:10], took[:10], hint[2:], self.break_command())), True
             return ('%s, and its holder is gone: not broken, because %s. The next landing breaks '
                     'it itself once main has caught up, or break it with: %s' % (
@@ -645,9 +681,9 @@ class Lander(Checks, Merge, MergedGate, Push, After):
         # Again under the lock: the turn may have come long after preconditions(), and the merge
         # goes onto HEAD.
         current, why = refs.current_branch(self.root)
-        if current != self.cfg.main_branch:
+        if current != self.checkout_branch:
             return 'the main checkout is on %s, not %s, at the landing\'s turn' % (
-                current or why or '(detached HEAD)', self.cfg.main_branch)
+                current or why or '(detached HEAD)', self.checkout_branch)
         why = self.onto_origin()
         if why:
             return why
@@ -1013,7 +1049,7 @@ class Lander(Checks, Merge, MergedGate, Push, After):
             return G.Outcome(G.FAILED, [
                 'NOT LANDED: the landing tree could not be put back at the base to gate %s alone: '
                 '%s; nothing was pushed, and the landing did not move %s from the base %s' % (
-                    self.branch, why, self.cfg.main_branch, self.expect_main[:10])], undone=True)
+                    self.branch, why, self.base_branch, self.expect_main[:10])], undone=True)
         failed = self.do_merge()
         if failed is not None:
             return failed
@@ -1060,7 +1096,7 @@ class Lander(Checks, Merge, MergedGate, Push, After):
         out = self.gate_out = self.gate()
         if out.code == G.FAILED and self.folds:     # a folded batch drops its folds, never fails them
             out = self.gate_out = self.regate_alone(out)
-        main_b, base = self.cfg.main_branch, self.expect_main
+        main_b, base = self.base_branch, self.expect_main
         if out.code == G.OK:
             changed = self.unchanged()      # the commit pushed must be the commit gated
             if changed:

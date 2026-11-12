@@ -26,7 +26,7 @@ from kitlib.git import refs
 from . import holders
 from .holders import canon
 from .remove_checks import (ARCHIVE, base_commit, dirty, dirty_refusal, exemption, failure, git,
-                            GitReadError, handle, ignored_reason, is_workstream, kept_reflog,
+                            GitReadError, handle, ignored_reason, is_base, is_workstream, kept_reflog,
                             merge_check, OK, open_ctx, REFUSED, registered, registered_target,
                             registrations, same_name, unmoved, worktree_entries, worktree_listing)
 
@@ -410,7 +410,7 @@ def _remove_branch(ctx, branch):
     reads it). Every refusal changes nothing."""
     main, s = ctx.main, ctx.s
     up = s['upstream']
-    if same_name(branch, s['base']):
+    if is_base(branch, s):
         ctx.say('refused   %s is the main branch; nothing was deleted' % branch)
         return REFUSED
     tip, bad = local_branch(main, branch)

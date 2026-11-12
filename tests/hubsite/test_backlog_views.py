@@ -106,6 +106,28 @@ class TheViewFollowsTheStore(Case):
         self.assertEqual(after["repos"][0]["completed"], [{"id": "A", "t": "first", "d": RECENT}])
         self.assertEqual(after["at"], NOW.isoformat())
 
+    def staged(self, repo, **records):
+        """Commit `records` on a detached head, set refs/remotes/origin/staging to it (as a
+        landing's push leaves it once fetched), back on main; then turn staging on in .kit.json.
+        Returns the staged commit."""
+        repo.git("checkout", "-q", "--detach")
+        self.put(repo, "staged", **records)
+        staged = repo.head()
+        repo.git("update-ref", "refs/remotes/origin/staging", staged)
+        repo.git("checkout", "-q", "main")
+        repo.write(".kit.json", '{"backlog": {"store": "main"}, "staging": {"branch": "staging"}}')
+        return staged
+
+    def test_with_a_staging_branch_the_records_and_branches_are_read_against_it(self):
+        # docs/gate-landing.md "Staging branch": records land on the staging branch, never main
+        repo = self.main_repo(A=record("A", "first"))
+        staged = self.staged(repo, B=record("B", "landed on staging"))
+        self.assertNotEqual(repo.git("rev-parse", "main"), staged)
+        self.assertEqual(backlog.main_commit(repo.root), staged)
+        self.assertEqual(ids(self.views(("r", repo.root)).get(), "r", "open"), ["A", "B"])
+        repo.git("branch", "work", staged)
+        self.assertEqual(backlog.branch_block(repo.root, "work", "pulled_by")["behind"], 0)
+
     def test_completed_is_a_closed_line_or_a_deleted_file_within_the_days(self):
         repo = self.main_repo(SHUT=record("SHUT", "closed in place", closed=RECENT),
                               OLD=record("OLD", "closed long ago", closed=LONG_AGO),
@@ -361,6 +383,13 @@ class AFailureIsNeverAnEmptyStore(Case):
         repo.write(".kit.json", '{"backlog": {"store": "main"}, "repo": {"main_branch": "trunk"}}')
         entry = self.views(("r", repo.root)).get()["repos"][0]
         self.assertEqual(entry["error"], backlog.BAD_REF)       # the class "bad ref"
+        self.assertEqual(entry["open"], [])
+
+    def test_a_staging_branch_not_fetched_is_an_error_not_main_s_records(self):
+        repo = self.main_repo(A=record("A", "first"))
+        repo.write(".kit.json", '{"backlog": {"store": "main"}, "staging": {"branch": "staging"}}')
+        entry = self.views(("r", repo.root)).get()["repos"][0]
+        self.assertEqual(entry["error"], backlog.BAD_REF)
         self.assertEqual(entry["open"], [])
 
     def test_a_failed_read_keeps_the_last_good_lists_and_says_stale(self):

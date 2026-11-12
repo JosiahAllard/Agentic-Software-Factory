@@ -393,7 +393,8 @@ def _owner_rules(root, new):
     config the commit `new` holds (the defaults when it does not load) merged with main's
     (kitlib.config.owner.merge), main being <remote>/<main> as last fetched, else the main
     checkout's HEAD; never the work tree's `.kit.json`, so an uncommitted edit there cannot loosen
-    them. (None, why) when main's config cannot be read, or when the main checkout is not on the
+    them. When main names a staging branch, the rules are that branch's as last fetched (the
+    base a landing merges onto), with main's staging setting. (None, why) when main's config cannot be read, or when the main checkout is not on the
     main branch its HEAD's config names: as land refuses (kitlib.landing.lander config_refusal),
     since another branch's `.kit.json` would choose the rules."""
     from kitlib import config as kconfig
@@ -412,8 +413,18 @@ def _owner_rules(root, new):
                                                              cfg.main_branch))
         ref = 'refs/remotes/%s/%s^{commit}' % (cfg.remote, cfg.main_branch)
         tracking, _why = _git(main_root, ['rev-parse', '--verify', '-q', ref])
+        main = tracking.strip() if tracking else head.strip()
         if tracking:
-            cfg = kconfig.load_at(main_root, tracking.strip())
+            cfg = kconfig.load_at(main_root, main)
+        if kconfig.staging_on(cfg):
+            # landings merge onto the staging branch and read its owner rules, with main's
+            # staging setting (docs/gate-landing.md "Staging branch")
+            ref = 'refs/remotes/%s/%s^{commit}' % (cfg.remote, kconfig.work_base(cfg))
+            base, _why = _git(main_root, ['rev-parse', '--verify', '-q', ref])
+            if not base:
+                return None, ('the staging branch %s cannot be read: the owner rules are read '
+                              'from it, as gate land reads them' % ref[:-len('^{commit}')])
+            cfg = kconfig.load_at(main_root, base.strip(), staging_from=main)
     except kconfig.ConfigError as e:
         return None, 'the kit configuration of main is refused: %s' % e
     try:

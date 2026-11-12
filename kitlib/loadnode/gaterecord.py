@@ -34,15 +34,16 @@ def gate_facts(top):
         kind = cfg.section('gate').get('kind')
     except ConfigError as e:
         raise JobError(EXIT_USAGE, 'the config of %s cannot be read: %s' % (top, e))
-    ref, _note = refs.default_base(top, cfg.remote, cfg.main_branch)
+    main = kconfig.work_base(cfg)       # the base work lands on: main, or the staging branch
+    ref, _note = refs.default_base(top, cfg.remote, main)
     base, why = refs.resolve(ref, top)
     if not base:
         raise JobError(EXIT_USAGE, 'the default base of %s does not resolve (%s): neither %s/%s '
-                       'nor %s' % (top, why, cfg.remote, cfg.main_branch, cfg.main_branch))
+                       'nor %s' % (top, why, cfg.remote, main, main))
     branch, _ = refs.current_branch(top)
     slug = place.slug_of(branch or 'detached')
     return {'repo': place.repo_name(cfg, top), 'kind': kind, 'remote': cfg.remote or '',
-            'main': cfg.main_branch, 'base': base,
+            'main': main, 'base': base,
             'slug': slug if registry.repo_ok(slug) else 'gate'}
 
 

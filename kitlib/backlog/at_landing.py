@@ -742,7 +742,8 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
     left = dict((rid, by_trailer.pop(rid)) for rid in unproven if rid in by_trailer)
     held -= unproven
     release |= unproven - set(left)
-    ctx = pmod.Context(store, root, remote=cfg.remote, main_branch=cfg.main_branch, branch=branch)
+    ctx = pmod.Context(store, root, remote=cfg.remote, main_branch=cfg.main_branch,
+                       code_main=kconfig.work_base(cfg), branch=branch)
     folder = isinstance(backend, store_folder.MainBackend)
     live = []                               # offer.live_branches' answer, once it is needed
     gone = set()                            # ids the fresh snapshot no longer had as planned

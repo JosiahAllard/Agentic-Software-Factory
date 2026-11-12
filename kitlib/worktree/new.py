@@ -60,6 +60,7 @@ import re
 import time
 
 from kitlib import kitroot
+import kitlib.config as kconfig
 from kitlib.config import ConfigError, load
 from kitlib.git import cmd
 from kitlib.git import repo as gitrepo
@@ -246,7 +247,11 @@ def create(root, branch, existing=False, base=None, wait=True, say=None, sleep=t
     if (commit or approval is not None) and (existing or (approval is not None and base)):
         return Outcome(REFUSED, ['refused   a base commit or --approval starts a NEW branch, '
                                  'and --approval takes no --base; nothing was created.'])
-    base = branch_name(base, remote) if base else cfg.main_branch
+    work_base = kconfig.work_base(cfg)
+    base = branch_name(base, remote) if base else work_base
+    # A staging work base has no local copy that a landing keeps (a landing never writes one;
+    # docs/gate-landing.md "Staging branch"): the pushed <remote>/<staging> is the one start.
+    pushed_only = kconfig.staging_on(cfg) and base == work_base
     # The kit's own tools, named in the hints below: a repository holds no copy of them.
     check = kitroot.command('worktree_remove', main) + ' --check'
     slug = branch.split('/', 1)[1]
@@ -311,6 +316,8 @@ def create(root, branch, existing=False, base=None, wait=True, say=None, sleep=t
     if rc != 0:
         return refuse('fetch failed: %s' % (err or 'exit %s' % rc))
     pushed = '%s/%s' % (remote, base)
+    if pushed_only:
+        return _from_pushed(main, cfg, path, branch, existing, pushed, out, prep, refuse)
 
     def refs():
         """(m, om): each a commit, or '' when the ref names none; _Unread when git gives no answer.
@@ -347,8 +354,8 @@ def create(root, branch, existing=False, base=None, wait=True, say=None, sleep=t
         start = om
         out.append('base      local %s is %d commit(s) behind %s; this branch starts at %s %s and '
                    'local %s is not updated' % (base, behind, pushed, pushed, om[:7], base))
-    route = [route_line(base, pushed, kitroot.command('redfirst'), remote, cfg.main_branch)] \
-        if start is None and m and not om and base != cfg.main_branch else []
+    route = [route_line(base, pushed, kitroot.command('redfirst'), remote, work_base)] \
+        if start is None and m and not om and base != work_base else []
     if start is None and held:
         return refuse('refused   %s, but %s %s: no pushed commit to base on. %s'
                       % (seen, pushed, why, REFUSAL), *route)
@@ -402,6 +409,33 @@ def _made(path, out):
                'explicit path; you do not land' % path)
     out.append('next      %s' % kitroot.command('preflight', path))
     return Outcome(OK, out)
+
+
+def _from_pushed(main, cfg, path, branch, existing, pushed, out, prep, refuse):
+    """The base is a staging branch (kitlib.config.staging_on): start at the pushed `pushed`
+    (<remote>/<staging>, fetched) by hash. A landing never writes a local staging branch, so no
+    local copy is compared and none is updated; a landing in flight has pushed nothing yet, and
+    its merge is not in the start either way."""
+    om, why = gitrefs.resolve('refs/remotes/%s' % pushed, main, known=True)
+    if om is None:
+        return refuse('refused   refs/remotes/%s could not be read (%s); nothing was created. %s'
+                      % (pushed, why, REFUSAL))
+    if not om:
+        return refuse('refused   there is no %s after the fetch: the staging branch is not pushed; '
+                      'nothing was created. %s' % (pushed, REFUSAL))
+    add = (path, branch) if existing else (path, '-b', branch, om)
+    why = _add(main, cfg, path, add, out, prep)
+    if why:
+        return refuse(why)
+    if existing:
+        tip = git(main, 'rev-parse', 'refs/heads/' + branch)[1]
+        missing = git(main, 'rev-list', '--count', '%s..%s' % (tip, om))[1]
+        out.append('branch    %s @ %s, resumed (%s commit(s) of pushed %s not in it)'
+                   % (branch, tip[:7], missing, pushed))
+    else:
+        out.append('branch    %s from pushed %s @ %s (the staging branch: its pushed tip)'
+                   % (branch, pushed, om[:7]))
+    return _made(path, out)
 
 
 def _at_commit(main, cfg, path, branch, commit, out, prep):

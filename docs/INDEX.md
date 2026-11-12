@@ -69,7 +69,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/gate-run.md` | gate.py: commands, exit codes, steps, auto-detected gate, daemons, console windows | running or configuring the gate | kw: gate, steps, exit codes, commands, daemons, docs-only
 - `docs/gate-records.md` | gate.py: Gate-OK and Result records, gate budget, session cap, gate queue | a gate record, budget or queue | kw: gate, records, budget, queue, result, unchanged red
 - `docs/gate-rerun-checkout.md` | gate.py: stopping a gate, targeted rerun, the caller's checkout, stash guard, limits | stopping, rerunning or running a gate from another checkout | kw: gate, rerun, stash, caller checkout
-- `docs/gate-landing.md` | gate.py: landing, the landing queue, submitting, batch, folding | landing a branch | kw: gate, landing, submit, batch, queue
+- `docs/gate-landing.md` | gate.py: landing, the landing queue, submitting, batch, folding, the staging branch | landing a branch | kw: gate, landing, submit, batch, queue, staging
 - `docs/gate-landing-policy.md` | gate.py: strict paths, carrying a verdict, gate reuse, branch cleanup | a strict branch, a carried verdict, a reused gate | kw: gate, strict, carry, reuse, cleanup
 - `docs/guard.md` | shell guard and git hooks: the index of its pages | a command is refused | kw: guard, hooks, refusal, hub secrets
 - `docs/guard-core.md` | shell guard: output, refusal log, rule modes, hosts, parsing, state | reading a guard refusal or how the guard parses a line | kw: guard, refusal log, modes, hosts, parsing

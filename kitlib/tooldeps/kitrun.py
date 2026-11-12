@@ -29,10 +29,11 @@ FULL = ['-m', 'unittest', 'discover', '-s', 'tests', '-t', '.']
 
 def default_base(top):
     """`(rev, note)`: the shared default base (kitlib.git.refs.default_base) for the checkout's
-    .kit.json "repo" remote and main branch; origin and main when .kit.json cannot be read."""
+    .kit.json "repo" remote and work base (kitlib.config.work_base); origin and main when .kit.json
+    cannot be read."""
     try:
         disk = kconfig.load(top)
-        remote, main = disk.remote, disk.main_branch
+        remote, main = disk.remote, kconfig.work_base(disk)
     except kconfig.ConfigError:
         remote, main = 'origin', 'main'
     return gitrefs.default_base(top, remote, main)

@@ -6,8 +6,8 @@ the kit commands to run next (docs/preflight.md).
 
 By default it prints the repo, branch and base lines, the kit folder and any failing or warning
 check; --full prints every line. -C names the checkout to report on (default: here). --fetch
-fetches the remote first. --base names the base (any revision; default `.kit.json` "repo".main_branch when set, else main when it
-exists, else master). --board adds the coordinator's board after the report: a row per worktree
+fetches the remote first. --base names the base (any revision; default the work base: `.kit.json` "staging".branch when
+set, else "repo".main_branch when set, else main when it exists, else master). --board adds the coordinator's board after the report: a row per worktree
 against the base and the stale-doc line. --write-state (only with --board) rewrites the board
 block of the coordinator's state file (docs/preflight.md "--board"). Exit 0 with the report; 2 on
 a usage error, a directory in no git work tree, or a `.kit.json` preflight cannot use. A reading
@@ -44,8 +44,8 @@ def build_parser():
     p.add_argument('-C', dest='dir', default='.', help='the checkout to report on (default: here)')
     p.add_argument('--fetch', action='store_true', help='git fetch the remote first')
     p.add_argument('--base', default=None,
-                   help='the base revision (default: "repo".main_branch if set, else main if it '
-                        'exists, else master; rows measured against <remote>/<base> when '
+                   help='the base revision (default: "staging".branch if set, else '
+                        '"repo".main_branch if set, else main if it exists, else master; rows measured against <remote>/<base> when '
                         'the two differ)')
     p.add_argument('--full', action='store_true',
                    help='print every check (default: the repo, branch and base lines, the kit folder '

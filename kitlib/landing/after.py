@@ -36,7 +36,7 @@ class After(object):
                 if rr.last is None:
                     continue            # ledger() said so; there is nothing to build it from
                 events.append(landings.event(
-                    rr.last, repo_name, self.cfg.main_branch, self.merge,
+                    rr.last, repo_name, self.base_branch, self.merge,
                     records=self.closed.get(rr.branch, ()), mode=mode,
                     deploy=self.deploy_note(rr.last.get('tip')),
                     approvals=self.landed_approvals(rr.last.get('tip'))))
@@ -75,11 +75,11 @@ class After(object):
         lines = []
         try:
             from kitlib.loadnode import mirror
-            mirror.refresh(self.root, place.repo_name(self.cfg, self.root), self.cfg.main_branch,
+            mirror.refresh(self.root, place.repo_name(self.cfg, self.root), self.base_branch,
                            out.facts['merge'], store=self.queue_store(), say=lines.append)
         except BaseException as e:  # noqa: BLE001 - landed: only the nodes' mirrors lag
             lines.append("WARNING: refreshing the load nodes' mirrors of %s stopped (%s); the "
-                         'landing stands' % (self.cfg.main_branch, _what(e)))
+                         'landing stands' % (self.base_branch, _what(e)))
         at = next((i for i, x in enumerate(out.lines) if x.startswith('LANDED ')), len(out.lines))
         out.lines[at:at] = lines
 

@@ -117,6 +117,36 @@ class OwnerTests(unittest.TestCase):
         self.assertIs(self.pairs.owner_choice(self.a,self.b),True)
         self.pairs.require_selected(self.a,self.b)
 
+    def test_stop_goes_through_when_a_chat_fails_its_live_check_and_ends_its_pm_routes(self):
+        """Between turns or closed, a chat stays listed and fails its live check; Stop still works.
+
+        Ordering: the PM connects a <-> b first, then the owner connects them. The PM is refused a
+        direction the owner already decides (owner-disconnected), but its routes made before the
+        owner's row stay in pm.current(), so the owner's Stop must end them."""
+        from optional.bridge.core.messages import SenderAuthority
+        from optional.bridge.core.pmroutes import PmRoutes
+        p,c=chat('p'),chat('c')
+        self.live.update({'p':p,'c':c})
+        for peer in (p,c): self.pairs.observe(peer)
+        pm=PmRoutes(self.pairs,launched=lambda binding:'pm',clock=lambda:self.now)
+        owner=OwnerControls(self.pairs,self.decisions,pm=pm)
+        pm.connect(SenderAuthority(p,'root-p',launched='pm'),self.a.reference,self.b.reference)
+        owner.change(self.a.reference,self.b.reference,enabled=True)
+        self.assertEqual({route[:2] for route in pm.current()},
+            {(self.a.reference,self.b.reference),(self.b.reference,self.a.reference)})
+        del self.live['b']
+        owner.change(self.a.reference,self.b.reference,enabled=False)
+        self.assertIs(self.pairs.owner_choice(self.a,self.b),False)
+        self.assertIs(self.pairs.owner_choice(self.b,self.a),False)
+        self.assertEqual(pm.current(),())
+        self.assertEqual(owner.pm_routes(),())
+        # One direction, with the chat that sends in it not answering.
+        owner.change(self.a.reference,c.reference,enabled=True)
+        del self.live['c']
+        owner.change(c.reference,self.a.reference,enabled=False,bidirectional=False)
+        self.assertIs(self.pairs.owner_choice(c,self.a),False)
+        self.assertIs(self.pairs.owner_choice(self.a,c),True)
+
 
 class WriterLeaseTests(unittest.TestCase):
     """A writer lease is an owner click, one use, exact chats, until revoked, logged, and in memory."""

@@ -29,6 +29,7 @@ import os
 
 from kitlib.backlog import scope as smod
 from kitlib.config import ConfigError, load as load_config
+import kitlib.config as kconfig
 
 from kitlib.git import batch, cmd, refs
 from kitlib.git import repo as gitrepo
@@ -175,7 +176,7 @@ def look(root, files=None, branch=None, base=None, cfg=None):
             c = cfg if cfg is not None else load_config(root)
         except ConfigError as exc:
             return Outcome(CANNOT, ['CANNOT ANSWER: kit configuration: %s' % exc])
-        base, note = refs.default_base(root, c.remote, c.main_branch)
+        base, note = refs.default_base(root, c.remote, kconfig.work_base(c))
         if note:
             lines.append('note      %s' % note)
     why = refs.bad_rev(base)

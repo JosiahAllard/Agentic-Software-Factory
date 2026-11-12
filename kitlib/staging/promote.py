@@ -17,8 +17,8 @@ green writes S's promotion record and moves main to S (kitlib.staging.advance). 
      oldest promote_after_hours old; `force` skips only this check.) Not due: OK, nothing recorded.
   5. S already ended in a hold (record.HOLDS: red, refused, diverged, error): never tested again.
      M not an ancestor of S: an attempt that ends diverged.
-  6. The gate. A machine-lock refusal (busy, timeout, reserved, hold, no lock): a skip, nothing
-     recorded (the next hub tick asks again). FAILED: ends red. Any other refusal: ends error.
+  6. The gate, its slot booked now or never (BOOK: no_wait). A machine-lock refusal (busy,
+     timeout, reserved, hold, no lock): a skip, nothing recorded (the next hub tick asks again). FAILED: ends red. Any other refusal: ends error.
   7. OK: the promotion record of S on M (`write_record`, the gaps branch's
      gate_ok.record_tested_pass(kind 'promotion')): the pre-push guard lets main move to S only
      with it. Not written: ends failed. Written: an attempt at tested, then advance.
@@ -50,7 +50,7 @@ from kitlib.staging import record as R
 
 LOCK_FILE = 'kit-staging-promote.lock'
 SLUG = 'promote'                # the gate's log folder (land-promote) and the tree's folder name
-BOOK_WAIT_S = 600               # the gate's longest wait for its slot: about one hub tick
+BOOK = {'no_wait': True}        # the gate's slot: now or never (a busy machine is a skip)
 OFF = ('promote: OFF - %s/%s names no "staging".branch, so there is nothing to promote '
        '(docs/gate-landing.md "Staging branch")')
 CODES = {'done': G.OK, 'behind': G.OK, 'red': G.FAILED}     # every other end: REFUSED
@@ -108,7 +108,7 @@ def run(main, cfg, say=_quiet, force=False, book_kw=None, git=D.git, gate=runner
         record=write_record, mover=None, clock=time.time):
     """One promotion run of the repository whose main checkout is `main` (its config `cfg`): a
     G.Outcome (the module docstring). `book_kw`: more of the gate's booking (kitlib.lock.run
-    book), over `wait_s` BOOK_WAIT_S. `gate`, `record`, `mover(main, cfg2, staging, git, say)`
+    book), over BOOK: now or never. `gate`, `record`, `mover(main, cfg2, staging, git, say)`
     and `clock` are stand-ins a test passes."""
     lock, why = lock_for(main)
     if lock is None:
@@ -124,7 +124,7 @@ def run(main, cfg, say=_quiet, force=False, book_kw=None, git=D.git, gate=runner
         if lock.took_over:
             say('promote: took over the promote lock from a run that is gone (%s)'
                 % describe(lock.took_over))
-        book = dict({'wait_s': BOOK_WAIT_S}, **(book_kw or {}))
+        book = dict(BOOK, **(book_kw or {}))
         return _held(main, cfg, say, force, book, git, gate, record, mover or A.Mover, clock)
     finally:
         lock.release()

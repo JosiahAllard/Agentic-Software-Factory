@@ -83,6 +83,18 @@ class Case(StagingCase):
 
 
 class Promotes(Case):
+    def test_the_gate_s_slot_is_booked_now_or_never(self):
+        seen = []
+
+        def gate(*a, **k):
+            seen.append(k['book_kw'])
+            return self.gate(*a, **k)
+        self.land()
+        out = self.run_promote(gate=gate)          # the scratch store's book_kw, with no no_wait
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertTrue(seen[0].get('no_wait'), seen)
+        self.assertNotIn('wait_s', seen[0])
+
     def test_green_moves_main_to_exactly_the_tested_tip_after_its_record(self):
         base = self.remote_main()
         tip = self.land()

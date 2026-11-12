@@ -122,7 +122,7 @@ class AllowRulesCheckTest(unittest.TestCase):
                      memory={'repos': {}, 'pm_repo': lambda cfg: None, 'folder': lambda top: None},
                      allow_rules={'repos': {'alpha': self.repo}, 'pm_repo': lambda cfg: None,
                                   'settings': self.settings},
-                     watcher={'beat': lambda: None, 'now': 0}, foreground_lock={'read': lambda: 0})
+                     foreground_lock={'read': lambda: 0})
         txt = pmstart.checklist({}, NOW, procs=[], **fakes)
         self.assertIn('- allow rules (alpha): %s names plugin export %s (gone)' % (kmemory.local_rel(), GONE), txt)
 

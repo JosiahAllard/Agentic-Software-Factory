@@ -319,15 +319,16 @@ class ClaudePeerTests(unittest.TestCase):
         with self.assertRaisesRegex(DeliveryError,'native-outcome-unconfirmed'):
             self.adapter.send(message)
 
-    def test_an_answered_send_frees_its_expectation_so_600_sends_of_a_run_are_written(self):
+    def test_an_answered_send_frees_its_expectation_so_sends_past_the_cap_of_a_run_are_written(self):
         # The common case: a written send with no status frame, made terminal in the broker by
-        # the recipient's reply. Before the broker port, send 513 was refused (peer-pending-capacity).
+        # the recipient's reply. Before the broker port, send cap+1 was refused (peer-pending-capacity).
         from optional.bridge.hosts.claude.assembly import broker_liveness   # the service's own port
         with ExitStack() as stack:
             core, outbox = self.shared_core(stack)
             self.reopen_endpoint(broker_liveness(outbox))
-            with mock.patch.object(claude_peer,'write_once',return_value=claude_peer.push.WRITTEN):
-                for index in range(600):
+            with mock.patch('optional.bridge.hosts.claude.peer.MAX_PENDING',8), \
+                    mock.patch.object(claude_peer,'write_once',return_value=claude_peer.push.WRITTEN):
+                for index in range(8+4):
                     operation = 'test-op-%d' % index
                     core.admit(operation,self.recipient,'hello %d' % index,b'test-source')
                     receipt = core.dispatch_once(operation)

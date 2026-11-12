@@ -102,19 +102,17 @@ store's git push (the `push` setting).
   read them. Two live sessions of one name: the one `pipes.json` names, else the newest, logged
   `ambiguous`. Whether a desktop session wakes on a push is unproven; a session also reads `pending
   --for <key>` at each start, which catches what a push missed.
-- The PM watcher: every `push.WATCHER_POLL_S` (30 s) the worker's thread reads the heartbeat pm_watch
-  writes beside its state file (`kitlib.pmwatch.heartbeat_file`; the state file is the `pm_watch`
-  config's `state_file`, else `kitlib.pmwatch.default_state_file`). A heartbeat at most
-  `push.WATCHER_STALE_S` (300 s) old is `up`, an older one `down`, none readable `none`. When a heartbeat
-  this worker saw fresh goes stale or missing, it pushes the PM once `[hub push] watcher down
-  age:<seconds|none> route:pm attempt:<k>` and a line to start pm_watch again (docs/pm-watch.md); a fresh
-  heartbeat acknowledges it, a written try ends it, and a try not written is retried on the same
-  schedule. It fires again only after the heartbeat was fresh again, and never on a server that has not
-  seen a fresh one (it is not kept across a restart). A pm_watch run with its own `--state` path is not
-  seen. The `session-watch` job stands in for the heartbeat: while its health block in `jobs` has fewer
-  than 3 failures and a success at most 300 s old (`kitlib.pmwatch.session_job_healthy`, read through
-  `Api.jobs_seen`) the watcher is `up` and counts as fresh, so no `watcher down` push is sent while the
-  job covers; a job reader that raises covers nothing.
+- The session watch: every `push.WATCHER_POLL_S` (30 s) the worker's thread reads the health block of
+  the `session-watch` job, the one session watcher (docs/session-watch.md), through `Api.jobs_seen`.
+  The job is `up` while that block has fewer than 3 failures in a row and a success (`ok_at`) at most
+  300 s old (`kitlib.pmwatch.session_job_healthy`), `down` while it has a block that is not, and `none`
+  with no block (no such job, or a reader that raises). When a job this worker saw `up` stops being
+  `up`, it pushes the PM once `[hub push] watcher down age:<seconds|none> route:pm attempt:<k>`, `age`
+  the seconds since the job's last success, with a line to read hub health `jobs.session-watch` (its
+  error and note) and that a hub restart starts the job again. The job's next healthy read acknowledges
+  it, a written try ends it, and a try not written is retried on the same schedule. It fires again only
+  after the job was `up` again, and never on a server that has not seen it `up` (it is not kept across
+  a restart), so a first run that hangs pushes nothing (docs/session-watch.md "Limits").
 - Timed jobs: each job is a module of `kitlib/hubjobs` with `make(sources)`, found there by
   `kitlib.hubjobs.makers` (pkgutil; a module named `_...` is a helper, not a job) and run by
   `kitlib.hubsite.jobs`; adding one needs no edit to a shared file (the `kitlib.hubjobs` docstring
@@ -134,7 +132,7 @@ store's git push (the `push` setting).
   a detail is one more header field, `[hub push] job <name> <word> detail:<detail> route:pm
   attempt:<k>`, cut to the header alphabet like every field (a sha or a count, never prose). Each job
   owes at most one push: a newer event replaces one not yet written, its detail with it, except a
-  word in `push.JOB_EACH` (`unblocked`, `approval-expired`, `fill`, `stale-lock` and the usage crossover's words), owed once per detail, so two
+  word in `push.JOB_EACH` (`unblocked`, `approval-expired`, `fill`, `stale-lock`, `behind`, `stale-code` and the usage crossover's words), owed once per detail, so two
   records unblocked in one round are two pushes. `unblock-conditions` (`kitlib/hubjobs/unblock_conditions.py`, every 300 s) reads
   each `launcher.repos` repository's store with no fetch and, on each blocked record, each `until`
   line it may act on (docs/backlog.md "block --until"); a met condition clears that one member in one
@@ -168,8 +166,8 @@ store's git push (the `push` setting).
   or slots the pull left free, push `fill` to the PM once per episode, detail `<key>:<free>:<why>`.
   A PM hold (`launch.py fill-hold`) or the usage stand-down (every account at its week limit) sends nothing:
   no nudge, no waits notice, no pull, no PM event (docs/hub-fill.md "PM hold and usage").
-  `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/pm-watch.md "Hub session-watch job") runs
-  pm_watch's checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind
+  `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/session-watch.md) runs the
+  session checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind
   (`idle`, `stopped`, `limit`, `usage`, `reset`, `bgfail`, `locknotice`, `remote`, `error`) with its
   subject (session, run or notice id, check) as the detail, `usage` and `reset` with
   `<account>:<window>:<percentage now>` (`2:seven_day:96`), several as `events` with their count. The event lines are free text, so they go in its health `note` (the last 20 pushed, with
@@ -183,6 +181,18 @@ store's git push (the `push` setting).
   `crossed`, `cross-cleared`, `cross-failed`, `stalled`, `no-ready`, `no-checkin`, `no-room`,
   `pm-limit`, `unmanaged`. It reads the hub's own hand-off records through `Sources.handoffs`, which
   `serve.build` sets to the newest of each session.
+  `plugin-refresh` (`kitlib.hubsite.plugin_job`, docs/plugin-source.md "Hub refresh") pushes
+  `behind`, a word in `push.JOB_EACH`, once for each kit main when the export is not at it and the job
+  will not refresh it: detail `<main sha12>:<why>`, `why` one of `no-export` (no export yet) and
+  `unmigrated` (an account folder not migrated), both fixed by `plugin_refresh.py --migrate --apply`,
+  and `behind` (`plugin.auto_refresh` off), fixed by `plugin_refresh.py --apply`. The push text names
+  the command for each; health's `jobs.plugin-refresh.note` gives it in full.
+  `hub stale-code` is not a timed job: it is the server's own push (`serve.Hub._tell_pm`, job name
+  `hub`, a word in `push.JOB_EACH`) when it will not restart itself onto the hub code now on disk.
+  That is the first definite outcome of `kitlib.hubsite.selfrestart`: NOT_HERE, CHECK_FAILED,
+  LAUNCH_FAILED or NOT_RESTARTED, or a self-restart look that raised (docs/hub-serving.md "Stale
+  code"). It comes once per process, with no detail, and its text carries the owner's restart step
+  (`kitlib.hubclient.codestale`). A hub with no push worker pushes nothing.
 - Files, in `launcher.state_dir`: `push-outbox.json` (what is still to send, rewritten after each round
   that changed it, so a server ended without a clean close loses at most that round; read again at
   start: an entry whose item changed while the server was down fires afresh, one whose item is gone is
@@ -217,13 +227,9 @@ store's git push (the `push` setting).
     PM until it is consumed or expires.
   - A filed answer's live check is read once, when the filing is seen: an asker that ends after it is
     still tried (and reads it at its next start), and a coordinator started after it is not told.
-  - `session-watch` drops the events it saw while pm_watch's heartbeat was fresh and not stepped aside
-    (`yielded`), so those of the last 300 s before a pm_watch stopped are not pushed, and one at the
-    hand-over, before the job reads the `yielded` heartbeat, can reach neither; it does not see a pm_watch run with
-    its own `--state`, so both push then, unless pm_watch's sessions file, alerts and notice
-    folders are the job's and it steps aside; with no push worker its events are not pushed. While it
-    covers, a stopped pm_watch's BRANCH and HUB lines reach no one, and no `watcher down` push says so
-    (docs/pm-watch.md "Hub session-watch job").
+  - With no push worker, the `session-watch` job's events are not pushed; its health note still lists
+    them. A `session-watch` job never seen `up` gives no `watcher down` push (docs/session-watch.md
+    "Limits").
 
 Tests: tests/hubsite/test_push.py, tests/host/test_claude_peer.py, tests/launcher/test_pipes.py.
 

@@ -30,8 +30,8 @@ What look() does, in turns, all on the caller's thread except the work marked (t
      close, waits for its port and process, waits for the task to leave Running, starts the task
      and waits for the new server's GET health. A restarter that cannot be started logs
      LAUNCH_FAILED and the stale warning shows.
-A server still running LAUNCH_WAIT_S after its restarter started logs NOT_RESTARTED and the stale
-warning shows. Once a restarter was started, look() does nothing more in that process, for any
+A server still running LAUNCH_WAIT_S after its restarter started logs NOT_RESTARTED, once, and the
+stale warning shows, whatever an older stamp showed before. Once a restarter was started, look() does nothing more in that process, for any
 stamp, newer ones too: the owner's restart is the way on. Before that, one attempt per stamp: a
 stamp whose check failed or whose restarter failed to start is not tried again; only a newer
 stamp, settled again, is. The new server starts on the stamp now on disk, so it has nothing to
@@ -39,6 +39,11 @@ restart for. Until a
 restart is given up the stale warning stays hidden, so no restart to-do is filed for a restart
 that is about to happen; past GIVE_UP_S from the first difference with no restarter started it
 shows (STILL_TRYING), and the restart is still made when the turns allow.
+
+`definite` turns True, and stays True for the process, at the first outcome that says no restart
+is coming for the code on disk: NOT_HERE, CHECK_FAILED, LAUNCH_FAILED or NOT_RESTARTED (never
+STILL_TRYING, which may still restart). serve.Hub._watch_code pushes the PM the hub's stale-code
+job event on it (docs/hub-push.md "Timed jobs").
 
 Known limits: a restarter that stops this server and then cannot start the task (or whose new
 server never answers) leaves no hub; LOG_NAME says why. The check proves the new code builds and
@@ -53,11 +58,12 @@ import sys
 import threading
 import time
 
+from kitlib import kitroot
 from kitlib import platform
 from kitlib.proc import spawn
 from kitlib.hubclient import localask
 
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 HUB_TOOL = os.path.join(KIT_ROOT, 'tools', 'hub.py')
 SETTLE_S = 90               # the code must be unchanged this long before the check
 GIVE_UP_S = 900             # past this from the first difference, the stale warning shows
@@ -331,6 +337,8 @@ class Watcher(object):
         self._run = run or in_thread
         self._clock = clock
         self.stale = False          # the stale warning shows
+        self.definite = False       # an outcome said no restart is coming (module docstring)
+        self._hung_told = False     # NOT_RESTARTED was logged
         self.launched = False       # a restarter was started: nothing more is done
         self._launched_at = None
         self._seen = started        # the last stamp look() was given
@@ -348,7 +356,8 @@ class Watcher(object):
         return os.path.join(self.tokens, LOG_NAME) if self.tokens else None
 
     def _show(self):
-        self.stale = True
+        """The stale warning shows for a definite outcome (module docstring)."""
+        self.stale = self.definite = True
 
     def _start(self, kind, stamp, fn):
         box = []
@@ -406,7 +415,8 @@ class Watcher(object):
         """One turn with the stamp now on disk (module docstring). Never raises out of a log."""
         now = self._clock()
         if self.launched:
-            if not self.stale and now - self._launched_at >= LAUNCH_WAIT_S:
+            if not self._hung_told and now - self._launched_at >= LAUNCH_WAIT_S:
+                self._hung_told = True
                 self._say(NOT_RESTARTED % (now - self._launched_at, self.log_path))
                 self._show()
             return
@@ -424,7 +434,7 @@ class Watcher(object):
             return
         if not self.stale and now - self._first >= GIVE_UP_S:
             self._say(STILL_TRYING % (now - self._first), 'note')
-            self._show()
+            self.stale = True       # not definite: the restart is still made when it can
         if self._off is not None or stamp in self._done:
             return
         if self._probed is None:

@@ -21,7 +21,7 @@ file still holds is never read): a reading no older than
 pmwatch.STALE_MINUTES at TRIGGER_WEEK% or more, or earlier, a fresh week at EARLY_FLOOR% or more
 that burn_eta, from the account's readings of the last BURN_SPAN_S, puts at 100% within LEAD_S;
 or a stall read: the session transcript's newest entry is a weekly-limit error (the host's
-weekly_stop, not pm_watch's LIMIT event, which can lag an hour) whose reset lies ahead, with no
+weekly_stop, not the session watch's LIMIT event, which can lag an hour) whose reset lies ahead, with no
 transcript write for QUIET_S.
 
 A crossing asks first: the job pushes the session a checkpoint message and waits for its ready

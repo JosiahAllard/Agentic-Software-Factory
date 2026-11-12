@@ -70,7 +70,7 @@ class UserConfigTest(unittest.TestCase):
         plus pm_watch, which kitlib.pmwatch reads."""
         self.write({'ledger_path': self.ledger,
                     'pm_start': {'hub_url': 'https://example.invalid/hub', 'hub_source': 'hub.html',
-                                 'pm_watch_cmd': 'python pm_watch.py', 'memory_dir': self.home,
+                                 'memory_dir': self.home,
                                  'handoff_file': 'HANDOFF.md', 'reminders_file': 'r.json',
                                  'sessions_file': 's.json', 'standing': ['a rule']},
                     'coordinator_start': {'standing': ['a rule'], 'cap': {'items': 5}},

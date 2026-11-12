@@ -21,7 +21,6 @@ from kitlib.git import refs
 
 DUE_COUNT = 4            # landings on staging not yet tested: an --if-due run is due at this many
 DUE_HOURS = 6.0          # or when the oldest of them is this many hours old
-PUSH_TIMEOUT = 600       # seconds; the landing's own push timeout (kitlib.landing.merge)
 OK = ('promoted', 'current')     # the statuses that exit 0; every other one exits 4
 # A `show` of a path the commit does not hold (kitlib.config.load._git_show's words): no .kit.json
 MISSING = ('does not exist in', 'exists on disk, but not in')
@@ -96,10 +95,10 @@ def push_args(remote, sha, main_b):
 
 
 def _push(args, cwd):
-    """`(rc, err)` of the push: the landing's timeout, and NETWORK_ENV so a credential prompt
-    fails instead of waiting. rc None: git did not start or did not answer in time."""
-    env = dict(gitcmd.scrubbed_env(), **gitcmd.NETWORK_ENV)
-    r = gitcmd.call(args, cwd, timeout=PUSH_TIMEOUT, env=env)
+    """`(rc, err)` of the push: the landing's push timeout and environment (kitlib.git.cmd
+    PUSH_TIMEOUT, with_network_env), so a credential prompt fails instead of waiting. rc None:
+    git did not start or did not answer in time."""
+    r = gitcmd.call(args, cwd, timeout=gitcmd.PUSH_TIMEOUT, env=gitcmd.with_network_env())
     return r.rc, r.err or ''
 
 

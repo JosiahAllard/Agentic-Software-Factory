@@ -51,6 +51,7 @@ import os
 import re
 import subprocess
 
+from kitlib import kitroot
 from kitlib.config import user as kuser
 from kitlib.fs import writelock
 from kitlib.git import lockplace
@@ -67,7 +68,7 @@ from kitlib.proc import spawn as procspawn
 
 from . import place, schema
 
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 MAX_AGE = datetime.timedelta(hours=24)       # how old an owner's order may be
 SKEW = datetime.timedelta(minutes=5)         # how far in the future a stamp may be (clock drift)
 HUB, OWNER, APPROVAL = 'hub', 'owner', 'approval'

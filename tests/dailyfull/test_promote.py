@@ -99,7 +99,7 @@ class PushForm(unittest.TestCase):
             return gitcmd.Result(0, b'', '')
         with mock.patch.object(gitcmd, 'call', side_effect=fake):
             P._push(['push'], '.')
-        self.assertEqual(seen[0]['timeout'], P.PUSH_TIMEOUT)
+        self.assertEqual(seen[0]['timeout'], gitcmd.PUSH_TIMEOUT)
         self.assertEqual(seen[0]['env']['GIT_TERMINAL_PROMPT'], '0')
         self.assertEqual(seen[0]['env']['GCM_INTERACTIVE'], 'never')
 

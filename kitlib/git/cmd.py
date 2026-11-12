@@ -27,7 +27,9 @@
   forcing `ssh -o BatchMode=yes` through GIT_SSH_COMMAND would override the user's core.sshCommand,
   GIT_SSH and ssh config handling, which this module cannot see), and GIT_HTTP_LOW_SPEED_LIMIT/TIME (git's http.lowSpeedLimit/Time),
   so a transfer stalled below 1000 bytes/s for 60 seconds fails instead of hanging until the
-  call's timeout (or forever, under timeout=None). A push keeps the user's own credential prompts.
+  call's timeout (or forever, under timeout=None). A push keeps the user's own credential prompts
+  unless its caller passes `with_network_env()` as its `env` (the landing's push and its
+  remote-branch delete, and the daily run's promotion, do: nobody is there to answer one).
 - From a parent with no console (the guard hook under pythonw.exe, a scheduled task), git starts
   with CREATE_NO_WINDOW (kitlib.proc.job.no_window_flags), so a git or ssh console prompt goes to
   a hidden console and waits until the call's timeout. A caller that can prompt must run from a
@@ -41,6 +43,7 @@
 """
 import collections
 import os
+import re
 import subprocess
 import threading
 
@@ -60,7 +63,31 @@ _VALUE_OPTIONS = ('-c', '-C', '--git-dir', '--work-tree', '--namespace', '--conf
 AUTO_MAINTENANCE_OFF = (('maintenance.auto', 'false'), ('gc.auto', '0'))
 GIT_TIMEOUT = 30          # seconds
 KILL_GRACE = 5            # seconds a killed tree's pipes get to end before the call gives up on them
+PUSH_TIMEOUT = 600        # seconds: a kit push (the landing's push and remote-branch delete, a promotion)
 _DEFAULT = object()
+
+# git's own ref status line for a push it refused (transport.c; untranslated, and call() runs git
+# under LC_ALL=C): `! [rejected]` decided before sending (non-fast-forward, fetch first),
+# `! [remote rejected]` the remote's answer (a hook declined). `failed to push some refs` alone is
+# not one: git prints it for any failed push, a status report lost after the upload included
+PUSH_REFUSED = ('! [rejected] ', '! [remote rejected] ')
+# git's line for a push over HTTP(S) that never connected (exit 128, nothing else on stderr):
+# `fatal: unable to access '<url>': <curl's error>`, which git dies with only when its first
+# request, the ref discovery (remote-curl.c discover_refs), fails, before any pack is sent; with
+# curl's error one that only a connection never made gives: `Could not resolve host: <host>` (or
+# `proxy`), `Failed to connect to <host>:<port>` or `<host> port <port>` (curl 8 adds `after <n>
+# ms`; the reason after `: ` is the OS's or curl's, as `Connection refused`, `Timed out`, `Could
+# not connect to server`), `Connection timed out after <n> milliseconds` and `Resolving timed out
+# after <n> milliseconds` (curl's connect timeout in those states, before any request is sent).
+# git 2.55.0.windows.5 with libcurl 8.21.0 printed the first two forms, `<host>:<port> after <n>
+# ms: Could not connect to server` for both a refused port and a timed-out connect. Every other
+# curl error (a reset, a TLS failure, `Operation timed out`) came after the connection
+PUSH_NEVER_CONNECTED = re.compile(
+    r"fatal: unable to access '[^']*': (?:"
+    r"Could not resolve (?:host|proxy): \S+"
+    r"|Failed to connect to \S+(?::\d+| port \d+)(?: after \d+ ms)?: [^:]+"
+    r"|(?:Connection|Resolving) timed out after \d+ milliseconds"
+    r")\Z")
 
 # rc is None when git did not run at all (not found, timed out); out is bytes, err is text.
 Result = collections.namedtuple('Result', 'rc out err')
@@ -87,13 +114,26 @@ def subcommand(args):
     return ''
 
 
+def with_network_env(env=None):
+    """`env` (a mapping, left unchanged; None: scrubbed_env()) with NETWORK_ENV set, a new dict:
+    the `env` for a push through call() that must fail rather than wait on a credential prompt."""
+    out = scrubbed_env() if env is None else dict(env)
+    out.update(NETWORK_ENV)
+    return out
+
+
 def network_env(args, env):
     """`env` (a mapping, left unchanged) with NETWORK_ENV set when `args` is a network read; a
     new dict either way. For the few git children that do not go through call()."""
-    out = dict(env)
-    if subcommand(args) in NETWORK_READS:
-        out.update(NETWORK_ENV)
-    return out
+    return with_network_env(env) if subcommand(args) in NETWORK_READS else dict(env)
+
+
+def push_never_connected(rc, err):
+    """Whether a push that ended with exit `rc` and stderr `err` never connected to the remote,
+    so no byte of it can have reached it: git died (exit 128) and every line it printed is
+    PUSH_NEVER_CONNECTED. Any other line, a later-phase one included, or any other exit: False."""
+    lines = [l.strip() for l in (err or '').splitlines() if l.strip()]
+    return rc == 128 and bool(lines) and all(PUSH_NEVER_CONNECTED.match(l) for l in lines)
 
 
 def config_entries(env, pairs):

@@ -38,6 +38,7 @@ HOOKS = ('/etc/local.d/pm-kit-cgroup.start', '/etc/cron.d/pm-kit')
 GROUP_CONTROLLERS = ('cpuset', 'memory', 'pids')
 ANCHOR = BASE + '/anchor'          # the leaf the kit's tmux server runs in
 ATTACH = 'tmux -L pm-kit attach -t pm-kit-anchor \\; new-window'     # delegation.ATTACH
+# Not kitroot.root(): kitroot imports kitlib.platform, so a platform module naming it would be a cycle.
 SETUP = 'sudo python3 %s --delegation --apply' % os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
     'tools', 'machine_setup.py')

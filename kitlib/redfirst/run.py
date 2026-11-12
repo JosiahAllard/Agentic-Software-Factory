@@ -48,6 +48,7 @@ import subprocess
 import sys
 import time
 
+from kitlib import kitroot
 from kitlib.config import heavy_match, heavy_programs
 from kitlib.config import load as load_config
 import kitlib.config as kconfig
@@ -79,8 +80,7 @@ SIGNALS = tuple(s for s in (signal.SIGINT, getattr(signal, 'SIGBREAK', None)) if
 # (kitlib.config.schema, 3600). RUN_TIMEOUT is read at each call, so a test sets a short one. A run that booked the machine lock (locked_run) is not timed here.
 RUN_TIMEOUT = UNIT_TIMEOUT
 KIT_JSON = '.kit.json'
-TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                    'tools', 'redfirst.py')
+TOOL = os.path.join(kitroot.root(), 'tools', 'redfirst.py')
 
 
 def rev(cwd, name):

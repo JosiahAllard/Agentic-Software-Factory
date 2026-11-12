@@ -24,7 +24,7 @@ write two start and two end notices, and the machine is free again only once eve
 notice. Ids are `L-<run id>-start` and `L-<run id>-end`; fields are title, text, at, repo, from (`machine
 lock`), kind (`lock-window`), run and phase. The lock writes each as a file in that folder; they are never
 stored in the hub. The server lists them (`GET /api/v1/notices`, `kitlib.hubsite.derived.notices`) and the
-PM watcher prints `LOCKNOTICE <id> <title>` for each new one. The page shows them under Info, Lock notices
+hub's session-watch job pushes the PM `locknotice` for each new one (docs/session-watch.md). The page shows them under Info, Lock notices
 (`#notices`), from the snapshot's `views.notices`: newest first, the latest 100, read only. The tab's count
 is the runs with a start notice and no end notice yet, marked while any is open. A run the lock asks to stop
 because it is stale (docs/lock-api.md "Stale runs") also gets `L-<run id>-stale` (phase `stale`, file

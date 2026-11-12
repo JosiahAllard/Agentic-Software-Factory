@@ -113,10 +113,14 @@ def staging(root, cfg):
 def landed_branch(root, cfg):
     """(rev, name) of the branch landed work is on: with staging on, the staging branch at
     `refs/remotes/<remote>/<staging>` as last fetched (a landing pushes it and never moves a
-    local branch; no fetch here); else main_branch(root, cfg) for both."""
+    local branch; no fetch here); else main_branch(root, cfg) for both. A staging branch not
+    fetched raises RuntimeError, as a missing main does: never main's records instead."""
     on = staging(root, cfg)
     if on:
-        return "refs/remotes/%s/%s" % on, on[1]
+        rev = "refs/remotes/%s/%s" % on
+        if not has_rev(root, rev + "^{commit}"):
+            raise RuntimeError("the staging branch %s cannot be read (not fetched?)" % rev)
+        return rev, on[1]
     main = main_branch(root, cfg)
     return main, main
 

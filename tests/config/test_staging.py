@@ -158,6 +158,12 @@ class Overlay(unittest.TestCase):
         self.assertEqual(kconfig.work_base(kconfig.load_at_fetched_staging(
             self.fx.root, self.staged, 'origin')), 'stg')          # a section there that is bad
 
+    def test_the_pre_push_read_holds_the_base_s_own_too(self):
+        self.fetched(self.plain)                                     # a stale fetch: no staging
+        cfg = kconfig.load_at_fetched_staging(self.fx.root, self.staged, 'origin')
+        self.assertEqual(kconfig.work_base(cfg), 'main')
+        self.assertIn('stg', cfg.guarded_mains())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -109,6 +109,13 @@ class SnapshotTest(unittest.TestCase):
         b, _c = hubbacklog.snapshot("r", self.root, now=NOW)
         self.assertEqual([i["id"] for i in b["items"]], ["EX-OPEN-1", "EX-OPEN-2"])
 
+    def test_a_staging_branch_not_fetched_is_an_error_not_main_s_records(self):
+        with open(os.path.join(self.root, ".kit.json"), "w") as f:
+            f.write('{"backlog": {"store": "main"}, "staging": {"branch": "staging"}}')
+        with self.assertRaises(RuntimeError) as cm:
+            hubbacklog.snapshot("r", self.root, now=NOW)
+        self.assertIn("refs/remotes/origin/staging", str(cm.exception))
+
     def test_store_from_kit_json(self):
         with open(os.path.join(self.root, ".kit.json"), "w") as f:
             f.write('{"backlog": {"store": "elsewhere"}}')

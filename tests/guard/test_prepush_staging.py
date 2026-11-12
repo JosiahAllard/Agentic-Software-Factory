@@ -43,6 +43,14 @@ class StagingGuard(pc.PrePushCase):
         self.assertFalse(ok)
         self.assertIn('this push deletes staging', msg)
 
+    def test_a_stale_fetch_of_main_does_not_drop_the_tip_s_own_guard(self):
+        self.on_main({'repo': {'name': 'kit-test', 'push_block': False}})
+        tip = self.staging_tip({'repo': {'name': 'kit-test', 'push_block': False},
+                                'staging': {'branch': 'staging'}})   # main as fetched: none
+        ok, msg = self.check('(delete) %s refs/heads/staging %s' % (ZERO, tip))
+        self.assertFalse(ok)
+        self.assertIn('this push deletes staging', msg)
+
     def test_with_no_staging_setting_a_branch_named_staging_is_not_held(self):
         tip = self.on_main({'repo': {'name': 'kit-test', 'push_block': False}})
         self.assertEqual(self.check('(delete) %s refs/heads/staging %s' % (ZERO, tip)),

@@ -154,6 +154,7 @@ class Config(object):
         self._raw = raw          # name -> dict as written (absent sections are {})
         self._files = files      # name -> repo-relative file it came from, or None (inline/absent)
         self._derived = {}       # repo.main_branch, repo.name, the machine owner email, each read once
+        self._held = ()          # branches guarded_mains also holds (load_at_fetched_staging)
 
     def raw(self, name):
         return copy.deepcopy(self._raw.get(name, {}))
@@ -220,7 +221,7 @@ class Config(object):
         """The branches the push rules (guard, pre-push) hold as main: main_branch, and, while
         `.kit.json` writes no main_branch, `main` too, the fixed default before it was read from
         the repository: `<remote>/HEAD` is local and any session can repoint it, so reading it
-        never takes the protection off `main`."""
+        never takes the protection off `main`. Also any branch load_at_fetched_staging kept."""
         main = self.main_branch
         out = [main]
         if self.written('repo', 'main_branch') is None and main != FIXED_MAIN:
@@ -228,7 +229,7 @@ class Config(object):
         base = self.work_base
         if base not in out:     # the staging branch: held as main too (no delete, no forced push)
             out.append(base)
-        return out
+        return out + [b for b in self._held if b not in out]
 
     @property
     def work_base(self):
@@ -389,16 +390,20 @@ def overlay_staging(cfg, rev):
 
 def load_at_fetched_staging(root, rev, remote):
     """load_at(root, rev) with overlay_staging from <remote>/<main> as last fetched, when that
-    resolves to another commit than `rev`. Lenient, for the pre-push guard: a ref that does not
-    resolve, or a section there that cannot be read, leaves `rev`'s own setting."""
+    resolves to another commit than `rev`. For the pre-push guard, never looser than `rev`'s own
+    read: guarded_mains holds the union of both (a stale fetch of main can name no staging
+    branch), and a ref that does not resolve, or a section there that cannot be read, leaves
+    `rev`'s own setting."""
     cfg = load_at(root, rev)
     if remote and not gitrefs.bad_rev(remote):
         main, _ = gitrefs.resolve('refs/remotes/%s/%s' % (remote, cfg.main_branch), root)
         if main and main != rev:
+            own = cfg.guarded_mains()
             try:
                 overlay_staging(cfg, main)
             except ConfigError:
                 pass
+            cfg._held = tuple(own)
     return cfg
 
 

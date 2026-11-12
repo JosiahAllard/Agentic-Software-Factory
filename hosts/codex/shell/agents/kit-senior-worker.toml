@@ -12,6 +12,4 @@ it on the problem. AGENTS.md binds you; your profile is `.codex/agent-profile.md
 
 A plan-only brief is the worker's. A root cause or concurrency problem you have failed at, or plainly
 cannot solve, goes to a deep-worker session: stop and report.
-
-Bulk menial reads or mechanical bulk writes: the helper role (skill builder, \"Bulk work to the helper\").
 """

@@ -2,6 +2,7 @@
 # Generated from content/roles/worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: worker
 description: "Default coder for routine low- and medium-risk work: additive content, UI, pure logic with tests, small known-cause fixes, moves, plan-only and sync work."
+tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage, WebFetch
 model: sonnet
 effort: medium
 experimental:
@@ -16,7 +17,6 @@ follow it: design first, then build, test, commit and report.
 - Before editing, trace the callers of what you change and its failure paths; one the brief did not
   foresee goes in your design.
 - A review or test-only brief: return findings or PASS/FAIL and edit nothing.
-- Bulk menial reads or mechanical bulk writes: the helper role (skill builder, "Bulk work to the helper").
 
 ## Moves and renames
 

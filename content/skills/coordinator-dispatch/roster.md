@@ -20,7 +20,7 @@ Not installed: weak-worker -> the worker; strong-worker -> the worker raised to 
 - docs-writer: settled facts into docs, and specs extended from the owner's answers (skill `specialty-docs`). Docs only.
 - lander: optional; spawned fresh per landing; submits one reviewed branch (or a batch), waits, reports.
 - test-runner: runs test tiers in a worktree; PASS/FAIL plus failing lines. A pass/fail check whose log nobody needs: the cheapest role the profile lists (none: the worker).
-- helper: dispatched by builders only, for bulk menial reads and mechanical bulk writes.
+- helper: dispatched by deep-worker and topic sessions only, for bulk menial reads and mechanical bulk writes.
 - consultant: a long-lived session per repository (`consultant-<repo>` in your session list): engineering questions go there before the PM; owner matters still go to the PM, which logs its calls as delegated.
 - Creative specialty skills (`specialty-tech-art`, `specialty-3d-assets`, `specialty-rigging`, `specialty-sound`): a worker type, `creative.md` beside the dispatch skill.
 

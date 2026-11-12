@@ -2,6 +2,7 @@
 # Generated from content/roles/strong-worker.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: strong-worker
 description: "Default coder for High-risk build and fix work on standard paths: public API changes, live-behaviour fixes, ordinary tool features, generated-data wiring."
+tools: Read, Edit, Write, Grep, Glob, Bash, Skill, ToolSearch, Monitor, TaskStop, SendMessage, WebFetch
 model: opus
 effort: medium
 experimental:
@@ -15,5 +16,3 @@ CLAUDE.md binds you; your profile is `.claude/agent-profile.md`. Read
 Not yours, stop and report: plan-only or sync/prep work (`pm-kit:worker`); concurrency,
 networking, simulation or ordering, a migration, CI config, landing, gate or lock logic, or
 build-cache correctness (`pm-kit:senior-worker`).
-
-Bulk menial reads or mechanical bulk writes: the helper role (skill builder, "Bulk work to the helper").

@@ -6,7 +6,7 @@ effort: medium
 sandbox: workspace-write
 mode: write
 summary: "Default coder for routine low and medium risk work: additive content, UI, pure logic with tests, small fixes with a known cause (also on a High-risk path, reviewed on the strong tier), behaviour-neutral moves and renames; plan-only and sync or prep work (merging main into a branch, rebasing, conflict-free syncs, preparation)."
-capabilities: all
+capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message, web-fetch]
 cache: long
 ---
 
@@ -18,7 +18,6 @@ follow it: design first, then build, test, commit and report.
 - Before editing, trace the callers of what you change and its failure paths; one the brief did not
   foresee goes in your design.
 - A review or test-only brief: return findings or PASS/FAIL and edit nothing.
-- Bulk menial reads or mechanical bulk writes: the helper role (skill builder, "Bulk work to the helper").
 
 ## Moves and renames
 

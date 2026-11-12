@@ -8,12 +8,12 @@ from kitlib import hubvalidate
 from . import apilog, schema
 from .apibase import (
     AGENT_FROM, API_VERSION, DAYS_MAX, OWNER, ROUTE_SLACK_S, SEGMENT_SAYS, VIEWS,
-    _SEGMENT, _fields, _invalid, _natural, _q, _q_flag, _q_int, _reason, _record_view,
+    _SEGMENT, _fields, _invalid, _q, _q_flag, _q_int, _reason, _record_view,
     _text, _timeout, _typed)
 from .apifindings import _seen, _unpathed, _unresolved_marks
 from .apiposts import _unpath_act
 from .apiskills import _skill_source
-from .store import HubError
+from .store import PENDING_COLLECTIONS, HubError
 
 
 def backlog(api, req):
@@ -183,19 +183,22 @@ def _wait_for(api, since, timeout, mine, routes=False):
     """Store.wait until mine() (the pending items this wait is for: its `for` key, less its
     `except` ids) is not empty, the store resets, or timeout seconds pass; a write that leaves
     it empty waits on. With routes (a wait for the PM) it also looks again when an item's route
-    next turns to the PM, which no write announces. The changes since `since`, all of them."""
+    next turns to the PM, which no write announces. mine() and the route are read again only
+    after a wake no write made (the timeout, that route turn, the store's close, which mine()
+    raises on) or a write to a collection pending reads (store.PENDING_COLLECTIONS): any other
+    write leaves them as they were. The changes since `since`, all of them."""
     end = time.monotonic() + timeout
-    at = since
+    at, look, turn = since, True, None
     while True:
-        left = max(0.0, end - time.monotonic())
-        if routes:
+        now = time.monotonic()
+        if routes and look:
             flip = api.route_change_in()
-            if flip is not None:
-                left = min(left, flip + ROUTE_SLACK_S)
-        ch = api.store.wait(at, left)
+            turn = None if flip is None else now + flip + ROUTE_SLACK_S
+        ch = api.store.wait(at, max(0.0, (end if turn is None else min(end, turn)) - now))
         if ch.reset:
             return ch
-        if mine() or time.monotonic() >= end:
+        look = not ch.events or any(e.collection in PENDING_COLLECTIONS for e in ch.events)
+        if (look and mine()) or time.monotonic() >= end:
             break
         at = ch.revision
     return api.store.changes_since(since)
@@ -231,10 +234,10 @@ def snapshot(api, req):
                            'bare')
         revision, docs = api.store.revision, {}
     else:
-        revision, docs = api.store.snapshot(colls, skip=SNAPSHOT_SKIP)
-    if docs.get('landings'):        # the newest FEED_MAX: every event is kept ("Landings" in apilog)
-        feed = docs['landings']
-        docs['landings'] = {k: feed[k] for k in sorted(feed, key=_natural)[-apilog.FEED_MAX:]}
+        # the newest FEED_MAX landings, cut before the copy: every event is kept ("Landings" in
+        # apilog)
+        revision, docs = api.store.snapshot(colls, skip=SNAPSHOT_SKIP,
+                                            newest={'landings': apilog.FEED_MAX})
     if not req.full:                # the paths as GET to_pm and GET finding_marks cut them
         for d in (docs.get('to_pm') or {}).values():
             _unpath_act(d)

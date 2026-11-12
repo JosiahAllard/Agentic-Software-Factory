@@ -28,7 +28,8 @@ file, the daily full run and a repo switch-over use it, and catch what a direct-
 leaves out. --plan prints and runs nothing.
 The modules run in parallel worker processes (kitlib.tooldeps.selfrun), --jobs at a time - by
 default the logical processors the machine lock run holds - longest first by the times recorded
-in the git common dir (kit-tests-times.json), long modules split by class - then the table's
+in the git common dir, one file per git tier (kit-tests-times.json for the fake git,
+kit-tests-times-real-git.json for real git), long modules split by class - then the table's
 `serial` modules one at a time. As the pool drains, the cpu slots its last units do not use go
 back to the lock (kitlib.lock.giveback.drainer) when the lock run offers it. --jobs 1 runs the
 one `python -m unittest` process the tool always ran.

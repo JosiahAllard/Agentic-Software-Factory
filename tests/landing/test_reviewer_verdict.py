@@ -248,11 +248,11 @@ class ReviewerVerdict(GateRepoCase):
     def new_class_branch(self):
         wt, tip = self.branch('b', {'pkg/mod.py': 'class Fresh:\n    pass\n',
                                     'tests/test_mod.py': 'class TestFresh:\n    pass\n'})
-        return tip, {'--branch': 'kit/b', '--tip': tip,
-                     '--range': '%s..%s' % (self.main[:10], tip[:10])}
+        return wt, tip, {'--branch': 'kit/b', '--tip': tip,
+                         '--range': '%s..%s' % (self.main[:10], tip[:10])}
 
     def test_a_new_source_needs_an_approved_design_review(self):
-        tip, over = self.new_class_branch()
+        wt, tip, over = self.new_class_branch()
         self.plant(RID, handback_turn(report('LAND')))
         out = self.assert_refused(**over)
         self.assertIn('the diff adds pkg/mod.py, pkg/mod.py:Fresh, and no --design-reviewer-id', out)
@@ -263,9 +263,20 @@ class ReviewerVerdict(GateRepoCase):
         self.plant(RID2, handback_turn(DESIGN))
         code, out, err = self.add(**over)
         self.assertEqual((code, out.strip().splitlines()[-1]), (0, 'QUEUED kit/b %s' % tip), err)
+        # a class added to a file that already exists needs one too: this range adds no file
+        self.repo.write('pkg/mod.py', 'class Fresh:\n    pass\n\n\nclass Second:\n    pass\n',
+                        root=wt)
+        tip2 = self.repo.commit('second class', 'pkg/mod.py', cwd=wt)
+        over = {'--branch': 'kit/b', '--tip': tip2, '--range': '%s..%s' % (tip[:10], tip2[:10])}
+        out = self.assert_refused(**over)
+        self.assertIn('the diff adds pkg/mod.py:Second, and no --design-reviewer-id', out)
+        self.assertTrue(out.strip().endswith(V.DESIGN_INSTEAD), out)
+        over['--design-reviewer-id'] = RID2
+        code, out, err = self.add(**over)
+        self.assertEqual((code, out.strip().splitlines()[-1]), (0, 'QUEUED kit/b %s' % tip2), err)
 
     def test_a_design_review_with_no_transcript_or_reader_queues_with_a_note(self):
-        tip, over = self.new_class_branch()
+        _, tip, over = self.new_class_branch()
         over['--design-reviewer-id'] = RID2
         code, out, err = self.add(**over)
         self.assertEqual(code, 0, (out, err))
@@ -317,6 +328,16 @@ class ReviewerVerdict(GateRepoCase):
         with mock.patch.object(self.tool, 'main_as_fetched', return_value=(None, 'no ref')):
             self.assertEqual(self.tool.new_sources(self.repo.root, rng),
                              ['pkg/from_main.py', 'pkg/from_main.py:FromMain'])
+        # a class main adds to a file that already exists is left out the same way
+        self.repo.write('pkg/from_main.py', 'class FromMain:\n    pass\n\n\nclass Later:\n    pass\n')
+        landed = self.repo.commit('main adds a class', 'pkg/from_main.py')
+        self.repo.git('push', '-q', 'origin', 'main')
+        self.repo.git('merge', '-q', '--no-edit', landed, cwd=wt)
+        t3 = self.repo.git('rev-parse', 'HEAD', cwd=wt).strip()
+        rng = '%s..%s' % (t2, t3)
+        self.assertEqual(self.tool.new_sources(self.repo.root, rng), [])
+        with mock.patch.object(self.tool, 'main_as_fetched', return_value=(None, 'no ref')):
+            self.assertEqual(self.tool.new_sources(self.repo.root, rng), ['pkg/from_main.py:Later'])
 
 
 class SkillIds(unittest.TestCase):

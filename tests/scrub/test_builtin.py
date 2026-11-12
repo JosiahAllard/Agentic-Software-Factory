@@ -111,7 +111,6 @@ PENDING_HISTORY = {
     ('provenance', 'tests/landed/test_landed.py'): 2,
     ('provenance', 'tests/machinepaths/test_machinepaths.py'): 2,
     ('provenance', 'tests/machinesetup/test_machinesetup.py'): 7,
-    ('provenance', 'tests/pmwatch/test_pmwatch.py'): 1,
     ('provenance', 'tests/preflight/test_preflight.py'): 2,
     ('provenance', 'tests/pytests/test_pytests.py'): 2,
     ('provenance', 'tests/syncbase/test_advice.py'): 2,

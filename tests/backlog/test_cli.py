@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -15,6 +16,7 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog import store_ref
 from kitlib.backlog.errors import Refusal
+from kitlib.fs import writelock
 from kitlib.worktree import classify, quiet
 from tests.backlog import ownertree
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
@@ -79,6 +81,31 @@ class Cli(unittest.TestCase):
         self.assertEqual(self.repo.git('status', '--porcelain'), '')
         log = self.repo.git('log', '--format=%s', smod.STORE_REF)
         self.assertEqual(log.split('\n')[0], 'closes FOO: the work is finished')
+
+    def test_a_write_behind_another_local_writer_says_it_waits_then_writes(self):
+        with mock.patch.dict(os.environ, self.env, clear=True):
+            lock = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF,
+                                        smod.STORE_REF).lock_path()
+        taken, done = threading.Event(), threading.Event()
+
+        def hold():
+            with writelock.locked(lock, 5):
+                taken.set()
+                done.wait(30)
+        t = threading.Thread(target=hold, daemon=True)
+        t.start()
+        self.addCleanup(t.join, 30)
+        self.addCleanup(done.set)
+        self.assertTrue(taken.wait(30))
+        threading.Timer(0.5, done.set).start()
+        out = self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py',
+                      *ADD_FLAGS)
+        first = out.split('\n')[0]
+        self.assertTrue(first.startswith('waiting for the backlog store lock held by pid %d since '
+                                         % os.getpid()), out)
+        self.assertTrue(first.endswith('(up to %s s)' % smod.LOCK_WAIT), out)
+        self.assertEqual(out.count('waiting for'), 1, out)
+        self.assertIn('FOO', self.repo.git('ls-tree', '-r', '--name-only', smod.STORE_REF))
 
     def test_a_pull_in_the_main_checkout_is_refused_and_as_a_branch_pulls(self):
         self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py', *ADD_FLAGS)

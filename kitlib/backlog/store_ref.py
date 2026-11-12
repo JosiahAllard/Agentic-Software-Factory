@@ -2,6 +2,7 @@
 on a ref with no history shared with main (`ref`) or on a visible `backlog` branch (`branch`),
 published by compare-and-swap (kitlib/backlog/store.py, the write loop).
 """
+import hashlib
 import os
 import random
 import shutil
@@ -9,13 +10,24 @@ import time
 
 from kitlib.config import user as kuser
 from kitlib.git import cmd, refs
+from kitlib.git import repo as gitrepo
 
 from . import store as smod
 from . import store_live as slive
 from . import store_read as sread
 from .errors import Failure, Refusal
 
-FETCH_TIMEOUT = 60
+FETCH_TIMEOUT = 60      # seconds each fetch, push and ls-remote of the store may take
+FETCH_TRIES = 3         # tries of a fetch that could not lock or update the local ref
+FETCH_PAUSE = 0.25      # the most a fetch sleeps between those tries
+_FETCH_S = FETCH_TRIES * FETCH_TIMEOUT + (FETCH_TRIES - 1) * FETCH_PAUSE   # one _fetch at most
+# The most one write holds the store lock (Store.longest_hold): an attempt or guard step may
+# start just before HOLD_S, and then runs a guard pause, the load's fetch, the push, the
+# ls-remote after a failed push, the fetch of _landed_under and the backoff sleep, plus its
+# local work.
+HOLD_BOUND_S = (smod.HOLD_S + max(smod.GUARD_PAUSES) + _FETCH_S + FETCH_TIMEOUT + FETCH_TIMEOUT
+                + _FETCH_S + smod.BACKOFF_S * smod.ATTEMPTS + smod.LOCAL_S)
+LOCK_PREFIX = 'kit-backlog-store'
 
 
 # --- the ref and branch backends ------------------------------------------------------------------
@@ -59,6 +71,29 @@ class RefBackend(object):
             return '%s on %s' % (self.remote_ref, self.remote)
         return self.local_ref
 
+    hold_bound_s = HOLD_BOUND_S
+
+    def lock_path(self):
+        """The store's write lock file (kitlib.backlog.store, Store.write): one per store in the
+        repository's git common dir, keyed by the remote and its ref (no remote: the local ref),
+        so every worktree of this clone shares it. None when git cannot place it: the write then
+        relies on the compare-and-swap alone."""
+        place = gitrepo.classify(self.root)
+        if place.kind not in (gitrepo.MAIN, gitrepo.LINKED) or not place.common:
+            return None
+        key = '%s %s' % (self.remote, self.remote_ref) if self.remote else self.local_ref
+        digest = hashlib.sha1(key.encode('utf-8')).hexdigest()[:12]
+        return os.path.join(place.common, '%s-%s.lock' % (LOCK_PREFIX, digest))
+
+    def has_reached(self, snap, tip):
+        """True when `snap` holds `tip` (it is the snapshot's tip or an ancestor of it). False,
+        never an error, when it does not or git cannot tell (an object not fetched yet)."""
+        if not snap.tip:
+            return False
+        if snap.tip == tip:
+            return True
+        return refs.is_ancestor(tip, snap.tip, self.root)[0] is True
+
     def _git(self, args, **kw):
         out, why = cmd.run(args, self.root, **kw)
         if out is None:
@@ -80,7 +115,7 @@ class RefBackend(object):
     def _fetch(self):
         """Bring the remote's store into `local_ref`. Returns False when the remote has none."""
         why = ''
-        for _ in range(3):
+        for _ in range(FETCH_TRIES):
             r = cmd.call(['fetch', '--no-tags', '--no-write-fetch-head', '--quiet', self.remote,
                           '+%s:%s' % (self.remote_ref, self.local_ref)], self.root,
                          timeout=FETCH_TIMEOUT)
@@ -91,7 +126,7 @@ class RefBackend(object):
                 return False
             if 'cannot lock ref' not in why and 'unable to update local ref' not in why:
                 break
-            time.sleep(random.uniform(0.05, 0.25))
+            time.sleep(random.uniform(0.05, FETCH_PAUSE))
         raise Failure('cannot fetch the backlog store from %s: %s' % (self.remote, why))
 
     def _local_tip(self):
@@ -197,7 +232,7 @@ class RefBackend(object):
                 if now == expect and 'cannot lock ref' not in said:
                     raise Failure('push to %s failed: %s' % (self.remote, said))
                 if not self._landed_under(new, said):
-                    raise smod.Conflict(said)
+                    raise smod.Conflict(said, now or None)
         self._advance_cache(new)
         return new
 

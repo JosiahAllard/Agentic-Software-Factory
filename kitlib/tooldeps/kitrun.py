@@ -121,13 +121,14 @@ def units_env(fake):
     return env
 
 
-def run_pass(args, top, cfg, jobs, fake, out, hold, give_back=None, record_times=True,
-             counted=None, history=False):
+def run_pass(args, top, cfg, jobs, fake, out, hold, give_back=None, counted=None, history=False):
     """One run of `args` (FULL or test modules) with the units' KIT_FAKE_GIT set to `fake`
-    (units_env), writing to `out`; its exit status. `give_back`: the pool's (drainer, or
-    tiers.keep_for_next of it), None for none. `counted`: selfrun.count_units' answer for `args`,
-    already asked (the pool then asks no count child). `history`: the run also appends its
-    per-module cost to the history file (testcost), which only the daily full run asks for."""
+    (units_env), writing to `out`; its exit status. The pass orders, splits and records by its
+    tier's unit times: selfrun.TIMES_FILE on the fake git (`fake` '1'), else
+    selfrun.REAL_TIMES_FILE. `give_back`: the pool's (drainer, or tiers.keep_for_next of it), None
+    for none. `counted`: selfrun.count_units' answer for `args`, already asked (the pool then asks
+    no count child). `history`: the run also appends its per-module cost to the history file
+    (testcost), which only the daily full run asks for."""
     def say(line):
         out.write(line + '\n')
         out.flush()
@@ -145,12 +146,12 @@ def run_pass(args, top, cfg, jobs, fake, out, hold, give_back=None, record_times
         return 0 if rc == 0 else 1
     modules = selftree.all_test_modules(top) if args is FULL else args
     common, _why = gitrepo.common_dir(top)
-    times = os.path.join(common, selfrun.TIMES_FILE) if common else None
+    name = selfrun.TIMES_FILE if fake == '1' else selfrun.REAL_TIMES_FILE
+    times = os.path.join(common, name) if common else None
     counts, classes = counted if counted is not None else (None, None)
     rc, _summary = selfrun.run(modules, top, jobs, serial=cfg['serial'], out=out, label=label,
                                times_path=times, hint=cfg.get('long', ()), environ=env,
-                               give_back=give_back, hold=hold, record_times=record_times,
-                               skip_fails=cfg.get('skip_fails', ()), counts=counts,
+                               give_back=give_back, hold=hold, skip_fails=cfg.get('skip_fails', ()), counts=counts,
                                classes=classes,
                                history_path=testcost.history_path(common) if history else None)
     return rc
@@ -282,8 +283,8 @@ def run(a, top, out):
     else:
         jobs = a.jobs
     if a.both_tiers or again:
-        # The fake pass, then the real-git pass (kitlib.tooldeps.tiers); only the fake pass
-        # records unit times (the landing tier's). The real-git pass runs only some modules:
+        # The fake pass, then the real-git pass (kitlib.tooldeps.tiers); each records and splits
+        # by its own tier's unit times (run_pass). The real-git pass runs only some modules:
         # under --both-tiers tiers.REAL_GIT_MODULES of the selection and the added or changed test
         # modules, otherwise only those.
         if a.both_tiers:
@@ -340,7 +341,7 @@ def run(a, top, out):
             # Counted before the fake pass, so the units it plans are the ones the fake pass kept
             # threads for.
             return run_pass(use, top, cfg, jobs, fake, tier_out, None, give_back=give,
-                            record_times=False, counted=counted)
+                            counted=counted)
         return tiers.run_tiers(one_pass, out, label=label)
     # The units' environment carries the tier: a pool worker imports tests/__init__.py once, so
     # its default cannot reach each unit (kitlib/tooldeps/pool_worker.py). This process keeps

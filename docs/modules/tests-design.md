@@ -26,7 +26,7 @@ Low-level design of `kitlib/pytests`, `kitlib/tooldeps`, `kitlib/ci` and `kitlib
 
 ## State
 
-`tests/selection.json` (tracked). Per-unit times and costs in the kit's temp folder. A red-first run's worktree is a scratch tree, removed at its end (`worktree.scratch`).
+`tests/selection.json` (tracked). Per-unit times (one file per git tier) and the cost history in the repository's git common dir (docs/test-tools.md "kit_tests"). A red-first run's worktree is a scratch tree, removed at its end (`worktree.scratch`).
 
 ## Errors
 

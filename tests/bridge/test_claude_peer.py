@@ -364,7 +364,8 @@ class ClaudePeerTests(unittest.TestCase):
             expiry = time.time()+.3
             self.written(self.numbered('expiring',expiry))
             time.sleep(max(0,expiry-time.time())+.05)
-            with self.assertRaisesRegex(BeforeWriteError,'peer-pending-capacity'):
+            # DeliveryError, so a send wrongly admitted fails here as an assertion.
+            with self.assertRaisesRegex(DeliveryError,'peer-pending-capacity'):
                 self.adapter.send(self.numbered('refused-while-held-open'))
             released.add('test-op-expiring')
             self.written(self.numbered('after-the-broker-let-go'))

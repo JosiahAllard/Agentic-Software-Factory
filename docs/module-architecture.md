@@ -373,6 +373,7 @@ None: no module is open to every other.
 | loadnode | proc | build | work uses base |
 | loadnode | records | build | work uses services |
 | lock | config | build | services uses facts |
+| lock | fs | build | services uses base |
 | lock | git | build | services uses facts |
 | lock | host | build | services uses facts |
 | lock | platform | build | services uses base |
@@ -386,6 +387,7 @@ None: no module is open to every other.
 | machinesetup | allowrules | build | apps uses services |
 | machinesetup | autotasks | build | same layer (apps): machinesetup's row names autotasks |
 | machinesetup | config | build | apps uses facts |
+| machinesetup | fs | build | apps uses base |
 | machinesetup | git | build | apps uses facts |
 | machinesetup | hookrun | build | apps uses guard |
 | machinesetup | host | build | apps uses facts |
@@ -527,6 +529,7 @@ None: no module is open to every other.
 | schedtask | proc | build | same layer (base): schedtask's row names proc |
 | scrub | forbidden | build | same layer (services): scrub's row names forbidden |
 | stackskill | host | build | apps uses facts |
+| strayrestore | fs | build | work uses base |
 | strayrestore | git | build | work uses facts |
 | strayrestore | host | build | work uses facts |
 | strayrestore | platform | build | work uses base |

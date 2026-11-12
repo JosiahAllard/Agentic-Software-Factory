@@ -825,8 +825,8 @@ class ReadTest(ApiCase):
 
 
 class SnapshotCostTest(ApiCase):
-    """What GET snapshot, POST to_pm/send and a pending read copy out of the store, which they
-    do under its mutex (KIT-HUB-STORE-SNAPSHOT-DEEPCOPY, KIT-HUB-SMALL-COSTS)."""
+    """What GET snapshot, POST to_pm/send and a pending read copy out of the store
+    (KIT-HUB-STORE-SNAPSHOT-DEEPCOPY, KIT-HUB-SMALL-COSTS)."""
 
     def setUp(self):
         ApiCase.setUp(self)
@@ -837,6 +837,8 @@ class SnapshotCostTest(ApiCase):
         """fn()'s answer, and every object copy.deepcopy was handed while it ran."""
         from kitlib.hubsite import store as hub_store
         seen, real = [], hub_store.copy.deepcopy
+        # the documents before fn: a write in it replaces the ones a read copied first
+        self.was = {c: list(v.values()) for c, v in self.store._docs.items()}
 
         def deepcopy(x, *a):
             seen.append(x)
@@ -847,13 +849,17 @@ class SnapshotCostTest(ApiCase):
 
     def holding(self, seen, coll):
         """The objects in seen that are the store's collection coll, or a dict that holds it
-        (the store's whole {collection: documents}), or one of its documents: a copy of any
-        of them copies coll's documents. Only the objects handed to deepcopy itself are seen,
-        not what it recurses into."""
+        (the store's whole {collection: documents}), or one of its documents, or a dict that
+        holds one (the shallow copy of coll a read deep-copies once the mutex is free): a copy
+        of any of them copies coll's documents. Only the objects handed to deepcopy itself are
+        seen, not what it recurses into."""
         held = self.store._docs[coll]
-        docs = list(held.values())
-        return [x for x in seen if x is held or any(x is d for d in docs)
-                or (isinstance(x, dict) and any(v is held for v in x.values()))]
+        docs = list(held.values()) + getattr(self, 'was', {}).get(coll, [])
+
+        def mine(v):
+            return v is held or any(v is d for d in docs)
+        return [x for x in seen if mine(x)
+                or (isinstance(x, dict) and any(mine(v) for v in x.values()))]
 
     def bodies_in(self, seen):
         return self.holding(seen, 'page_html')

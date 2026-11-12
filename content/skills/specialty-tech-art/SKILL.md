@@ -7,34 +7,34 @@ description: Use when your brief says to load it - art that is code: shaders, ma
 
 Dispatch: senior-worker at least, never weak-worker; reads the repo profile's **Branches and worktrees**, **Build and test**, **Shared resources** and **Art**.
 
-Read `creative.md` beside this file first. You work inside the art direction where one exists; where it is silent you propose, you do not stall. You never change a look the owner approved, and never edit the direction document.
+`creative.md` beside this file first. Within art direction; silent: propose, never stall. Never change owner-approved look or direction doc.
 
-1. Inputs: the art direction by document and section, the FEEL block, what you own (scenes, shaders, resources, scripts) and what belongs to someone else, and a lock and port if you will render. An open direction is a question for the owner, asked by showing answers.
-2. Propose mode: dispatched to propose looks because no direction exists, you propose strongly different options and choose none yourself; this overrides the direction input above.
-3. You cannot model, animate or record by hand. Images, edits, cut-outs and upscales come only from the generators the profile's **Art** section names (`creative.md`); meshes are specialty-3d-assets work, sounds and music specialty-sound work. Anything else: stop and report exactly what is needed.
-4. A design question (a new look, a skin, an area the direction is silent on): options first (`creative.md`), Step 0 as generated images or quick shader or palette variants, same scene and camera. A fix to something that exists skips to step 5.
-5. Read the existing look first - the shaders, materials and theme resources already there - so a new element does not make the game look like two products.
-6. Keep art data in resources, not code, where the project does: a palette, theme or material editable without a rebuild beats a constant in a script.
-7. Shaders are code: uniforms named for what they mean, per-pixel work kept off anything the whole screen draws, a comment on any non-obvious term. Mind the budgets the direction names (overdraw, transparency, viewports, lights); say what your change costs when you cannot measure it.
-8. Headless and server paths must still work: anything that exists only with a window needs a guard; the project's headless runs are the check.
-9. Look at what you made, and loop until the critic passes (`creative.md`, "Visual loop"): render a frame the way the project allows, under the profile's lock, after the orphan sweep. `<kit>/optional/comfy/render_glb.py` is a kit lock wrapper, run directly (skill machine-lock-run). Read the image back; say what you see (colour, contrast, edges, whether it reads at its real size); compare with the direction's words and with a before image. For anything animated, describe its first, peak and last frames.
-10. Cannot render: say so plainly and mark every visual claim unverified. Never describe a result you have not seen.
-11. Critique (`creative.md`), deliver the page (options side by side, or before and after for a fix, with the cost), commit (skill builder).
+1. Inputs: direction (document, section), FEEL block, owned vs others' files, lock + port to render. Open direction: owner question, asked by showing answers.
+2. Propose mode (no direction): strongly different options, pick none; overrides step 1.
+3. No hand modelling, animating, recording. Images, edits, cut-outs, upscales: profile **Art** generators only (`creative.md`); meshes: specialty-3d-assets; audio: specialty-sound. Else: stop, report need.
+4. Design question (new look, skin, silent direction): options first (`creative.md`), Step 0 as images or shader/palette variants, same scene, camera. Fix: step 5.
+5. Existing shaders, materials, themes first: one product look.
+6. Art data in resources where project does, editable without rebuild.
+7. Shaders are code: meaning-named uniforms; no per-pixel work on full-screen draws; odd terms commented. Direction's budgets (overdraw, transparency, viewports, lights); unmeasured: state cost.
+8. Headless, server paths work: window-only code guarded; headless runs check.
+9. Visual loop to critic pass (`creative.md`, "Visual loop"): render per project, locked, after orphan sweep. `<kit>/optional/comfy/render_glb.py`: kit lock wrapper, run directly (skill machine-lock-run). Read image back vs direction, before image. Animated: first, peak, last frames.
+10. No render: say so, every visual claim unverified; never describe unseen.
+11. Critique (`creative.md`); page (options side by side, or before/after, with cost); commit (skill builder).
 
 ## Direction mode
 
-Dispatched as art director: after the owner picks a concept, you write the style sheet beside it and the builders never edit it. Flow: Step 0 sheet, the owner narrows, takes, the owner picks, then the style sheet and the asset sheet. Template:
+Art director: after owner's concept pick, write style sheet beside it; builders never edit. Flow: Step 0 sheet, owner narrows, takes, owner picks, style sheet, asset sheet. Template:
 
-- Palette: 6-10 hex entries, each with its role.
+- Palette: 6-10 hex, each with role.
 - Camera: FOV, height, pitch, framing.
-- Lighting rig: sun azimuth and elevation, ambient, fog, tonemap, exposure.
-- Materials: per material, roughness, rim, toon bands or the PBR notes.
-- Asset sheet: each element alone, centred on plain mid-grey, from the shippable image generator (`<kit>/knowledge/asset-generation/MODELS.md`); only the composed reference concept may come from a reference-only model. The owner picks the whole sheet once per theme, before any image-to-3D run.
+- Lighting rig: sun azimuth, elevation, ambient, fog, tonemap, exposure.
+- Materials: roughness, rim, toon bands or PBR notes.
+- Asset sheet: elements alone, centred, plain mid-grey, shippable generator (`<kit>/knowledge/asset-generation/MODELS.md`); only composed reference concept from reference-only model. Owner picks whole sheet once per theme, before image-to-3D.
 
 ## Never
 
-- Claim an asset exists that you have not seen on disk.
+- Claim an asset unseen on disk.
 
 ## Report
 
-The page path or URL first. Then the frame you rendered and what you saw, in your own words; your pick and why (an options page); the critique's three weaknesses; what you built, with the files; what you could not verify; the performance cost and how you know it; any asset the work still needs, described so it can be sourced; anything outside your scope.
+Page path/URL first; frame, what you saw; pick, why; critique's three weaknesses; files; unverified; cost, how known; needed assets, described; out-of-scope.

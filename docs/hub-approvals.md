@@ -242,7 +242,7 @@ or from and to dates, which clear each other); Clear resets them, and they start
 date range that reaches past the oldest event held says the hub keeps only the newest 200.
 
 ## handoffs/C-NNN
-A session's hand-off record: written beside its ready reply to the PM (skill session-handoff step 5),
+A session's hand-off record: written beside its ready reply to the PM (skill session-handoff, Checkpoint step 4),
 with the reply's word and state note path, through the MCP tool `hub_handoff_ready` or `tools/hub.py
 handoffs add`. The types are `schema.FIELDS['handoffs']`; the source is `kitlib/hubsite/api.py`
 docstring "Hand-offs".

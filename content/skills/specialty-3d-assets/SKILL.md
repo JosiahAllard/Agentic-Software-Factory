@@ -7,33 +7,33 @@ description: Use when your brief says to load it - building a game-ready 3D prop
 
 Dispatch: senior-worker at least, never weak-worker; reads the repo profile's **Branches and worktrees**, **Build and test**, **Shared resources** and **Art**.
 
-Read `creative.md` (`../specialty-tech-art/creative.md` from this folder) first. Props are yours; characters, rigs and skins are skill `specialty-rigging`. A reader of your contact sheet should say what each object is, who would use it and what it feels like, without being told.
+`creative.md` (`../specialty-tech-art/creative.md` from this folder) first. Props: yours; characters, rigs, skins: skill `specialty-rigging`. Sheet reader names object, user, feel, untold.
 
-1. Inputs: what to build, the art direction it matches, the FEEL block, its real-world size in the project's units and what it sits next to, where it lives (asset path, the scene or material that uses it). Size missing: ask; scale is the classic scripted-asset failure. No art direction in the profile's **Art** section (the default profile has none): stop and say so.
-2. Say once, in your first report, which category the brief is: parametric hard-surface (props, housings, frames, panels, barriers, blocky weapons, architecture) is what scripts do well; faces, cloth, creatures and hand-painted detail they do badly. Then make the best version the method allows.
-3. New with a creative choice: options first (`creative.md`), Step 0 as generated images or rough blockouts.
-4. Write the script, not the mesh: named constants at the top for what they control, a comment where a number is load-bearing; build from primitives, explicit vertex sections and modifiers. Changing the shape means changing a number. Nobody edits the mesh by hand, you included.
-5. A generated mesh (`to3d`) is raw material: you turn it into a game asset - scale, pivot, triangle budget, separate materials for parts that glow or tint - and keep that cleanup as a script like any other asset.
-6. Split by material, not convenience: a part tinted, lit or swapped separately is its own object with its own material.
-7. Match the engine's export conventions (up and forward axis, scale, origin where the game positions it) so no scene corrects yours. Deterministic output: no random seeds, no timestamps, no interactive state.
-8. Render and look straight after the first run: several angles, one proving the feature you rely on (a profile, a bevel, a cutout). Read every image back and say what you see. `<kit>/optional/comfy/render_glb.py` is a kit lock wrapper, run directly (skill machine-lock-run); an engine-side render needs the profile's lock, and is what ships.
-9. Validate the exported file re-imported from disk, never the scene that made it: object names, triangle budget, overall dimensions against the given size, one material per object, UVs present; print each measurement beside its budget. The validator passes a right-size wrong-shape mesh, so never report a result you have not looked at.
-10. Critique (`creative.md`), deliver the contact sheet (all renders, measurements beside budgets, the shape constants, the rebuild command), commit (skill builder).
+1. Inputs: what, art direction, FEEL block, real size in project units, neighbours, asset path, using scene/material. No size: ask. No **Art** direction (default profile has none): stop, say so.
+2. First report names category once: parametric hard-surface (props, housings, panels, blocky weapons, architecture) scripts well; faces, cloth, creatures, hand-painted detail badly. Then best possible.
+3. Creative choice: options first (`creative.md`), Step 0 as images or blockouts.
+4. Script, not mesh: named constants on top; load-bearing numbers commented; primitives, explicit vertices, modifiers. Shape change = number change.
+5. Generated mesh (`to3d`): raw material; scripted cleanup to scale, pivot, triangle budget, separate glow/tint materials.
+6. Split by material: separately tinted, lit, swapped part = own object, material.
+7. Engine export conventions (up/forward axis, scale, origin): no scene correction. Deterministic: no seeds, timestamps, interactive state.
+8. Render after first run: several angles, one proving relied-on feature (profile, bevel, cutout); read every image back, say what you see. `<kit>/optional/comfy/render_glb.py`: kit lock wrapper, run directly (skill machine-lock-run); engine-side render (profile's lock) ships.
+9. Validate re-imported export, never source scene: names, triangle budget, dimensions vs size, one material per object, UVs; each measurement beside budget. Wrong shape passes at right size: never report unseen.
+10. Critique (`creative.md`); sheet (renders, measurements vs budgets, shape constants, rebuild command); commit (skill builder).
 
 ## Generated first
 
-For a prop with a picked asset sheet (skill `specialty-tech-art`, "Direction mode"), prefer this route to building from primitives (step 4):
+Prop with picked asset sheet (skill `specialty-tech-art`, "Direction mode"): prefer over primitives (step 4):
 
-1. The asset sheet's image of the prop, as the owner picked it.
-2. Image-to-3D with TRELLIS.2 (`comfy_gen.py to3d --engine trellis2`); the face and texture caps are in `<kit>/knowledge/asset-generation/BEST_PRACTICES.md`.
-3. The cleanup script (step 5): scale, pivot, budget, emissive parts rebuilt as their own materials.
-4. For detail beyond the budget: a scripted normal-map bake from the generated mesh onto the decimated one, with LODs, then validate the bake against the budget (step 9).
+1. Owner-picked sheet image.
+2. Image-to-3D, TRELLIS.2 (`comfy_gen.py to3d --engine trellis2`); face, texture caps: `<kit>/knowledge/asset-generation/BEST_PRACTICES.md`.
+3. Cleanup script (step 5): scale, pivot, budget, emissive parts own materials.
+4. Over-budget detail: scripted normal-map bake onto decimated mesh, LODs; validate (step 9).
 
 ## Never
 
-- Hand-edit an exported mesh, or commit one whose script you did not write.
-- Sculpt by hand: report what is needed instead.
+- Hand-edit exported mesh; commit one without your script.
+- Hand sculpt: report need.
 
 ## Report
 
-The contact sheet path or URL first. Then what you saw in the renders, in your own words, including what you fixed between rounds; your pick and why (an options sheet); the critique's three weaknesses; the files built; the validator table, pass or fail per check; the engine-side render; branch and commit; anything the asset still needs that you cannot make.
+Sheet path/URL first; what renders showed, fixes between rounds; pick, why; critique's three weaknesses; files; validator pass/fail table; engine render; branch, commit; unmakeable needs.

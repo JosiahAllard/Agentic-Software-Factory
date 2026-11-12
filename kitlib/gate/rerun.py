@@ -889,7 +889,7 @@ def scope_of(top, cls):
 
 def add_line(top, branch, head, classes):
     """The `backlog.py add` line a FLAKE prints: the builder reports it; the coordinator decides
-    on filing it (skill builder, step 10). The summary is a short title, within plan_edit.SUMMARY_MAX
+    on filing it (skill builder, "Tests"). The summary is a short title, within plan_edit.SUMMARY_MAX
     (the class, cut to 60 characters, and the tip); the failing test ids go into the
     not-folded reason, which the record keeps in its body's `## Found` section. A gradle or
     dotnet class's scope is its module or project folder (`scope`); one at the tree root (scope

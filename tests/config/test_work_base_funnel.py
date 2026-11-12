@@ -38,6 +38,9 @@ ALLOWED = {
     'kitlib/backlog/pull_branch.py:main_branches':
         (1, "a pull may not record the store's main branch (a published branch name)"),
     'kitlib/commit/run.py:_commit': (1, LANDER_MAIN + ' (main_checkout_error)'),
+    'kitlib/dailyfull/promote.py:main_of':
+        (1, 'the branch a promotion moves and the one the staging setting is read from: main '
+            'itself, never the work base'),
     'kitlib/gate/runner.py:merged_tip':
         (1, 'neither the main branch nor the work base is gated as a branch'),
     'kitlib/guard/backlogrole.py:_landed':

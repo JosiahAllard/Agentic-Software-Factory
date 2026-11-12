@@ -6,6 +6,7 @@ identity/active-turn/permission facts; it does not authenticate arbitrary caller
 that can invoke Python or manufacture metadata. Current login and frontend IPC
 verification are separate deployment requirements. No native state is modified.
 """
+from contextlib import contextmanager
 import ctypes
 from ctypes import wintypes as w
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import threading
 
 from optional.bridge.core.contracts import SessionIdentity, WorkspaceIdentity
 from optional.bridge.core.jsonwire import JsonLineDecoder
@@ -191,6 +193,7 @@ class CodexObserver:
                     or type(host_creation) is not int or host_creation<=0 or not self.executable.is_file()):
                 raise ContextError('invalid-native-host')
             self.pid,self.creation=host_pid,host_creation
+            self._scoped=threading.local()
             self.user=process_sids(os.getpid())[0]
             self._handle=open_process(0x00101000,False,self.pid)
             if not self._handle: raise ContextError('native-host-unavailable')
@@ -208,7 +211,29 @@ class CodexObserver:
         if (info.st_dev,info.st_ino)!=self._root_identity:
             raise ContextError('native-profile-changed')
 
+    @contextmanager
+    def scope(self):
+        """Within this block, on this thread, each rollout is found and read once.
+
+        Only a block's outermost entry owns the memo; an inner exit leaves it. The memo adds no
+        new staleness: a read is already as old as the check that used it, and a rollout that is
+        appended meanwhile is a live chat, not a dead one. A check that must see a write it
+        follows (the delivery's confirm) runs outside any scope and reads fresh.
+        """
+        outer=getattr(self._scoped,'memo',None) is None
+        if outer: self._scoped.memo={'chats':{},'reads':{}}
+        try:
+            yield
+        finally:
+            if outer: self._scoped.memo=None
+
     def _find(self, thread):
+        memo=getattr(self._scoped,'memo',None)
+        if memo is None: return self._walk(thread)
+        if thread not in memo['chats']: memo['chats'][thread]=self._walk(thread)
+        return memo['chats'][thread]
+
+    def _walk(self, thread):
         root=self.root/'sessions'
         _regular(root,directory=True)
         queue=[(root,0)]
@@ -232,12 +257,24 @@ class CodexObserver:
         return matches[0]
 
     def _records(self, path, *, contexts=None):
+        """The rollout's authority records, once per scope() and else read fresh.
+        contexts, when given, collects (turn_id, sha) of every turn_context in order.
+        """
+        memo=getattr(self._scoped,'memo',None)
+        held=memo['reads'].get(path) if memo is not None else None
+        if held is None:
+            seen=[] if memo is not None or contexts is not None else None
+            held=(*self._read_whole(path,seen),tuple(seen or ()))
+            if memo is not None: memo['reads'][path]=held
+        if contexts is not None: contexts.extend(held[3])
+        return held[:3]
+
+    def _read_whole(self, path, contexts):
         """The rollout's authority records, read whole while the file stands still.
 
         A running chat appends to its rollout, so a read that overlaps an append (the
         file changed, or it ended mid-line) is retried, at most RECORD_TRIES times in
         all; a file that does so on every try is refused as before. Failing one read must not drop a live chat.
-        contexts, when given, collects (turn_id, sha) of every turn_context in order.
         """
         for attempt in range(RECORD_TRIES):
             if contexts is not None:

@@ -239,6 +239,43 @@ class LeasedWriterDeliveryTests(unittest.TestCase):
             self.assertFalse(lease.recheck())
         self.refused(adapter,self.claude_message,'codex-direct-route-unavailable')
 
+    def counting(self):
+        from optional.bridge.hosts.codex.context import CodexObserver
+        from unittest.mock import patch
+        reads,walks=[],[]
+        read,walk=CodexObserver._read_records,CodexObserver._walk
+        def counted_read(observer,path,contexts):
+            reads.append(path)
+            return read(observer,path,contexts)
+        def counted_walk(observer,thread):
+            walks.append(thread)
+            return walk(observer,thread)
+        patcher=patch.multiple(CodexObserver,_read_records=counted_read,_walk=counted_walk)
+        return patcher,reads,walks
+
+    def test_a_recheck_finds_and_reads_each_rollout_once(self):
+        self.leased()
+        self.grant()
+        patcher,reads,walks=self.counting()
+        with self.factory._delivery_lease(self.claude_message) as lease, patcher:
+            self.assertTrue(lease.recheck())
+        self.assertEqual(sorted(reads),sorted([self.path,self.target_path]))
+        self.assertEqual(sorted(walks),sorted([self.sender.identity.native_session_id,
+            self.recipient.identity.native_session_id]))
+
+    def test_a_recheck_on_large_rollouts_fits_the_start_timeout(self):
+        self.leased()
+        self.grant()
+        junk=(b'{"timestamp":"2026-10-12T12:00:01Z","type":"response_item","payload":{"x":"'
+            +b'a'*60000+b'"}}\n')
+        with self.factory._delivery_lease(self.claude_message) as lease:
+            for path in (self.path,self.target_path):
+                with path.open('ab') as stream:
+                    for _ in range(700): stream.write(junk)  # about 42 MB each
+            started=time.monotonic()
+            self.assertTrue(lease.recheck())
+            self.assertLess(time.monotonic()-started,3)
+
     def test_a_lease_is_no_route_so_a_deselected_sender_gets_no_bytes(self):
         adapter=self.leased()
         self.grant()
@@ -461,6 +498,8 @@ class RolloutAppendDuringLiveCheckTests(unittest.TestCase):
     tearDown=DirectRuntimeDeliveryTests.tearDown
     setUp=DirectRuntimeDeliveryTests.setUp
     populate=DirectRuntimeDeliveryTests.populate
+    leased=LeasedWriterDeliveryTests.leased
+    grant=LeasedWriterDeliveryTests.grant
 
     def appending(self,times):
         from optional.bridge.hosts.codex import context as context_module
@@ -492,6 +531,15 @@ class RolloutAppendDuringLiveCheckTests(unittest.TestCase):
         with patcher, self.assertRaises(PairingError):
             self.controller.pairs.require_selected(self.sender,self.recipient)
         self.assertEqual(len(appended),3)  # bounded: RECORD_TRIES reads, then refused
+
+    def test_an_append_during_a_rechecks_read_is_retried_and_the_recheck_holds(self):
+        self.leased()
+        self.grant()
+        with self.factory._delivery_lease(self.claude_message) as lease:
+            patcher,appended=self.appending(1)
+            with patcher:
+                self.assertTrue(lease.recheck())
+        self.assertEqual(len(appended),1)
 
     def partial_line(self,complete_on):
         # The chat is mid-append: the rollout ends without a newline. complete_on: the read

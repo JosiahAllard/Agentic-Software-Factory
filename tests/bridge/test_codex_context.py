@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import uuid
 
-from optional.bridge.hosts.codex.context import CodexObserver, ContextError
+from optional.bridge.hosts.codex.context import CodexObserver, ContextError, _sha
 from kitlib.proc.process import own_ctime
 
 NATIVE_SOURCE = 'optional/bridge/hosts/codex/context.py'
@@ -139,6 +139,41 @@ class CodexContextTests(unittest.TestCase):
             with self.assertRaises(ContextError): self.observer.observe(self.meta)
         with patch('optional.bridge.hosts.codex.context.MAX_ROLLOUT_BYTES',1):
             with self.assertRaises(ContextError): self.observer.observe(self.meta)
+
+    def counting(self):
+        reads,walks=[],[]
+        read,walk=self.observer._read_records,self.observer._walk
+        self.observer._read_records=lambda path,contexts: (reads.append(path),read(path,contexts))[1]
+        self.observer._walk=lambda thread: (walks.append(thread),walk(thread))[1]
+        return reads,walks
+
+    def test_a_scope_finds_and_reads_each_rollout_once_and_a_call_outside_one_reads_fresh(self):
+        reads,walks=self.counting()
+        facts=self.observer.observe(self.meta)
+        sha=(_sha(self.session),_sha(self.context))
+        self.assertEqual((len(reads),len(walks)),(1,1))
+        with self.observer.scope():
+            for _ in range(3): self.observer.observe(self.meta)
+            self.observer.observe_existing(facts,self.meta,session_sha256=sha[0],context_sha256=sha[1])
+        self.assertEqual((len(reads),len(walks)),(2,2))  # the scope: one more of each
+        self.observer.observe(self.meta)
+        self.assertEqual((len(reads),len(walks)),(3,3))  # the memo is gone with the scope
+
+    def test_an_inner_scope_exit_keeps_the_outer_scopes_memo(self):
+        reads,_walks=self.counting()
+        with self.observer.scope():
+            with self.observer.scope(): self.observer.observe(self.meta)
+            self.observer.observe(self.meta)
+        self.assertEqual(len(reads),1)
+
+    def test_scoped_contexts_are_copied_to_each_caller(self):
+        with self.observer.scope():
+            first=[]
+            self.observer._records(self.path,contexts=first)
+            first.append('caller edit')
+            second=[]
+            self.observer._records(self.path,contexts=second)
+        self.assertEqual(second,[(self.turn,_sha(self.context))])
 
     def test_thread_name_is_the_last_index_entry_for_the_thread_and_never_identity(self):
         # Codex keeps chat titles in session_index.jsonl, one JSON line per rename (display only).

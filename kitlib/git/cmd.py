@@ -29,7 +29,7 @@
   so a transfer stalled below 1000 bytes/s for 60 seconds fails instead of hanging until the
   call's timeout (or forever, under timeout=None). A push keeps the user's own credential prompts
   unless its caller passes `with_network_env()` as its `env` (the landing's push and its
-  remote-branch delete do: a detached landing has nobody to answer one).
+  remote-branch delete, and the daily run's promotion, do: nobody is there to answer one).
 - From a parent with no console (the guard hook under pythonw.exe, a scheduled task), git starts
   with CREATE_NO_WINDOW (kitlib.proc.job.no_window_flags), so a git or ssh console prompt goes to
   a hidden console and waits until the call's timeout. A caller that can prompt must run from a
@@ -63,7 +63,7 @@ _VALUE_OPTIONS = ('-c', '-C', '--git-dir', '--work-tree', '--namespace', '--conf
 AUTO_MAINTENANCE_OFF = (('maintenance.auto', 'false'), ('gc.auto', '0'))
 GIT_TIMEOUT = 30          # seconds
 KILL_GRACE = 5            # seconds a killed tree's pipes get to end before the call gives up on them
-PUSH_TIMEOUT = 600        # seconds: a kit push (the landing's push and its remote-branch delete)
+PUSH_TIMEOUT = 600        # seconds: a kit push (the landing's push and remote-branch delete, a promotion)
 _DEFAULT = object()
 
 # git's own ref status line for a push it refused (transport.c; untranslated, and call() runs git

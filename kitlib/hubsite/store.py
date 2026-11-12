@@ -413,8 +413,9 @@ class Store(object):
             raise HubError('invalid', 'if_version must be a whole number, not %r' % (if_version,),
                            'if_version')
         names = []                      # the PM's repo names, asked before the mutex (step 0)
-        if op != 'delete' and (hubvalidate.repo_tag(fields) or hubvalidate.repo_tag(
-                self._docs.get(coll, {}).get(doc_id))):
+        if op != 'delete' and coll in hubvalidate.REPO_COLLECTIONS and (
+                hubvalidate.repo_tag(fields)
+                or hubvalidate.repo_tag(self._docs.get(coll, {}).get(doc_id))):
             names.append(self.known_repos())
         with self._mutex:
             self._check_open()

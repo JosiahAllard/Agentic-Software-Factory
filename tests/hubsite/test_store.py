@@ -361,6 +361,11 @@ class ValidateTest(StoreCase):
         s.put('repos', 'alpha', {'name': 'alpha'})
         s.add('todos', {'status': 'open', 'title': 't', 'from': 'you'})
         s.add('questions', question(repo='all'))
+        # an approval carries its repo, but its collection takes no repo-tag check
+        s.add('approvals', approvals.new_doc(
+            'https://github.com/o/r', 't', 'a' * 40,
+            [{'path': 'x.md', 'base_blob': None, 'content': 'x\n'}],
+            datetime.datetime(2026, 1, 2, tzinfo=datetime.timezone.utc)))
         self.assertEqual(asked, [], 'a write with no repo tag asked for the names')
         q = s.add('questions', question(repo='gamerepo'))
         self.assertEqual(q.warnings, [])

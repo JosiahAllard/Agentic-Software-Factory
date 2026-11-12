@@ -243,19 +243,37 @@ class WaitForTest(DirectCase):
         def pick(coll, *a):
             picked.add(coll)
             return real_pick(coll, *a)
-        self.store.pending, self.store.pick = pending, pick
+        # each entry to store.wait notes its `since`, so the test waits on the waiter itself
+        # rather than on a sleep long enough under load
+        entered, cond = [], threading.Condition()
+        real_wait = self.store.wait
+
+        def wait(since, timeout):
+            with cond:
+                entered.append(since)
+                cond.notify_all()
+            return real_wait(since, timeout)
+
+        def waiting_since(rev):
+            with cond:
+                ok = cond.wait_for(lambda: any(s >= rev for s in entered), 10)
+            self.assertTrue(ok, 'the waiter never waited again from revision %d' % rev)
+        self.store.pending, self.store.pick, self.store.wait = pending, pick, wait
         for key in ('kit', 'pm'):           # the PM's wait reads the routes too
             with self.subTest(key=key):
                 qid = self.ask(**{'from': key})
                 out = {}
+                with cond:
+                    del entered[:]
                 t = threading.Thread(target=lambda: out.update(got=self.wait(20, **{'for': key})))
                 t.start()
                 self.addCleanup(t.join, 30)
-                time.sleep(0.3)
+                waiting_since(self.store.revision)  # its first read is done; it waits
                 before = len(reads)
                 for _ in range(3):          # the inbox is no pending collection
                     self.store.add('inbox', {'text': 'x'})
-                time.sleep(0.3)
+                # it woke for the inbox writes and went back to waiting past them
+                waiting_since(self.store.revision)
                 self.assertTrue(t.is_alive())
                 self.assertEqual(len(reads), before, 'an inbox write read pending again')
                 self.answer(qid)

@@ -233,15 +233,15 @@ class WaitForTest(DirectCase):
         self.assertIn(theirs, [c['id'] for c in got['changes']])
 
     def test_a_filtered_wait_reads_pending_again_only_after_a_write_pending_reads(self):
-        reads, real_pending, real_pick = [], self.store.pending, self.store.pick
+        reads, picked = [], set()
+        real_pending, real_pick = self.store.pending, self.store.pick
 
         def pending():
             reads.append(1)
             return real_pending()
 
         def pick(coll, *a):
-            self.assertIn(coll, store.PENDING_COLLECTIONS, 'pending reads a collection it '
-                                                           'does not name')
+            picked.add(coll)
             return real_pick(coll, *a)
         self.store.pending, self.store.pick = pending, pick
         for key in ('kit', 'pm'):           # the PM's wait reads the routes too
@@ -264,6 +264,9 @@ class WaitForTest(DirectCase):
                 self.assertGreater(len(reads), before)
                 self.ok('POST', '/questions/%s/log' % qid, AGENT,
                         {'if_version': self.store.get('questions', qid)['version']})
+        # what pending picks is read again on a write to those collections alone
+        self.assertTrue(picked)
+        self.assertLessEqual(picked, set(store.PENDING_COLLECTIONS))
 
     def test_a_wait_for_kit_that_times_out_says_so_even_after_other_writes(self):
         since = self.store.revision

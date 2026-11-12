@@ -6,6 +6,8 @@ import os
 import posixpath
 import re
 
+from kitlib import kitroot
+
 from . import commands as cm
 from . import commands_env as ce
 from . import commands_git as cg
@@ -252,11 +254,9 @@ GIT_BUILTINS = frozenset((
     'verify-commit', 'verify-pack', 'verify-tag', 'version', 'whatchanged', 'worktree', 'write-tree'))
 ALIAS_DEPTH = 10
 
-
-# the characters alias words are split by: git 2.55 splits a quoted alias value at a space, tab or
-# CR (observed: "rev-parse<c>--git-dir" runs for those, and is "not a git command" for VT and FF).
-# VT and FF are split here too: a word holding one is no git command or option git accepts, so
-# splitting it can only make the guard judge more, never less
+# the characters alias words are split by: git 2.55 splits a quoted alias value at a space, tab or CR (observed:
+# "rev-parse<c>--git-dir" runs for those, and is "not a git command" for VT and FF). VT and FF are split here too: a
+# word holding one is no command or option git accepts, so splitting it can only make the guard judge more, never less
 ALIAS_BLANKS = ' \t\n\v\f\r'
 
 
@@ -313,7 +313,7 @@ CONFIG_STRICT_READ_OPTS = set(CONFIG_READ_OPTS) | {'--show-origin', '--show-scop
 
 def kit_githooks():
     """The kit's own githooks folder: the value the install sets (docs/guard.md "Go-live")."""
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'githooks')
+    return os.path.join(kitroot.root(), 'githooks')
 
 
 def repo_config_file(text):

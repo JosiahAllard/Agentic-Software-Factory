@@ -107,10 +107,24 @@ def _same_path(a, b):
     return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
 
 
+def code_base(root):
+    """The work base of the configuration of the checkout `root` (kitlib.config.work_base: the
+    staging branch when one is set, else its main branch), or None when it cannot be read. A
+    landing never lands the staging branch either, so a pull may not record it."""
+    try:
+        return kconfig.work_base(kconfig.load(root))
+    except (kconfig.ConfigError, OSError):
+        return None
+
+
 def main_branches(ctx):
-    """The branch names a pull through `ctx` may not record: its main branch, and the code
-    repository's mains when it is the PM data worktree (code_mains)."""
+    """The branch names a pull through `ctx` may not record: its main branch, its work base
+    (code_base), and the code repository's mains when it is the PM data worktree (code_mains:
+    the work base included)."""
     out = [ctx.main_branch]
+    base = code_base(ctx.root)
+    if base and base not in out:
+        out.append(base)
     out.extend(m for m in code_mains(ctx.root) if m not in out)
     return out
 

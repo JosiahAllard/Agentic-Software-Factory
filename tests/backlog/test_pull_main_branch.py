@@ -2,6 +2,7 @@
 a landing closes only what the landed branch holds pulled, and the main branch never lands, so such
 a record would stay pulled for ever. kitlib.backlog.pull_branch, end to end through Store.write on
 a ref store whose repository has `main` checked out (the main checkout)."""
+import json
 import unittest
 from unittest import mock
 
@@ -86,6 +87,39 @@ class PullFromTheMainBranch(StoreCase):
         with self.assertRaises(Refusal) as cm:
             self.pull(ctx, 'FOO')
         self.assertNotIn('pulled_by: main', str(cm.exception))
+
+
+class PullAsTheStagingBranch(StoreCase):
+    """With a staging branch (docs/gate-landing.md "Staging branch") the work base never lands
+    either, so a pull may not record it (pull_branch.code_base)."""
+
+    pull = PullFromTheMainBranch.pull
+
+    def stage(self):
+        self.repo.write('.kit.json', json.dumps({'staging': {'branch': 'staging'}}))
+
+    def test_as_the_staging_branch_is_refused_and_writes_nothing(self):
+        self.seed(priced('FOO'))
+        self.stage()
+        before = self.remote_tip()
+        ctx = pmod.Context(self.store, self.repo.root, main_branch='main', branch='staging',
+                           today=TODAY)
+        with self.assertRaises(Refusal) as cm:
+            self.pull(ctx, 'FOO')
+        self.assertIn('pulled_by: staging', str(cm.exception))
+        self.assertIn('--as <branch>', str(cm.exception))
+        self.assertEqual(self.remote_tip(), before)
+        self.assertEqual(self.get('FOO').get('state'), 'open')
+
+    def test_the_work_base_is_one_of_the_main_branches(self):
+        ctx = pmod.Context(self.store, self.repo.root, main_branch='main', today=TODAY)
+        self.assertEqual(pull_branch.main_branches(ctx), ['main'])      # staging off: as before
+        self.stage()
+        self.assertEqual(pull_branch.code_base(self.repo.root), 'staging')
+        self.assertEqual(pull_branch.main_branches(ctx), ['main', 'staging'])
+        with mock.patch.object(kconfig, 'load', side_effect=kconfig.ConfigError('bad')):
+            self.assertIsNone(pull_branch.code_base(self.repo.root))
+            self.assertEqual(pull_branch.main_branches(ctx), ['main'])
 
 
 class PullFromThePmDataWorktree(StoreCase):

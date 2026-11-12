@@ -368,9 +368,13 @@ class Push(object):
             steps = self.clear_steps(left)
         else:
             steps = []
-        steps.append(('break the landing lock (it refuses while the holder is alive, or while %s '
-                      'differs from %s/%s)' % (self.base_branch, self.cfg.remote,
-                                               self.base_branch), [self.break_command()]))
+        if self.staging:            # break_lock then asks only about MERGE_HEAD (LandingLock.unpushed)
+            refuses = 'a merge is in progress in the main checkout (MERGE_HEAD)'
+        else:
+            refuses = '%s differs from %s/%s' % (self.base_branch, self.cfg.remote,
+                                                 self.base_branch)
+        steps.append(('break the landing lock (it refuses while the holder is alive, or while %s)'
+                      % refuses, [self.break_command()]))
         for n, (text, commands) in enumerate(steps, 1):
             lines.append('%d. %s' % (n, text))
             lines.extend(STEP_CMD + c for c in commands)
@@ -386,7 +390,8 @@ class Push(object):
         pushed, pushed_why = refs.ls_remote(self.cfg.remote, 'refs/heads/%s' % self.base_branch,
                                             self.root)
         extra = []
-        if main and main != self.expect_main:
+        # With a staging branch, main is not the base, so its own commits are not on top of it.
+        if main and main != self.expect_main and not self.staging:
             known = [self.expect_main] + self.tips + self.merges
             out, _ = cmd.run_text(['log', '--format=%H %s', main, '--not'] + known, self.root)
             extra = [l for l in (out or '').splitlines() if l.strip()]
@@ -438,20 +443,25 @@ class Push(object):
                         ] + self.on_origin_steps(left, left['tracking'])
             if on is None:
                 return [self.check_first(left['tracking'])]
+            if self.staging:
+                done = ('%s; go to the last step' % self.main_unmoved())
+            else:
+                done = ('bring %s to it (HEAD on %s, then `%s merge --ff-only %s`), then go to '
+                        'the last step' % (main_b, main_b, g, upstream))
             steps = [('the push may have landed: %s could not be read (%s). Fetch, then check '
                       'what %s is' % (upstream, left['pushed_why'] or 'ls-remote failed', upstream),
                       ['%s fetch %s' % (g, remote), '%s rev-parse %s' % (g, tracking)]),
-                     ('if that printed the merge %s, the landing is done: bring %s to it (HEAD '
-                      'on %s, then `%s merge --ff-only %s`), then go to the last step. If it '
+                     ('if that printed the merge %s, the landing is done: %s. If it '
                       'printed %s, the push did not land, and nothing is to be undone: the main '
                       'checkout was never merged into. If the fetch failed, stop: what it printed '
-                      'is stale' % ((self.merge or '(none)'), main_b, main_b, g, upstream,
-                                    self.expect_main), [])]
+                      'is stale' % ((self.merge or '(none)'), done, self.expect_main), [])]
             if self.merge:          # neither: someone pushed, maybe on top of the merge
+                landed = (self.main_unmoved() if self.staging
+                          else 'bring %s to it as above' % main_b)
                 steps.append(('if it printed anything else, list the remote branches that hold '
-                              'the merge: if the list names %s, the merge is landed: bring %s to '
-                              'it as above; if it does not, nothing landed and nothing is to be '
-                              'undone' % (upstream, main_b),
+                              'the merge: if the list names %s, the merge is landed: %s; if it '
+                              'does not, nothing landed and nothing is to be undone'
+                              % (upstream, landed),
                               ['%s branch -r --contains %s' % (g, self.merge)]))
             return steps
         on = self.on_remote(pushed)
@@ -475,17 +485,29 @@ class Push(object):
         main_b, remote = self.base_branch, self.cfg.remote
         g = 'git -C "%s"' % self.root
         upstream = '%s/%s' % (remote, main_b)
+        if self.staging:
+            stale = 'stop here'
+            landed = '%s; go to the last step' % self.main_unmoved()
+        else:
+            stale = 'stop here and do not move %s' % main_b
+            landed = ('bring the checkout to %s by hand (HEAD on %s, %s fast-forwarded to %s), '
+                      'then go to the last step' % (upstream, main_b, main_b, upstream))
         return ('%s is at %s, which this checkout cannot place against the merge %s, so whether '
                 'it holds the merge cannot be told here. Fetch, then list the remote branches '
-                'that hold the merge. If the fetch failed, the list is stale: stop here and do '
-                'not move %s. If the list names %s, the merge is landed: bring the checkout to %s '
-                'by hand (HEAD on %s, %s fast-forwarded to %s), then go to the last step. If it '
+                'that hold the merge. If the fetch failed, the list is stale: %s. If the list '
+                'names %s, the merge is landed: %s. If it '
                 'does not, the merge is not on %s, and nothing is to be undone (the main checkout '
                 'was never merged into): settle %s with whoever pushed it, then go to the last '
                 'step' % (
-                    upstream, (pushed or '?')[:10], (self.merge or '?')[:10], main_b, upstream,
-                    upstream, main_b, main_b, upstream, remote, upstream),
+                    upstream, (pushed or '?')[:10], (self.merge or '?')[:10], stale, upstream,
+                    landed, remote, upstream),
                 ['%s fetch %s' % (g, remote), '%s branch -r --contains %s' % (g, self.merge)])
+
+    def main_unmoved(self):
+        """What a landed merge asks of the main checkout with a staging branch: nothing."""
+        return ('nothing in the main checkout is to be moved (a landing onto the staging branch '
+                '%s never moves %s; only a promotion does)' % (self.base_branch,
+                                                               self.checkout_branch))
 
     def on_origin_steps(self, left, pushed):
         """clear_steps when the remote's main (`pushed`) is a merge of this landing or descends
@@ -500,9 +522,10 @@ class Push(object):
         upstream = '%s/%s' % (remote, main_b)
         steps = []
         if left['tracking'] != pushed:
-            steps.append(('the tracking ref %s is at %s, not %s as on %s: fetch it, or break_lock '
-                          'refuses' % (upstream, (left['tracking'] or '?')[:10], pushed[:10],
-                                       remote), ['%s fetch %s' % (g, remote)]))
+            steps.append(('the tracking ref %s is at %s, not %s as on %s: fetch it, %s' % (
+                upstream, (left['tracking'] or '?')[:10], pushed[:10], remote,
+                'so the next landing starts from it' if self.staging else 'or break_lock refuses'),
+                ['%s fetch %s' % (g, remote)]))
         gate_out = self.gate_out
         if gate_out is None or gate_out.code != G.OK:
             merges = list(reversed(self.merges))

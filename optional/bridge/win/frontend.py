@@ -129,6 +129,11 @@ def service_target(marker):
 
 
 MAX_INITIALIZE_BYTES=16*1024
+# The budget of a forwarded tool frame (tools/call and the like); the handshake keeps rpc's 5 s.
+# A call's first observe reads its rollout whole, and a rollout as large as the observer still
+# accepts (256 MB) takes about 6.5 s cold. 10 s is a ceiling shared with run_worker's timeout
+# limit (transport.py) and the rpc helper's 10 s reply read (rpcworker.py): raise all three or none.
+TOOL_CALL_SECONDS=10
 
 
 def _generation(marker):
@@ -144,11 +149,11 @@ def _generation(marker):
     return target,version(after)
 
 
-def _forward(target,message,channel,mark=None):
+def _forward(target,message,channel,mark=None, *, timeout=5):
     frame={'protocol':1,'request':message}
     if channel is not None:frame['channel']=channel.to_wire()
     if mark is not None:frame['mark']=mark
-    result=request(target,frame)
+    result=request(target,frame,timeout=timeout)
     if (type(result) is not dict or set(result)!={'protocol','response'}
             or type(result['protocol']) is not int or result['protocol']!=1):
         raise DeliveryError('invalid-service-response')
@@ -244,7 +249,7 @@ def serve_frontend(input_stream,output_stream,marker,mark=None):
                     _forward(current[0],initialized,channel,mark)
                     if _generation(marker)!=current:raise DeliveryError('service-marker-changed')
                     bound=current
-                response=_forward(current[0],message,channel,mark)
+                response=_forward(current[0],message,channel,mark,timeout=TOOL_CALL_SECONDS)
                 if _generation(marker)!=current:raise DeliveryError('service-marker-changed')
         except Exception as error:
             identity=message.get('id') if type(message) is dict else None

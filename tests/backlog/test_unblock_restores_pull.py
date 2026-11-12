@@ -33,9 +33,10 @@ class RestoreCase(StoreCase):
     def tip(self, branch):
         return self.repo.git('rev-parse', 'refs/heads/%s' % branch)
 
-    def advance(self, branch, start='main', what='work'):
-        """Point `branch` at a new commit on top of `start`, one main does not hold."""
-        tree = self.repo.git('rev-parse', 'main^{tree}')
+    def advance(self, branch, start='main', what='work', tree_of='main'):
+        """Point `branch` at a new commit on top of `start`, one main does not hold, holding the
+        tree of `tree_of`."""
+        tree = self.repo.git('rev-parse', '%s^{tree}' % tree_of)
         sha = self.repo.git('commit-tree', tree, '-p', start, '-m', '%s on %s' % (what, branch))
         self.repo.git('branch', '-f', branch, sha)
         return sha
@@ -209,6 +210,42 @@ class Unblock(RestoreCase):
         self.unblock()
         self.assert_open('FOO', 'scope folds into %s' % NEWCOMER)
         self.assertIn('a lead may re-pull it', self.get('FOO').body)
+
+    def off_main_base(self):
+        """A commit off main that added area/foo/shared.py, and one on it that changed the file:
+        both branches below are cut from the first, as a real repository's can be after an off-main merge."""
+        self.repo.git('checkout', '-q', '-b', 'off-main', 'main')
+        self.repo.write('area/foo/shared.py', 'v1\n')
+        self.repo.git('add', '-A')
+        self.repo.git('commit', '-q', '-m', 'off main')
+        base = self.repo.head()
+        self.repo.write('area/foo/shared.py', 'v2\n')
+        self.repo.git('commit', '-q', '-am', 'changed after')
+        later = self.repo.head()
+        self.repo.git('checkout', '-q', '-f', 'main')
+        return base, later
+
+    def test_a_base_both_branches_inherited_off_main_is_no_fold(self):
+        base, _later = self.off_main_base()
+        self.advance(OTHER, start=base, tree_of=base)
+        self.pulled(scope='area/foo/shared.py')
+        self.block()
+        self.advance(NEWCOMER, start=base, tree_of=base)
+        self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by=NEWCOMER,
+                         scope='area/bar/**'))
+        self.unblock()
+        self.assert_pulled('FOO', OTHER)
+
+    def test_a_change_after_the_shared_base_is_still_a_fold(self):
+        base, later = self.off_main_base()
+        self.advance(OTHER, start=base, tree_of=base)
+        self.pulled(scope='area/foo/shared.py')
+        self.block()
+        self.advance(NEWCOMER, start=base, tree_of=later)
+        self.seed(priced('BAR', state='pulled', pulled_at=TODAY, pulled_by=NEWCOMER,
+                         scope='area/bar/**'))
+        self.unblock()
+        self.assert_open('FOO', 'scope folds into %s' % NEWCOMER)
 
     def newcomer_pull(self, start='main'):
         self.advance(NEWCOMER, start=start)

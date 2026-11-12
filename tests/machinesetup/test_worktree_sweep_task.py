@@ -151,6 +151,13 @@ class RepoTask(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             W.repo_task(os.path.join(repo.root, 'gone'))
 
+    def test_a_main_checkout_git_cannot_tell_is_refused(self):
+        repo = gitfixture.TempRepo()
+        self.addCleanup(repo.cleanup)
+        with mock.patch.object(W.gitrepo, 'main_checkout_toplevel', return_value=None):
+            with self.assertRaisesRegex(RuntimeError, 'cannot find the main checkout'):
+                W.repo_task(repo.root)
+
 
 class StepBase(MS.Base):
     """machine setup's worktree sweep step through M.run against FakeHost, in the old-kit switch

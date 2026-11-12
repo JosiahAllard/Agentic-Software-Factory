@@ -82,7 +82,7 @@ def quiet_hold(root, branch, now=None, machine=None, procs=None, main=None):
     why = _queued_verdict(verdict_entry, wctx.main, branch, main)
     if why:
         return why, None
-    newest, why = _quiet_activity(classify, remove_checks, wctx.main, branch, on)
+    newest, why = _quiet_activity(remove_checks, wctx.main, branch, on)
     if newest is None:
         return why, None
     now = time.time() if now is None else now
@@ -123,7 +123,7 @@ def _queued_verdict(verdict_entry, main_tree, branch, main):
         branch, entry.get('state'), str(entry.get('tip'))[:10])
 
 
-def _quiet_activity(classify, remove_checks, main_tree, branch, on):
+def _quiet_activity(remove_checks, main_tree, branch, on):
     """`((newest time, what), None)` or `(None, why)`: quiet_hold's activity reads."""
     ref = 'refs/heads/%s' % branch
     args = ('log', '-1', '--format=%ct', ref, '--')
@@ -142,7 +142,7 @@ def _quiet_activity(classify, remove_checks, main_tree, branch, on):
     for entry in on:
         # The --classify walk with the top-level `.git` (a linked tree's file, or a git dir) left
         # out: the git dir's mtimes are not work.
-        got, why = classify._newest(entry['path'], 'the tree', skip=('.git',))
+        got, why = sweep.newest(entry['path'], 'the tree', skip=('.git',))
         if got is None:
             return None, why
         found.append(got)

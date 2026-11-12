@@ -365,8 +365,10 @@ class RealSettingsTest(unittest.TestCase):
                          {"pm_start": {}, "hub": {"port": 4322}, "launcher": {"accounts": {}}})
         self.assertEqual(pmconfig.machine_config(cfg_file), {"pm_start": {}, "hub": {"port": 1111}})
         with open(local_file, "w", encoding="utf-8") as f:
-            f.write("[not an object")                   # unreadable: config.json's keys stand
-        self.assertEqual(pmconfig.machine_config(), {"pm_start": {}, "hub": {"port": 1111}})
+            f.write("[not an object")                   # unreadable: a ConfigError naming it, not config.json alone
+        with self.assertRaises(ConfigError) as cm:
+            pmconfig.machine_config()
+        self.assertIn(local_file, str(cm.exception))
 
     def test_a_valid_hub_key_gives_the_settings(self):
         self.write({"hub": {"port": 4322}})

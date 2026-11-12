@@ -127,6 +127,10 @@ class PathsTest(unittest.TestCase):
         self.t.write('brain/Fleet.Brain.Tests/Q.cs', "char c = 'worker/src/main/java/W.java';\n")
         self.assertEqual([p for _, _, _, p, *_ in found(paths, self.t)], ['brain/tests/test_x.py'])
 
+    def test_a_pyw_test_source_is_read_with_single_quotes(self):
+        self.t.write('brain/tests/test_x.pyw', "p = 'worker/src/main/java/W.java'\n")
+        self.assertEqual([p for _, _, _, p, *_ in found(paths, self.t)], ['brain/tests/test_x.pyw'])
+
 
 if __name__ == '__main__':
     unittest.main()

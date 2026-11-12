@@ -54,6 +54,10 @@ class PythonTest(unittest.TestCase):
         self.t.write('tools/run.py', 'import proto\nimport util\n')
         self.assertEqual(found(self.t), [])
 
+    def test_a_pyw_file_is_read_like_a_py_file(self):
+        self.t.write('tools/ui.pyw', 'from kitlib.git import cmd\n')
+        self.assertEqual([(s, d, f) for s, d, _, f, *_ in found(self.t)], [('tools', 'lib', 'tools/ui.pyw')])
+
     def test_a_file_that_does_not_parse_is_skipped(self):
         self.t.write('tools/bad.py', 'import kitlib.git.cmd\ndef (:\n')
         self.assertEqual(found(self.t), [])

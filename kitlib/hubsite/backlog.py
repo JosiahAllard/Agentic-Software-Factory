@@ -36,6 +36,8 @@ from kitlib.git import refs
 DAYS = hubbacklog.DAYS
 REUSE_S = 5         # seconds `Views.get()` answers from what it read last, starting no git; a
                     # fresh read inside as many seconds of the last full round starts no fetch
+AGAIN_MAX = 2       # reads one repository's read holder makes again for callers that came
+                    # while it read (Views._read); one asked past them is the next get()'s
 PARKED_LOOKUPS = 20     # most `git log -1` runs one view build spends on parked records' times
 NO_CHECKOUT = "no checkout of this repository on this machine"
 NO_REPOS = "the repository list could not be read"
@@ -641,12 +643,18 @@ class Views(object):
     (tests).
 
     `get()` never fetches. A repository is read by one caller at a time (`_read`): a hung
-    repository costs the caller that started its read git's time limit, and the callers that
-    arrive meanwhile wait for that one read instead of starting their own. `get(stop=event)`
+    repository costs the caller that started its read git's time limit. A caller that arrives
+    meanwhile gets the repository's held entry at once, however old, and the read's holder reads
+    it again when done (at most AGAIN_MAX times a hold), so a write's `reread` or a round that
+    finds a read running is never lost and never waits on it; only a caller with no held entry
+    for it (none read yet, or its folder changed) waits for that one read instead of starting
+    its own. `get(stop=event)`
     starts no further repository's read once `event` is set, and then answers None (the read a
     stopping timer's thread makes: kitlib.hubsite.serveviews). `refresh()` runs a
     round: each repository in turn is fetched and read again (the local copy when its fetch
-    failed); `get(fresh=True)` is the same. Only one round runs at a time: a call that waited
+    failed; a repository whose read is running is left to that read's holder, which reads it
+    again with the round's fetch); `get(fresh=True)` is the same. Only one round runs at a
+    time: a call that waited
     through a round started after it arrived takes that round's result instead of fetching again.
     `start()` runs a round at once and then every `refresh_s`, on a daemon thread, until `stop()`.
     `held()` answers from what the reads so far left, however old, and starts no git, reads no
@@ -672,10 +680,13 @@ class Views(object):
         self.wait = wait
         self.timer_error = None        # the class of what the timer's last round raised, or None
         self._cache = {}               # repo_view's: {name: (key, last good view)}
-        self._held = {}                # {name: (root, the clock after its read, entry)}
-        self._reads = {}               # {name: reads done}, counted under the name's lock
-        self._locks = {}               # {name: its read lock}
-        self._guard = threading.Lock()      # _locks
+        self._held = {}                # {name: (root, the clock after its read or None, entry)}
+        self._reads = {}               # {name: reads done}, counted under _guard
+        self._busy = {}                # {name: True} while a read of it runs (its holder's)
+        self._again = {}               # {name: (opened,)}: read again, asked during that read
+        # _reads, _busy, _again; never held across git. Its waiters are the callers of a
+        # repository with no held entry whose read is busy: notified when the read ends
+        self._guard = threading.Condition()
         self._round_at = None          # the clock when the last full round ended
         self._last = None              # the last answer whose repository list could be read
         self._pairs = None             # the last repository list read (held() reads no list)
@@ -726,10 +737,9 @@ class Views(object):
         timer's next round. No fetch: the write left the store's local ref at its own commit."""
         self._read(name, root, self.clock(), self.opener(root, False))
 
-    def _lock(self, name):
-        """The lock that makes a repository's read single-flight: one per name, made once."""
-        with self._guard:
-            return self._locks.setdefault(name, threading.Lock())
+    def _wait_read(self, name):
+        """Wait, holding _guard, for the busy read of `name` to end (its holder notifies)."""
+        self._guard.wait()
 
     def _recent(self, at):
         """True when `at` (a clock reading, or None) is under `reuse_s` seconds old. A clock that
@@ -737,21 +747,70 @@ class Views(object):
         return at is not None and 0 <= (self.clock() - at).total_seconds() < self.reuse_s
 
     def _read(self, name, root, now, opened=None):
-        """Read one repository, never beside another read of it: a caller takes the entry of a
-        read of this repository that ENDED after the caller arrived (it may have begun before),
-        and starts no git of its own (a round's read, which brings what it `opened`, always
-        reads). The entry is stamped with the clock after the read, so a slow read does not use
-        up its own `reuse_s`; the clock is read before the read is counted, so a clock that
-        raises leaves the waiting callers to read for themselves."""
-        seen = self._reads.get(name, 0)
-        with self._lock(name):
+        """Read one repository, never beside another read of it (single-flight).
+
+        The caller that finds no read of it running is its holder: it marks the name busy under
+        _guard and reads with no lock held. A caller that finds a read running and a held entry
+        for this root answers that entry at once, however old, and asks the holder to read again
+        (`again`, which keeps the newest `opened` a round brought): a hung read never stalls the
+        callers behind it. One with no held entry waits on _guard until the read ends, then
+        takes the entry of a read that ENDED after it arrived, and starts no git of its own (a
+        round's read, which brings what it `opened`, always reads).
+
+        The holder, after its read, takes _guard: an `again` asked meanwhile is cleared and read
+        (with that `opened`, else opened afresh with no fetch), at most AGAIN_MAX times a hold;
+        else it clears busy and notifies the waiters. Both sides act under _guard, so a request
+        made as the holder ends is never lost. One still asked past the cap leaves the entry
+        unstamped, so the next get() reads it. An again-read that raises leaves the entry it
+        had, unstamped. The entry is stamped with the clock after the read, so a slow read does
+        not use up its own `reuse_s`; the clock is read before the read is counted, so a clock
+        that raises leaves the waiting callers to read for themselves."""
+        with self._guard:
+            seen = self._reads.get(name, 0)
+            while self._busy.get(name):
+                held = self._held.get(name)
+                if held and held[0] == root:
+                    if opened is not None or name not in self._again:
+                        self._again[name] = (opened,)
+                    return held[2]
+                self._wait_read(name)
             held = self._held.get(name)
             if opened is None and held and held[0] == root and self._reads.get(name, 0) != seen:
                 return held[2]
-            entry = repo_view(name, root, now, self.opener, False, self.days, self._cache, opened)
-            self._held[name] = (root, self.clock(), entry)
-            self._reads[name] = self._reads.get(name, 0) + 1
-            return entry
+            self._busy[name] = True
+        try:
+            return self._hold(name, root, now, opened)
+        finally:
+            with self._guard:
+                self._busy.pop(name, None)
+                self._again.pop(name, None)
+                self._guard.notify_all()
+
+    def _hold(self, name, root, now, opened):
+        """The holder's read and its again-reads (_read): the newest entry they made."""
+        entry = repo_view(name, root, now, self.opener, False, self.days, self._cache, opened)
+        stamp = self.clock()
+        reads = 0
+        while True:
+            with self._guard:
+                self._held[name] = (root, stamp, entry)
+                self._reads[name] = self._reads.get(name, 0) + 1
+                want = self._again.pop(name, None)
+                if want is None:
+                    return entry
+                if reads >= AGAIN_MAX:
+                    self._held[name] = (root, None, entry)      # the next get() reads it
+                    return entry
+            reads += 1
+            try:
+                again = repo_view(name, root, self.clock(), self.opener, False, self.days,
+                                  self._cache, want[0])
+                stamp = self.clock()
+            except Exception:           # noqa: BLE001 - the holder's own read answered
+                with self._guard:
+                    self._held[name] = (root, None, entry)
+                return entry
+            entry = again
 
     def get(self, fresh=False, stop=None):
         """The view now: {"at", "repos": [...], "error"}. The caller owns what it gets.

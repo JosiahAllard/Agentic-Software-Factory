@@ -4,6 +4,7 @@ import hashlib
 import os
 import shutil
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -13,7 +14,9 @@ from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog import store_folder, store_open, store_read, store_ref
 from kitlib.fs import replace as fsreplace
+from kitlib.backlog import errors as berrors
 from kitlib.backlog.errors import Failure, Usage
+from kitlib.fs import writelock
 from kitlib.git import cmd
 
 from tests.backlog.helpers import ADD_NONE, BRANCH, StoreCase, priced, race, rec
@@ -145,6 +148,9 @@ class CompareAndSwap(StoreCase):
         with self.assertRaises(Failure) as cm:
             self.verb('set', 'FOO', [('effort', ['m'])])
         self.assertIn('nothing was written', str(cm.exception))
+        self.assertIn('under %d attempts in a row' % smod.ATTEMPTS, str(cm.exception))
+        self.assertEqual(str(cm.exception).count('planned '), smod.ATTEMPTS,
+                         'the tips each attempt planned on and lost to')
         self.assertEqual(n, list(range(smod.ATTEMPTS)))
         self.assertEqual(self.get('FOO').get('effort'), '-')
         self.assertEqual(sorted(r.id for r in self.store.load().records),
@@ -233,6 +239,46 @@ class CompareAndSwap(StoreCase):
             self.verb('set', 'FOO', [('effort', ['m'])])
         self.assertEqual(n, [0])
 
+    def test_after_a_lost_race_a_stale_fetch_is_re_read_not_planned_on(self):
+        """The remote serves the tip before the race for two fetches after a lost race (a stale
+        replica): the next load re-reads after a pause until it holds the tip it lost to, so the
+        write loses once, not again on the stale read."""
+        self.seed(priced('FOO'))
+        old = self.remote_tip()
+        other, _ = clone(self, 'other')
+        attempts, sleeps, stale = [], [], []
+
+        def interfere(attempt):
+            attempts.append(attempt)
+            if attempt == 0:
+                add(other, 'BAR')
+        real_fetch, real_publish = self.backend._fetch, self.backend.publish
+
+        def fetch():
+            got = real_fetch()
+            if stale:
+                stale.pop()
+                self.repo.git('update-ref', smod.STORE_REF, old)
+            return got
+
+        def publish(snap, writes, message):
+            try:
+                return real_publish(snap, writes, message)
+            except smod.Conflict:
+                if not attempts[1:]:
+                    stale.extend([1, 1])       # the next two fetches read the old tip
+                raise
+        self.backend._fetch, self.backend.publish = fetch, publish
+        self.store.before_publish = interfere
+        with mock.patch.object(smod.time, 'sleep', sleeps.append):
+            self.verb('set', 'FOO', [('effort', ['s'])])
+        self.assertEqual(attempts, [0, 1], 'a stale read was planned on and lost again')
+        self.assertEqual([s for s in sleeps if s in (0.5, 1)], [0.5, 1])
+        self.assertEqual(stale, [])
+        snap = self.store.load()
+        self.assertIsNotNone(snap.get('BAR'))
+        self.assertEqual(snap.get('FOO').get('effort'), 's')
+
     def test_a_stale_local_copy_loses_then_refetches(self):
         """`--no-fetch` reads the local copy; a write from it loses the lease and re-reads."""
         self.seed(priced('FOO'))
@@ -245,6 +291,120 @@ class CompareAndSwap(StoreCase):
         snap = self.store.load()
         self.assertIsNotNone(snap.get('BAR'))
         self.assertEqual(snap.get('FOO').get('effort'), 's')
+
+
+class StoreLock(StoreCase):
+    """The store write lock: local writers queue instead of racing (Store.write)."""
+
+    def hold_in_thread(self):
+        """Hold this store's lock on another thread until the returned release() is called."""
+        lock = self.backend.lock_path()
+        taken, done = threading.Event(), threading.Event()
+
+        def hold():
+            with writelock.locked(lock, 5):
+                taken.set()
+                done.wait(30)
+        t = threading.Thread(target=hold, daemon=True)
+        t.start()
+        self.assertTrue(taken.wait(30))
+
+        def release():
+            done.set()
+            t.join(30)
+        self.addCleanup(release)
+        return release
+
+    def test_the_lock_is_one_per_store_in_the_common_dir(self):
+        lock = self.backend.lock_path()
+        self.assertEqual(os.path.normcase(os.path.dirname(lock)),
+                         os.path.normcase(self.repo.common_dir()))
+        self.assertEqual(lock, self.make_backend().lock_path())
+        other = store_ref.RefBackend(self.repo.root, 'origin', 'refs/backlog/other',
+                                     'refs/backlog/other')
+        self.assertNotEqual(lock, other.lock_path())
+
+    def test_a_second_local_writer_queues_and_never_loses_the_race(self):
+        """B starts while A holds the lock between its plan and its push: B says whom it waits
+        for, then plans on A's tip and publishes at its first attempt."""
+        self.seed(priced('FOO'))
+        second = smod.Store(self.make_backend(), self.rules)
+        sctx = pmod.Context(second, self.repo.root, branch=BRANCH)
+        a_planned, b_waiting = threading.Event(), threading.Event()
+        waited, b_attempts, errors = [], [], []
+
+        def hold(attempt):
+            a_planned.set()
+            b_waiting.wait(30)
+        self.store.before_publish = hold
+
+        def on_wait(holder):
+            waited.append(holder)
+            b_waiting.set()
+        second.on_wait = on_wait
+        second.before_publish = b_attempts.append
+
+        def b():
+            a_planned.wait(30)
+            try:
+                second.write(lambda s: plan_edit.plan_add(s, sctx, 'BAR', 'other',
+                                                          ['area/bar/**'], **ADD_NONE))
+            except Exception as exc:        # reported by the assert below
+                errors.append(repr(exc))
+        t = threading.Thread(target=b, daemon=True)
+        t.start()
+        self.verb('set', 'FOO', [('effort', ['s'])])
+        t.join(60)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(waited), 1)
+        self.assertIn('held by pid', waited[0])
+        self.assertEqual(b_attempts, [0], 'the queued writer lost a race')
+        self.assertEqual(remote_log(self), [added('BAR'), 'backlog: set FOO', 'seed'])
+
+    def test_a_lock_held_past_the_wait_is_store_busy_and_writes_nothing(self):
+        self.seed(priced('FOO'))
+        before = self.remote_tip()
+        self.hold_in_thread()
+        self.store.lock_wait = 0.3
+        with self.assertRaises(berrors.StoreBusy) as cm:
+            self.verb('set', 'FOO', [('effort', ['s'])])
+        said = str(cm.exception)
+        self.assertIn('held by pid %d' % os.getpid(), said)
+        self.assertIn('waited 0.3 s; nothing was written', said)
+        self.assertEqual(cm.exception.holder.split(' since ')[0], 'held by pid %d' % os.getpid())
+        self.assertEqual(self.remote_tip(), before)
+
+    def test_a_write_holds_the_lock_no_longer_than_its_bound(self):
+        """No attempt starts HOLD_S after the lock was taken; the ERROR says so and gives the
+        tips each attempt planned on and lost to."""
+        self.seed(priced('FOO'))
+        other, _ = clone(self, 'other')
+        attempts = []
+
+        def interfere(attempt):
+            attempts.append(attempt)
+            planned = self.repo.git('rev-parse', smod.STORE_REF)
+            add(other, 'B%d' % attempt)
+            tips.append((planned, self.remote_tip()))
+        tips = []
+        self.store.before_publish = interfere
+        with mock.patch.object(smod, 'HOLD_S', 0), self.assertRaises(Failure) as cm:
+            self.verb('set', 'FOO', [('effort', ['m'])])
+        said = str(cm.exception)
+        self.assertEqual(attempts, [0])
+        self.assertIn('under 1 attempts in 0 s', said)
+        self.assertIn('nothing was written', said)
+        self.assertIn('tips per attempt: planned %s remote %s' % (tips[0][0][:10], tips[0][1][:10]),
+                      said)
+
+    def test_the_hold_bound_counts_every_git_wait_of_an_attempt(self):
+        """A guard step started just before HOLD_S runs a pause, a fetch (with its retries), the
+        push, the ls-remote and the landed-check fetch: the bound is derived from them."""
+        fetch = store_ref.FETCH_TRIES * store_ref.FETCH_TIMEOUT
+        self.assertGreaterEqual(self.store.longest_hold(),
+                                smod.HOLD_S + max(smod.GUARD_PAUSES) + 2 * fetch
+                                + 2 * store_ref.FETCH_TIMEOUT)
+        self.assertGreater(self.store.longest_hold(), smod.LOCK_WAIT)
 
 
 @real_git('the remote rejects the push in a pre-receive hook')

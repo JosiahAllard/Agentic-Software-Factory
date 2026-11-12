@@ -12,7 +12,7 @@ import time
 from kitlib.config import pmdata
 from kitlib.config import user as kuser
 from kitlib.fs import replace as fsreplace
-from kitlib.git import cmd
+from kitlib.git import cmd, lockplace
 from kitlib.git import repo as gitrepo
 
 from . import store as smod
@@ -189,6 +189,21 @@ class MainBackend(object):
 
     def describe(self):
         return '%s in %s' % (self.rel, self.root)
+
+    hold_bound_s = smod.HOLD_S + INDEX_WAIT + smod.LOCAL_S
+
+    def lock_path(self):
+        """The store's write lock file (kitlib.backlog.store, Store.write): one per records folder
+        of this worktree, in the git common dir (kitlib.git.lockplace). None outside a checkout,
+        where publish refuses anyway, or when git cannot tell."""
+        place = gitrepo.classify(self.root)
+        if place.kind not in (gitrepo.MAIN, gitrepo.LINKED) or not place.common:
+            return None
+        flat = os.path.join(self.root, self.rel.replace('/', '-').replace('\\', '-'))
+        try:
+            return lockplace.lock_path(flat, 'kit-backlog-store')
+        except lockplace.NoPlace:
+            return None
 
     def _read(self):
         raw = {}

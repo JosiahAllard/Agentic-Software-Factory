@@ -62,7 +62,9 @@ text is for the owner's console (it may name a folder):
   6. the push-notification worker (kitlib.hubsite.push.PushWorker), only when Sources.push and
      Sources.push_dir are both set, with a line in `Hub.notes`. It is made here and started by
      start(); one that fails to start is an 'error' line and the hub serves without it.
-  7. the timed jobs (kitlib.hubsite.jobs.Jobs), one per maker in Sources.jobs (GET health
+  7. the timed jobs (kitlib.hubsite.jobs.Jobs): with a backlog, first the hub's own refile job
+     (kitlib.hubsite.refile, its failures 'note' lines of the log; the Api's refile_later is
+     its kick), then one per maker in Sources.jobs (GET health
      `jobs` names them); a maker that raises, or makes a job whose name an earlier one has, is
      a line in `Hub.notes` and the hub serves without that job; one that gives None is left
      out. Their events are pushed through the push worker when there is one, their
@@ -173,6 +175,7 @@ from kitlib.proc import process
 from . import api as _api
 from . import jobs as _jobs
 from . import push as _push
+from . import refile as _refile
 from . import auth, gitsync, httpd, tunnel
 from . import selfrestart, servehealth, serverepos, serveviews
 from .store import HubError, Store, StoreBusy
@@ -285,8 +288,9 @@ def _file_later(log, doc_id, fn):
     """Api.file_later: fn, the filing of the owner's answer to question doc_id (kitlib.hubsite.api
     file_answer), on
     a daemon thread of its own, so the answer route returns before the record's fetch and push.
-    A raise is an 'error' line of the log; the question stays answered, and POST questions/file
-    or the next hub start files it (docs/hub-questions.md "Filing the answer")."""
+    A raise is an 'error' line of the log; the question stays answered, and the refile job files
+    it (kitlib.hubsite.refile: an unmarked answer SWEEP_S old; docs/hub-questions.md "Filing the
+    answer")."""
     def run():
         try:
             fn()
@@ -300,8 +304,9 @@ def _park_later(log, doc_id, fn):
     (kitlib.hubsite.api park_item, unpark_item), on a daemon thread of its own, as
     _file_later: the ask's route returns before the record's fetch and push. A raise, or the
     failure fn answers (a phrase with its code: api._later_said), is an 'error' line of the log;
-    the next hub start makes a park not made, and drops a line whose ask is gone or bound
-    elsewhere (POST questions/file)."""
+    the refile job makes a park that failed with a code to retry, and its full pass (at hub start,
+    or a POST questions/file with no id) drops a line whose ask is gone or bound elsewhere
+    (kitlib.hubsite.refile)."""
     def run():
         try:
             said = fn()
@@ -313,13 +318,14 @@ def _park_later(log, doc_id, fn):
     threading.Thread(target=run, name='hub-park-record', daemon=True).start()
 
 
-def _make_jobs(sources, pusher, notes, log):
-    """The timed jobs of `sources` (Sources.jobs) as one kitlib.hubsite.jobs.Jobs, their events
+def _make_jobs(sources, pusher, notes, log, own=()):
+    """The timed jobs of `sources` (Sources.jobs), after the hub's `own` jobs.Job (the refile
+    job), as one kitlib.hubsite.jobs.Jobs, their events
     pushed through `pusher` when there is one; None with none. A job whose maker raises, gives
     something other than a jobs.Job, or whose name a job made before it has, is left out with a
     line in `notes`: the hub serves
     without it. A maker that gives None (the job does not apply here) is left out silently."""
-    made = []
+    made = list(own)
     for make in sources.jobs:
         where = getattr(make, '__module__', '?')
         try:
@@ -345,7 +351,8 @@ def _make_jobs(sources, pusher, notes, log):
 
 
 def _push_line(log, text):
-    """The push worker's one-argument log, as a 'note' line of the hub's log (scrubbed)."""
+    """The push worker's one-argument log, and the refile job's, as a 'note' line of the hub's
+    log (scrubbed)."""
     if log is None:
         return
     try:
@@ -457,7 +464,16 @@ def build(settings, sources, log=None):
                          'or a done to-do')
         sources.pending = api.pending
         sources.handoffs = lambda: _api.newest_handoffs(store.docs('handoffs'))
-        timed = _make_jobs(sources, pusher, notes, log)
+        own = []
+        if views_b is not None:
+            # files answers and parks records that a failure, a busy store or a stop left
+            # behind; POST questions/file queues its work here (kitlib.hubsite.refile)
+            refiler = _refile.Refile(api, log=functools.partial(_push_line, log))
+            own.append(refiler.job())
+        timed = _make_jobs(sources, pusher, notes, log, own)
+        if own:
+            refiler.jobs = timed
+            api.refile_later = refiler.kick
         if timed is not None:
             api.jobs_status = timed.status   # GET health `jobs` (Api.jobs_seen)
         hub = Hub(settings, store, api, views, creds, listeners, sync, views_b, notes, log,
@@ -662,29 +678,7 @@ class Hub(object):
                 self.jobs.start()
             for lis in self.listeners:
                 lis.start()
-            if self.backlog is not None:
-                threading.Thread(target=self._refile, name='hub-refile', daemon=True).start()
             return True
-
-    def _refile(self):
-        """File, once at start, each answer to a bound question that is not filed yet (kitlib.
-        hubsite.api file_answer): one a crash or a failure left behind; and park the record of
-        each open bound ask not parked yet (api.park_item: a question, a to-do, an approval);
-        a hand-written owner line whose ask is gone is logged, never dropped (api._sweep_asks). A failure is logged as a
-        note, with its code and fixed phrase only, and the PM sees the question pending."""
-        try:
-            got = self.api.call('POST', _api.BASE + '/questions/file', _api.AGENT, {},
-                                via='hub-start')[1]
-        except Exception as e:      # noqa: BLE001 - the hub serves without the refile
-            self._say('filing answers at start failed: %s' % type(e).__name__)
-            return
-        for f in got.get('failed') or []:
-            self._say('%s not filed: %s' % (f.get('id'), f.get('message')), 'note')
-        for f in got.get('park_failed') or []:
-            self._say('%s: record not parked: %s' % (f.get('id'), f.get('message')), 'note')
-        for h in got.get('orphan_hand_lines') or []:
-            self._say('%s:%s: owner line cites missing %s' % (h.get('repo'), h.get('id'),
-                                                              h.get('q')), 'note')
 
     def _step(self, what, timeout, fn, *args):
         """One step of the close: True when fn(*args) answered True, which is how a step says

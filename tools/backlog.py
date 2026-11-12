@@ -62,6 +62,13 @@ def say(line=''):
     print(line, flush=True)
 
 
+def wait_line(store):
+    """The store's on_wait: one line, at once, when another writer on this machine holds the store
+    lock, so an agent's shell timeout does not read the wait as a hang."""
+    return lambda holder: say('waiting for the backlog store lock %s (up to %s s)'
+                              % (holder, store.lock_wait))
+
+
 def audit_line(verb, rid, rows, tip, session):
     """After a published write: its audit line (kitlib.backlog.audit), and on standard error the
     note or warning when there is none. Never a refusal: the write stands, so any failure here,
@@ -546,6 +553,7 @@ def main(argv=None):
         # `next` and `pull`: another session's record reserves only while it runs (read lazily).
         ctx.session_live = omod.SessionLiveness()
         store = ctx.store
+        store.on_wait = wait_line(store)
         if args.verb in WRITES or (args.verb in ('retarget', 'uncite') and args.apply):
             return do_write(args, ctx, store)
         if args.verb == 'retarget':

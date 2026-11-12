@@ -41,9 +41,10 @@ store's HubError codes plus `forbidden`, `unavailable` (a view this server does 
 that failed) and `internal` (anything unexpected). A write answers the revision after it (send:
 after its last note), so a client that waits `since` it is not woken by its own write.
 
-What an agent is told. A `store` refusal names files and the store's folder, and an unexpected
-error may: the owner gets that text, any other caller gets the fixed phrase of AGENT_SAYS for a
-`store` refusal and only the exception's class name for `internal`. The store's `invalid`,
+What an agent is told. A `store` refusal names files and the store's folder, a `busy` one (another
+local writer held a backlog store's lock, kitlib.hubsite.recordwrite) names the lock file, and an
+unexpected error may: the owner gets that text, any other caller gets the fixed phrase of
+AGENT_SAYS for a `store` or `busy` refusal and only the exception's class name for `internal`. The store's `invalid`,
 `not_found` and `conflict` messages name a collection, an id and a field and go to both.
 A transport whose answers leave this machine calls with agent_words=True: the owner then gets the
 agent's wording too (the same status, code and field), so no answer of that transport names the
@@ -83,8 +84,10 @@ the local owner is given. POST records/{repo}/{id}/delete takes `confirm`, which
                                             files a question's answer into the record it is
                                             bound to (recordwrite answer; file_answer)
 An answer to a question bound to a record is filed by POST questions/{id}/answer as soon as it is
-stored, and again by POST questions/file (AGENT, optional {id}) and at hub start for every
-answered one not filed yet: file_answer. A filed question has status `filed` and stays pending,
+stored, and again by POST questions/file (AGENT, optional {id}; queued for the hub's refile job
+when the server set refile_later) and by that job (kitlib.hubsite.refile: at hub start for every
+answered one not filed yet, then each one whose filing failed with a code to retry, with a
+backoff): file_answer. A filed question has status `filed` and stays pending,
 with `filed` true, until its asker has it: the push worker then marks it done itself (done_by
 `hub`, kitlib.hubsite.push "Done by the hub"), never in the filing's own write; the asker may
 still log it or mark it done (POST questions/{id}/log or done; its done of one the hub marked
@@ -416,6 +419,10 @@ class Api(object):
         # the request thread; set by serve.build. None runs it in the question's own call
         # (questions_add, questions_edit, questions_delete)
         self.park_later = None
+        # run(ids | 'all'): queue POST questions/file's work (the filing of those questions,
+        # or the whole pass) for the hub's refile job (kitlib.hubsite.refile Refile.kick); set
+        # by serve.build. None runs it in the request's own call (questions_file)
+        self.refile_later = None
         # held by every record write an ask drives (file_answer, park_item, unpark_item): each
         # reads the ask and writes the record as one step, so a park and the filing or
         # withdrawal of the same ask never interleave. serve.build sets a
@@ -907,6 +914,7 @@ FILING_SAYS = {
     'not_found': 'the record is completed or gone: the PM handles this answer',
     'invalid': 'the backlog store refused this answer: the PM handles it',
     'store': 'the backlog store could not be written now: the hub tries again',
+    'busy': 'another write on this machine held the backlog store: the hub tries again',
     'unavailable': 'this hub cannot write a backlog store: the hub tries again',
     'no_store': 'this repository names no backlog store the hub may write (.kit.json '
                 '"backlog".store): the PM handles this answer',
@@ -1034,11 +1042,23 @@ def questions_file(api, req):
     (park_item), the lines of asks gone or bound elsewhere are dropped (`unparked` [{id, record,
     unblocked}], _sweep_asks), and a hand-written line whose ask is gone is left and listed
     (`orphan_hand_lines` [{repo, id, q}]). A park or a drop not made is in `park_failed` [{id,
-    code, message}]."""
+    code, message}].
+
+    When the server set Api.refile_later, the work is queued for the hub's refile job instead
+    (kitlib.hubsite.refile): the route answers at once {ok, queued: [id]}, or {ok, queued:
+    'all'} with no id, and the result comes through the question itself (its status and
+    `filing`) and the push; the record write can wait on the backlog store's lock and fetch and
+    push, longer than a client waits (docs/hub-questions.md "Filing the answer"). An unknown id
+    is still refused at once."""
     b = _fields(req, ('id',))
     one = _text(b, 'id')
     if one is not None:
         api.doc('questions', one)
+    if api.refile_later is not None:
+        queued = [one] if one is not None else 'all'
+        api.refile_later(queued)
+        return {'ok': True, 'queued': queued}
+    if one is not None:
         ids = [one]
     else:
         ids = sorted(api.store.docs('questions'), key=_natural)

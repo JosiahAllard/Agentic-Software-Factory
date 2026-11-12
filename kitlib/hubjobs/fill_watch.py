@@ -901,10 +901,11 @@ def pull_record(root, rid, branch, sessions, liveness=None):
     `pull-held` row every role is refused), `not-open`, `not-theirs` (its session is not one of
     `sessions`), `refused` (the planner's refusal: not in the offer, a collision, a hold),
     `store` (the store is the implicit one or cannot be read, or the write surely did not land:
-    Busy, Dirty, Overtaken), or UNSURE (any other Failure: the write may have landed)."""
+    Busy, StoreBusy, Dirty, Overtaken), or UNSURE (any other Failure: the write may have landed)."""
     from kitlib.backlog import opener, policy, pull_branch
     from kitlib.backlog import offer as omod
-    from kitlib.backlog.errors import Busy, Dirty, Failure, IndexStale, NotFound, Overtaken, Refusal
+    from kitlib.backlog.errors import (Busy, Dirty, Failure, IndexStale, NotFound, Overtaken,
+                                       Refusal, StoreBusy)
     from kitlib.config import ConfigError
 
     def plan(snap):
@@ -925,6 +926,9 @@ def pull_record(root, rid, branch, sessions, liveness=None):
         if getattr(ctx.store.backend, 'implicit', False):
             return 'store'
         ctx.session_live = liveness
+        # a job thread holds no record_lock: it waits out any local writer's longest hold
+        # (kitlib.backlog.store, "The store write lock")
+        ctx.store.lock_wait = ctx.store.longest_hold()
         ctx.store.write(plan)
     except _Skip as skip:
         return skip.code
@@ -932,7 +936,7 @@ def pull_record(root, rid, branch, sessions, liveness=None):
         return None
     except NotFound:
         return 'gone'
-    except (Busy, Dirty, Overtaken):    # refused before anything landed
+    except (Busy, StoreBusy, Dirty, Overtaken):     # refused before anything landed
         return 'store'
     except Failure:                     # the write may have landed: never assume it did not
         return UNSURE

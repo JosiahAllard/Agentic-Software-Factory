@@ -289,8 +289,9 @@ class CodexObserver:
         since. It starts again from byte 0 when the file was replaced or shrank, when the last
         ANCHOR_BYTES before that end changed, or when the appended lines are refused (the full
         read then raises what it always raised). The residual: the prefix is trusted by that
-        anchor, so an in-place edit earlier than the last ANCHOR_BYTES, one that keeps the size,
-        is not seen. Every observer reader runs under the runtime's RLock, so self._folds needs
+        anchor, so an in-place rewrite that keeps the file at least its previous length, with the last
+        ANCHOR_BYTES before the old end unchanged, is not seen. MAX_FOLDS bounds the entry
+        count, not bytes (a fold holds one (turn_id, sha) per turn_context). Every observer reader runs under the runtime's RLock, so self._folds needs
         no lock of its own.
 
         A running chat appends to its rollout, so a read that overlaps an append (the

@@ -101,7 +101,10 @@ class DispatchTests(unittest.TestCase):
         self.core.adapters[self.a.identity.adapter_id] = TestAdapter(self.a.identity.adapter_id)
         children = []
         for index in range(600):
-            self.assertEqual(self.admit('op-%d' % index).state, 'queued')
+            try:
+                self.assertEqual(self.admit('op-%d' % index).state, 'queued')
+            except DeliveryError as refused:
+                self.fail('send %d refused: %s' % (index + 1, refused.code))
             self.assertEqual(self.core.dispatch_once('op-%d' % index).state, 'reply-received')
             children.append(self.store.reply_delivery('op-%d' % index)['child'])
             self.assertEqual(self.core.dispatch_once(children[-1]).state, 'reply-received')

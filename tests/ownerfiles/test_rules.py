@@ -586,15 +586,45 @@ def drop(text, *numbers):
     return b''.join(r for n, r in enumerate(rows, 1) if n not in numbers)
 
 
-class CombinesDeletions(unittest.TestCase):
-    """oc.combines_deletions: a merge's copy that only joins the deletions both sides made from
-    the base (ours drops line 2, theirs line 5, unless a case says otherwise)."""
+def rows(*names):
+    """A JSON-shaped list of rows: a, then one row per name, then z. Every row starts and ends
+    alike, so difflib may place an added row one line off (oc._side moves it back)."""
+    return b'[\n' + b''.join(b' {\n  %s\n },\n' % n for n in (b'a',) + names) + b' {\n  z\n }\n]\n'
+
+
+ROW_B, ROW_C = rows(b'b'), rows(b'c')
+
+
+class CombinesChanges(unittest.TestCase):
+    """oc.combines_changes: a merge's copy that only joins the changes both sides made from the
+    base (ours drops line 2, theirs line 5, or each adds a row after line 6, unless a case says
+    otherwise)."""
 
     O, T = drop(SIX, 2), drop(SIX, 5)
     BOTH = drop(SIX, 2, 5)
     CRLF = SIX.replace(b'\n', b'\r\n')
+    AO, AT = SIX + b'o\n', SIX + b't\n'
+    TWO = SIX + b'x\no\n', SIX + b'x\nt\n', SIX + b'x\nx\no\nt\n'     # read two ways at its x
     CASES = [
         # (name, ours, theirs, result, bases, combines)
+        ("both sides' additions, ours first", AO, AT, SIX + b'o\nt\n', [SIX], True),
+        ("both sides' additions, theirs first", AO, AT, SIX + b't\no\n', [SIX], True),
+        ('an addition and a deletion', AO, T, T + b'o\n', [SIX], True),
+        ('rows added in one place, interleaved', SIX + b'{\na\n}\n{\nc\n}\n', SIX + b'{\nb\n}\n',
+         SIX + b'{\na\n}\n{\nb\n}\n{\nc\n}\n', [SIX], True),
+        ('JSON rows added after a row of their shape, theirs first', ROW_B, ROW_C,
+         rows(b'c', b'b'), [rows()], True),
+        ('JSON rows added after a row of their shape, ours first', ROW_B, ROW_C,
+         rows(b'b', b'c'), [rows()], True),
+        ('the same addition on both sides, once', AO, AO, AO, [SIX], True),
+        ('the same addition on both sides, twice', AO, AO, AO + b'o\n', [SIX], False),
+        ('additions with a line neither side has', AO, AT, SIX + b'o\nnew\nt\n', [SIX], False),
+        ('an added line twice', AO, AT, SIX + b'o\nt\no\n', [SIX], False),
+        ("a side's additions reordered", SIX + b'o1\no2\n', AT, SIX + b'o2\nt\no1\n', [SIX],
+         False),
+        ('a line one side deleted kept beside an addition', AO, T, AO, [SIX], False),
+        ('a line both kept dropped beside the additions', AO, AT, drop(SIX + b'o\nt\n', 1),
+         [SIX], False),
         ("both sides' deletions", O, T, BOTH, [SIX], True),
         ('the same deletion on both sides', O, O, O, [SIX], True),
         ('CRLF lines deleted', drop(CRLF, 2), drop(CRLF, 5), drop(CRLF, 2, 5), [CRLF], True),
@@ -618,14 +648,22 @@ class CombinesDeletions(unittest.TestCase):
     def test_the_table(self):
         for name, ours, theirs, result, bases, combines in self.CASES:
             with self.subTest(name):
-                self.assertIs(oc.combines_deletions(ours, theirs, result, bases), combines)
+                self.assertIs(oc.combines_changes(ours, theirs, result, bases), combines)
+
+    def test_a_join_past_either_cost_bound_is_refused(self):
+        ours, theirs, result = self.TWO
+        self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), True)
+        for bound, value in [('JOIN_PAIRS_MAX', 5), ('JOIN_STATES_MAX', 1)]:   # 6 pairs, 2 states
+            with self.subTest(bound), mock.patch.object(oc, bound, value):
+                self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), False)
 
 
 @real_git('commit-tree for a forged parent and an octopus merge: the fake has none')
-class DeletionMerges(OwnerCommitsCase):
-    """oc.violations and a two-parent commit whose owner-only copy only joins the deletions both
-    sides made (deletion_merge): the merge is not a violation; any other resolution is, and every
-    commit on either side is still judged on its own."""
+class JoinedMerges(OwnerCommitsCase):
+    """oc.violations and a two-parent commit whose owner-only copy only joins the changes both
+    sides made (joined_merge; here deletions, the additions in tests/commit): the merge is not a
+    violation; any other resolution is, and every commit on either side is still judged on its
+    own."""
 
     def setUp(self):
         OwnerCommitsCase.setUp(self)

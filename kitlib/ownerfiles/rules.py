@@ -32,9 +32,10 @@ them, so the commits judged are the ones that leave). Renames are not followed: 
 delete and an add, and both paths count. Any git failure is `(None, why)`: the caller refuses.
 A `"owner".shrink_only` path (rules.is_shrink_only) does not count for a one-parent commit
 whose change to it only deletes lines (deletes_only); each commit is judged on its own.
-An owner-only path does not count for a two-parent commit whose copy of it only combines the
-deletions of its parents (deletion_merge: no line either parent lacks, none either parent deleted,
-none both kept dropped, nothing moved); every commit on either side is still judged on its own.
+An owner-only path does not count for a two-parent commit whose copy of it only joins the
+changes of its parents (joined_merge: every line a base line both kept or a line one parent
+added, each once and in its parent's order; none either parent deleted, none dropped); every
+commit on either side is still judged on its own.
 
 The author email is what the committer says it is (`--author`, GIT_AUTHOR_EMAIL): this check
 stops a plain agent commit, not an agent that forges the owner's identity. The guard's
@@ -64,6 +65,7 @@ merge_attribute_unset whether git would merge a path with no driver; they judge 
 commits with violations above.
 """
 import collections
+import difflib
 import re
 
 from kitlib.git import cmd, refs
@@ -72,6 +74,12 @@ from kitlib.git.refs import REGULAR_MODES, deletes_only     # named here too: ca
 Violation = collections.namedtuple('Violation', 'sha author paths why', defaults=('',))
 NOREPLACE = ['--no-replace-objects']
 LIST_TIMEOUT = 120    # seconds
+# combines_changes' cost bounds, past which it refuses (False). JOIN_PAIRS_MAX: the equal line
+# pairs between a base and a side, which difflib's matching grows with (docs/module-map.json,
+# 3,855 lines, has about 1 million: 0.6 s for the whole check). JOIN_STATES_MAX: the readings of
+# the result its line-by-line check keeps at once (1 for that file).
+JOIN_PAIRS_MAX = 8000000
+JOIN_STATES_MAX = 1000
 TRAILER = 'Owner-Approval'          # the one key; kitlib.config.owner refuses it as its own trailer
 # The id exactly as the hub issues it ('A-%03d', kitlib.hubsite.store): A-001 to A-999, then
 # A-1000 on; A-1, A-01 and A-000 are no id it writes (tests/ownerfiles/test_apply.py
@@ -384,7 +392,7 @@ def violations(root, rules, tip, exclude=(), env=None, approvals=None):
             locked = [q for q in locked if q != p or not shrinks]
         for p in (list(locked) if len(parents) == 2 else []):
             known, row = tree_entry(root, sha, p, env, noreplace=True)
-            joins, why = (deletion_merge(root, p, parents[0], parents[1], row, env) if known else
+            joins, why = (joined_merge(root, p, parents[0], parents[1], row, env) if known else
                           (None, 'git ls-tree could not list %s at %s' % (p, sha[:10])))
             if joins is None:
                 return None, why
@@ -631,39 +639,91 @@ def _lines(data):
     return [p + b'\n' for p in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
 
 
-def _subsequence(short, long):
-    rest = iter(long)
-    return all(line in rest for line in short)
+def _side(base, side):
+    """`(kept, added)`: which lines of `base` `side` keeps, and the lines it adds in each gap (gap
+    g: before base line g; a replaced run's added lines in the gap after it), as difflib matches
+    them. A run of added lines is moved down past a kept base line equal to its first line, so
+    two sides that add the same rows place them alike."""
+    kept, added = [False] * len(base), [[] for _ in range(len(base) + 1)]
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, base, side,
+                                                       autojunk=False).get_opcodes():
+        if tag == 'equal':
+            kept[i1:i2] = [True] * (i2 - i1)
+        else:
+            added[i2] = side[j1:j2]
+    for g in range(len(base)):
+        run = added[g]
+        if run and kept[g] and run[0] == base[g] and not added[g + 1]:
+            added[g], added[g + 1] = [], run[1:] + [base[g]]
+    return kept, added
 
 
-def combines_deletions(ours, theirs, result, bases):
-    """True when `result` (bytes) only combines the deletions `ours` and `theirs` made from every
-    one of `bases`, compared line by line (_lines: a changed line end is a changed line): `result`
-    is in order a part of each parent (no new line, none moved), holds each line as often as the
-    parent holding it fewer times (none both kept is dropped, none one deleted comes back), and
-    each line the parents hold a different number of times is held at least that often by every
-    base (the difference is a deletion, never an addition the merge drops). No base, or a NUL
-    byte in any copy (not text), is False."""
+def _rows(base, kept, added, shared):
+    """One side's copy as `(line, key)` rows, without the base lines the other side deleted
+    (`kept`: those both keep): key g for base line g, `(g, n)` for line n of the run both sides
+    add alike in gap g (`shared`), None for a line only this side adds."""
+    rows = []
+    for g, run in enumerate(added):
+        rows += [(line, (g, n) if g in shared else None) for n, line in enumerate(run)]
+        if g < len(base) and kept[g]:
+            rows.append((base[g], g))
+    return rows
+
+
+def _joins(ours, theirs, result):
+    """True when `result`'s lines read in order as all the rows of `ours` and `theirs` (_rows)
+    interleaved, each side's in its order: a keyed row taken from both sides at once, a None row
+    from its own side alone. More than JOIN_STATES_MAX readings at once is False."""
+    states = {(0, 0)}
+    for line in result:
+        found = set()
+        for j, k in states:
+            o = ours[j] if j < len(ours) else (None, None)
+            t = theirs[k] if k < len(theirs) else (None, None)
+            if o[0] == line and o[1] is None:
+                found.add((j + 1, k))
+            if t[0] == line and t[1] is None:
+                found.add((j, k + 1))
+            if o[0] == line and o[1] is not None and o[1] == t[1]:
+                found.add((j + 1, k + 1))
+        if not found or len(found) > JOIN_STATES_MAX:
+            return False
+        states = found
+    return (len(ours), len(theirs)) in states
+
+
+def combines_changes(ours, theirs, result, bases):
+    """True when `result` (bytes) only joins the changes `ours` and `theirs` made from every one
+    of `bases`, compared line by line (_lines: a changed line end is a changed line): against each
+    base, as difflib matches each side to it (_side), `result` holds the base lines both sides
+    kept, in order, and every line either side added, each once and in its side's order, the two
+    sides' added lines in any order between the kept lines around them (a run both add alike in
+    one place, once). So it holds no line neither side has, no second copy of an added line, no
+    line either side deleted, and drops or moves nothing. No base, a NUL byte in any copy (not
+    text), or a check past its bounds (JOIN_PAIRS_MAX, JOIN_STATES_MAX) is False. A join difflib
+    matches otherwise than the agent read it is refused too: an approval is the way left."""
     copies = [ours, theirs, result] + list(bases)
     if not bases or any(b'\0' in c for c in copies):
         return False
     o, t, r = _lines(ours), _lines(theirs), _lines(result)
-    if not (_subsequence(r, o) and _subsequence(r, t)):
-        return False
-    co, ct, cr = collections.Counter(o), collections.Counter(t), collections.Counter(r)
-    if any(cr[line] != min(co[line], ct[line]) for line in set(co) | set(ct) | set(cr)):
-        return False
-    differ = [line for line in set(co) | set(ct) if co[line] != ct[line]]
     for base in bases:
-        cb = collections.Counter(_lines(base))
-        if any(cb[line] < max(co[line], ct[line]) for line in differ):
+        b = _lines(base)
+        counts = collections.Counter(b)
+        if any(sum(counts[line] * n for line, n in collections.Counter(side).items())
+               > JOIN_PAIRS_MAX for side in (o, t)):
+            return False
+        kept_o, added_o = _side(b, o)
+        kept_t, added_t = _side(b, t)
+        kept = [x and y for x, y in zip(kept_o, kept_t)]
+        shared = {g for g, run in enumerate(added_o) if run and run == added_t[g]}
+        if not _joins(_rows(b, kept, added_o, shared), _rows(b, kept, added_t, shared), r):
             return False
     return True
 
 
-def deletion_merge(root, path, one, two, result, env=None):
+def joined_merge(root, path, one, two, result, env=None):
     """`(True, None)` when `result`, the `(mode, oid)` entry a merge of the commits `one` and `two`
-    gives `path` (its tree's, or the index's), only combines their deletions (combines_deletions,
+    gives `path` (its tree's, or the index's), only joins their changes (combines_changes,
     against every `git merge-base --all` of the two) and the path is a regular file of that one
     mode at `one`, `two` and every base; `(False, None)` otherwise (no base, a rename, an add, a
     mode change, a result that is no regular file); `(None, why)` when git cannot tell."""
@@ -688,7 +748,7 @@ def deletion_merge(root, path, one, two, result, env=None):
         if r.rc != 0:
             return None, 'git cat-file failed for %s: %s' % (oid[:10], r.err or 'exit %s' % r.rc)
         data.append(r.out)
-    return combines_deletions(data[0], data[1], data[-1], data[2:-1]), None
+    return combines_changes(data[0], data[1], data[-1], data[2:-1]), None
 
 
 def non_owner_paths(root, rules, head, landed=()):

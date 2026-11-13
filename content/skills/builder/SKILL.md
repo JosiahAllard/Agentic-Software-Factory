@@ -11,7 +11,7 @@ Caller: coordinator (deep-worker: requester; topic: PM).
 
 1. **Start**: `python <kit>/tools/preflight.py -C <worktree>`; whole brief; profile: brief's sections + **Branches and worktrees**, **Build and test**, **Shared resources that must be serialised** (none: `<kit>/content/default-profile.md` + README). Gap: ask. Engineering question: `consultant-<repo>`.
 2. **Read the design**: profile **Review** design doc (else `ARCHITECTURE.md`, README), area section; code to change (`codemap.py --symbol NAME [path]`). None: say so.
-3. **Design**, ≤15 lines: home + design section; contract (in, out, errors); deletes; tests; files; split/new class (never small, never set by docs): parts, one job each, deps, size. `python <kit>/tools/backlog.py -C <worktree> set <ID> --scope <path> [--scope <path>]`. Stop, report; build on approval. Brief has approved design (home, contract, files; split/new class: parts too): build.
+3. **Design**, ≤15 lines: home + design section; contract (in, out, errors); deletes; tests; files; split/new class (never small, never set by docs): parts, one job each, deps, size. `python <kit>/tools/backlog.py -C <worktree> set <ID> --scope <path> [--scope <path>]` (only a record your branch pulled; every word literal: no `$VAR`, `$PWD`, arrays; skill backlog-ops). Stop, report; build on approval. Brief has approved design (home, contract, files; split/new class: parts too): build.
 4. **Build**: approved design only. Misfit, or cause unclear after one try: stop, report.
 5. **Test**: touched tests (Tests).
 6. **Commit**.

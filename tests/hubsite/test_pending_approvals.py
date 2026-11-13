@@ -377,7 +377,7 @@ class RoutingGitCase(unittest.TestCase):
         self.views = backlog.Views(servesources._repo_pairs({'sessions_file': sessions}))
         self.store = Store.open(os.path.join(self.root, 'store'))
         self.addCleanup(self.store.close)
-        self.api = api.Api(self.store, session_keys=lambda: {'kit', 'other'},
+        self.api = api.Api(self.store, session_keys=lambda: {'kit', 'other'}, coordinators=dict,
                            repo_name=serverepos._repo_name(
                                self.views, remote_ids=serverepos._RemoteIds(clock=lambda: self.now)))
         now = datetime.datetime.now(datetime.timezone.utc).timestamp()

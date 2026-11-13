@@ -12,12 +12,14 @@ QUESTION_CLASSES, AGENT_STORY_STATUSES, HANDOFF_KINDS, MAX_FILES, MAX_CONTENT_BY
 
   validate(docs, only=None, known_repos=())
                               [Finding] for every document; `only` (a set of "collection/doc_id")
-                              limits the findings to those documents while refs and repos are
+                              checks those documents alone (no other is read; a name with no
+                              document gives nothing) while refs and repos are
                               still judged against all of docs; `known_repos` are extra repo
                               names (the configured ones) a repo tag may use, or a callable
                               giving them, called only when a checked document has a repo tag
   batch_docs(entries, base)   (docs, findings) from an ArtifactData batch (a list of entries with
                               op, collection, doc_id and a data object or a file_path)
+  repo_tag(d)                 document d's repo tag when the repo-alias check judges it, else None
   summary(findings)           "N error(s), M warning(s)"
   natural(doc_id)             the sort key of a hub id: its digit runs compared as numbers
 
@@ -193,15 +195,41 @@ def _known_repos(repos):
     return known
 
 
-def _check_pages(docs, out):
-    pages, html = docs.get('pages'), docs.get('page_html')
-    for doc_id, d in sorted((pages or {}).items()):
+def _chosen(docs, colls, only):
+    """(coll, doc_id, document) of the collections colls of docs, sorted; with `only`, the
+    documents it names alone, so a write's check reads that one document and never the rest. A
+    name with no such document or collection gives nothing."""
+    picked = None
+    if only is not None:
+        picked = collections.defaultdict(set)
+        for rel in only:
+            coll, _, doc_id = rel.partition('/')
+            picked[coll].add(doc_id)
+    for coll in sorted(colls):
+        have = docs.get(coll) or {}
+        ids = sorted(have) if picked is None else sorted(picked.get(coll, set()) & have.keys())
+        for doc_id in ids:
+            yield coll, doc_id, have[doc_id]
+
+
+def repo_tag(d):
+    """Document d's repo tag when it needs a repos/ name or alias (a string not in ANY_REPO),
+    else None: the tag the repo-alias check judges."""
+    if isinstance(d, dict) and isinstance(d.get('repo'), str) \
+            and d['repo'].strip().lower() not in ANY_REPO:
+        return d['repo']
+    return None
+
+
+def _check_pages(docs, out, only=None):
+    pages = docs.get('pages')
+    for _, doc_id, d in _chosen(docs, ('pages',), only):
         if not isinstance(d, dict):
             continue                        # validate reports it as not-object
         if not _text(d.get('title')):
             out.append(_f(WARN, 'pages', doc_id, 'title', 'pages-schema',
                           'a page needs a non-empty string title'))
-    for doc_id, d in sorted((html or {}).items()):
+    for _, doc_id, d in _chosen(docs, ('page_html',), only):
         if not isinstance(d, dict):
             continue
         if not isinstance(d.get('html'), str):
@@ -217,35 +245,27 @@ def validate(docs, only=None, known_repos=()):
     `known_repos`: further repo names (the PM's configured repositories, which the hub's repo
     menu lists beside the stored repos/ docs) that a repo tag may use without an alias, or a
     callable() giving them, called only when a document checked carries a repo tag. With `only`,
-    repo tags are checked on those documents alone, so the repo-alias note is about them too."""
+    only those documents are read and checked (each check reports on its own document), so the
+    repo-alias note is about them too; refs and repo names are still looked up in all of docs."""
     out = []
-    for coll in sorted(docs):
-        for doc_id, d in sorted(docs[coll].items()):
-            if not isinstance(d, dict):
-                out.append(_f(ERROR, coll, doc_id, '', 'not-object', 'the document is not an object'))
-                continue
-            if coll == 'todos':
-                _check_commands(coll, doc_id, d, out)
-                _check_handstep(coll, doc_id, d, out)
-            _check_status(coll, doc_id, d, out)
-            _check_options(coll, doc_id, d, out)
-            _check_refs(coll, doc_id, d, docs, out)
-    _check_pages(docs, out)
+    for coll, doc_id, d in _chosen(docs, docs, only):
+        if not isinstance(d, dict):
+            out.append(_f(ERROR, coll, doc_id, '', 'not-object', 'the document is not an object'))
+            continue
+        if coll == 'todos':
+            _check_commands(coll, doc_id, d, out)
+            _check_handstep(coll, doc_id, d, out)
+        _check_status(coll, doc_id, d, out)
+        _check_options(coll, doc_id, d, out)
+        _check_refs(coll, doc_id, d, docs, out)
+    _check_pages(docs, out, only)
     out.extend(_check_repos(docs, known_repos, only))
-    if only is not None:
-        out = [f for f in out if f.rel in only or f.level == NOTE]
     return sorted(out, key=lambda f: (f.rel, f.code, f.field))
 
 
 def _check_repos(docs, known_repos=(), only=None):
-    tags = []
-    for coll in REPO_COLLECTIONS:
-        for doc_id, d in sorted(docs.get(coll, {}).items()):
-            if only is not None and '%s/%s' % (coll, doc_id) not in only:
-                continue                    # its finding would be dropped: never look it up
-            if isinstance(d, dict) and isinstance(d.get('repo'), str) \
-                    and d['repo'].strip().lower() not in ANY_REPO:
-                tags.append((coll, doc_id, d['repo']))
+    tags = [(coll, doc_id, d['repo']) for coll, doc_id, d in _chosen(docs, REPO_COLLECTIONS, only)
+            if repo_tag(d)]
     if not tags:
         return []
     if callable(known_repos):               # asked only now that a repo tag is checked

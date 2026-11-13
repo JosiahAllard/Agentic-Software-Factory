@@ -7,6 +7,7 @@ the test modules a change adds or changes, and the session's kit binding no test
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -343,14 +344,14 @@ class KitSessionEnvironment(unittest.TestCase):
 class BothTiers(unittest.TestCase):
     """--both-tiers: the pool runs twice, KIT_FAKE_GIT 1 then 0; both passes give cpu slots back
     (the fake pass down to what the real pass can use, tests/tooldeps/test_kit_tests_passes.py)
-    and only the fake pass records unit times; exit 0 only when both pass."""
+    and each pass plans and records by its own tier's unit times; exit 0 only when both pass."""
 
     def run_both(self, rcs, extra=()):
         calls, out = [], io.StringIO()
 
         def run(modules, root, jobs, **kw):
             calls.append((kw['environ'].get('KIT_FAKE_GIT'), kw['give_back'] is not None,
-                          kw['times_path'], kw.get('record_times', True)))
+                          kw['times_path']))
             kw['out'].write('kit_tests: %s in 1s (full)\n' % ('OK' if rcs[len(calls) - 1] == 0
                                                               else 'FAILED, exit 1'))
             return rcs[len(calls) - 1], ''
@@ -370,14 +371,66 @@ class BothTiers(unittest.TestCase):
     def test_fake_then_real_and_ok_only_when_both_pass(self):
         rc, calls, text = self.run_both([0, 0])
         self.assertEqual(rc, 0, text)
-        # Both passes read the recorded times (ordering, splitting); only the fake pass records.
-        times = os.path.join(os.path.abspath('.'), cli.selfrun.TIMES_FILE)
-        self.assertEqual(calls, [('1', True, times, True), ('0', True, times, False)])
+        # Each pass orders, splits and records by its own tier's file.
+        here = os.path.abspath('.')
+        self.assertEqual(calls, [('1', True, os.path.join(here, cli.selfrun.TIMES_FILE)),
+                                 ('0', True, os.path.join(here, cli.selfrun.REAL_TIMES_FILE))])
         lines = text.splitlines()
         self.assertEqual(lines[-1], 'kit_tests: OK, both tiers green (fake git, real git)')
         self.assertEqual([ln for ln in lines if ln.startswith('kit_tests: OK')], lines[-1:])
         self.assertIn('kit_tests [fake git]: OK in 1s (full)', lines)
         self.assertIn('kit_tests [real git]: OK in 1s (full)', lines)
+
+    def test_the_real_git_pass_splits_a_module_by_its_real_git_times(self):
+        # A landing module fast on the fake git and slow on real git: the planner splits it by
+        # class in the real-git pass only, and each pass writes back only its own tier's file.
+        common = tempfile.mkdtemp(prefix='kit-times-')
+        self.addCleanup(gitfixture.rmtree, common)
+        fake_path = os.path.join(common, cli.selfrun.TIMES_FILE)
+        real_path = os.path.join(common, cli.selfrun.REAL_TIMES_FILE)
+        with open(fake_path, 'w', encoding='utf-8') as fh:     # as save_times writes it
+            json.dump({m: 5.0 for m in MODULES}, fh, indent=0, sort_keys=True)
+        with open(fake_path, 'rb') as fh:
+            fake_bytes = fh.read()
+        with open(real_path, 'w', encoding='utf-8') as fh:
+            json.dump({'tests.git.test_g': 20.0, 'tests.landing.test_land_x': 240.0}, fh)
+        started, out, real_run = [], io.StringIO(), cli.selfrun.run
+
+        def unit(u, audit, timeout, root=None, cmd=None, env=None):
+            fake = env['KIT_FAKE_GIT']
+            started.append((fake, u[0]))
+            return u, 'OK', 1, 5.0 if fake == '1' else 120.0, ''
+
+        def run(modules, root, jobs, **kw):
+            return real_run(modules, root, jobs, run_unit=unit, **kw)
+        counted = ({m: 2 for m in MODULES}, {'tests.landing.test_land_x': ['A', 'B']})
+        here = os.path.abspath('.')
+        temp_home(self)         # selfrun.run's run folder comes from user.make_temp
+        with mock.patch.dict(os.environ, {'KIT_FAKE_GIT': '1'}), \
+                mock.patch.object(cli.gitrepo, 'toplevel', return_value=(here, None)), \
+                mock.patch.object(cli.gitrepo, 'common_dir', return_value=(common, None)), \
+                mock.patch.object(cli.selftree, 'config', return_value={'serial': []}), \
+                mock.patch.object(cli.selftree, 'all_test_modules', return_value=MODULES), \
+                no_change(), \
+                mock.patch.object(cli.giveback, 'drainer', return_value=lambda n: None), \
+                mock.patch.object(cli.selfrun, 'count_units', return_value=counted), \
+                mock.patch.object(cli.selfrun, 'run', side_effect=run):
+            rc = cli.main(['--full', '--jobs', '2', '--both-tiers'], out=out)
+        text = out.getvalue()
+        self.assertEqual(rc, 0, text)
+        self.assertEqual(sorted(u for f, u in started if f == '1'), sorted(MODULES), text)
+        # Two pool threads start the units, so only the set is fixed, not the order.
+        self.assertEqual(sorted(u for f, u in started if f == '0'),
+                         ['tests.git.test_g', 'tests.landing.test_land_x.A',
+                          'tests.landing.test_land_x.B'], text)
+        self.assertIn('kit_tests [real git]: split by class: tests.landing.test_land_x '
+                      '(2 classes)\n', text)
+        self.assertNotIn('kit_tests [fake git]: split by class', text)
+        self.assertEqual(cli.selfrun.load_times(real_path), {
+            'tests.git.test_g': 120.0, 'tests.landing.test_land_x': 240.0,
+            'tests.landing.test_land_x.A': 120.0, 'tests.landing.test_land_x.B': 120.0})
+        with open(fake_path, 'rb') as fh:
+            self.assertEqual(fh.read(), fake_bytes)
 
     def test_the_real_git_pass_runs_only_git_worktree_and_landing_modules(self):
         ran = []
@@ -428,8 +481,7 @@ class ChangedTestsOnRealGit(unittest.TestCase):
 
         def run(modules, root, jobs, **kw):
             calls.append((kw['environ'].get('KIT_FAKE_GIT'), list(modules),
-                          kw['give_back'] is not None, kw.get('record_times', True),
-                          kw['hold'] is not None))
+                          kw['give_back'] is not None, kw['hold'] is not None))
             rc = rcs[len(calls) - 1]
             kw['out'].write('kit_tests: %s in 1s\n' % ('OK' if rc == 0 else 'FAILED, exit 1'))
             return rc, ''
@@ -460,8 +512,8 @@ class ChangedTestsOnRealGit(unittest.TestCase):
         rc, calls, bases, text = self.run_main(
             ['--select', '--changed', 'tests/a/test_m.py', 'kitlib/x.py'])
         self.assertEqual(rc, 0, text)
-        self.assertEqual(calls, [('1', SELECTED, True, True, False),
-                                 ('0', ['tests.a.test_m'], True, False, False)], text)
+        self.assertEqual(calls, [('1', SELECTED, True, False),
+                                 ('0', ['tests.a.test_m'], True, False)], text)
         self.assertEqual(bases, [])                 # --changed: git is not asked
         self.assertIn('kit_tests: real-git pass: 1 added or changed test module(s): '
                       'tests.a.test_m\n', text)
@@ -472,8 +524,8 @@ class ChangedTestsOnRealGit(unittest.TestCase):
         rc, calls, bases, text = self.run_main(
             ['--full'], changed=(['tests/gate/test_other.py', 'docs/x.md'], None))
         self.assertEqual((rc, bases), (0, ['main']), text)
-        self.assertEqual(calls, [('1', MODULES, True, True, False),
-                                 ('0', ['tests.gate.test_other'], True, False, False)], text)
+        self.assertEqual(calls, [('1', MODULES, True, False),
+                                 ('0', ['tests.gate.test_other'], True, False)], text)
         self.assertEqual(self.oks(text), [OK_BOTH], text)
 
     def test_no_changed_test_module_is_one_pass_and_a_line_that_is_no_verdict(self):
@@ -482,7 +534,7 @@ class ChangedTestsOnRealGit(unittest.TestCase):
             rc, calls, bases, text = self.run_main(argv, changed=changed)
             self.assertEqual(rc, 0, text)
             self.assertEqual(calls, [('1', SELECTED if '--select' in argv else MODULES,
-                                      True, True, False)], text)
+                                      True, False)], text)
             self.assertIn(NONE_CHANGED + '\n', text)
             self.assertEqual(self.oks(text), ['kit_tests: OK in 1s'], text)
 
@@ -531,7 +583,7 @@ class ChangedTestsOnRealGit(unittest.TestCase):
         rc, calls, bases, text = self.run_main(
             ['--select', '--pid-hold', '--changed', 'tests/a/test_m.py'])
         self.assertEqual(rc, 0, text)
-        self.assertEqual([c[4] for c in calls], [True, False], text)
+        self.assertEqual([c[3] for c in calls], [True, False], text)
         self.assertIn('without the pid hold', text)
 
     def test_a_module_changed_only_in_comments_and_docstrings_runs_on_the_fake_only(self):

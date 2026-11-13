@@ -29,6 +29,7 @@ Details: `<kit>/docs/worktree-remove.md`; `<kit>/docs/new-worktree.md`.
 5. `python - @'...'@`: here-string is an argument, not stdin. Script file, or pipe it.
 6. ONE-object result: bare scalar, `.Count` = `$null`, `$x.Count -gt 0` passes silently. Wrap in `@()`.
 7. Test output also: `dotnet test --logger trx`.
+8. Git Bash rewrites a one-slash Windows flag into a path (`taskkill /PID 123` becomes `taskkill <Git install folder>/PID 123`): double it, `taskkill //PID <pid>`.
 
 ### Never (Windows)
 

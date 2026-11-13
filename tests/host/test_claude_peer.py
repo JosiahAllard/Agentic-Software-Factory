@@ -26,6 +26,13 @@ from kitlib.launcher import settings as S
 TOKEN = 'k' * 32
 
 
+def on_windows(test):
+    """Run `test` as on Windows: its records name pipes, which on Linux are no peer address."""
+    p = mock.patch('kitlib.platform.NAME', 'windows')
+    p.start()
+    test.addCleanup(p.stop)
+
+
 def pipe_name(n):
     return r'\\.\pipe\LOCAL\cc-msg-test-%d' % n
 
@@ -86,6 +93,9 @@ def frames(packet):
 
 
 class Packet(unittest.TestCase):
+    def setUp(self):
+        on_windows(self)
+
     def test_an_auth_frame_then_a_prompting_cross_session_message(self):
         src = peer.source_pipe()
         self.assertTrue(src.startswith(peer.SOURCE_PREFIX))
@@ -139,6 +149,7 @@ class Packet(unittest.TestCase):
 
 class Resolve(unittest.TestCase):
     def setUp(self):
+        on_windows(self)
         self.m = Machine(self)
 
     def test_a_launcher_key_is_its_sessions_json_name(self):
@@ -233,6 +244,7 @@ class Resolve(unittest.TestCase):
 
 class Deliver(unittest.TestCase):
     def setUp(self):
+        on_windows(self)
         self.m = Machine(self)
 
     def test_no_live_session_is_no_session_and_nothing_is_written(self):

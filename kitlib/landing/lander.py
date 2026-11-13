@@ -207,9 +207,12 @@ A submitted landing (kitlib.landing.submit; `land.py --submit`) is this landing 
 process: its records are written `running` before it starts, and every outcome finishes them.
 At its turn (the booking given) it reads its first record (submit.turn): folded into another
 landing's batch, it says FOLDED and ends, writing nothing more (that landing finishes its
-records); folded into one that still runs, it gives the turn back and books again until that one
-lands them or gives them back; else it marks the record turn_at, so no landing folds it from
-then on. A booking that fails is checked the same way before its NOT RUN or REFUSED is written.
+records); folded into one that still runs, it releases its slot and waits out of the landing
+queue, a look at its records every poll (wait_folded): finished by that landing, it says FOLDED;
+given back, it books again with what is left of its --wait; that running out first, it says
+FOLDED. Else it marks the record turn_at, so no landing folds it from then on. A booking that
+fails is checked the same way (folded, or folded into one that still runs: FOLDED) before its
+NOT RUN or REFUSED is written.
 
 Folding (docs/gate-landing.md "Folding queued submissions"), on by default ("landing".batch_max, default
 5; a .kit.json that sets it to 1 folds nothing): a submitted landing whose locked checks
@@ -853,13 +856,14 @@ class Lander(Checks, Merge, MergedGate, Push, After):
 
     def turn_check(self):
         """A submitted landing without its turn (before its booking, or its booking failed):
-        the FOLDED Outcome (fold_exit) when another landing folded it (submit.turn, given False),
-        nothing written; else None, and the landing goes on to its own outcome. A direct
-        landing: None."""
+        the FOLDED Outcome (fold_exit) when another landing folded it (submit.turn, given False:
+        FOLDED, or WAIT while that landing runs), nothing written; else None, and the landing goes
+        on to its own outcome. A direct landing: None."""
         if not self.submitted or not self.result_runs:
             return None
-        state, rec = submitmod().turn(self.root, self.result_runs, self.output_log, given=False)
-        if state == submitmod().FOLDED:
+        sub = submitmod()
+        state, rec = sub.turn(self.root, self.result_runs, self.output_log, given=False)
+        if state in (sub.FOLDED, sub.WAIT):
             return self.fold_exit(rec)
         self.was_dropped = isinstance(rec, dict) and rec.get('fold_dropped') is True
         return None
@@ -868,10 +872,11 @@ class Lander(Checks, Merge, MergedGate, Push, After):
         """Step 3 for a submitted landing, its booking given: None when the turn is its own
         (submit.turn marked its first record turn_at); the FOLDED Outcome (fold_exit) when
         another landing folded it. Folded into a landing that still runs (it lands them, or gives
-        them back): the slot is released and booked again, a look every poll_s, with what is left
-        of the --wait budget. Raises LockError (that booking not given; the caller checks the
-        turn again)."""
-        sub, said = submitmod(), False
+        them back): the slot is released and the landing waits out of the landing queue
+        (wait_folded), so the turn goes to the landing behind it; given back, it books again with
+        what is left of the --wait budget. Raises LockError (that booking not given; the caller
+        checks the turn again)."""
+        sub = submitmod()
         while True:
             state, rec = sub.turn(self.root, self.result_runs, self.output_log, given=True)
             if state == sub.FOLDED:
@@ -879,16 +884,32 @@ class Lander(Checks, Merge, MergedGate, Push, After):
             if state == sub.MINE:
                 self.was_dropped = isinstance(rec, dict) and rec.get('fold_dropped') is True
                 return None
-            if not said:
-                said = True
-                self.say('waiting: %s is folded into the batch of the landing run %s, which still '
-                         'runs: it lands them or gives them back; booking again a look every %s s'
-                         % ('+'.join(self.branches), rec.get('folded_into'), self.poll_s))
             self.drop_slot(0, 'done')
-            left = (self.deadline or 0) - time.monotonic()
-            time.sleep(max(0.01, min(self.poll_s, max(0.0, left))))
+            self.say('waiting: %s is folded into the batch of the landing run %s, which still '
+                     'runs: it lands them or gives them back; out of the landing queue, a look at '
+                     'its records every %s s' % ('+'.join(self.branches), rec.get('folded_into'),
+                                                 self.poll_s))
+            out = self.wait_folded()
+            if out is not None:
+                return out
             left = (self.deadline or 0) - time.monotonic()
             self.book_slot(max(0, int(left)), cores=1 if self.on_node() else None)
+
+    def wait_folded(self):
+        """A submitted landing folded into a landing that still runs, its slot released: a look
+        at its records every poll_s (submit.turn, given False), holding and booking nothing. None
+        once they are its own again (given back, or taken back from a landing that died): it
+        books again. The FOLDED Outcome (fold_exit) once the folding landing finished them, or
+        when the --wait budget runs out first, as when its booking is not given (turn_check)."""
+        sub = submitmod()
+        while True:
+            state, rec = sub.turn(self.root, self.result_runs, self.output_log, given=False)
+            if state == sub.MINE:
+                return None
+            left = (self.deadline or 0) - time.monotonic()
+            if state == sub.FOLDED or left <= 0:
+                return self.fold_exit(rec)
+            time.sleep(max(0.01, min(self.poll_s, left)))
 
     def fold_exit(self, rec):
         """Another landing folded this submission into its batch: its slot released, one line
@@ -1210,8 +1231,10 @@ def queue(root, store=None):
     then one per landing, holding first, then waiting in turn order. A landing of another
     repository is marked so: they share the machine lock's slots, not the turn. A lock file that
     is not a record is shown held, phase ?, with the read error: that is when an operator checks
-    here before clearing it by hand. REFUSED when the config, the lock's place or the queue cannot
-    be read."""
+    here before clearing it by hand. The folds (submit.folded) are shown too: the lock line names
+    the submissions folded into its holder's run, and an entry whose submission another landing
+    folded ends `; folded into <run>` (it ends FOLDED at its turn). REFUSED when the config, the
+    lock's place or the queue cannot be read."""
     try:
         cfg = kconfig.load(root)
         lock = landing.LandingLock.for_config(root, cfg)
@@ -1229,11 +1252,35 @@ def queue(root, store=None):
                   key=lambda e: str(e.get('held_at') or ''))
     waiting = sorted([e for e in lands if e.get('state') == 'waiting'],
                      key=lambda e: e.get('ticket') or 0)
-    lines = [landing.describe(rec) + ('; unreadable: %s' % unreadable if unreadable else ''),
+    folds = submitmod().folded(root)
+    lines = [landing.describe(rec) + _folded_in(root, rec, folds)
+             + ('; unreadable: %s' % unreadable if unreadable else ''),
              'landing queue: %s' % ('%d holding or waiting' % len(lands) if lands else 'empty')]
+    into = dict((place.slug_of('+'.join(f['branches'])), f['folded_into']) for f in folds)
     for n, e in enumerate(held + waiting, 1):
+        ours = e.get('resource') == key
         lines.append('  %d. %s %s/%s (%s, run %s, pid %s) since %s%s' % (
             n, e.get('state'), e.get('repo'), e.get('slug'), e.get('kind'), e.get('id'),
             e.get('pid'), e.get('held_at') or e.get('since') or '?',
-            '' if e.get('resource') == key else '; another repository'))
+            ('; folded into %s' % into[e.get('slug')] if e.get('slug') in into else '') if ours
+            else '; another repository'))
     return G.Outcome(G.OK, lines)
+
+
+def _folded_in(root, rec, folds):
+    """The lock line's `; folded into its run <id>: <a+b> (run <id>), ...` for the lock file
+    record `rec`: the folds (submit.folded) still running in the run of its holder, which is the
+    run of the land record of its first branch while that record runs in the holder's pid; ''
+    when there are none."""
+    branches = (rec or {}).get('branches')
+    if not isinstance(branches, list) or not branches or not isinstance(branches[0], str):
+        return ''
+    own, _ = result.read(root, branches[0], 'land', legacy=False)
+    if (not isinstance(own, dict) or own.get('verdict') != result.RUNNING
+            or own.get('pid') != rec.get('pid') or not own.get('run_id')):
+        return ''
+    mine = [f for f in folds if f['running'] and f['folded_into'] == own['run_id']]
+    if not mine:
+        return ''
+    return '; folded into its run %s: %s' % (own['run_id'], ', '.join(
+        '%s (run %s)' % ('+'.join(f['branches']), f['run_id']) for f in mine))

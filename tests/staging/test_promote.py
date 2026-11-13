@@ -2,7 +2,7 @@
 staging branch (tests/dailyfull/test_promote.StagingCase), the merged gate run for real on the
 scratch machine-lock store. Stood in: the promotion record (gate_ok.record_tested_pass is the gaps
 branch's), the landing lock (a stand-in that logs its takes) and the main checkout's sync (the
-landing's sync_checkout, not extracted yet)."""
+landing's sync_checkout: tests/landing/test_sync_checkout.py)."""
 import os
 import stat
 import time

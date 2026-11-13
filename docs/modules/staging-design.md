@@ -96,7 +96,6 @@ Exit codes: 0 done, behind, not due or a skip; 1 red; 2 usage or off; 4 held, di
 ## Gaps
 
 - **`promote_args` (slice E).** A repository's own promotion arguments are not read yet: every promotion runs the merged gate's selection as the kit computes it. This must close before a repository with its own promotion needs (retribution) turns staging on.
-- **The sync seam.** `advance.sync_main` calls `kitlib.landing.push.sync_checkout`, which the landing side extracts from `Push.sync_main` (whose `if self.staging: return []` stays in the landing's wrapper). Until it is there the call fails into the WARNING line, and main is still moved.
 - **The records.** `gate_ok.record_tested_pass` and the guard's reader are the gaps branch's; without them a promotion ends `failed` and main is not moved.
 
 ## Adding to it

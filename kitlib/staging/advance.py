@@ -39,6 +39,7 @@ import os
 import time
 
 from kitlib.dailyfull import promote as P
+from kitlib.landing import push as LP
 from kitlib.records import landing as LL
 
 PUSH_TRIES = 3              # pushes of one attempt before it ends failed
@@ -62,8 +63,7 @@ def sync_main(main, cfg, sha):
     (kitlib.landing.push.sync_checkout). [] or WARNING lines; a failure is a WARNING line."""
     ff = 'git -C "%s" merge --ff-only %s/%s' % (main, cfg.remote, cfg.main_branch)
     try:
-        from kitlib.landing import push
-        return list(push.sync_checkout(main, cfg, cfg.main_branch, sha))
+        return list(LP.sync_checkout(main, cfg, cfg.main_branch, sha))
     except Exception as e:          # noqa: BLE001 - the move is made; a sync never undoes it
         return ['WARNING: the main checkout\'s %s was not fast-forwarded to %s (%s: %s); bring '
                 'it there with: %s' % (cfg.main_branch, sha[:10], type(e).__name__, e, ff)]

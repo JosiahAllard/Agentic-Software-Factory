@@ -254,7 +254,7 @@ class FromLater(Case):
     def test_a_sync_that_raises_is_a_warning_line(self):
         def boom(*a, **k):
             raise RuntimeError('no checkout')
-        with mock.patch('kitlib.landing.push.sync_checkout', side_effect=boom, create=True):
+        with mock.patch('kitlib.landing.push.sync_checkout', side_effect=boom):
             lines = A.sync_main('/main', Cfg(), S)
         self.assertEqual(len(lines), 1)
         self.assertIn('git -C "/main" merge --ff-only origin/main', lines[0])

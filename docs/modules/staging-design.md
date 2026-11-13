@@ -95,7 +95,7 @@ Exit codes: 0 done, behind, not due or a skip; 1 red; 2 usage or off; 4 held, di
 
 ## Gaps
 
-- **`promote_args` (slice E).** A repository's own promotion arguments are not read yet: every promotion runs the merged gate's selection as the kit computes it. This must close before a repository with its own promotion needs (retribution) turns staging on.
+- **`promote_args` (slice E).** A repository's own promotion arguments are not read yet: every promotion runs the merged gate's selection as the kit computes it. This must close before a repository with its own promotion needs turns staging on.
 
 ## Adding to it
 

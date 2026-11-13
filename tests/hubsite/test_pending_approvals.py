@@ -117,6 +117,13 @@ class ApiPendingCase(Clocked):
         self.assertEqual(self.pending('pm'), [('approval', 'A-001', 'coord')])
         self.assertEqual(self.pending('alpha'), [])
 
+    def test_the_name_comes_before_a_coordinator_session_when_both_are_live(self):
+        self.otherwise()
+        self.api._session_keys = lambda: {'alpha', 'coord', 'zeta'}
+        self.decide()
+        self.assertEqual(self.pending('alpha'), [('approval', 'A-001', 'alpha')])
+        self.assertEqual(self.pending('coord'), [])
+
     def test_no_configured_repository_is_the_pms(self):
         self.names = {}
         self.decide('denied')

@@ -87,8 +87,9 @@ Notes on the table:
   `--from` while that key is still in sessions.json; everything else (a to-do's free-text `from`, the
   owner's own items, stories, To PM items, and a question whose session has gone) is for `pm`
   (`kitlib.hubsite.api.Api.pending`). An approval has no `from`: it is for the coordinator of its
-  repository, the configured repository whose origin remote is the approval's `repo`, keyed by that
-  repository's name while the name is in sessions.json, and for `pm` otherwise. `pending --for KEY`
+  repository, the configured repository whose origin remote is the approval's `repo`, keyed by the
+  first of that repository's coordinator keys (its name first, then its coordinator sessions in
+  sessions.json) that is in sessions.json, and for `pm` otherwise. `pending --for KEY`
   lists only KEY's items, and `pending --for pm` the items routed to `pm`, every answered question and
   every decided approval; reading it marks nothing, so the item stays pending for every reader until it
   is logged, acknowledged, consumed or past its window.

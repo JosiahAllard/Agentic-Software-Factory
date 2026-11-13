@@ -332,7 +332,7 @@ class Recovery(Case):
         tip = self.land()
         self.repo.git('push', '-q', 'origin', '%s:refs/heads/main' % tip, cwd=self.stg)
         R.start(SP.folder(self.cfg(), self.main_dir), tip, base, 'pushing')
-        with mock.patch.object(P, '_push', side_effect=AssertionError('pushed')):
+        with mock.patch.object(P, 'run_push', side_effect=AssertionError('pushed')):
             out = self.run_promote(gate=self.no_gate)
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual(self.attempts()[-1].phase, 'done')
@@ -502,8 +502,8 @@ class PrePushRefusal(Case):
             f.write('#!/bin/sh\necho "pre-push: refused, the test guard says no" >&2\nexit 1\n')
         os.chmod(hook, os.stat(hook).st_mode | stat.S_IEXEC)
         self.repo.git('config', 'core.hooksPath', hooks)
-        real = P._push
-        with mock.patch.object(P, '_push', side_effect=real) as push:
+        real = P.run_push
+        with mock.patch.object(P, 'run_push', side_effect=real) as push:
             out = self.run_promote()
             self.assertEqual(out.code, G.REFUSED, out.lines)
             self.assertEqual(push.call_count, 1)

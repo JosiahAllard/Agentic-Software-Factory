@@ -18,8 +18,10 @@ raises it with the owner. A newer push of this job replaces one the hub still ow
 (push.PushWorker.job_event: these words are not in JOB_EACH), a known limit.
 
 Outcomes: a start is a success whose note names it; nothing to start is a skip; a repository
-whose config or git cannot be read, or a start that failed, is a note on a success when
-another repository started, else a failure (health shows it).
+whose config or git cannot be read, whose look raised (an announce that failed: that end stays
+unannounced and is pushed again next pass), or whose start failed, is a note on a success when
+another repository started, else a failure (health shows it). The pass goes on to the next
+repository either way.
 """
 import os
 import sys
@@ -71,7 +73,10 @@ class PromoteJob(object):
 
             def announce(a, name=name):
                 ctx.event('promote-%s' % a.phase, '%s:%s' % (name, (a.sha or '?')[:10]))
-            verdict, note = self.look(root, announce)
+            try:
+                verdict, note = self.look(root, announce)
+            except Exception as e:  # noqa: BLE001 - one repository never stops the pass
+                verdict, note = 'error', 'its look failed: %s: %s' % (type(e).__name__, e)
             if verdict == 'start':
                 pid, why = self.start(root)
                 if pid is None:

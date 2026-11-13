@@ -335,16 +335,15 @@ def write_daily_record(main, sha, tested, started_utc, ran, wt, git=git):
     the record the pre-push guard asks of a push to main with staging on. `tested` is the config
     the run's gate came from (`sha`'s own), `ran` the gate's results. None when written, else why
     not; a promotion without it is never tried."""
-    tested_pass = getattr(gate_ok, 'record_tested_pass', None)
-    if tested_pass is None:
-        return 'this kit has no gate_ok.record_tested_pass (the tested records)'
     rc, base, _ = git(main, 'rev-parse', '--verify', '-q',
                       'refs/remotes/%s/%s' % (tested.remote, P.main_of(tested)))
     try:
         source = detect.effective(tested, wt).source
-        tested_pass(main, sha, 'daily', gate_ok.gate_config(tested), runner.kit_identity(),
-                    place.repo_name(tested, main), started_utc, runner.record_steps(ran),
-                    base=base if rc == 0 and base else None, config_rev=sha, source=source)
+        gate_ok.record_tested_pass(main, sha, 'daily', gate_ok.gate_config(tested),
+                                   runner.kit_identity(), place.repo_name(tested, main),
+                                   started_utc, runner.record_steps(ran),
+                                   base=base if rc == 0 and base else None, config_rev=sha,
+                                   source=source)
     except Exception as e:      # noqa: BLE001 - any failure leaves main where it is
         return '%s: %s' % (type(e).__name__, e)
     return None

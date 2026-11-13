@@ -158,7 +158,7 @@ class Mover(object):
             err = []
 
             def push(args, cwd):
-                rc, text = P._push(args, cwd)
+                rc, text = P.run_push(args, cwd)
                 err.append(text)
                 return rc, text
             a.set('pushing', tries=int(a.rec.get('tries') or 0) + 1)

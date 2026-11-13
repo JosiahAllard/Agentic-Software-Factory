@@ -57,7 +57,7 @@ class PushForm(unittest.TestCase):
             seen.append(kw)
             return gitcmd.Result(0, b'', '')
         with mock.patch.object(gitcmd, 'call', side_effect=fake):
-            P._push(['push'], '.')
+            P.run_push(['push'], '.')
         self.assertEqual(seen[0]['timeout'], gitcmd.PUSH_TIMEOUT)
         self.assertEqual(seen[0]['env']['GIT_TERMINAL_PROMPT'], '0')
         self.assertEqual(seen[0]['env']['GCM_INTERACTIVE'], 'never')
@@ -141,7 +141,7 @@ class Promote(StagingCase):
         tested = self.land()
 
         def hung_up(args, cwd):
-            P._push(args, cwd)
+            P.run_push(args, cwd)
             return 128, 'fatal: the remote end hung up unexpectedly'
         self.assertEqual(self.promote(tested, push=hung_up)['status'], 'promoted')
         self.assertEqual(self.remote_main(), tested)
@@ -183,7 +183,7 @@ class PromoteOnRealGit(StagingCase):
 
         def racing(args, cwd):
             moved.append(self.push_to_main_directly())     # after the fetch, before the push
-            return P._push(args, cwd)
+            return P.run_push(args, cwd)
         p = self.promote(tested, push=racing)
         self.assertEqual(p['status'], 'diverged', p)
         self.assertEqual(self.remote_main(), moved[0])

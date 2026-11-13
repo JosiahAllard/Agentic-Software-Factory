@@ -339,10 +339,10 @@ class TreeIsMain(Case):
 
 
 class TreeIsMainWithStagingOn(Case):
-    """With staging on and the daily worktree set to the main
-    checkout, a scheduled run is recorded red `infra` (the plain run's refusal), never a repeating
-    exit 2 that records nothing. Slice C1 retired `--if-due`, the form that skipped the staging
-    read there and exited 2; the schedule runs the plain form."""
+    """With staging on and the daily worktree set to the main checkout, a scheduled run is
+    recorded red `infra` (the plain run's refusal), never a repeating exit 2 that records nothing.
+    Slice C1 retired `--if-due`, the form that skipped the staging read there and exited 2; the
+    schedule runs the plain form."""
     KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test', 'worktree': '.'},
            'staging': {'branch': 'staging'}}
 
@@ -441,7 +441,7 @@ class StagingOffIsToday(Case):
         self.assertEqual(self.remote_main(), before)
 
 class DailyRecord(Case):
-    """write_daily_record against a stub of gate_ok.record_tested_pass (the gaps branch's)."""
+    """write_daily_record against a stub of gate_ok.record_tested_pass."""
     KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test'}, 'staging': {'branch': 'staging'}}
     RAN = [{'name': 'unit', 'status': 'PASS', 'seconds': 1.0},
            {'name': 'lint', 'status': 'SKIP', 'seconds': 0.0}]
@@ -456,7 +456,7 @@ class DailyRecord(Case):
         def stub(main, sha_, kind, gate_config, kit, repo, started, steps, **kw):
             seen.append(dict(main=main, sha=sha_, kind=kind, gate_config=gate_config, kit=kit,
                              repo=repo, started=started, steps=steps, **kw))
-        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=stub):
+        with mock.patch.object(gate_ok, 'record_tested_pass', new=stub):
             why = D.write_daily_record(self.main_dir, sha, cfg, '2026-11-12T04:00:00Z',
                                        self.RAN, self.main_dir)
         self.assertIsNone(why)
@@ -474,20 +474,16 @@ class DailyRecord(Case):
     def test_a_main_that_cannot_be_read_is_no_base(self):
         seen = []
         git = lambda *a, **k: (1, '', 'no such ref')
-        with mock.patch.object(gate_ok, 'record_tested_pass', create=True,
+        with mock.patch.object(gate_ok, 'record_tested_pass',
                                new=lambda *a, **k: seen.append(k)):
             D.write_daily_record(self.main_dir, 'a' * 40, self.cfg(), 'x', [], self.main_dir,
                                  git=git)
         self.assertIsNone(seen[0]['base'])
 
-    def test_a_missing_or_raising_record_tested_pass_is_why_not(self):
-        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=None):
-            why = D.write_daily_record(self.main_dir, 'a' * 40, self.cfg(), 'x', [], self.main_dir)
-        self.assertIn('no gate_ok.record_tested_pass', why)
-
+    def test_a_raising_record_tested_pass_is_why_not(self):
         def boom(*a, **k):
             raise OSError('read-only')
-        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=boom):
+        with mock.patch.object(gate_ok, 'record_tested_pass', new=boom):
             why = D.write_daily_record(self.main_dir, 'a' * 40, self.cfg(), 'x', [], self.main_dir)
         self.assertEqual(why, 'OSError: read-only')
 
@@ -501,8 +497,8 @@ class StagingRunCase(Case):
         self.stg = self.repo.worktree('stg')
         self.repo.git('reset', '-q', '--hard', 'origin/staging', cwd=self.stg)
         self.n = 0
-        # The daily record (gate_ok.record_tested_pass) stood in at its seam: it is the gaps
-        # branch's, and its folder is the machine's.
+        # The daily record (gate_ok.record_tested_pass) stood in at its seam: its folder is the
+        # machine's.
         self.records = []
         self.record_why = None
 
@@ -549,7 +545,7 @@ class Promotes(StagingRunCase):
         self.land()
         before = self.remote_main()
         self.record_why = 'the record folder cannot be made (test)'
-        with mock.patch.object(P, '_push', side_effect=AssertionError('pushed')):
+        with mock.patch.object(P, 'run_push', side_effect=AssertionError('pushed')):
             o = self.run_daily()
         self.assertEqual(o.code, G.REFUSED, o.lines)
         p = self.result()['promotion']
@@ -565,14 +561,10 @@ class Promotes(StagingRunCase):
         self.assertIn('SKIPPED (unchanged)', o.lines[0])
         self.assertEqual(len(self.records), 1)
 
-    def test_if_due_is_retired(self):
-        with redirect_stdout(io.StringIO()), mock.patch('sys.stderr', io.StringIO()):
-            self.assertEqual(tool.main(['-C', self.main_dir, '--if-due']), G.USAGE)
-
     def test_the_unchanged_skip_promotes_what_an_earlier_run_could_not(self):
         tested = self.land()
         before = self.remote_main()
-        with mock.patch.object(P, '_push', return_value=(1, '! [rejected] (test)')):
+        with mock.patch.object(P, 'run_push', return_value=(1, '! [rejected] (test)')):
             o = self.run_daily('20261008-040000')
         self.assertEqual(o.code, G.REFUSED, o.lines)
         self.assertEqual(self.result('20261008-040000')['promotion']['status'], 'not-promoted')

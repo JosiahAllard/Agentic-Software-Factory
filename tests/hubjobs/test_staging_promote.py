@@ -92,6 +92,17 @@ class Job(unittest.TestCase):
         out = self.run_job({'a': '/a', 'b': '/b'})
         self.assertEqual(out, 'started a (due, pid 4242); b: bad config')
 
+    def test_an_announce_that_raises_is_noted_and_the_pass_goes_on(self):
+        self.looks = {'/a': ('idle', 'held', [Attempt('red', 'f' * 40)]),
+                      '/b': ('start', 'due', [])}
+
+        def event(word, detail=None):
+            raise OSError('hub down')
+        self.ctx.event = event
+        out = self.run_job({'a': '/a', 'b': '/b'})
+        self.assertEqual(out, 'started b (due, pid 4242); a: its look failed: OSError: hub down')
+        self.assertEqual(self.started, ['/b'])
+
     def test_a_stop_ends_the_pass(self):
         self.ctx.stop.set()
         self.looks = {}

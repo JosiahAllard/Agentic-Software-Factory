@@ -39,6 +39,17 @@ class SyncCheckout(unittest.TestCase):
         self.assertTrue(lines[0].endswith('merge --ff-only origin/main'), lines[0])
         self.assertEqual(self.repo.git('rev-parse', 'refs/heads/main'), self.start)
 
+    def test_own_commits_are_kept_and_named_against_the_target_not_a_landing(self):
+        self.repo.write('local.txt', 'y\n')
+        own = self.repo.commit('made here', 'local.txt')
+        lines = A.sync_main(self.root, Cfg(), self.target)
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("1 commit(s) made in the main checkout that %s lacks" % self.target[:10],
+                      lines[0])
+        self.assertIn(own[:10] + ' made here', lines[0])
+        self.assertNotIn('landing', lines[0])
+        self.assertEqual(self.repo.head(), own)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -62,7 +62,7 @@ def push_args(remote, sha, main_b):
     return ['push', '--quiet', remote, '%s:refs/heads/%s' % (sha, main_b)]
 
 
-def _push(args, cwd):
+def run_push(args, cwd):
     """`(rc, err)` of the push: the landing's push timeout and environment (kitlib.git.cmd
     PUSH_TIMEOUT, with_network_env), so a credential prompt fails instead of waiting. rc None:
     git did not start or did not answer in time."""
@@ -88,7 +88,7 @@ def promote(wt, cfg, sha, staging, git, push=None, ls_remote=None):
       not-promoted the remote's main is still behind `sha` after the push (git's first line)
       unknown      the remote's main cannot be read or placed after the push
     """
-    push, ls_remote = push or _push, ls_remote or refs.ls_remote
+    push, ls_remote = push or run_push, ls_remote or refs.ls_remote
     remote, main_b = cfg.remote, main_of(cfg)
     got = {'status': None, 'main': main_b, 'from': None, 'to': sha, 'why': None}
 

@@ -568,14 +568,14 @@ def sync_checkout(root, cfg, main_b, target, what=None, env=None):
         return ['%s: it cannot be read; bring it there with: %s' % (lead, ff)]
     out, why = cmd.run_text(['log', '--format=%H %s', main, '--not', target], root)
     if out is None:
-        return ['%s: git cannot tell whether it has commits the landing lacks (%s); check, '
-                'then: %s' % (lead, why, ff)]
+        return ['%s: git cannot tell whether it has commits %s lacks (%s); check, then: %s'
+                % (lead, target[:10], why, ff)]
     own = [l for l in out.splitlines() if l.strip()]
     if own:
-        return ['%s: it has %d commit(s) made in the main checkout that the landing did not '
-                'gate or push: %s. They are kept: rebase them onto %s/%s (or set them aside), '
-                'then: %s' % (lead, len(own), '; '.join(l[:10] + l[40:] for l in own[:10]),
-                              remote, main_b, ff)]
+        return ['%s: it has %d commit(s) made in the main checkout that %s lacks, never gated '
+                'or pushed: %s. They are kept: rebase them onto %s/%s (or set them aside), '
+                'then: %s' % (lead, len(own), target[:10],
+                              '; '.join(l[:10] + l[40:] for l in own[:10]), remote, main_b, ff)]
     current, why = refs.current_branch(root)
     if current != main_b:
         return ['%s: the main checkout is on %s, not %s; switch back, then: %s' % (

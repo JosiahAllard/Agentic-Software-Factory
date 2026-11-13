@@ -108,7 +108,7 @@ class Case(unittest.TestCase):
         status = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
         if isinstance(status, Exception):
             raise status
-        if status == 'push':            # run the push the wrapper makes (P._push is patched)
+        if status == 'push':            # run the push the wrapper makes (P.run_push is patched)
             push(P.push_args(cfg.remote, sha, cfg.main_branch), main)
             status = 'not-promoted'
         return {'status': status, 'why': 'the stand-in said %s' % status, 'main': 'main',
@@ -266,7 +266,7 @@ class Pushes(Case):
         self.answers = ['push']
         a = self.attempt('tested')
         said = 'pre-push: refused, main may move only to a tested commit\nerror: failed to push'
-        with mock.patch.object(P, '_push', return_value=(1, said)) as push:
+        with mock.patch.object(P, 'run_push', return_value=(1, said)) as push:
             lines = self.mover().advance(a)
         self.assertEqual(a.phase, 'refused', lines)
         self.assertEqual(push.call_count, 1)
@@ -284,7 +284,7 @@ class Pushes(Case):
                        'main' % S):
             a = self.attempt('tested')
             self.sleeps = []
-            with mock.patch.object(P, '_push', return_value=(1, cannot + '\nerror: failed')) as p:
+            with mock.patch.object(P, 'run_push', return_value=(1, cannot + '\nerror: failed')) as p:
                 lines = self.mover().advance(a)
             self.assertEqual(a.phase, 'failed', lines)
             self.assertEqual(p.call_count, A.PUSH_TRIES)
@@ -296,7 +296,7 @@ class Pushes(Case):
         a = self.attempt('tested')
         said = iter([(1, 'pre-push: refused, cannot list the objects'), (0, 'ok')])
         self.answers = ['push', 'promoted']
-        with mock.patch.object(P, '_push', side_effect=lambda *x: next(said)):
+        with mock.patch.object(P, 'run_push', side_effect=lambda *x: next(said)):
             self.mover().advance(a)
         self.assertEqual(a.phase, 'done')
         self.assertEqual(a.rec['tries'], 2)

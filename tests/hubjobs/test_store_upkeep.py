@@ -1,6 +1,8 @@
-"""kitlib.hubjobs.store_upkeep: the hub's daily commit graph and gc of the PM data worktree's
-git common dir, with the git children (`_run`), the common dir and the machine lock stubbed."""
+"""kitlib.hubjobs.store_upkeep: the hub's daily commit graph, prune and gc of the PM data
+worktree's git common dir, with the git children (`_run`), the common dir and the machine lock
+stubbed; every pack is a file in a temporary folder."""
 import os
+import stat
 import tempfile
 import threading
 import time
@@ -197,34 +199,196 @@ class Steps(UpkeepCase):
         self.assertEqual(self.calls, [])
 
 
-class Findings(UpkeepCase):
-    def test_old_idx_less_packs_are_reported_and_left_in_place(self):
-        orphan = self.place('objects/pack/pack-old.pack', su.PACK_AGE_S + 60)
-        young = self.place('objects/pack/pack-young.pack', su.PACK_AGE_S - 60)
-        whole = self.place('objects/pack/pack-whole.pack', 10 * su.PACK_AGE_S)
-        idx = self.place('objects/pack/pack-whole.idx', 10 * su.PACK_AGE_S)
+OLD = 10 * 86400                    # an age past PACK_AGE_S
+
+
+class Prune(UpkeepCase):
+    def siblings(self, stem, age_s, suffixes=('.pack',) + su.SIBLINGS):
+        return [self.place('objects/pack/%s%s' % (stem, s), age_s) for s in suffixes]
+
+    def test_a_pass_deletes_old_idx_less_packs_and_their_siblings_inside_the_slot_only(self):
+        doomed = self.siblings('pack-0a', su.PACK_AGE_S + 60)
+        keep = (self.siblings('pack-1b', su.PACK_AGE_S - 60)                 # young: may be written
+                + self.siblings('pack-2c', OLD, ('.pack', '.keep', '.rev'))   # kept by git
+                + self.siblings('pack-3d', OLD, ('.pack', '.idx') + su.SIBLINGS)  # live
+                + self.siblings('pack-4e', OLD, ('.idx', '.rev'))             # an .idx alone
+                + self.siblings('tmp_pack_5f', OLD, ('.pack',))               # git's own temp
+                + self.siblings('pack-6A', OLD, ('.pack',)))                  # not git's name
+        os.makedirs(os.path.join(self.pack, 'pack-7d.pack'))                 # not a file
         self.loose = 10
-        out = self.run_job()
+        with mock.patch.object(su, 'prune', side_effect=lambda c, n: self.log.append('prune')
+                               or self.real_prune(c, n)):
+            out = self.run_job()
+        self.assertEqual(self.log, ['commit-graph', 'count-objects', 'slot held', 'prune',
+                                    'slot released'])
+        self.assertEqual(self.booked[0][3]['resource'], land.queue_key(self.common))
+        self.assertIn('pruned 1 .idx-less pack: pack-0a.pack', out)
+        self.assertIn('finding: pack-2c.pack has no .idx (10 d old), kept by .keep', out)
+        self.assertEqual(out.count('finding'), 1)
         self.assertEqual(self.events, [('findings', '1')])
-        self.assertIn('finding: pack-old.pack has no .idx (24 h old)', out)
-        self.assertNotIn('pack-young', out)
-        self.assertNotIn('pack-whole', out)
-        for path in (orphan, young, whole, idx):
+        for path in doomed:
+            self.assertFalse(os.path.exists(path), path)
+        for path in keep:
+            self.assertTrue(os.path.exists(path), path)
+        self.assertTrue(os.path.isdir(os.path.join(self.pack, 'pack-7d.pack')))
+
+    real_prune = staticmethod(su.prune)
+
+    def test_a_pack_inside_the_age_is_kept_and_its_age_is_at_least_an_hour(self):
+        self.assertGreaterEqual(su.PACK_AGE_S, 3600)  # git renames the .pack in before its .idx
+        young = self.siblings('pack-0a', su.PACK_AGE_S - 1, ('.pack', '.rev'))
+        self.assertEqual(su.prune(self.common, NOW), ([], []))
+        self.assertEqual(su.scan(self.common, NOW), [])
+        for path in young:
             self.assertTrue(os.path.exists(path), path)
 
+    def test_an_idx_or_keep_that_appears_before_the_delete_keeps_the_pack(self):
+        for suffix in ('.idx', '.keep'):
+            with self.subTest(suffix=suffix):
+                pack, = self.siblings('pack-0a', OLD, ('.pack',))
+                listed = su.orphans(self.common, NOW)
+                late = self.place('objects/pack/pack-0a' + suffix, 0)
+                with mock.patch.object(su, 'orphans', return_value=listed):
+                    self.assertEqual(su.prune(self.common, NOW),
+                                     ([], ['pack-0a.pack kept: it has a %s now' % suffix]))
+                self.assertTrue(os.path.exists(pack))
+                os.remove(late)
+
+    def test_a_pack_a_multi_pack_index_lists_is_kept(self):
+        for midx in ('objects/pack/multi-pack-index',
+                     'objects/pack/multi-pack-index.d/multi-pack-index-1f.midx'):
+            for name in (b'pack-0a.idx', b'pack-0a.pack'):
+                with self.subTest(midx=midx, name=name):
+                    listed, = self.siblings('pack-0a', OLD, ('.pack',))
+                    other, = self.siblings('pack-1b', OLD, ('.pack',))
+                    path = self.place(midx, 0)
+                    with open(path, 'wb') as f:
+                        f.write(b'MIDX\x01\x01PNAM\0' + name + b'\0pack-9f.idx\0\0')
+                    gone, kept = su.prune(self.common, NOW)
+                    self.assertEqual(gone, ['pack-1b.pack'])
+                    self.assertEqual(kept, ['pack-0a.pack kept: the multi-pack-index lists it'])
+                    self.assertTrue(os.path.exists(listed))
+                    self.assertFalse(os.path.exists(other))
+                    os.remove(path)
+
+    def test_a_longer_name_in_the_multi_pack_index_does_not_keep_the_pack(self):
+        pack, = self.siblings('pack-0a', OLD, ('.pack',))
+        path = self.place('objects/pack/multi-pack-index', 0)
+        with open(path, 'wb') as f:
+            f.write(b'MIDX\x01\x01PNAM\0pack-0ab.idx\0\0')
+        self.assertEqual(su.prune(self.common, NOW), (['pack-0a.pack'], []))
+        self.assertFalse(os.path.exists(pack))
+
+    def test_a_sibling_link_is_removed_and_its_target_left_read_only(self):
+        pack, = self.siblings('pack-0a', OLD, ('.pack',))
+        target = os.path.join(os.path.dirname(self.common), 'outside.rev')
+        with open(target, 'wb') as f:
+            f.write(b'x')
+        os.chmod(target, stat.S_IREAD)
+        self.addCleanup(os.chmod, target, stat.S_IWRITE | stat.S_IREAD)
+        link = pack[:-len('.pack')] + '.rev'
+        try:
+            os.symlink(target, link)
+        except (OSError, NotImplementedError) as e:
+            self.skipTest('no symlink on this host: %s' % e)
+        self.assertEqual(su.prune(self.common, NOW), (['pack-0a.pack'], []))
+        self.assertFalse(os.path.lexists(link))
+        self.assertTrue(os.path.exists(target))
+        self.assertFalse(os.stat(target).st_mode & stat.S_IWRITE)
+
+    def test_an_unreadable_multi_pack_index_prunes_nothing_and_says_so(self):
+        pack, = self.siblings('pack-0a', OLD, ('.pack',))
+        os.makedirs(os.path.join(self.pack, 'multi-pack-index'))     # open() refuses a folder
+        self.loose = 10
+        out = self.run_job()
+        self.assertIsInstance(out, str)
+        self.assertIn('no pack pruned: the multi-pack-index could not be read', out)
+        self.assertTrue(os.path.exists(pack))
+        self.assertEqual(self.events, [('findings', '1')])
+
+    def test_a_read_only_orphan_and_its_siblings_are_deleted(self):
+        doomed = self.siblings('pack-0a', OLD, ('.pack', '.rev'))
+        for path in doomed:
+            os.chmod(path, stat.S_IREAD)
+        self.addCleanup(lambda: [os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+                                 for p in doomed if os.path.exists(p)])
+        self.assertEqual(su.prune(self.common, NOW), (['pack-0a.pack'], []))
+        for path in doomed:
+            self.assertFalse(os.path.exists(path), path)
+
+    def test_a_sibling_refused_after_its_pack_went_is_named(self):
+        pack, rev = self.siblings('pack-0a', OLD, ('.pack', '.rev'))
+        real = su.fsreplace.remove
+
+        def remove(path):
+            if path == rev:
+                raise PermissionError(32, 'in use by another process')
+            real(path)
+        with mock.patch.object(su.fsreplace, 'remove', side_effect=remove):
+            gone, kept = su.prune(self.common, NOW)
+        self.assertEqual(gone, ['pack-0a.pack'])
+        (note,) = kept
+        self.assertTrue(note.startswith('pack-0a.rev kept: '), note)
+        self.assertFalse(os.path.exists(pack))
+        self.assertTrue(os.path.exists(rev))
+
+    def test_a_stop_between_the_steps_deletes_nothing(self):
+        pack, = self.siblings('pack-0a', OLD, ('.pack',))
+        self.stop_after_graph = self.stop.set
+        out = self.run_job()
+        self.assertIsInstance(out, jobs.Skip)
+        self.assertTrue(os.path.exists(pack))
+        self.assertIn('finding: pack-0a.pack has no .idx', out.note)
+
+    def test_a_refused_delete_keeps_the_pack_names_it_and_the_pass_succeeds(self):
+        held = self.siblings('pack-0a', OLD, ('.pack', '.rev'))
+        freed = self.siblings('pack-1b', OLD, ('.pack', '.rev'))
+        real = su.fsreplace.remove
+
+        def remove(path):
+            if path.endswith('pack-0a.pack'):
+                raise PermissionError(32, 'in use by another process')
+            real(path)
+        self.loose = 10
+        with mock.patch.object(su.fsreplace, 'remove', side_effect=remove):
+            out = self.run_job()
+        self.assertIsInstance(out, str)
+        self.assertIn('pack-0a.pack kept (retried next pass): ', out)
+        self.assertIn('in use by another process', out)
+        self.assertIn('pruned 1 .idx-less pack: pack-1b.pack', out)
+        self.assertIn('finding: pack-0a.pack has no .idx (10 d old)', out)
+        self.assertEqual(self.events, [('findings', '1')])
+        for path in held:
+            self.assertTrue(os.path.exists(path), path)
+        for path in freed:
+            self.assertFalse(os.path.exists(path), path)
+
+    def test_a_busy_lock_deletes_nothing(self):
+        pack, = self.siblings('pack-0a', OLD, ('.pack',))
+        self.loose = 10
+        self.book_error = LockError(EXIT_TIMEOUT, 'busy here')
+        out = self.run_job()
+        self.assertIn('prune skipped to the next pass', out)
+        self.assertTrue(os.path.exists(pack))
+        self.assertEqual(self.events, [('findings', '1')])
+
     def test_ages_past_two_days_read_in_days(self):
-        self.place('objects/pack/pack-old.pack', 3 * 86400)
+        self.place('objects/pack/pack-0a.pack', 3 * 86400)
         self.assertIn('3 d old', su.scan(self.common, NOW)[0])
 
 
 class PushOnChange(UpkeepCase):
     """An event is pushed at the pass's end, and only when it changed or a day passed; the last
-    pushes survive a hub restart (a new StoreUpkeep over the same common dir)."""
+    pushes survive a hub restart (a new StoreUpkeep over the same common dir). The prune is
+    stubbed to delete nothing, so the orphans stay from pass to pass."""
 
     def setUp(self):
         super(PushOnChange, self).setUp()
         self.loose = 10
         self.place('objects/pack/pack-a.pack', su.PACK_AGE_S + 60)
+        held = mock.patch.object(su, 'prune', return_value=([], []))
+        held.start()
+        self.addCleanup(held.stop)
 
     def restarted(self, later_s):
         self.job = su.StoreUpkeep(self.root, book=self.fake_book, clock=lambda: NOW + later_s)

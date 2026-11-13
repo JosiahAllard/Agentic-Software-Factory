@@ -70,10 +70,12 @@ class Thresholds(unittest.TestCase):
 
 class Untested(unittest.TestCase):
     def test_the_first_parent_commits_main_lacks_and_the_oldest(self):
-        git = FakeGit({('log',): (0, '%d\n%d\n' % (NOW, NOW - 9), '')})
+        git = FakeGit({('log',): (0, 'a1 %d\nb2 %d\n' % (NOW - 9, NOW), '')})
         self.assertEqual(C.untested('.', Cfg(), 'staging', git), ((2, NOW - 9), None))
-        self.assertEqual(git.calls, [('log', '--first-parent', '--format=%ct',
-                                      'origin/main..origin/staging')])
+        self.assertEqual(C.first_parent('.', git, 'origin/main', 'origin/staging'),
+                         ([('a1', NOW - 9), ('b2', NOW)], None))
+        self.assertEqual(git.calls[0], ('log', '--first-parent', '--reverse', '--format=%H %ct',
+                                        'origin/main..origin/staging'))
 
     def test_another_main_ref(self):
         git = FakeGit({('log',): (0, '', '')})

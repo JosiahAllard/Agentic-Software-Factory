@@ -15,7 +15,9 @@ from kitlib.dailyfull import promote as P
 from kitlib.lock import run as lockrun
 from kitlib.lock import store as lockstore
 from kitlib.staging import advance as A
+from kitlib.staging import culprit as CU
 from kitlib.staging import promote as SP
+from kitlib.staging import revert as V
 from kitlib.staging import record as R
 from kitlib.gate import runner
 from kitlib.records import gate_ok, place
@@ -453,6 +455,93 @@ class Look(Case):
         verdict, note = self.look()
         self.assertEqual(verdict, 'start')
         self.assertIn('left at pushing', note)
+
+
+class Hunt(Case):
+    """The culprit hunt after a red, run for real: its probes in the promotion's tree on the
+    scratch store, its revert as a local branch of the main checkout (kitlib.staging.culprit)."""
+
+    def branch(self, merge):
+        return self.repo.git('rev-parse', '--verify', '-q', 'refs/heads/' + V.branch_of(merge),
+                             check=False)
+
+    def test_one_red_landing_is_confirmed_by_its_revert_and_the_branch_prepared(self):
+        tip = self.land_red()
+        out = self.run_promote()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        said = '\n'.join(out.lines)
+        self.assertIn('promote: hunt: culprit %s (confirmed by revert)' % tip[:10], said)
+        self.assertIn('promote: REVERT PREPARED - local branch revert/%s' % tip[:10], said)
+        self.assertIn('nothing was pushed', said)
+        a = self.attempts()[-1]
+        found = a.rec['culprit']
+        self.assertEqual((found['end'], found['merge'], found['by']),
+                         (CU.FOUND, tip, CU.BY_REVERT))
+        self.assertEqual([p['what'] for p in found['probes']], ['S', 'revert of %s' % tip[:10]])
+        self.assertEqual(found['red'], ['unit'])
+        revert = self.branch(tip)
+        self.assertEqual(a.rec['revert']['branch'], V.branch_of(tip))
+        self.assertEqual((a.rec['revert']['commit'], a.rec['revert']['base']), (revert, tip))
+        self.assertEqual(self.repo.git('rev-parse', revert + '^1'), tip)
+        self.assertNotIn('RED', self.repo.git('ls-tree', '--name-only', revert).split())
+        self.assertEqual(self.repo.git('log', '-1', '--format=%an|%cn', revert),
+                         '%s|%s' % (V.AUTHOR[0], V.AUTHOR[0]))
+        self.assertEqual(a.event(), ('revert', tip[:10]))
+        self.assertIn('; revert branch revert/%s' % tip[:10], R.line(a))
+        self.assertEqual(self.repo.git('ls-remote', 'origin', 'refs/heads/' + V.branch_of(tip)),
+                         '')                        # nothing pushed
+
+    def test_the_red_landing_among_green_ones_is_found_by_bisect(self):
+        self.land()
+        culprit = self.land_red()
+        tip = self.land()
+        out = self.run_promote()
+        found = self.attempts()[-1].rec['culprit']
+        self.assertEqual((found['end'], found['merge'], found['by']),
+                         (CU.FOUND, culprit, CU.BY_BISECT), out.lines)
+        self.assertEqual(len(found['suspects']), 3)         # 'unit' has no globs: every landing
+        revert = self.branch(culprit)
+        self.assertEqual(self.repo.git('rev-parse', revert + '^1'), tip)
+        self.assertNotIn('RED', self.repo.git('ls-tree', '--name-only', revert).split())
+        self.assertIn('landed-3.txt', self.repo.git('ls-tree', '--name-only', revert).split())
+
+    def test_main_red_already_is_on_main_after_the_revert_probed_red_and_no_branch(self):
+        self.land_red()
+        self.repo.git('push', '-q', 'origin', 'HEAD:refs/heads/main', cwd=self.stg)
+        base = self.remote_main()
+        tip = self.land()
+        out = self.run_promote()
+        found = self.attempts()[-1].rec['culprit']
+        self.assertEqual(found['end'], CU.ON_MAIN, out.lines)
+        self.assertEqual([p['what'] for p in found['probes']],
+                         ['S', 'revert of %s' % tip[:10], 'bisect'])     # the probe at M ran
+        self.assertEqual([p['sha'] for p in found['probes']][2], base)
+        self.assertNotIn('revert', self.attempts()[-1].rec)
+        self.assertEqual(self.branch(tip), '')
+
+    def test_the_probes_wait_for_their_slot_within_the_budget_and_the_gate_never_waits(self):
+        self.land_red()
+        self.run_promote()
+        hunts = [c for c in self.book_calls if c['slug'] == CU.SLUG]
+        self.assertTrue(hunts, self.book_calls)
+        others = [c for c in self.book_calls if c['slug'] != CU.SLUG]
+        self.assertTrue(others[0].get('no_wait'), others)
+        for c in hunts:
+            self.assertNotIn('no_wait', c)
+            self.assertTrue(0 < c['wait_s'] <= CU.HUNT_BUDGET_S, c)
+            self.assertEqual(c.get('gate_mode'), 'bisect')
+
+    def test_a_hunt_left_marked_hunting_is_marked_stopped_by_the_look(self):
+        tip = self.land()
+        a = R.start(SP.folder(self.cfg(), self.main_dir), tip, self.remote_main(), 'red',
+                    why='the gate failed')
+        a.rec['culprit'] = {'verdict': R.HUNTING, 'pid': 1, 'red': ['unit']}
+        a.write()
+        announced = []
+        SP.look(self.main_dir, self.cfg(), announced.append)
+        self.assertEqual([x.rec['culprit']['verdict'] for x in announced], [CU.STOPPED])
+        self.assertEqual(self.attempts()[-1].rec['culprit']['verdict'], CU.STOPPED)
+        self.assertEqual(self.attempts()[-1].event(), ('red', tip[:10]))
 
 
 class Off(StagingCase):

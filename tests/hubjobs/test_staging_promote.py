@@ -6,11 +6,13 @@ from unittest import mock
 
 from kitlib.hubjobs import staging_promote as sp
 from kitlib.hubsite import jobs
+from kitlib.hubsite import push
+from kitlib.staging import record as R
 
 
-class Attempt(object):
-    def __init__(self, phase, sha):
-        self.phase, self.sha = phase, sha
+def Attempt(phase, sha, **more):
+    """An attempt as record.attempts reads one back (never written here)."""
+    return R.Attempt('/nowhere/promote.json', dict({'phase': phase, 'sha': sha}, **more))
 
 
 class Ctx(object):
@@ -73,6 +75,26 @@ class Job(unittest.TestCase):
                                            ('promote-red', 'a:?')])
         for end in ('red', 'refused', 'diverged', 'failed', 'error'):
             self.assertIn(end, sp.EVENTS)
+
+    def test_a_red_with_a_revert_branch_is_announced_as_promote_revert_of_the_culprit(self):
+        merge = 'c' * 40
+        revert = Attempt('red', 'f' * 40, culprit={'merge': merge, 'verdict': 'culprit'},
+                         revert={'branch': 'revert/' + merge[:10], 'commit': 'd' * 40})
+        no_branch = Attempt('red', 'e' * 40, culprit={'merge': merge}, revert={'why': 'conflict'})
+        self.looks = {'/a': ('idle', 'held', [revert, no_branch])}
+        self.run_job({'a': '/a'})
+        self.assertEqual(self.ctx.events, [('promote-revert', 'a:' + 'c' * 10),
+                                           ('promote-red', 'a:' + 'e' * 10)])
+        self.assertIn('revert', sp.EVENTS)
+
+    def test_promote_revert_alone_is_owed_once_per_detail_and_its_text_says_review(self):
+        self.assertIn('promote-revert', push.JOB_EACH)
+        for end in ('red', 'refused', 'diverged', 'failed', 'error'):
+            self.assertNotIn('promote-' + end, push.JOB_EACH)
+        text = push.JOB_EACH['promote-revert']
+        for said in ('revert/<landing sha10>', 'Reverts-landing', 'nothing was pushed',
+                     'coordinator', 'never land it unreviewed', '--existing'):
+            self.assertIn(said, text)
 
     def test_an_error_with_nothing_started_fails(self):
         self.looks = {'/a': ('error', 'git log failed', [])}

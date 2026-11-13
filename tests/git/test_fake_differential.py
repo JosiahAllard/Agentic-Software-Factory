@@ -191,6 +191,12 @@ WORKTREES_AND_CONFLICTS = [
     ('git', ['commit', '-q', '-a', '-m', 'main edit']),
     ('git', ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', 'main',
              'kit/wt']),
+    # kitlib/staging/revert.py's revert of one commit: clean (main's own edit), then a conflict
+    # (kit/wt's edit undone on main, which changed the same line).
+    ('git', ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z',
+             '--merge-base', 'main', 'main', 'main~1']),
+    ('git', ['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z',
+             '--merge-base=kit/wt', 'main', 'kit/wt~1']),
     ('git', ['merge', '-q', '-m', 'conflict', 'kit/wt']),
     ('git', ['status', '--porcelain=v1']),
     ('git', ['ls-files', '-s']),

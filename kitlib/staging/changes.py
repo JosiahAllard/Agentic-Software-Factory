@@ -20,16 +20,28 @@ def thresholds(cfg):
     return (DUE_COUNT if landings is None else landings), (DUE_HOURS if hours is None else hours)
 
 
-def untested(root, cfg, staging, git, main_ref=None):
-    """`((count, oldest), None)`: the first-parent commits of `<remote>/<staging>` that
-    `main_ref` (default `<remote>/<main>`) lacks, and the committer time (epoch seconds) of the
-    oldest of them, None when there are none. `(None, why)` when git cannot say."""
-    tip = '%s/%s' % (cfg.remote, staging)
-    base = main_ref or '%s/%s' % (cfg.remote, cfg.main_branch)
-    rc, out, err = git(root, 'log', '--first-parent', '--format=%ct', '%s..%s' % (base, tip))
+def first_parent(root, git, base, tip):
+    """`([(sha, committer time)], None)`: the first-parent commits of `tip` that `base` lacks,
+    oldest first (each one landing, or a commit pushed straight to staging; the culprit hunt's
+    candidates too, kitlib.staging.culprit), or `(None, why)` when git cannot say."""
+    rc, out, err = git(root, 'log', '--first-parent', '--reverse', '--format=%H %ct',
+                       '%s..%s' % (base, tip))
     if rc != 0:
         return None, 'git log %s..%s failed: %s' % (base, tip, err or 'exit %d' % rc)
-    times = [int(t) for t in out.split()]
+    pairs = [line.split() for line in out.splitlines() if line.strip()]
+    return [(sha, int(t)) for sha, t in pairs], None
+
+
+def untested(root, cfg, staging, git, main_ref=None):
+    """`((count, oldest), None)`: the first-parent commits of `<remote>/<staging>` that
+    `main_ref` (default `<remote>/<main>`) lacks (first_parent), and the committer time (epoch
+    seconds) of the oldest of them, None when there are none. `(None, why)` when git cannot say."""
+    tip = '%s/%s' % (cfg.remote, staging)
+    base = main_ref or '%s/%s' % (cfg.remote, cfg.main_branch)
+    found, why = first_parent(root, git, base, tip)
+    if found is None:
+        return None, why
+    times = [t for _sha, t in found]
     return (len(times), min(times) if times else None), None
 
 

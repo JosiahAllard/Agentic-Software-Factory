@@ -70,7 +70,8 @@ import difflib
 import re
 
 from kitlib.git import cmd, refs
-from kitlib.git.refs import REGULAR_MODES, deletes_only     # named here too: callers use oc.<name>
+from kitlib.git.refs import (  # noqa: F401 - named here too: callers use oc.<name>
+    REGULAR_MODES, deletes_only, parse_merge_tree)
 
 Violation = collections.namedtuple('Violation', 'sha author paths why', defaults=('',))
 NOREPLACE = ['--no-replace-objects']
@@ -429,20 +430,6 @@ def run_git(root, *args, timeout=None, env=None):
     kw = {} if timeout is None else {'timeout': timeout}
     r = cmd.call(list(args), root, env=env, **kw)
     return r.rc, r.out.decode('utf-8', 'replace'), r.err
-
-
-def parse_merge_tree(raw):
-    """`(tree, conflicted paths)` from `git merge-tree --write-tree --name-only --no-messages -z`
-    (the tree OID, then each conflicted path once, NUL-terminated). A newline after the OID is
-    tolerated as well as a NUL."""
-    tokens = raw.split('\0')
-    head = tokens[0]
-    if '\n' in head:
-        head, rest = head.split('\n', 1)
-        tokens = [rest] + tokens[1:]
-    else:
-        tokens = tokens[1:]
-    return head.strip(), {t for t in tokens if t not in ('', '\n')}
 
 
 def _entries(out, path):

@@ -528,11 +528,16 @@ def _in_the_way(repo, ix, hs):
 
 # -- merge-tree -----------------------------------------------------------------------------
 
-_MERGE_TREE = _u.Spec('merge-tree', flags='write-tree name-only no-messages z allow-unrelated-histories')
+_MERGE_TREE = _u.Spec('merge-tree', flags='write-tree name-only no-messages z allow-unrelated-histories',
+                      values='merge-base')
 
 
 @command('merge-tree')
 def merge_tree(ctx, args):
+    """`--write-tree --name-only --no-messages [-z] [--allow-unrelated-histories] [--merge-base
+    <commit>] <one> <two>`. With `--merge-base` that commit is the base (a revert's: the reverted
+    commit, between the target and its parent) and no merge base is looked for; a tree there is
+    Unsupported."""
     opts, pos, dd = _u.parse(_MERGE_TREE, args)
     if not opts.get('write-tree'):
         raise Unsupported('merge-tree without --write-tree')
@@ -548,7 +553,17 @@ def merge_tree(ctx, args):
         if c is None:
             raise GitExit(1, 'merge-tree: %s - not something we can merge\n' % spec)
         oids.append(c)
-    bases = _revs.merge_bases(repo, oids[0], [oids[1]])
+    given = opts.get('merge-base')
+    if given is not None:
+        o = _pl.resolve(ctx, given)
+        if o is None or not repo.objects.has(o):
+            raise die('could not parse as tree \'%s\'' % given)
+        c = _revs.peel(repo, o, 'commit')
+        if c is None:
+            raise Unsupported('merge-tree --merge-base of a tree')
+        bases = [c]
+    else:
+        bases = _revs.merge_bases(repo, oids[0], [oids[1]])
     if not bases:
         if not opts.get('allow-unrelated-histories'):
             raise die('refusing to merge unrelated histories')

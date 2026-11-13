@@ -302,6 +302,18 @@ class ParseWorktreesTest(unittest.TestCase):
         self.assertTrue(wts[0].bare)
 
 
+class ParseMergeTreeTest(unittest.TestCase):
+    """refs.parse_merge_tree (moved from kitlib.ownerfiles.rules, which names it too)."""
+
+    def test_parse_merge_tree_layouts(self):
+        oid = '1' * 40
+        self.assertEqual(refs.parse_merge_tree(oid + '\0p.txt\0'), (oid, {'p.txt'}))
+        self.assertEqual(refs.parse_merge_tree(oid + '\np.txt\0'), (oid, {'p.txt'}))
+        self.assertEqual(refs.parse_merge_tree(oid + '\n'), (oid, set()))
+        self.assertEqual(refs.parse_merge_tree(oid + '\0p.txt\0 q dir/r.txt\0'),
+                         (oid, {'p.txt', ' q dir/r.txt'}))
+
+
 class TopLevelTest(RepoFixture):
     """-C is a plain path: any work tree of any repository names its own top level."""
 

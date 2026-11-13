@@ -99,7 +99,10 @@ class Job(unittest.TestCase):
         def event(word, detail=None):
             raise OSError('hub down')
         self.ctx.event = event
-        out = self.run_job({'a': '/a', 'b': '/b'})
+        try:
+            out = self.run_job({'a': '/a', 'b': '/b'})
+        except OSError as e:
+            self.fail('the pass stopped at a: %s' % e)
         self.assertEqual(out, 'started b (due, pid 4242); a: its look failed: OSError: hub down')
         self.assertEqual(self.started, ['/b'])
 

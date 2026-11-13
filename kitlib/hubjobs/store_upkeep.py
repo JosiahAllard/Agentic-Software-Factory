@@ -30,8 +30,9 @@ in order:
         be read keeps every pack that pass, with a note. What is left no git can read, so nothing
         reachable is lost. Such packs are left when a repack's delete is refused on Windows
         because another git holds the file open. git renames a new pack into place just before
-        its `.idx`, so a young one is never touched, and the `.idx`, `.keep` and multi-pack-index
-        are checked again just before each delete. No path but a `.pack` and SIBLINGS is ever
+        its `.idx`, so a young one is never touched. The multi-pack-index is read once per prune,
+        after the orphans are listed; the `.idx` and `.keep` are checked again just before each
+        delete. No path but a `.pack` and SIBLINGS is ever
         removed. A delete still refused after kitlib.fs.replace.remove's retries (a file in use)
         keeps that pack and its siblings; it is named in the note and retried next pass, never a
         failure.
@@ -258,12 +259,14 @@ def prune(common, now):
 
 def _remove(path):
     """kitlib.fs.replace.remove of a file the prune chose, its read-only bit cleared first (git
-    writes packs read-only; Windows refuses to delete such a file). A file already gone is no
-    error."""
+    writes packs read-only; Windows refuses to delete such a file). A link is removed as it is,
+    its target never made writable. A file already gone is no error."""
     try:
-        os.chmod(path, os.stat(path).st_mode | stat.S_IWRITE)
+        mode = os.lstat(path).st_mode
     except FileNotFoundError:
         return
+    if not stat.S_ISLNK(mode):
+        os.chmod(path, mode | stat.S_IWRITE)
     fsreplace.remove(path)
 
 

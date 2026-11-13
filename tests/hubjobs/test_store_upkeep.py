@@ -271,6 +271,31 @@ class Prune(UpkeepCase):
                     self.assertFalse(os.path.exists(other))
                     os.remove(path)
 
+    def test_a_longer_name_in_the_multi_pack_index_does_not_keep_the_pack(self):
+        pack, = self.siblings('pack-0a', OLD, ('.pack',))
+        path = self.place('objects/pack/multi-pack-index', 0)
+        with open(path, 'wb') as f:
+            f.write(b'MIDX\x01\x01PNAM\0pack-0ab.idx\0\0')
+        self.assertEqual(su.prune(self.common, NOW), (['pack-0a.pack'], []))
+        self.assertFalse(os.path.exists(pack))
+
+    def test_a_sibling_link_is_removed_and_its_target_left_read_only(self):
+        pack, = self.siblings('pack-0a', OLD, ('.pack',))
+        target = os.path.join(os.path.dirname(self.common), 'outside.rev')
+        with open(target, 'wb') as f:
+            f.write(b'x')
+        os.chmod(target, stat.S_IREAD)
+        self.addCleanup(os.chmod, target, stat.S_IWRITE | stat.S_IREAD)
+        link = pack[:-len('.pack')] + '.rev'
+        try:
+            os.symlink(target, link)
+        except (OSError, NotImplementedError) as e:
+            self.skipTest('no symlink on this host: %s' % e)
+        self.assertEqual(su.prune(self.common, NOW), (['pack-0a.pack'], []))
+        self.assertFalse(os.path.lexists(link))
+        self.assertTrue(os.path.exists(target))
+        self.assertFalse(os.stat(target).st_mode & stat.S_IWRITE)
+
     def test_an_unreadable_multi_pack_index_prunes_nothing_and_says_so(self):
         pack, = self.siblings('pack-0a', OLD, ('.pack',))
         os.makedirs(os.path.join(self.pack, 'multi-pack-index'))     # open() refuses a folder

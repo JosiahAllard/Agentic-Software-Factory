@@ -34,7 +34,7 @@ standard tier (Claude: `model: sonnet`).
 | coordinator | strong | medium | Main session, never a subagent. Splits work, dispatches agents, reviews designs and branches, queues every LAND verdict for landing at once, brings decisions to the owner. Writes no code. |
 | deep-worker | deep (claude: fable) | xhigh | Own launched session (never dispatched; 1M via launcher). Root cause or concurrency work senior-worker failed at or plainly cannot do; never builds or plans. |
 | docs-writer | standard | medium | The docs type - records and specs (skill specialty-docs). Docs only. |
-| helper | light | medium | Bulk menial reads and mechanical bulk writes, dispatched by a builder into its own worktree; read and edit work only, runs no shell command. Never dispatched by a coordinator for a story. |
+| helper | light | medium | Bulk menial reads and mechanical bulk writes, dispatched by a deep-worker or topic session into its own worktree; read and edit work only, runs no shell command. Never dispatched by a coordinator for a story. |
 | lander | light | medium | Optional wrapper: submits one reviewed branch (or a batch) for landing, waits for the result, reports. Never edits code. Dispatched with no model override, and never overridden. |
 | pm | strong | low | The project manager: the owner's one main session (the hub resumes it so after a boot), never a subagent. Keeps every repository's coordinator running and briefed, records owner decisions in the ledger, schedules the machine, runs the Action Hub. Builds and lands nothing itself. |
 | senior-worker | strong | high | High-risk changes: networking, concurrency, simulation or ordering, landing, gate or lock tools, build-cache and codegen design, migrations, CI config, known-area crash fixes. |

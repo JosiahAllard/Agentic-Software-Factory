@@ -6,7 +6,7 @@ compact: 170000
 sandbox: workspace-write
 mode: test
 summary: Runs test tiers in a given worktree and reports only PASS/FAIL plus failing lines.
-capabilities: [bash, powershell, worktree, search, read, find]
+capabilities: [bash, worktree, search, read, find]
 ---
 
 You run tests and report the result: a mechanical test runner, not a developer.

@@ -178,6 +178,20 @@ class CheckTest(unittest.TestCase):
         docs = {'questions': {'Q-1': question(status='bad')}, 'todos': {'T-1': todo(refs=['Q-9'])}}
         self.assertEqual(codes(V.validate(docs, only={'todos/T-1'})), [('todos/T-1', 'ref-dangling')])
 
+    def test_only_reads_no_other_document_and_a_missing_one_gives_nothing(self):
+        class Unread(dict):
+            """A document validate must not read: a store write checks one document alone."""
+            def get(self, *a):
+                raise AssertionError('a document `only` leaves out was read')
+            __getitem__ = items = get
+        docs = {'questions': {'Q-1': Unread(), 'Q-2': Unread()},
+                'todos': {'T-1': todo(refs=['Q-9', 'Q-2'], repo='ghost'), 'T-2': Unread()},
+                'pages': {'p': Unread()}, 'page_html': {'p': Unread()},
+                'landings': {'L-001': Unread()}, 'repos': {}}
+        only = {'todos/T-1', 'todos/T-404', 'nonesuch/X-1', 'pages/p404'}
+        self.assertEqual(codes(V.validate(docs, only=only)),
+                         [('todos/T-1', 'ref-dangling'), ('todos/T-1', 'repo-alias')])
+
     def test_summary_and_line(self):
         f = V.validate({'todos': {'T-1': todo(commands='x', refs=['Q-1'])}, 'questions': {}})
         self.assertEqual(V.summary(f), '1 error(s), 1 warning(s)')

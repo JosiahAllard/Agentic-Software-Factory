@@ -9,10 +9,12 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 import uuid
 
+from optional.bridge.hosts.codex.context import CodexObserver
 from optional.bridge.hosts.codex.runtime import CodexSources
 from optional.bridge.win.frontend import serve_frontend,service_target
 from optional.bridge.win.lifecycle import Supervisor
@@ -113,12 +115,12 @@ class FrontendRecoveryTests(unittest.TestCase):
         self.frontend.stdin.write(json.dumps(message).encode()+b'\n')
         self.frontend.stdin.flush()
 
-    def call(self,method,params=None):
+    def call(self,method,params=None, *, wait=8):
         self.next_id+=1
         message={'jsonrpc':'2.0','id':self.next_id,'method':method}
         if params is not None:message['params']=params
         self.send(message)
-        raw=self.output.get(timeout=8)
+        raw=self.output.get(timeout=wait)
         response=json.loads(raw)
         self.assertEqual(response['id'],self.next_id)
         return response
@@ -134,9 +136,22 @@ class FrontendRecoveryTests(unittest.TestCase):
         self.assertIn('result',response,response)
         return response['result']
 
-    def connections(self,meta=None):
+    def connections(self,meta=None, *, wait=8):
         return self.call('tools/call',{'name':'bridge_connections','arguments':{},
-            '_meta':self.meta if meta is None else meta})
+            '_meta':self.meta if meta is None else meta},wait=wait)
+
+    def test_a_cold_observe_slower_than_five_seconds_returns_its_result(self):
+        # A cold read of a large rollout (README "Service", tool-call budget) outlasts the
+        # handshake's 5 s; the tool frame's own budget must still carry its result back.
+        read=CodexObserver._read_whole
+        def cold(observer,path):
+            if path not in observer._folds: time.sleep(5.5)
+            return read(observer,path)
+        self.initialize()
+        with patch.object(CodexObserver,'_read_whole',cold):
+            response=self.connections(wait=14)
+        self.assertFalse(self.result(response)['isError'],response)
+        self.assertEqual(len(self.supervisor.controller.pairs.registered()),1)
 
     def test_same_live_frontend_recovers_initialized_session_after_real_supervisor_restart(self):
         self.initialize()
@@ -328,7 +343,7 @@ class RecoveryProtocolTests(unittest.TestCase):
         encoded=b''.join(json.dumps(message).encode()+b'\n' for message in messages)
         output=io.BytesIO()
         calls=[]
-        def forwarded(target,frame):
+        def forwarded(target,frame, *, timeout):
             calls.append((target,frame))
             return replies(frame,len(calls))
         with patch('optional.bridge.win.frontend.capture_inherited_channel',return_value=None),patch(

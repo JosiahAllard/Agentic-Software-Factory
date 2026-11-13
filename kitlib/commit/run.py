@@ -10,6 +10,7 @@ import subprocess
 import sys
 import uuid
 
+from kitlib import kitroot
 from kitlib import config as kconfig
 from kitlib import attribution, verdict
 from kitlib.docs import callers as doc_callers
@@ -19,17 +20,17 @@ from kitlib.git import cmd, repo
 from kitlib.proc import spawn
 
 from kitlib.commit.checks import (
-    OK, REFUSED, USAGE, _Stop, author_email, deletion_merge_paths, foreign_refusal, landed_main,
+    OK, REFUSED, USAGE, _Stop, author_email, foreign_refusal, joined_merge_paths, landed_main,
     locked_paths, machine_path_error, main_checkout_error, merge_heads, model_requirement_error,
-    owner_identity_error, owner_only_refusal, repo_path, shrunk_paths, staged_deletion_merges,
-    staged_machine_path_error, staged_status, unapproved_locked, unstage_added)
+    owner_identity_error, owner_only_refusal, repo_path, shrunk_paths, staged_machine_path_error,
+    staged_status, staged_unjoined, unapproved_locked, unstage_added)
 from kitlib.commit.checks import drop_sync_base, unsynced_merge_refusal
 from kitlib.commit.message import (
     build_message, build_trailers, canonical_approved, message_body, session_lines)
 from kitlib.ownerfiles import rules as ownerrules
 
 
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 
 
 DOC_BUDGET_TIMEOUT = 600     # seconds
@@ -551,7 +552,8 @@ def _stage(req, root, paths, rendered, named, merged, status_before, msg_warning
            lines, exempt=(None, (), (), ())):
     """`(head, snap, status_after, others, message)`: the named paths staged and checked, for
     commit_only; raises _Stop on a refusal. `exempt`: (rules, the owner-only paths exempt as
-    work-tree shrinks, those exempt as a merge of deletions, [the merge's MERGE_HEAD] for them),
+    work-tree shrinks, those exempt as a merge that joins both sides, [the merge's MERGE_HEAD]
+    for them),
     each judged again here on its staged copy against `head`."""
     # A listed path is always added again. The one skip: a listed path staged as a deletion and
     # absent from the work tree (`git add` would fail "pathspec did not match"); its deletion is
@@ -580,7 +582,7 @@ def _stage(req, root, paths, rendered, named, merged, status_before, msg_warning
     rules, shrunk, joined, merge_head = exempt
     grown = sorted(set(shrunk) - (shrunk_paths(root, rules, shrunk, ['--cached', head])
                                   if shrunk and head else set()))
-    unjoined, why = (staged_deletion_merges(root, joined, head, merge_head[0])
+    unjoined, why = (staged_unjoined(root, joined, head, merge_head[0])
                      if joined and head and merge_head else (sorted(joined), None))
     if grown or unjoined:   # the staged copy, the one committed, is what counts
         note = ['the staged merge of %s could not be judged: %s.' % (', '.join(unjoined), why)
@@ -703,12 +705,13 @@ def _commit(req, lines):
     if locked and not req.owner_authored:
         if len(heads) == 1:
             # A path the merge would carry unnamed, as it is staged now, is refused with the hint
-            # to leave it out; any other may be a merge of deletions only (docs/commit.md). When
-            # git cannot say which the merge carries, nothing is exempt and the refusal says why.
+            # to leave it out; any other may be a merge that only joins both sides (docs/commit.md).
+            # When git cannot say which the merge carries, nothing is exempt and the refusal says
+            # why.
             carried, carry_why = ownerrules.merge_owned(
                 root, rules, set(locked) & set(status_before), heads, landed)
             if not carry_why:
-                joined = deletion_merge_paths(root, rules, set(locked) - carried, heads[0], landed)
+                joined = joined_merge_paths(root, rules, set(locked) - carried, heads[0], landed)
         elif not merge_heads(root):     # a shrink: never a merge
             shrunk = shrunk_paths(root, rules, locked)
         locked = [p for p in locked if p not in shrunk | joined]

@@ -76,6 +76,7 @@ import stat
 import sys
 import time
 
+from kitlib import kitroot
 import kitlib.platform
 from kitlib.loadnode import frames
 from kitlib.loadnode import registry
@@ -94,7 +95,7 @@ BRANCH_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}(?:/[A-Za-z0-9][A-Za-z0-
 BASE_SUFFIX = '-base'           # refs/node/<job>-base: a gate job's base commit
 MAIN_REF = 'refs/pmkit/main/'   # + the main branch: the last base main pushed, so the mirror keeps
                                 # its objects (job.NodeJob.push_main: fast-forwards only)
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 GATE_STOP_S = 60                # a stopped gate gets this long after its Ctrl+C before a kill
 
 SPEC_CAP = 64 * 1024            # bytes of one parameters line

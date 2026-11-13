@@ -180,7 +180,11 @@ nominates no channel, and the other halves keep working.
 
   JSON identity claims grant nothing. Helpers run in job objects and are killed as a tree. A
   restarted service is rejoined by replaying only the frontend's initialize handshake; a tool call
-  is never replayed.
+  is never replayed. The frontend gives a tool frame 10 s for its reply (`TOOL_CALL_SECONDS`), and
+  each handshake frame 5 s. A Codex call's first observe reads the chat's rollout whole: about 1 s
+  for 40 MB, measured, and about 6.5 s for the largest rollout the observer accepts (256 MB).
+  10 s is also the limit of `run_worker` and of the rpc helper's reply read, so raising it means
+  raising all three.
 - **Launch mark** (`mcp_frontend.py`, `win/frontend.py`, `Controller.launched`). A session the kit
   launched carries its kind in `PM_KIT_ROLE` (`kitlib/host/sessionmark.py`). The frontend reads it once,
   at start, so a later change to the session's environment reaches no frame. It sends the mark

@@ -22,6 +22,8 @@ only ctimes below the stamp).
                       CommandLine, ExecutablePath, ProcessId, ParentProcessId, Created), from /proc
   process_rows(timeout, run)
                       the seam's name for rows: no child is started, so no timeout applies
+  wall_start(ctime)   the epoch second that process started, as `ps -o lstart` prints it (Claude
+                      Code's procStart on Linux), None for another boot's ctime
 
 terminate_verified opens a pidfd on the pid first and reads its starttime after: the pidfd names
 the process it was opened on, so the signal reaches that process or none, and the starttime read
@@ -373,6 +375,24 @@ def _created(btime, starttime, tck):
         return datetime.datetime.fromtimestamp(btime + starttime / tck).astimezone().isoformat()
     except (OverflowError, OSError, ValueError):
         return None
+
+
+def wall_start(ctime):
+    """The epoch second a process of this ctime started, as `ps -o lstart` shows it (btime plus
+    its starttime ticks, floored): None when the ctime is of another boot, or the boot id, btime or
+    the tick rate cannot be read."""
+    if type(ctime) is not int or ctime <= 0:
+        return None
+    try:
+        if ctime >> 64 != boot():
+            return None
+        tck = _clk_tck()
+    except (OSError, ValueError, AttributeError):
+        return None
+    btime = _btime()
+    if btime is None or not tck:
+        return None
+    return btime + (ctime & (2 ** 64 - 1)) // tck
 
 
 def rows(readlink=os.readlink):

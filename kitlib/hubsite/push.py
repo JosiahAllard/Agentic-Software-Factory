@@ -37,9 +37,11 @@ them alone, never does):
   submitted   a story the owner submitted (or submitted again): to the PM only; a skill edit
               the owner submitted: to the kit's coordinator (Api.kit_session_key) and the PM
   sent        a note the owner sent the PM (to_pm): to the PM only
-Recipients: the item's `from` (a launcher key, or a to-do's free name; for an approval, which has
-no `from`, Api.repo_key of its repo) unless it is the PM's (PM_KEY, OWNER_FROM, empty, or
-is_pm), and the PM (PM_KEY) always, once.
+Recipients: the item's `from` (a launcher key, or a to-do's free name) unless it is the PM's
+(PM_KEY, OWNER_FROM, empty, or is_pm), and the PM (PM_KEY) always, once. An approval has no
+`from` (its header's is Api.repo_key of its repo): it goes to that repository's coordinator, the
+first live key of Api.coordinator_keys (its name, then its coordinator sessions, as the kit's
+`kit`); with none live, its first coordinator session, else the name (_coordinator).
 
 Filed answers (`filed`, by the question's `filed_as`, kitlib.hubsite.api _filed_as):
   pulled      its asker alone: someone is working on the record (the PM when the PM asked,
@@ -564,9 +566,9 @@ class PushWorker(object):
         whose item changed since fired afresh: start()'s first half, and a test's."""
         rev, docs = self.store.snapshot()
         self._rev = rev
-        self._fps = self._prints(docs)
+        now = self._at() if docs.get('approvals') else None     # one clock read: _fps and _fire
+        self._fps = self._prints(docs, now)
         self._outbox = self._load()
-        now = self._at() if docs.get('approvals') else None
         for key, entry in list(self._outbox.items()):
             now_fp = self._fps.get(key)
             if now_fp is None:
@@ -773,11 +775,12 @@ class PushWorker(object):
     def _round(self, changes):
         if changes.reset:
             rev, docs = self.store.snapshot()
-            fresh = self._prints(docs)
+            now = self._at() if docs.get('approvals') else None
+            fresh = self._prints(docs, now)
             for key, fp in fresh.items():
                 if fp != self._fps.get(key):
                     kind, doc_id = key.split(':', 1)
-                    self._fire(kind, doc_id, docs[_coll(kind)][doc_id], self._fps.get(key))
+                    self._fire(kind, doc_id, docs[_coll(kind)][doc_id], self._fps.get(key), now)
             for key in set(self._fps) - set(fresh):
                 self._before.pop(key, None)
                 self._drop(key)
@@ -832,13 +835,15 @@ class PushWorker(object):
             self._before.pop(key, None)
             self._drop(key)
             return
+        now = None
         if kind == 'approval':
             self._kinds[key] = doc.get('kind')
             self._superseded[key] = doc.get('superseded')
-        old, fp = self._fps.get(key), self._print(kind, doc)
+            now = self._at()            # one clock read: _fps and the entry's fingerprint agree
+        old, fp = self._fps.get(key), self._print(kind, doc, now)
         self._fps[key] = fp
         if fp != old:
-            self._fire(kind, doc_id, doc, old)
+            self._fire(kind, doc_id, doc, old, now)
 
     def _fire(self, kind, doc_id, doc, old, now_at=None):
         key = '%s:%s' % (kind, doc_id)
@@ -862,17 +867,20 @@ class PushWorker(object):
         if kind == 'question' and event in ('filed', 'standing'):
             self._fire_filed(key, doc_id, doc, base, event)
             return
+        to = None
         if kind == 'approval':
             sender = self._repo_key(doc.get('repo'))    # no `from`: its repository's coordinator
+            to = self._coordinator(doc.get('repo'))     # that coordinator's live session key
         elif kind in ('story', 'to_pm'):
             sender = ''                 # the owner's own, for the PM
         elif kind == 'skill_edit':
             sender = self._kit_key()    # the kit's coordinator commits it
         else:
             sender = doc.get('from') if isinstance(doc.get('from'), str) else ''
+        to = sender if to is None else to
         keys = [PM_KEY]
-        if event != 'added' and sender and sender not in (PM_KEY, OWNER_FROM) and not self._is_pm(sender):
-            keys.insert(0, sender)
+        if event != 'added' and to and to not in (PM_KEY, OWNER_FROM) and not self._is_pm(to):
+            keys.insert(0, to)
         now = self.clock()
         fp = self._print(kind, doc, now_at)
         first = self._first(kind, base, fp)         # not a re-answer or a re-done
@@ -1039,15 +1047,14 @@ class PushWorker(object):
 
     def _live_session(self, doc, asker):
         """The first key with a live session (the delivery object's `resolve`, None for none)
-        of: question doc's asker, then the coordinator of the record's repository and of the
-        question's repo, each through Api.repo_key and as it is. None when none is live or the
+        of: question doc's asker, then the coordinators of the record's repository and of the
+        question's repo, each through _repo_keys (Api.coordinator_keys: its name, then its
+        coordinator sessions) and as it is. None when none is live or the
         delivery object cannot tell (no `resolve`; a key whose resolve raised counts as not
-        live, logged)."""
-        resolve = getattr(self.push, 'resolve', None)
-        if not callable(resolve):
+        live, logged: _first_live)."""
+        if not callable(getattr(self.push, 'resolve', None)):
             return None
         record = doc.get('record') if isinstance(doc.get('record'), dict) else {}
-        keys = []
         with sessions_once():           # sessions.json is read once for the whole walk
             rrepo = record.get('repo')
             if isinstance(rrepo, str) and rrepo and rrepo.lower() == self._pm_folder().lower():
@@ -1057,6 +1064,17 @@ class PushWorker(object):
                 rkeys = self._repo_keys(rrepo)
             cands = ([asker] + rkeys + [rrepo] + self._repo_keys(doc.get('repo'))
                      + [doc.get('repo')])
+        return self._first_live(cands)
+
+    def _first_live(self, cands):
+        """The first of keys `cands` with a live session (the delivery object's `resolve`),
+        each tried once, never the PM's (PM_KEY, OWNER_FROM, is_pm). None when none is live or
+        the delivery object cannot tell (no `resolve`; a key whose resolve raised counts as not
+        live, logged)."""
+        resolve = getattr(self.push, 'resolve', None)
+        if not callable(resolve):
+            return None
+        keys = []
         for k in cands:
             if isinstance(k, str) and k and k not in keys and k not in (PM_KEY, OWNER_FROM):
                 keys.append(k)
@@ -1069,6 +1087,18 @@ class PushWorker(object):
             except Exception as e:      # noqa: BLE001 - a host fault: the PM hears it
                 self.log('push: resolve(%s) failed: %s' % (field(k), type(e).__name__))
         return None
+
+    def _coordinator(self, repo):
+        """The key an approval of `repo` is pushed to: the first live of _repo_keys(repo)
+        (Api.coordinator_keys: the repository's name, then its coordinator sessions); with none
+        live, or no way to tell, its first coordinator session (a session's key before the
+        name, as Api.kit_session_keys), else the name. '' when the repository has none."""
+        with sessions_once():           # sessions.json is read once for the whole walk
+            keys = [k for k in self._repo_keys(repo) if k]
+        live = self._first_live(keys)
+        if live is not None:
+            return live
+        return (keys[1:] + keys[:1] or [''])[0]
 
     def _asked_by(self, entry):
         """True when the entry's item is from a session other than the PM's (a recipient)."""
@@ -1171,9 +1201,11 @@ class PushWorker(object):
         if self._outbox.pop(key, None) is not None:
             self._dirty = True
 
-    def _acked(self, entry, recipient, doc):
-        """True when `recipient` has nothing more to hear of entry (module docstring)."""
-        if doc is None or self._print(entry['kind'], doc) != entry['fingerprint']:
+    def _acked(self, key, entry, recipient, doc):
+        """True when `recipient` has nothing more to hear of entry (module docstring). doc is
+        the item's `status` and `pm_ack` alone (_acks), None when it is gone; its fingerprint is
+        the one this round's events, _tick or a reset left in _fps."""
+        if doc is None or self._fps.get(key) != entry['fingerprint']:
             return True
         if entry['event'] == 'reopened' or entry['kind'] == 'approval':
             return False                # only a written try acknowledges it
@@ -1201,10 +1233,17 @@ class PushWorker(object):
         return picked
 
     def _acks(self):
+        # the fields an ack reads, one pick per collection: no whole document is copied, and
+        # no fingerprint is made again (_fps holds each item's, kept by _changed, _tick, resets)
+        ids = collections.defaultdict(list)
+        for entry in self._outbox.values():
+            ids[_coll(entry['kind'])].append(entry['id'])
+        got = {coll: self.store.pick(coll, these, ('status', 'pm_ack'))
+               for coll, these in ids.items()}
         for key, entry in list(self._outbox.items()):
-            doc = self.store.get(_coll(entry['kind']), entry['id'])
+            doc = got[_coll(entry['kind'])].get(entry['id'])
             for r in list(entry['recipients']):
-                if self._acked(entry, r, doc):
+                if self._acked(key, entry, r, doc):
                     if r == entry.get('done') and self._picked(entry, r):
                         entry['has_it'] = True      # the asker picked this answer up
                     del entry['recipients'][r]
@@ -1303,9 +1342,12 @@ class PushWorker(object):
         self._dirty = True
 
     # ------------------------------------------------------------------ files
-    def _prints(self, docs):
-        """Every item's fingerprint, and (kept for _tick) each approval's kind and `superseded` note."""
-        out, now = {}, (self._at() if docs.get('approvals') else None)
+    def _prints(self, docs, now=None):
+        """Every item's fingerprint (an approval's at `now`, the clock when None), and (kept for
+        _tick) each approval's kind and `superseded` note."""
+        out = {}
+        if now is None and docs.get('approvals'):
+            now = self._at()
         self._kinds, self._superseded = {}, {}
         for coll, kind in COLLECTIONS.items():
             for doc_id, d in docs.get(coll, {}).items():

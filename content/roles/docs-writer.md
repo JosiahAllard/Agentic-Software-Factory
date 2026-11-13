@@ -8,7 +8,7 @@ sandbox: workspace-write
 mode: write
 group: docs
 summary: "The docs type - records and specs (skill specialty-docs). Docs only."
-capabilities: [read, edit, write, search, find, powershell, bash, skill]
+capabilities: [read, edit, write, search, find, bash, skill]
 cache: long
 ---
 

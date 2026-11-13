@@ -16,6 +16,7 @@ import os
 import re
 import sys
 
+from kitlib import kitroot
 from kitlib.host import agentname
 from kitlib import content as kcontent
 from kitlib.config import user as kuser
@@ -76,7 +77,7 @@ CONSULTANT_AUTOCOMPACT = (100000, 500000)
 CONSULTANT_DEFAULT_AUTOCOMPACT = 350000
 # a sessions.json entry of that agent, bare or with the kit plugin's prefix (kitlib.host.agentname)
 ROLE_AUTOCOMPACT = {'consultant': CONSULTANT_DEFAULT_AUTOCOMPACT, 'deep-worker': DEEP_AUTOCOMPACT}
-KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT = kitroot.root()
 # the kit plugin's agents, read from the role files (content/roles/*.md, kitlib.content.roster; rendered as
 # hosts/claude/shell/agents/*.md): a bare one of these is started with the plugin's prefix, any other name as given
 KIT_AGENTS = tuple(r.name for r in kcontent.roster(KIT))
@@ -145,7 +146,7 @@ def consultant_repo(folder):
 
 def cli(*args):
     """A launch.py command line for the owner or the PM to run."""
-    kit = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    kit = kitroot.root()
     return 'python "%s" %s' % (os.path.join(kit, 'tools', 'launch.py'), ' '.join(args))
 
 
@@ -249,7 +250,7 @@ def start(settings, host, repo=None, repo_path=None, account=None, org=None, pro
         if add_dir:
             prompt += HOME_NOTE % (start_in, add_dir)
             folder = start_in
-    settings_path, settings_data = _session_settings(host, mcp, name, out)
+    settings_path, settings_data = _session_settings(host, mcp, name, out, role)
     command = window.claude_command(name, prompt, run_as(agent), model, effort, autocompact, add_dir=add_dir,
                                    remote_control=remote_control, permission_mode=permission_mode,
                                    settings=settings_path)
@@ -347,10 +348,15 @@ def entry_start_args(settings, key, entry, account, prompt, predecessor=None, na
     return args
 
 
-def _session_settings(host, mcp, name, out):
-    """(the --settings file, the JSON start writes there or None) for a session `name`: none when
-    the host has no session_spec (a refusal when `mcp` asks for servers) or the rendered file is
-    missing (said in `out`)."""
+def _session_settings(host, mcp, name, out, role=None):
+    """(the --settings file, the JSON start writes there or None) for a session `name`: none for a
+    PM (`role` window.PM: like its relaunch and after-reboot starts, it keeps every tool; `mcp` is
+    refused), when the host has no session_spec (a refusal when `mcp` asks for servers) or the
+    rendered file is missing (said in `out`)."""
+    if role == window.PM:
+        if mcp:
+            raise LaunchError('--mcp is not for the PM: it starts with no session settings, so every MCP server is on.')
+        return None, None
     spec = host.session_spec
     if spec is None:
         if mcp:

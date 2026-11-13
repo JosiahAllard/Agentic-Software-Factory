@@ -8,7 +8,7 @@ import threading
 import time
 import unittest
 
-from kitlib.hubsite import api
+from kitlib.hubsite import api, store
 from kitlib.hubsite.api import AGENT, BASE, OWNER
 from kitlib.hubsite.store import Store
 
@@ -231,6 +231,60 @@ class WaitForTest(DirectCase):
                          ([mine], False, False))
         # the changes are all of them since `since`, the other session's answer too
         self.assertIn(theirs, [c['id'] for c in got['changes']])
+
+    def test_a_filtered_wait_reads_pending_again_only_after_a_write_pending_reads(self):
+        reads, picked = [], set()
+        real_pending, real_pick = self.store.pending, self.store.pick
+
+        def pending():
+            reads.append(1)
+            return real_pending()
+
+        def pick(coll, *a):
+            picked.add(coll)
+            return real_pick(coll, *a)
+        # each entry to store.wait notes its `since`, so the test waits on the waiter itself
+        # rather than on a sleep long enough under load
+        entered, cond = [], threading.Condition()
+        real_wait = self.store.wait
+
+        def wait(since, timeout):
+            with cond:
+                entered.append(since)
+                cond.notify_all()
+            return real_wait(since, timeout)
+
+        def waiting_since(rev):
+            with cond:
+                ok = cond.wait_for(lambda: any(s >= rev for s in entered), 10)
+            self.assertTrue(ok, 'the waiter never waited again from revision %d' % rev)
+        self.store.pending, self.store.pick, self.store.wait = pending, pick, wait
+        for key in ('kit', 'pm'):           # the PM's wait reads the routes too
+            with self.subTest(key=key):
+                qid = self.ask(**{'from': key})
+                out = {}
+                with cond:
+                    del entered[:]
+                t = threading.Thread(target=lambda: out.update(got=self.wait(20, **{'for': key})))
+                t.start()
+                self.addCleanup(t.join, 30)
+                waiting_since(self.store.revision)  # its first read is done; it waits
+                before = len(reads)
+                for _ in range(3):          # the inbox is no pending collection
+                    self.store.add('inbox', {'text': 'x'})
+                # it woke for the inbox writes and went back to waiting past them
+                waiting_since(self.store.revision)
+                self.assertTrue(t.is_alive())
+                self.assertEqual(len(reads), before, 'an inbox write read pending again')
+                self.answer(qid)
+                t.join(10)
+                self.assertEqual(self.ids(out['got']['pending']), [qid])
+                self.assertGreater(len(reads), before)
+                self.ok('POST', '/questions/%s/log' % qid, AGENT,
+                        {'if_version': self.store.get('questions', qid)['version']})
+        # what pending picks is read again on a write to those collections alone
+        self.assertTrue(picked)
+        self.assertLessEqual(picked, set(store.PENDING_COLLECTIONS))
 
     def test_a_wait_for_kit_that_times_out_says_so_even_after_other_writes(self):
         since = self.store.revision

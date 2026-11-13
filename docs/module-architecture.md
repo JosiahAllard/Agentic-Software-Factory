@@ -121,6 +121,7 @@ None: no module is open to every other.
 | autotasks | fs | build | apps uses base |
 | autotasks | git | build | apps uses facts |
 | autotasks | hubclient | build | apps uses services |
+| autotasks | kitlib-root | build | apps uses base |
 | autotasks | launcher | build | apps uses services |
 | autotasks | platform | build | apps uses base |
 | autotasks | proc | build | apps uses base |
@@ -151,6 +152,7 @@ None: no module is open to every other.
 | commit | content | build | work uses facts |
 | commit | docs | build | work uses services |
 | commit | git | build | work uses facts |
+| commit | kitlib-root | build | work uses base |
 | commit | machinepaths | build | work uses services |
 | commit | ownerfiles | build | work uses services |
 | commit | proc | build | work uses base |
@@ -158,6 +160,7 @@ None: no module is open to every other.
 | config | content | build | same layer (facts): config's row names content |
 | config | git | build | same layer (facts): config's row names git |
 | config | host | build | same layer (facts): config's row names host |
+| config | kitlib-root | build | facts uses base |
 | config | platform | build | facts uses base |
 | config | proc | build | facts uses base |
 | content | git | build | same layer (facts): content's row names git |
@@ -191,6 +194,7 @@ None: no module is open to every other.
 | delegations | git | build | work uses facts |
 | delegations | host | build | work uses facts |
 | delegations | hubclient | build | work uses services |
+| delegations | kitlib-root | build | work uses base |
 | delegations | landed | build | work uses services |
 | delegations | ledger | build | work uses services |
 | delegations | ownerfiles | build | work uses services |
@@ -281,6 +285,7 @@ None: no module is open to every other.
 | hubbacklog | git | build | apps uses facts |
 | hubclient | config | build | services uses facts |
 | hubclient | hubvalidate | build | same layer (services): hubclient's row names hubvalidate |
+| hubclient | kitlib-root | build | services uses base |
 | hubjobs | backlog | build | apps uses work |
 | hubjobs | config | build | apps uses facts |
 | hubjobs | coordstate | build | apps uses work |
@@ -357,6 +362,7 @@ None: no module is open to every other.
 | launcher | git | build | services uses facts |
 | launcher | host | build | services uses facts |
 | launcher | hubclient | build | same layer (services): launcher's row names hubclient |
+| launcher | kitlib-root | build | services uses base |
 | launcher | ledger | build | same layer (services): launcher's row names ledger |
 | launcher | platform | build | services uses base |
 | launcher | proc | build | services uses base |
@@ -364,12 +370,14 @@ None: no module is open to every other.
 | ledger | config | build | services uses facts |
 | ledger | fs | build | services uses base |
 | ledger | git | build | services uses facts |
+| ledger | kitlib-root | build | services uses base |
 | ledger | platform | build | services uses base |
 | ledger | proc | build | services uses base |
 | loadnode | config | build | work uses facts |
 | loadnode | content | build | work uses facts |
 | loadnode | gate | build | same layer (work): loadnode's row names gate |
 | loadnode | git | build | work uses facts |
+| loadnode | kitlib-root | build | work uses base |
 | loadnode | lock | build | work uses services |
 | loadnode | platform | build | work uses base |
 | loadnode | proc | build | work uses base |
@@ -393,6 +401,7 @@ None: no module is open to every other.
 | machinesetup | git | build | apps uses facts |
 | machinesetup | hookrun | build | apps uses guard |
 | machinesetup | host | build | apps uses facts |
+| machinesetup | kitlib-root | build | apps uses base |
 | machinesetup | launcher | build | apps uses services |
 | machinesetup | platform | build | apps uses base |
 | machinesetup | pluginsource | build | apps uses services |
@@ -497,6 +506,7 @@ None: no module is open to every other.
 | pytests | config | build | services uses facts |
 | pytests | git | build | services uses facts |
 | pytests | host | build | services uses facts |
+| pytests | kitlib-root | build | services uses base |
 | pytests | platform | build | services uses base |
 | pytests | proc | build | services uses base |
 | records | config | build | services uses facts |
@@ -508,6 +518,7 @@ None: no module is open to every other.
 | redfirst | gate | build | apps uses work |
 | redfirst | git | build | apps uses facts |
 | redfirst | guard | build | apps uses guard |
+| redfirst | kitlib-root | build | apps uses base |
 | redfirst | lock | build | apps uses services |
 | redfirst | platform | build | apps uses base |
 | redfirst | proc | build | apps uses base |
@@ -531,6 +542,7 @@ None: no module is open to every other.
 | schedtask | proc | build | same layer (base): schedtask's row names proc |
 | scrub | forbidden | build | same layer (services): scrub's row names forbidden |
 | stackskill | host | build | apps uses facts |
+| stackskill | kitlib-root | build | apps uses base |
 | staging | config | build | work uses facts |
 | staging | dailyfull | build | same layer (work): staging's row names dailyfull |
 | staging | fs | build | work uses base |

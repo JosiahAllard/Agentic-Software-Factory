@@ -27,7 +27,9 @@ store's git push (the `push` setting).
   `pm_ack` alone never does. An approval's phase ending (consumed, expired, a denial's 24 hours past)
   drops what was still owed and sends nothing.
 - Who hears: the item's `from`, unless that is the PM's own (`pm`, the owner, empty), and the PM, once;
-  for an approval, the coordinator key its `repo` names (docs/hub-pm.md "Who handles a pending item") and the PM; for
+  for an approval, its repository's coordinator (docs/hub-pm.md "Who handles a pending item"): the first live
+  key of `Api.coordinator_keys` (the repository's name, then its coordinator sessions, as the kit's `kit`),
+  with none live its first coordinator session, else the name (`push.py` `_coordinator`), and the PM; for
   a skill edit, the kit's coordinator (`Api.kit_session_key`) and the PM. A
   launcher key is resolved through sessions.json: its recorded `name`, else, when no live session has
   that name, a live session of the entry's own stem (`<stem>-a<N>[-r<k>]`, `kitlib.launcher.lookup`
@@ -43,7 +45,7 @@ store's git push (the `push` setting).
     more): one recipient, by who is live (the delivery's `resolve`; a delivery with no `resolve` counts
     as none live, and a key whose `resolve` raises as not live, logged; `push.py` `_live_session`): the
     asker while it is live, until it picks it up; else the coordinator of the record's repository or of
-    the question's repo (each through the repository-to-key map an approval's push uses, `Api.repo_key`,
+    the question's repo (each through the coordinator keys an approval's push uses, `Api.coordinator_keys`,
     then as it is) while one is live, sent once; else, for `freed`, the PM, sent once, to start a
     coordinator, and for `held`, the asker all the same (it also reads it at its next start). The PM that
     asked is told once. Until 2026-10-27 `held` went to nobody and `freed` only to the PM, on the

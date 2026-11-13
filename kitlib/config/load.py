@@ -388,6 +388,24 @@ def overlay_staging(cfg, rev):
     return cfg
 
 
+def overlay_fetched_staging(cfg, root=None):
+    """overlay_staging from `refs/remotes/<remote>/<main>` of `cfg` as last fetched in `root`
+    (default cfg.root): the staging setting is main's, never the checkout's working tree, so a
+    stale main checkout cannot start work from the wrong base. That ref not resolving leaves
+    `cfg`'s own setting. Returns `cfg`. ConfigError, naming the ref and the fix, when main's
+    staging section there is not well formed (the caller refuses: fail closed)."""
+    ref = 'refs/remotes/%s/%s' % (cfg.remote, cfg.main_branch)
+    sha, _why = gitrefs.resolve(ref, root or cfg.root, known=True)
+    if not sha:
+        return cfg
+    try:
+        return overlay_staging(cfg, sha)
+    except ConfigError as e:
+        raise ConfigError('%s. The staging setting is read from %s (%s as last fetched): fix '
+                          '"staging" in .kit.json on %s, then fetch' % (e, ref, sha[:10],
+                                                                       cfg.main_branch))
+
+
 def load_at_fetched_staging(root, rev, remote):
     """load_at(root, rev) with overlay_staging from <remote>/<main> as last fetched, when that
     resolves to another commit than `rev`. For the pre-push guard, never looser than `rev`'s own

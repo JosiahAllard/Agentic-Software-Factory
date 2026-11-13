@@ -2,6 +2,7 @@
 "staging".branch, docs/gate-landing.md "Staging branch"): a new branch starts at the pushed
 <remote>/<staging> (a landing never writes a local staging branch, so none is compared), and the
 removal tools hold the main branch as well as the work base."""
+import json
 import os
 import unittest
 
@@ -59,6 +60,54 @@ class StagingStart(WorktreeCase):
         rc, out = self.tool('fix/old', '--existing')
         self.assertEqual(rc, 0, out)
         self.assertIn('resumed (1 commit(s) of pushed origin/%s not in it)' % STAGING, out)
+
+
+class FetchedStagingSetting(WorktreeCase):
+    """The staging setting is main's as just fetched (kitlib.config.overlay_fetched_staging),
+    never the main checkout's working tree, which lags until the owner fast-forwards it."""
+
+    def on_origin(self, branch, rel, text, start=None):
+        """A commit writing `rel` on top of `start` (default origin/<branch>), pushed to `branch`
+        from a scratch worktree; the main checkout is not moved."""
+        scratch = os.path.join(self.base_dir, 'seed-%s' % branch)
+        self.git('fetch', '-q', 'origin')
+        self.git('worktree', 'add', '-q', '--detach', scratch, start or 'origin/%s' % branch)
+        with open(os.path.join(scratch, rel), 'w', encoding='utf-8', newline='\n') as h:
+            h.write(text)
+        self.run_git(scratch, 'add', rel)
+        self.run_git(scratch, 'commit', '-q', '-m', 'on %s' % branch)
+        sha = self.run_git(scratch, 'rev-parse', 'HEAD')[1]
+        self.run_git(scratch, 'push', '-q', 'origin', '%s:refs/heads/%s' % (sha, branch))
+        self.git('worktree', 'remove', '--force', scratch)
+        return sha
+
+    def test_staging_turned_on_upstream_is_read_before_the_checkout_has_it(self):
+        main = self.on_origin(self.BASE, '.kit.json', json.dumps({'staging': {'branch': STAGING}}))
+        staged = self.on_origin(STAGING, 's.txt', 'landed on staging\n', start=main)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, '.kit.json')))   # checkout lags
+        rc, out = self.tool('fix/fresh')
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.git('rev-parse', 'fix/fresh')[1], staged)
+        self.assertIn('from pushed origin/%s @ %s' % (STAGING, staged[:7]), out)
+
+    def test_staging_turned_off_upstream_is_read_before_the_checkout_drops_it(self):
+        self.configure({'staging': {'branch': STAGING}})
+        self.on_origin(STAGING, 's.txt', 'landed on staging\n', start='origin/%s' % self.BASE)
+        main = self.on_origin(self.BASE, '.kit.json', '{}\n')
+        rc, out = self.tool('fix/fresh')
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.git('rev-parse', 'fix/fresh')[1], main)
+
+    def test_a_malformed_staging_setting_on_main_refuses_and_creates_nothing(self):
+        self.on_origin(self.BASE, '.kit.json', json.dumps({'staging': {'branch': self.BASE}}))
+        rc, out = self.tool('fix/fresh')
+        self.assertEqual(rc, new.CONFIG, out)
+        self.assertIn('new_worktree: refused: kit configuration:', out)
+        self.assertIn('The staging setting is read from refs/remotes/origin/%s' % self.BASE, out)
+        self.assertIn('fix "staging" in .kit.json on %s, then fetch' % self.BASE, out)
+        self.assertIn('nothing was created', out)
+        self.assertFalse(new.branch_exists(self.repo, 'fix/fresh'))
+        self.assertEqual(self.worktree_paths(), [])
 
 
 class RemovalBase(unittest.TestCase):

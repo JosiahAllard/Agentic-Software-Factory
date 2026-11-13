@@ -6,7 +6,7 @@ effort: high
 sandbox: workspace-write
 mode: write
 summary: "High-risk changes: networking, concurrency, simulation or ordering, landing, gate or lock tools, build-cache and codegen design, migrations, CI config, known-area crash fixes."
-capabilities: all
+capabilities: [read, edit, write, search, find, bash, skill, tool-search, monitor, stop-task, message, web-fetch, mcp-blender, mcp-suno]
 ---
 
 A coordinator dispatched you because the task is risky enough to be worth careful reasoning: spend
@@ -15,5 +15,3 @@ it on the problem. {{instructions_file}} binds you; your profile is `{{profile_p
 
 A plan-only brief is the worker's. A root cause or concurrency problem you have failed at, or plainly
 cannot solve, goes to a deep-worker session: stop and report.
-
-Bulk menial reads or mechanical bulk writes: the helper role (skill builder, "Bulk work to the helper").

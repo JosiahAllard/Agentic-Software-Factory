@@ -30,6 +30,7 @@ import os
 import subprocess
 import sys
 
+from kitlib import kitroot
 from kitlib import platform
 from kitlib.config import ConfigError, user as kuser
 from kitlib.fs.treelock import TreeBusy, TreeLock, TreeLockError
@@ -309,7 +310,7 @@ def tick(home=None, kit=None, now=None, fetch=None, start=None, repos=None, pyth
     state folder (state_dir, home_problem, unignored) or the lock that cannot be used: EXIT_FAILED,
     nothing started."""
     from kitlib.hubclient import client, errors
-    kit = os.path.normpath(kit or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    kit = os.path.normpath(kit or kitroot.root())
     now = now or datetime.datetime.now()
     try:
         schedules = (fetch or (lambda: hub_schedules(home)))()

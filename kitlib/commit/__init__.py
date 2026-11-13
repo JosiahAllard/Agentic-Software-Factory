@@ -61,7 +61,7 @@ run imports checks and message; neither imports the other or run.
   --owner-authored, which refuses unless the author identity git will record (`git var
   GIT_AUTHOR_IDENT`) is "owner".email (unset, an agent_emails address or any other: refused).
   During a merge in progress (merge_fold, one MERGE_HEAD), a named owner-only path whose staged
-  copy only combines both sides' deletions (checks.staged_deletion_merges), every commit on
+  copy only joins both sides' changes (checks.staged_unjoined), every commit on
   either side that changed it the owner's or approved, needs neither (docs/commit.md "Owner
   approval").
   --owner-approved is required only when an owner-only path is in the commit, and

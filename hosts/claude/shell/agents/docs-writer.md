@@ -2,7 +2,7 @@
 # Generated from content/roles/docs-writer.md: edit that, then run python tools/render_content.py --write. Never edit this file by hand.
 name: docs-writer
 description: "Writes a repository's docs from settled facts or the owner's answers: decisions, landing notes, plan ticks, specs. Never code, tests, tools, CI or config."
-tools: Read, Edit, Write, Grep, Glob, PowerShell, Bash, Skill
+tools: Read, Edit, Write, Grep, Glob, Bash, Skill
 model: sonnet
 effort: medium
 autoCompactWindow: 170000

@@ -301,6 +301,41 @@ class AckTest(PushCase):
         self.assertEqual(self.attempts('kit'), [1])
         self.assertEqual(self.attempts('pm'), [1, 2])
 
+    def test_a_quiet_round_reads_no_owed_item_whole_and_an_ack_or_a_log_still_ends_it(self):
+        # red proof: _acks reading each owed item whole (store.get) and fingerprinting it again
+        # every round, so a round's cost grows with the outbox (KIT-HUB-PUSH-OUTBOX-GROWTH)
+        qids = [self.ask(**{'from': 'kit'}) for _ in range(3)]
+        for qid in qids:
+            self.answer(qid)
+        tid = self.todo()
+        self.done(tid)
+        self.worker.poll()
+        self.pick_up('kit')
+        self.later(1)                   # the pick-up, which writes nothing, still ends kit's
+        self.assertEqual({k: sorted(e['recipients']) for k, e in self.worker._outbox.items()},
+                         dict([('question:%s' % q, ['pm']) for q in qids] + [('todo:' + tid, ['pm'])]))
+        whole, picked = [], []
+        real_get, real_pick = self.store.get, self.store.pick
+
+        def get(coll, doc_id):
+            whole.append((coll, doc_id))
+            return real_get(coll, doc_id)
+
+        def pick(coll, doc_ids, fields):
+            picked.append((coll, sorted(doc_ids), tuple(fields)))
+            return real_pick(coll, doc_ids, fields)
+        self.store.get, self.store.pick = get, pick
+        self.later(10)                  # nothing due, nothing written: a quiet round
+        del self.store.get, self.store.pick
+        self.assertEqual([w for w in whole if w[1]], [], 'a quiet round read an owed item whole')
+        self.assertEqual(sorted(picked), [('questions', sorted(qids), ('status', 'pm_ack')),
+                                          ('todos', [tid], ('status', 'pm_ack'))])
+        self.ack(tid)                   # a pm_ack and a log still acknowledge the PM
+        self.store.update('questions', qids[0], {'status': 'logged'})
+        self.later(10)
+        self.assertEqual(sorted(self.worker._outbox), sorted('question:%s' % q for q in qids[1:]))
+        self.assertEqual(self.attempts('pm'), [1, 1, 1, 1], 'nothing was sent again')
+
     def test_pm_ack_stops_the_pm(self):
         tid = self.todo()
         self.done(tid)
@@ -956,6 +991,65 @@ class ResolvingPush(FakePush):
     def resolve(self, key):
         self.resolved.append(key)
         return ('sid-' + key) if key in self.live else None
+
+
+class ApprovalRouteTest(PushCase):
+    """An approval goes to its repository's coordinator by session, as the kit's `kit`, not by the
+    repository's name, which no session has (docs/hub-push.md "Push notifications")."""
+    NAME = 'Example-Repo'
+    REPO = 'example.org/team/kit'
+
+    def route(self, live):
+        self.api = api.Api(self.store, clock=self.ticks, session_keys=lambda: {'kit', 'zeta'},
+                           repo_name=lambda repo: self.NAME if repo == self.REPO else None,
+                           coordinators=lambda: {'kit': self.NAME, 'zeta': 'Other-Repo'})
+        self.push = ResolvingPush(live)
+        self.push.states[self.NAME] = push.NO_SESSION      # no session is keyed by the name
+        self.worker = self.make()
+
+    def decide(self):
+        self.store.put('approvals', 'A-001', {
+            'title': 'T', 'op': 'x', 'line': 'x', 'args_sha256': 'a' * 64,
+            'status': 'approved', 'kind': 'op', 'repo': self.REPO,
+            'created_at': '1970-01-12T13:00:00+00:00', 'decided_at': '1970-01-12T13:46:00+00:00'})
+        self.worker.poll()
+
+    def test_an_approval_is_written_to_its_live_coordinator_keyed_otherwise_than_its_repo(self):
+        # red proof: before this change it went to the repository's name, NO_SESSION every try
+        self.route({'kit'})
+        self.decide()
+        self.assertEqual(sorted(r for r, _t in self.push.calls), ['kit', push.PM_KEY])
+        self.assertIn(' route:kit attempt:1', self.push.to('kit')[0])
+        self.assertEqual(self.undelivered(), [], 'every try was written')
+        self.assertEqual(self.worker._outbox, {}, 'sent once: nothing more is owed')
+        self.later(push.schedule(1))
+        self.assertEqual(self.attempts('kit'), [1])
+
+    def test_with_no_coordinator_live_it_waits_on_the_coordinators_session_key(self):
+        self.route(())
+        self.push.states['kit'] = push.NO_SESSION
+        self.decide()
+        self.assertEqual(sorted(r for r, _t in self.push.calls), ['kit', push.PM_KEY])
+        self.assertEqual([(u['recipient'], u['reason']) for u in self.undelivered()],
+                         [('kit', push.NO_SESSION)])
+        self.push.live.add('kit')               # the coordinator starts
+        del self.push.states['kit']
+        self.later(push.schedule(1))
+        self.assertEqual(self.attempts('kit'), [1, 2])
+        self.assertEqual(self.push.to(self.NAME), [])
+        self.assertEqual(self.worker._outbox, {}, 'its written try ends it')
+
+    def test_an_approval_its_coordinator_already_holds_is_not_pushed_to_it_again(self):
+        # the held compare is against the key it goes to, `kit`: one against the repository's
+        # name would push it to `kit` all the same. handed_to stands in for the hand-over: Api
+        # pending lists an approval as its repo_key's, so no `pending --for kit` makes this one
+        self.route({'kit'})
+        self.api.handed_to = lambda kind, doc_id: 'kit' if (kind, doc_id) == ('approval', 'A-001') else None
+        self.decide()
+        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY])
+        self.later(push.schedule(1))
+        self.assertEqual(self.push.to('kit'), [])
+        self.assertEqual(self.worker._outbox, {})
 
 
 class FiledPushCase(PushCase):

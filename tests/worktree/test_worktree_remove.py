@@ -1462,6 +1462,16 @@ class KeepersInBuildOutput(unittest.TestCase):
         hits = self.keepers('state.local.md', 'Debug/settings.local.json')
         self.assertEqual(len(hits), 2, hits)
 
+    def test_a_dotted_package_qualified_report_is_not_a_keeper(self):
+        self.assertEqual(self.keepers('Debug/reports/TEST-org.x.api.local.FooTest.xml'), [])
+
+    def test_one_stem_one_extension_config_files_are_keepers(self):
+        self.assertEqual(len(self.keepers('Debug/settings.local.json')), 1)
+        self.assertEqual(len(self.keepers('appsettings.local.yaml')), 1)
+
+    def test_dotted_stems_and_multi_dot_extensions_are_not_keepers(self):
+        self.assertEqual(self.keepers('app.settings.local.json', 'name.local.json.bak', 'a.local.b.c'), [])
+
     def test_the_other_keeper_patterns_stay_case_insensitive(self):
         self.assertEqual(len(self.keepers('App.DB', 'Server.PEM')), 2)
 

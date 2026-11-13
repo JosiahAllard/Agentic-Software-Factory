@@ -1,6 +1,7 @@
 """What each test module costs, kept per day (docs/test-tools.md "kit_tests"): the data for a test
-budget rule. kit-tests-times.json (selfrun.save_times) keeps only the last wall time per unit, for
-scheduling; this is the measurement, and nothing here changes what runs.
+budget rule. kit-tests-times.json and kit-tests-times-real-git.json (selfrun.save_times, one per
+git tier) keep only the last wall time per unit, for scheduling; this is the measurement, and
+nothing here changes what runs.
 
 The history file `kit-tests-history.jsonl` sits in the git common dir. A daily full run
 (`kit_tests --full --both-tiers`, its fake-git pass) appends one line: {"v": 1, "date":

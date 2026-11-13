@@ -78,6 +78,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 
+from kitlib import kitroot
 import kitlib.platform
 from kitlib.config import ConfigError, load as load_config
 from kitlib.config import schema
@@ -89,7 +90,7 @@ from kitlib.proc.job import Job, JobError
 
 SECTION = 'tool_tests'
 KEYS = ('shards', 'serial', 'split_classes', 'jobs_max', 'jobs_divisor', 'jobs_env', 'unit_timeout')
-KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT_ROOT = kitroot.root()
 ENTRY = os.path.join(KIT_ROOT, 'tools', 'pytests.py')    # the child's command
 LINGER = 30                        # seconds a finished unit's leftovers may hold its pipe
 CREATE_SUSPENDED = win32.CREATE_SUSPENDED

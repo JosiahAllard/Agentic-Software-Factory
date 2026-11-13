@@ -38,8 +38,10 @@ tests/testutil.py) is listed and not run, since its unit would FAIL for running 
 
 Order and splitting (plan_units). Up to `jobs` units run at once, longest first by the seconds
 each unit took when last run (`times_path`: kit_tests keeps them in the repository's git common
-dir, TIMES_FILE, shared by its work trees and never in a work tree); units with no record start
-first, the selection table's `long` hint list in its order, then the largest source. A module
+dir, shared by its work trees and never in a work tree, one file per git tier: TIMES_FILE for the
+fake git, REAL_TIMES_FILE for real git, so each tier plans and splits by its own times; a unit
+that timed out is recorded at its timeout at least, so the next run splits it); units with no
+record start first, the selection table's `long` hint list in its order, then the largest source. A module
 expected to take more than half the run's ideal wall time (expected seconds summed, over jobs;
 at least SPLIT_FLOOR) runs one unit per test class (`python -m unittest <module>.<Class>`), so it
 cannot floor the wall time alone; with no record, the `long` list names the modules to split.
@@ -153,6 +155,7 @@ _COUNT = '\n'.join([
 SPLIT_FLOOR = 60.0
 SPLIT_SHARE = 0.5
 TIMES_FILE = 'kit-tests-times.json'
+REAL_TIMES_FILE = 'kit-tests-times-real-git.json'
 # A test module that must not share an interpreter with other units says so, and why, in its own
 # source: `KIT_TESTS_OWN_PROCESS = '<why>'`; its units run as `python -m unittest <unit>` alone.
 # unittest's summary line ends `OK (skipped=N)` or `FAILED (failures=1, skipped=N)`.
@@ -361,10 +364,12 @@ def load_times(path):
     return {k: float(v) for k, v in data.items() if isinstance(v, (int, float))}
 
 
-def save_times(path, results, split):
+def save_times(path, results, split, timeout):
     """Merge this run's unit seconds into `path` (re-read first, so a concurrent run's other
-    modules survive; written whole through a temp file). A split module's own entry becomes the
-    sum of its classes when all of them ran. Never fails the run."""
+    modules survive; written whole through a temp file). A unit that timed out is recorded at
+    max(its seconds, `timeout`), a lower bound, so the next run can split it; its next OK or
+    FAILED run replaces that. A split module's own entry becomes the sum of its classes when all
+    of them ran. Never fails the run."""
     if not path:
         return
     times = load_times(path)
@@ -372,6 +377,8 @@ def save_times(path, results, split):
     for (unit, _, _), status, _ran, secs, _ in results:
         if status in ('OK', 'FAILED'):
             took[unit] = round(secs, 1)
+        elif status == 'TIMEOUT':
+            took[unit] = round(max(secs, timeout), 1)
     times.update(took)
     for m, classes in split.items():
         parts = [took.get('%s.%s' % (m, c)) for c in classes]
@@ -438,7 +445,7 @@ def plan_units(modules, root, jobs, classes=None, times=None, hint=()):
 
 def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, environ=None,
         label='selected', counts=None, classes=None, times_path=None, hint=(), give_back=None,
-        hold=None, record_times=True, skip_fails=(), history_path=None):
+        hold=None, skip_fails=(), history_path=None):
     """Run `modules` (checkout `root`), up to `jobs` at once, then the `serial` ones ({module:
     why}) one at a time; write the log to `out`; return (exit status 0, 1 or INTERRUPTED, the
     summary line). `counts` {module: tests} skips the count_tests child (tests use it), and
@@ -447,13 +454,10 @@ def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, e
     while unrecorded. `give_back(units still running)`: called as the pool drains (Giving back).
     `hold`: the run's opted-in pid hold (kitlib.pytests.runner.PidHoldRun), already started by the
     caller before it copied `environ`, so its beacon reaches the units; its end line is written
-    before the summary. None: no hold. `record_times` False: the times at `times_path` still
-    order and split the run, but this run's are not written back (kit_tests --both-tiers'
-    real-git pass, so the file keeps the landing tier's times). `skip_fails` ([module, why] pairs,
-    the selection table's list): a listed module whose unit skipped any test is FAILED, since a
-    skip voids the proof it exists for. `history_path`: append this run's per-module tests, seconds
-    and cpu to that file (kitlib.tooldeps.testcost) when `record_times` is on and the run was not
-    interrupted; None: not kept."""
+    before the summary. None: no hold. `skip_fails` ([module, why] pairs, the selection table's
+    list): a listed module whose unit skipped any test is FAILED, since a skip voids the proof it
+    exists for. `history_path`: append this run's per-module tests, seconds and cpu to that file
+    (kitlib.tooldeps.testcost) when the run was not interrupted; None: not kept."""
     proof = dict(skip_fails)
     out = out or sys.stdout
     injected = run_unit
@@ -597,11 +601,10 @@ def run(modules, root, jobs, serial=(), out=None, timeout=None, run_unit=None, e
     if hold is not None:
         say('kit_tests: %s' % hold.end())
     wall = time.time() - start
-    if record_times:
-        save_times(times_path, done, split)
-        if history_path and done and not interrupted:   # a cut-short run would show false drops
-            testcost.record(history_path, testcost.module_rows(done, cpus, module_of), wall, jobs,
-                            label)
+    save_times(times_path, done, split, timeout)
+    if history_path and done and not interrupted:       # a cut-short run would show false drops
+        testcost.record(history_path, testcost.module_rows(done, cpus, module_of), wall, jobs,
+                        label)
     return report(done, wall, jobs, len(alone), out, label,
                   not_run=(total[0] - len(done)) if interrupted else None, timeout=timeout)
 

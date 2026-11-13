@@ -2267,16 +2267,58 @@ class MergeJoinsTwoApprovedChanges(JoinCase):
 
 
 @real_git('merge-base --all and a conflict in the owner-only file: as MergeJoinsTwoApprovedChanges')
-class AMergeOfDeletions(JoinCase):
-    """Each side, in an approved commit, deletes a line next to the other's, so CLAUDE.md
-    conflicts; a resolution that only joins both deletions is committed with no new approval
-    (ownerrules.deletion_merge on the staged copy). Any other one is refused."""
+class AMergeThatJoinsBothSides(JoinCase):
+    """Each side, in an approved commit, changes CLAUDE.md next to the other's change (deletes a
+    line, or adds one after line 3), so it conflicts; a resolution that only joins both sides'
+    changes is committed with no new approval (ownerrules.joined_merge on the staged copy). Any
+    other one is refused."""
 
-    def merge_deletions(self, *ids):
+    UNION = SEVEN.replace('line 3\n', 'line 3\nmain row\nbranch row\n')
+
+    def conflict(self, main_text, branch_text, *ids):
         self.approve(*ids)
-        tip, main = self.merge(SEVEN.replace('line 3\n', ''), SEVEN.replace('line 4\n', ''))
+        tip, main = self.merge(main_text, branch_text)
         self.assertIn(self.F, self.git('diff', '--name-only', '--diff-filter=U'))
         return tip, main
+
+    def merge_deletions(self, *ids):
+        return self.conflict(SEVEN.replace('line 3\n', ''), SEVEN.replace('line 4\n', ''), *ids)
+
+    def merge_additions(self, *ids):
+        return self.conflict(SEVEN.replace('line 3\n', 'line 3\nmain row\n'),
+                             SEVEN.replace('line 3\n', 'line 3\nbranch row\n'), *ids)
+
+    def test_the_union_of_both_sides_additions_is_committed_and_lands(self):
+        tip, main = self.merge_additions('A-001', 'A-002')
+        self.put(self.F, self.UNION)
+        code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, main])
+        self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n', self.UNION)
+        rules = C.kconfig.load(self.wt).owner_rules()
+        self.assertEqual(ownerrules.violations(self.wt, rules, 'HEAD', [main]), ([], None))
+
+    def test_a_side_whose_rows_begin_with_the_others_is_committed_as_it_is(self):
+        # main adds X, the branch X then Y; the result X Y holds X once (rules._block_joins)
+        held = SEVEN.replace('line 3\n', 'line 3\nmain row\nbranch row\n')
+        tip, main = self.conflict(SEVEN.replace('line 3\n', 'line 3\nmain row\n'), held,
+                                  'A-001', 'A-002')
+        self.put(self.F, held)
+        code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, main])
+        rules = C.kconfig.load(self.wt).owner_rules()
+        self.assertEqual(ownerrules.violations(self.wt, rules, 'HEAD', [main]), ([], None))
+
+    def test_a_union_with_a_line_neither_side_has_is_refused(self):
+        tip, _ = self.merge_additions('A-001', 'A-002')
+        self.put(self.F, self.UNION.replace('branch row\n', 'branch row\nagent row\n'))
+        self.assert_refused(tip)
+
+    def test_a_union_with_an_unapproved_side_is_refused(self):
+        tip, _ = self.merge_additions('A-002')      # the branch's A-001 is not approved
+        self.put(self.F, self.UNION)
+        self.assert_refused(tip)
 
     def test_a_resolution_that_only_deletes_is_committed_and_lands(self):
         tip, main = self.merge_deletions('A-001', 'A-002')

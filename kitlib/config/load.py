@@ -36,8 +36,12 @@ FIXED_MAIN = schema.SECTIONS['repo']['main_branch'].default   # guarded_mains
 KIT_SECTIONS = ('repo', 'owner', 'hook', 'heavy', 'roles')
 PLACEHOLDER = re.compile(r'\{([A-Za-z_]\w*)\}')
 PLACEHOLDERS = ('python', 'root', 'base', 'here', 'tools')    # gate.py's substitution mapping
+# "staging".suspects_cmd's: the gate's, and the two files the culprit hunt writes for it
+# (kitlib.staging.culprit cmd_suspects).
+SUSPECTS_PLACEHOLDERS = PLACEHOLDERS + ('tests_file', 'landings_file')
 # Step keys about running a subprocess; a hook check is called, not run.
-CMD_ONLY = ('cwd', 'daily_cmd', 'full_cmd', 'merged_args', 'ok_exits', 'reuse', 'toolchain')
+CMD_ONLY = ('cwd', 'daily_cmd', 'full_cmd', 'merged_args', 'ok_exits', 'promote_args', 'reuse',
+            'toolchain')
 
 
 def _parse(text, where):
@@ -103,7 +107,8 @@ def _gate_rules(gate, errs):
         requires = step.get('requires')
         requires = requires if isinstance(requires, list) else []
         argvs = [('cmd', step.get('cmd')), ('full_cmd', step.get('full_cmd')),
-                 ('daily_cmd', step.get('daily_cmd')), ('merged_args', step.get('merged_args'))]
+                 ('daily_cmd', step.get('daily_cmd')), ('merged_args', step.get('merged_args')),
+                 ('promote_args', step.get('promote_args'))]
         argvs += [('requires', r) for r in requires if isinstance(r, list)]
         toolchain = step.get('toolchain')
         toolchain = toolchain if isinstance(toolchain, list) else []
@@ -120,17 +125,27 @@ def _gate_rules(gate, errs):
                 errs.append('%s: "toolchain" cannot name {base}: its output must not depend on '
                             'the base' % where)
         for key, argv in argvs:
-            for arg in argv if isinstance(argv, list) else ():
-                if not isinstance(arg, str):
-                    continue
-                unknown = sorted(set(PLACEHOLDER.findall(arg)) - set(PLACEHOLDERS))
-                if unknown:
-                    errs.append('%s "%s": unknown placeholder(s) %s' % (where, key, ', '.join(
-                        '{%s}' % u for u in unknown)))
+            _placeholders('%s "%s"' % (where, key), argv, PLACEHOLDERS, errs)
         for r in requires:
             if isinstance(r, str) and re.search(r'[\s/\\{]', r):
                 errs.append('%s: "requires" %r must be a bare command name; a command with '
                             'arguments is a probe argv' % (where, r))
+
+
+def _placeholders(where, argv, known, errs):
+    """Name each `{name}` in `argv` that `known` lacks, as one error of `where`."""
+    unknown = sorted({u for arg in (argv if isinstance(argv, list) else ())
+                      if isinstance(arg, str) for u in PLACEHOLDER.findall(arg)} - set(known))
+    if unknown:
+        errs.append('%s: unknown placeholder(s) %s' % (where, ', '.join(
+            '{%s}' % u for u in unknown)))
+
+
+def _staging_rules(staging, errs):
+    """The cross-field rules of a type-checked "staging" section: suspects_cmd's placeholders."""
+    if isinstance(staging, dict):
+        _placeholders('"staging".suspects_cmd', staging.get('suspects_cmd'),
+                      SUSPECTS_PLACEHOLDERS, errs)
 
 
 class Config(object):
@@ -329,6 +344,8 @@ def _build(root, where, reader, home=None, machine=None):
         why = ownermod.trailer_problem(owner['trailer'])
         if why:
             errs.append(why)
+    if not errs:
+        _staging_rules(raw.get('staging'), errs)
     if isinstance(raw.get('gate'), dict) and not errs:     # cross-field rules walk checked types only
         _gate_rules(raw['gate'], errs)
         hooked = isinstance(hook, dict) and hook.get('module')
@@ -377,6 +394,8 @@ def overlay_staging(cfg, rev):
             errs.append('%s: section "staging" must be an object' % where)
         else:
             schema.section_type('staging').check(value, '"staging"', errs)
+            if not errs:
+                _staging_rules(value, errs)
             raw['staging'], files['staging'] = copy.deepcopy(value), None
     if not errs:
         why = _staging_problem((raw.get('staging') or {}).get('branch'), lambda: cfg.main_branch)

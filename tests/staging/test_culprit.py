@@ -1,7 +1,9 @@
 """kitlib.staging.culprit: the landings, the suspects and the hunt's order, with stand-in probes, a
 stand-in revert and a stand-in git (the hunt run for real: tests/staging/test_promote.py Hunt)."""
+import json
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -220,9 +222,99 @@ class FailingPaths(unittest.TestCase):
         results = [{'name': n, 'status': 'FAIL'} for n in failures]
         specs = {'sub': {'name': 'sub', 'cwd': 'sub'}}
         with mock.patch.object(rerun, 'cover_step', side_effect=cover):
-            got = CU.failing_paths(self.top, results, ['unit', 'sub', 'jvm'], specs, 99.0)
-        self.assertEqual(got, {'tests/test_a.py', 'sub/tests/test_b.py', 'mod/'})
+            found = CU.failures(self.top, results, ['unit', 'sub', 'jvm'], specs, 99.0)
         self.assertEqual(seen, [('unit', '', 99.0), ('sub', 'sub', 99.0), ('jvm', '', 99.0)])
+        self.assertEqual([(f['step'], f['cwd'], f['id']) for f in found],
+                         [('unit', '', 'tests.test_a.Case.t'), ('sub', 'sub', 'tests.test_b.Case.t'),
+                          ('jvm', '', 'x.Y.t')])
+        self.assertEqual(CU.failing_paths(self.top, found),
+                         {'tests/test_a.py', 'sub/tests/test_b.py', 'mod/'})
+
+
+SUSPECTS_PY = '''import json, sys
+mode, tests, lands = sys.argv[1], sys.argv[2], sys.argv[3]
+t, l = json.load(open(tests)), json.load(open(lands))
+print('read', t['red'], [x['sha'][:1] for x in l])
+if mode == 'named':
+    print('noise line')
+    print('suspect ' + l[1]['sha'])
+    print('suspect ' + l[1]['sha'])
+    print('  suspect ' + l[0]['sha'] + '  ')
+elif mode == 'foreign':
+    print('suspect ' + 'f' * 40)
+elif mode == 'fail':
+    sys.exit(3)
+elif mode == 'slow':
+    import time; time.sleep(30)
+'''
+
+
+class CmdSuspects(unittest.TestCase):
+    """cmd_suspects runs the repository's command for real (records/inflight.run)."""
+
+    def setUp(self):
+        self.folder = tempfile.mkdtemp(prefix='kit-suspects-')
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        self.script = os.path.join(self.folder, 's.py')
+        with open(self.script, 'w', encoding='utf-8') as f:
+            f.write(SUSPECTS_PY)
+        self.tests = {'base': M, 'tip': L3, 'red': ['unit'], 'failing': ['tests/test_a.py'],
+                      'failures': [{'step': 'unit', 'id': 'tests.test_a.Case.t',
+                                    'cls': 'tests.test_a.Case'}]}
+
+    def run_mode(self, mode, timeout=60, **kw):
+        argv = ['{python}', '{here}/s.py', mode, '{tests_file}', '{landings_file}']
+        values = {'python': sys.executable, 'root': self.folder, 'here': self.folder,
+                  'base': M, 'tools': self.folder}
+        return CU.cmd_suspects(argv, values, self.folder, self.tests, LANDS, timeout, **kw)
+
+    def test_its_suspect_lines_are_the_suspects_in_order_once_each(self):
+        self.assertEqual(self.run_mode('named'), ([L2, L1], None))
+        with open(os.path.join(self.folder, CU.TESTS_FILE), encoding='utf-8') as f:
+            self.assertEqual(json.load(f), self.tests)
+        with open(os.path.join(self.folder, CU.LANDINGS_FILE), encoding='utf-8') as f:
+            self.assertEqual(json.load(f), [{'sha': x.sha, 'paths': x.paths} for x in LANDS])
+        with open(os.path.join(self.folder, CU.SUSPECTS_LOG), encoding='utf-8') as f:
+            log = f.read()
+        self.assertIn("read ['unit'] ['1', '2', '3']", log)
+        self.assertIn('exit 0', log)
+
+    def test_exit_0_naming_none_is_no_suspect(self):
+        self.assertEqual(self.run_mode('none'), ([], None))
+
+    def test_a_non_zero_exit_falls_back(self):
+        shas, why = self.run_mode('fail')
+        self.assertIsNone(shas)
+        self.assertTrue(why.startswith('exited 3 ('), why)
+        self.assertIn(CU.SUSPECTS_LOG, why)
+
+    def test_a_commit_that_is_not_a_landing_falls_back(self):
+        self.assertEqual(self.run_mode('foreign'),
+                         (None, 'named ffffffffff, which is not a landing of M..S'))
+
+    def test_a_command_past_its_timeout_is_ended_and_falls_back(self):
+        self.assertEqual(self.run_mode('slow', timeout=2),
+                         (None, 'was still running after 2 s and was ended'))
+
+    def test_a_command_that_cannot_start_falls_back(self):
+        def run(argv, cwd, timeout):
+            raise FileNotFoundError(2, 'not found')
+        shas, why = self.run_mode('named', run=run)
+        self.assertIsNone(shas)
+        self.assertTrue(why.startswith('could not start ('), why)
+
+    def test_it_runs_in_the_tree_with_the_files_substituted(self):
+        seen = []
+
+        def run(argv, cwd, timeout):
+            seen.append((argv, cwd, timeout))
+            return 0, b'', b''
+        self.run_mode('x', timeout=7, run=run)
+        ((argv, cwd, timeout),) = seen
+        self.assertEqual(argv, [sys.executable, self.folder + '/s.py', 'x',
+                                os.path.join(self.folder, CU.TESTS_FILE),
+                                os.path.join(self.folder, CU.LANDINGS_FILE)])
+        self.assertEqual((cwd, timeout), (self.folder, 7))
 
 
 class Landings(unittest.TestCase):

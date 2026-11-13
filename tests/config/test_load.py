@@ -172,6 +172,27 @@ class GateRulesTest(TreeCase):
         step = {'name': 'a', 'always': True, 'cmd': ['x', '--select'], 'full_cmd': ['x', '--full']}
         self.assertEqual(self.load({'gate': {'steps': [step]}}).section('gate')['steps'], [step])
 
+    def test_promote_args_are_a_cmd_step_argv_with_known_placeholders(self):
+        self.assertIn('"promote_args": unknown placeholder(s) {repo}',
+                      self.steps({'name': 'a', 'always': True, 'cmd': ['x'],
+                                  'promote_args': ['{repo}']}))
+        why = self.refused({'hook': {'module': 'gate_hook'},
+                            'gate': {'steps': [{'name': 'a', 'always': True, 'check': 'pins',
+                                                'promote_args': ['--promotion']}]}})
+        self.assertIn('promote_args only apply to a "cmd" step', why)
+        step = {'name': 'a', 'always': True, 'cmd': ['x'], 'merged_args': ['--merged'],
+                'promote_args': ['--promotion', '{base}']}
+        self.assertEqual(self.load({'gate': {'steps': [step]}}).section('gate')['steps'], [step])
+
+    def test_suspects_cmd_takes_the_step_placeholders_and_its_two_files(self):
+        why = self.refused({'staging': {'branch': 'stg',
+                                        'suspects_cmd': ['{python}', 's.py', '{test_file}']}})
+        self.assertIn('"staging".suspects_cmd: unknown placeholder(s) {test_file}', why)
+        argv = ['{python}', '{tools}/s.py', '{root}', '{base}', '{here}', '{tests_file}',
+                '{landings_file}']
+        cfg = self.load({'staging': {'branch': 'stg', 'suspects_cmd': argv}})
+        self.assertEqual(cfg.written('staging', 'suspects_cmd'), argv)
+
     def test_daily_cmd_is_a_cmd_step_argv_with_known_placeholders(self):
         self.assertIn('"daily_cmd": unknown placeholder(s) {repo}',
                       self.steps({'name': 'a', 'always': True, 'cmd': ['x'], 'daily_cmd': ['{repo}']}))

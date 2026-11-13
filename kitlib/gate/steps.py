@@ -32,7 +32,7 @@ zero-test run (a warning: judge's zero rules are then the only backstop).
 The old gate keys this gate does not implement (`python_tests`, `python_tests_floor`, `trailers`,
 a step's `kill_retry`) are no keys at all: kitlib.config refuses each as an unknown key, so a
 config that sets one never loads. docs/gate-rerun-checkout.md "Not ported" says why. A `--pid-hold` argument in
-`setup`, a step's `cmd`, `full_cmd`, `daily_cmd` or `merged_args` refuses (GateConfigError,
+`setup`, a step's `cmd`, `full_cmd`, `daily_cmd`, `merged_args` or `promote_args` refuses (GateConfigError,
 `unsupported`): the pid hold of tools/pytests.py and tools/kit_tests.py is opt-in for agent runs,
 never in the gate.
 """
@@ -90,7 +90,7 @@ def unsupported(gate):
     if PID_HOLD_FLAG in (gate.get('setup') or []):
         out.append('"setup" %s (%s)' % (PID_HOLD_FLAG, PID_HOLD_WHY))
     for s in gate.get('steps') or []:
-        for key in ('cmd', 'full_cmd', 'daily_cmd', 'merged_args'):
+        for key in ('cmd', 'full_cmd', 'daily_cmd', 'merged_args', 'promote_args'):
             if PID_HOLD_FLAG in (s.get(key) or []):
                 out.append('step %s "%s" %s (%s)' % (s.get('name'), key, PID_HOLD_FLAG,
                                                      PID_HOLD_WHY))
@@ -308,12 +308,13 @@ def argv_of(s, full=False, daily=False):
     return s['cmd']
 
 
-def build(gate, root, base, tools_dir, merged=False, full=False, daily=False):
+def build(gate, root, base, tools_dir, merged=False, full=False, daily=False, promote=False):
     """[Step] for every configured step, in config order, plus `setup` first when configured.
     `full`: a step's `full_cmd`, when it has one, is its argv instead of `cmd` (a full run: a
     step whose cmd selects by the change runs everything). `daily` (the daily full run): its
     `daily_cmd` first, then `full_cmd`, then `cmd` (argv_of). `merged`: a step's merged_args are
-    appended (the landing's merged-tree gate), substituted alike."""
+    appended (the landing's merged-tree gate), substituted alike. `promote` (a staging promotion's
+    merged gate, kitlib.staging.promote): its promote_args after them."""
     bad = unsupported(gate)
     unknown = unknown_names(gate)
     if unknown:
@@ -333,8 +334,8 @@ def build(gate, root, base, tools_dir, merged=False, full=False, daily=False):
         cmd = None
         if s.get('cmd'):
             argv = argv_of(s, full, daily)
-            cmd = substitute(list(argv) + (list(s.get('merged_args') or []) if merged else []),
-                             values)
+            cmd = substitute(list(argv) + (list(s.get('merged_args') or []) if merged else []) +
+                             (list(s.get('promote_args') or []) if promote else []), values)
         cwd = os.path.normpath(os.path.join(root, s['cwd'])) if s.get('cwd') else root
         requires = [r if isinstance(r, str) else substitute(r, values) for r in s.get('requires') or []]
         steps.append(Step(s['name'], cmd, s.get('check'), cwd, _list(s.get('pass')),

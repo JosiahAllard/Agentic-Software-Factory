@@ -3,7 +3,8 @@
 
 run(main, cfg) tests the staging tip S against `<remote>/<main>` M with the merged-tree gate's
 selection (kitlib.gate.runner.merged_gate on a detached tree of its own, `<worktrees_dir>/promote`,
-escalated to every step in full when M..S changes the gate's config, as a landing is), and on a
+escalated to every step in full when M..S changes the gate's config, as a landing is; each step's
+promote_args appended after its merged_args, in this gate alone), and on a
 green writes S's promotion record and moves main to S (kitlib.staging.advance). In order:
 
   1. The promote lock (lock_for: a kitlib.fs.treelock file in the repository's git common dir,
@@ -224,7 +225,7 @@ def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate
         count, staging, tip[:10], cfg.remote, P.main_of(cfg), base[:10]))
     started = gate_ok.utc()
     out = gate(main, cfg_base, base, full=full, slug=SLUG, say=say,
-               book_kw=book, tree=wt)
+               book_kw=book, tree=wt, promote=True)
     log_dir = out.facts.get('log_dir')
     cause = D.SKIP_CAUSES.get(out.code)
     if cause is not None:

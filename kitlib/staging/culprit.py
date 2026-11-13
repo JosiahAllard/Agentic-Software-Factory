@@ -4,9 +4,11 @@ and its revert prepared for the coordinator (docs/modules/staging-design.md "Cul
   landings(root, git, base, tip)          ([Landing], None) or (None, why): every first-parent
                                           commit of base..tip (kitlib.staging.changes
                                           first_parent), oldest first, with the paths it changed
-  failing_paths(top, results, red, specs, since)   the test files (and runner scope folders)
-                                          S's failing tests live in
+  failures(top, results, red, specs, since)   S's failing tests, each with its step
+  failing_paths(top, found)               the test files (and runner scope folders) they live in
   suspects(specs, red, lands, failing, read)   the landings that may have turned the red red
+  cmd_suspects(argv, values, folder, tests, lands, timeout)   the repository's own suspects
+                                          ("staging".suspects_cmd), or why they cannot be had
   hunt(lands, base, tip, sus, probe, make, deadline, clock)   the hunt (below): a dict
   after_red(...)                          the whole, in the promotion's tree, for promote._test
 
@@ -17,6 +19,11 @@ A candidate that changed a failing test's file, or a path under a failing gradle
 test's scope, is a hit; the suspects are the hits, else the candidates. "One suspect" is one
 across every red step together (bisect.bisectable names them: `gate`, `windows` and an `infra`
 red are never hunted).
+
+A repository with `"staging".suspects_cmd` (read at M, as `<remote>/<main>` writes it) names its
+own instead (cmd_suspects): its `suspect <sha40>` lines, exit 0. A command that cannot start,
+exits non-zero, outlives its timeout or names a commit that is not a landing of M..S gives the
+kit's suspects above, and a line says why.
 
 The hunt, in this order, every probe a kitlib.dailyfull.bisect Prober's (failing tests only when
 S's logs name them, else the whole red steps; a whole-step probe runs that commit's own gate in
@@ -41,8 +48,11 @@ again and prepares `revert/<merge10>` on T (revert.prepare: local only, never pu
 coordinator reviews and lands it. Nothing here prints; the caller says the lines.
 """
 import collections
+import json
 import os
 import posixpath
+import re
+import subprocess
 import time
 
 from kitlib import dailyfull as D
@@ -52,6 +62,8 @@ from kitlib.gate import detect
 from kitlib.gate import reports
 from kitlib.gate import rerun
 from kitlib.gate import steps as S
+from kitlib.git import cmd as gitcmd
+from kitlib.records import inflight
 from kitlib.records import place
 from kitlib.staging import changes as C
 from kitlib.staging import record as R
@@ -64,6 +76,11 @@ HUNTING, STOPPED = R.HUNTING, 'stopped'     # the record's culprit verdict while
 FOUND, FLAKE, ON_MAIN, CAPPED, INCONCLUSIVE, BUDGET = (
     'found', 'flake', 'on-main', 'capped', 'inconclusive', 'budget')     # a hunt's `end`
 BY_REVERT, BY_BISECT = 'confirmed by revert', 'by bisect'
+SUSPECTS_TIMEOUT_S = 600        # suspects_cmd's run, or the hunt's budget left when that is less
+TESTS_FILE, LANDINGS_FILE, SUSPECTS_LOG = (
+    'suspects-tests.json', 'suspects-landings.json', 'suspects.log')    # in the attempt's folder
+FROM_CMD, FROM_KIT = 'suspects_cmd', 'kit'          # the record's culprit.suspects_from
+_SUSPECT = re.compile(r'^suspect ([0-9a-f]{40})$')
 _PREFIX = 'daily: bisect'
 
 Landing = collections.namedtuple('Landing', 'sha paths')
@@ -91,27 +108,37 @@ def _rel(top, spec):
     return reports.inside(top, os.path.join(top, cwd)) if cwd else ''
 
 
-def failing_paths(top, results, red, specs, since):
-    """The repository paths S's failing tests live in: a unittest class's file
-    (kitlib.gate.rerun scope_of, in its step's folder), and a gradle or dotnet failure's scope
-    folder ending '/'. `results`: the red gate's step results; `since`: its start, epoch
-    seconds (rerun.cover_step)."""
-    out = set()
+def failures(top, results, red, specs, since):
+    """S's failing tests in the red steps `red`, in step order: rerun.cover_step's failures
+    ({id, cls, cwd[, runner, scope]}: `cwd` the step's folder, '/'-separated, '' the top), each
+    with its `step`. `results`: the red gate's step results; `since`: its start, epoch seconds.
+    A step whose folder is outside `top` gives none."""
+    out = []
     for res in results:
         if res.get('name') not in red:
             continue
         rel = _rel(top, specs.get(res['name']))
         if rel is None:
             continue
-        here = os.path.join(top, *rel.split('/')) if rel else top
         for f in rerun.cover_step(dict(res), rel, top, since).get('failures') or []:
-            if f.get('runner'):
-                if f.get('scope'):
-                    out.add(f['scope'].strip('/') + '/')
-                continue
-            file = rerun.scope_of(here, f['cls'])
-            if file.endswith('.py'):
-                out.add(posixpath.join(rel, file) if rel else file)
+            out.append(dict(f, step=res['name'], cwd=rel))
+    return out
+
+
+def failing_paths(top, found):
+    """The repository paths the failures `found` (failures()) live in: a unittest class's file
+    (kitlib.gate.rerun scope_of, in its step's folder), and a gradle or dotnet failure's scope
+    folder ending '/'."""
+    out = set()
+    for f in found:
+        if f.get('runner'):
+            if f.get('scope'):
+                out.add(f['scope'].strip('/') + '/')
+            continue
+        rel = f['cwd']
+        file = rerun.scope_of(os.path.join(top, *rel.split('/')) if rel else top, f['cls'])
+        if file.endswith('.py'):
+            out.add(posixpath.join(rel, file) if rel else file)
     return out
 
 
@@ -132,6 +159,51 @@ def suspects(specs, red, lands, failing, read):
     candidates = [x for x in lands if any(_selects(specs.get(n), x.paths, read) for n in red)]
     hits = [x for x in candidates if _hits(x.paths, failing)]
     return hits or candidates
+
+
+def _write_json(path, value):
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(value, f, indent=1, sort_keys=True)
+
+
+def cmd_suspects(argv, values, folder, tests, lands, timeout, run=inflight.run):
+    """`([sha], None)`: the suspects the repository's `argv` ("staging".suspects_cmd) names, or
+    `(None, why)` when it gives none to trust. `values`: the step placeholders (steps.mapping of
+    the promotion's tree at S, which is also its working folder); `tests` the tests file's
+    content; `lands` the landings of M..S. Writes TESTS_FILE and LANDINGS_FILE ({tests_file},
+    {landings_file}) and the command's output, SUSPECTS_LOG, into `folder`. The command runs with
+    no input in a job of its own (inflight.run), its whole tree ended after `timeout` s. Its
+    stdout lines `suspect <sha40>` are the suspects, in order, others ignored; exit 0 with none
+    is no suspect."""
+    tests_file, landings_file = os.path.join(folder, TESTS_FILE), os.path.join(folder, LANDINGS_FILE)
+    try:
+        _write_json(tests_file, tests)
+        _write_json(landings_file, [{'sha': x.sha, 'paths': list(x.paths)} for x in lands])
+    except OSError as e:
+        return None, 'its files could not be written in %s: %s' % (folder, e)
+    cmd = S.substitute(argv, dict(values, tests_file=tests_file, landings_file=landings_file))
+    try:
+        rc, out, err = run(cmd, values['root'], timeout)
+    except OSError as e:
+        return None, 'could not start (%s)' % e
+    except subprocess.TimeoutExpired:
+        return None, 'was still running after %d s and was ended' % timeout
+    text, errs = gitcmd.text(out or b''), gitcmd.text(err or b'')
+    try:
+        with open(os.path.join(folder, SUSPECTS_LOG), 'w', encoding='utf-8') as f:
+            f.write('$ %s\nexit %d\n--- stdout\n%s\n--- stderr\n%s\n' % (
+                ' '.join(cmd), rc, text, errs))
+    except OSError:
+        pass                        # the log is evidence only
+    if rc != 0:
+        return None, 'exited %d (%s)' % (rc, os.path.join(folder, SUSPECTS_LOG))
+    named = [m.group(1) for m in (_SUSPECT.match(line.strip()) for line in text.splitlines())
+             if m]
+    known = {x.sha for x in lands}
+    foreign = [sha for sha in named if sha not in known]
+    if foreign:
+        return None, 'named %s, which is not a landing of M..S' % foreign[0][:10]
+    return list(dict.fromkeys(named)), None
 
 
 def hunt(lands, base, tip, sus, probe, make, deadline, clock, max_probes=B.DEFAULT_PROBES,
@@ -233,11 +305,13 @@ def after_red(ctx, attempt, out, say, clock=time.time, budget=HUNT_BUDGET_S, mak
         return []
     attempt.rec['culprit'] = {'verdict': HUNTING, 'pid': os.getpid(), 'red': red}
     attempt.write()
-    found, mode = _hunt(dict(ctx, log_dir=ctx.get('log_dir') or attempt.folder), red,
+    found, mode = _hunt(dict(ctx, log_dir=ctx.get('log_dir') or attempt.folder,
+                             folder=attempt.folder), red,
                         out.facts.get('results') or [], say, clock, clock() + budget, budget,
                         make)
     lines = ['promote: hunt: %s (%d probe(s))' % (found['verdict'], len(found['probes']))]
     rec = {k: found[k] for k in ('end', 'verdict', 'merge', 'by', 'suspects', 'probes')}
+    rec.update((k, found[k]) for k in ('suspects_from', 'suspects_why') if found.get(k))
     attempt.rec['culprit'] = dict(rec, red=red, **({'mode': mode} if mode else {}))
     if found.get('back'):
         lines.append('promote: hunt: %s' % found['back'])
@@ -260,8 +334,10 @@ def _hunt(ctx, red, results, say, clock, deadline, budget, make):
     except (ConfigError, detect.DetectError, S.GateConfigError) as e:
         return _none('inconclusive: the gate at %s: %s' % (base[:10], e)), None
     specs = {s['name']: s for s in gate.get('steps') or []}
-    failing = failing_paths(wt, results, red, specs, ctx.get('since'))
-    sus = suspects(specs, red, lands, failing, S.working_tree_reader(wt))
+    found_f = failures(wt, results, red, specs, ctx.get('since'))
+    failing = failing_paths(wt, found_f)
+    sus, origin, why = _suspects_of(ctx, red, found_f, failing, lands, specs, say, clock,
+                                    deadline)
     prober = B.Prober(wt, red, gate['kind'], place.repo_name(ctx['cfg_base'], main), SLUG,
                       ctx['log_dir'], say_as_hunt(say), ctx.get('book') or {}, git,
                       D.plan, steps=results)
@@ -278,9 +354,34 @@ def _hunt(ctx, red, results, say, clock, deadline, budget, make):
                      lambda merge, onto: make(wt, merge, onto), deadline, clock, budget=budget)
     finally:
         rc, _, err = git(wt, 'switch', '-q', '--detach', tip)
+    found['suspects_from'] = origin
+    if why:
+        found['suspects_why'] = why
     if rc != 0:
         found['back'] = 'could not put %s back at %s: %s' % (wt, tip[:10], err or 'exit %d' % rc)
     return found, (prober.mode if found['probes'] else None)
+
+
+def _suspects_of(ctx, red, found, failing, lands, specs, say, clock, deadline):
+    """`([Landing], suspects_from, why)`: the suspects_cmd M writes names, else the kit's
+    (`why`: why the command's were not used; None when none is set)."""
+    wt, base = ctx['wt'], ctx['base']
+    kit = suspects(specs, red, lands, failing, S.working_tree_reader(wt))
+    argv = ctx['cfg_base'].written('staging', 'suspects_cmd')
+    if not argv:
+        return kit, FROM_KIT, None
+    keep = ('step', 'id', 'cls', 'runner', 'scope')
+    tests = {'base': base, 'tip': ctx['tip'], 'red': list(red), 'failing': sorted(failing),
+             'failures': [{k: f[k] for k in keep if f.get(k) is not None} for f in found]}
+    timeout = max(1, int(min(SUSPECTS_TIMEOUT_S, deadline - clock())))
+    shas, why = cmd_suspects(argv, S.mapping(wt, base, ctx['cfg_base'].tools_dir), ctx['folder'],
+                             tests, lands, timeout)
+    if shas is None:
+        say('promote: hunt: suspects_cmd %s; the kit\'s suspects are used' % why)
+        return kit, FROM_KIT, 'suspects_cmd ' + why
+    by = {x.sha: x for x in lands}
+    say('promote: hunt: suspects_cmd named %d suspect(s)' % len(shas))
+    return [by[sha] for sha in shas], FROM_CMD, None
 
 
 def _none(verdict):

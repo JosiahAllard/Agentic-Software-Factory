@@ -57,6 +57,19 @@ class Build(unittest.TestCase):
         (plain,) = S.build(gate_of(cmd('s')), ROOT, 'b', 't', full=True)     # no full_cmd: cmd
         self.assertEqual(plain.cmd[1:], ['-c', 'pass'])
 
+    def test_promote_args_follow_merged_args_only_in_a_promotion(self):
+        g = gate_of(cmd('t', cmd=['{python}', 'g.py', 'gradle'],
+                        full_cmd=['{python}', 'g.py', 'gradle', '--all'],
+                        merged_args=['--merged'], promote_args=['--promotion', '{base}']))
+        (m,) = S.build(g, ROOT, 'b', 't', merged=True)
+        self.assertEqual(m.cmd[1:], ['g.py', 'gradle', '--merged'])
+        (p,) = S.build(g, ROOT, 'b', 't', merged=True, promote=True)
+        self.assertEqual(p.cmd[1:], ['g.py', 'gradle', '--merged', '--promotion', 'b'])
+        (fp,) = S.build(g, ROOT, 'b', 't', merged=True, full=True, promote=True)
+        self.assertEqual(fp.cmd[1:], ['g.py', 'gradle', '--all', '--merged', '--promotion', 'b'])
+        (d,) = S.build(g, ROOT, 'b', 't', merged=True, full=True, daily=True)    # a probe's
+        self.assertEqual(d.cmd[1:], ['g.py', 'gradle', '--all', '--merged'])
+
     def test_a_full_merged_landing_of_a_pytests_step_passes_its_usage_check(self):
         # A repository's tools-tests step (cmd --select, full_cmd --all, merged_args --merged)
         # in a full landing's merged-tree gate builds `pytests.py --all --audit --merged`; pytests
@@ -110,6 +123,7 @@ class Build(unittest.TestCase):
                   gate_of(cmd('a', cmd=kt, full_cmd=kt + [hold])),
                   gate_of(cmd('a', cmd=kt, daily_cmd=kt + [hold])),
                   gate_of(cmd('a', cmd=kt, merged_args=[hold])),
+                  gate_of(cmd('a', cmd=kt, promote_args=[hold])),
                   gate_of(cmd('a'), setup=['{python}', 'tools/pytests.py', '--all', hold])):
             with self.assertRaises(S.GateConfigError, msg=g) as cm:
                 S.build(g, ROOT, 'b', 't')

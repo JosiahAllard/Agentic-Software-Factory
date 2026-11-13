@@ -98,6 +98,7 @@ STEP = Obj({
     'defer': Field(Bool(), None, 'run after the other steps'),
     'skip_if_selected': Field(Strs, None, 'skip when one of these steps is selected'),
     'merged_args': Field(Strs, None, 'arguments added on the merged tree at landing'),
+    'promote_args': Field(Strs, None, "arguments added after merged_args in a staging promotion's merged gate alone (kitlib.staging.promote; docs/modules/staging-design.md \"Promotion\")"),
     'stage': Field(Enum(*STAGES), None, 'first, main or last'),
     'ok_exits': Field(ListOf(Int(), nonempty=True), None, 'exit codes that pass'),
     'content': Field(Obj({'globs': Field(Argv, None, 'files read'),
@@ -333,6 +334,7 @@ SECTIONS = {
                         'the staging branch: landings merge onto <remote>/<branch> and push to it, and work branches start from it (the work base, kitlib.config.work_base); unset: off, the work base is repo.main_branch; read from <remote>/<repo.main_branch>, never from the branch being merged onto (docs/gate-landing.md "Staging branch")'),
         'promote_after_landings': Field(Int(1), 4, 'a promotion is due when this many first-parent commits on the staging branch are not on the main branch (kitlib.staging.changes; docs/modules/staging-design.md "Promotion")'),
         'promote_after_hours': Field(Int(1), 6, 'or when the oldest of them is this many hours old'),
+        'suspects_cmd': Field(Argv, None, "the repository's own suspects after a red promotion, run in the promotion's tree at the staging tip: {python} {root} {base} {here} {tools} as a step's, plus {tests_file} and {landings_file}; prints `suspect <sha40>` lines; unset, or failing: the kit's suspects (docs/modules/staging-design.md \"Culprit and revert\")"),
     },
     'tool_tests': {
         'mentions': Field(Enum('path', 'tokens'), 'path', 'how a tool mention is found'),

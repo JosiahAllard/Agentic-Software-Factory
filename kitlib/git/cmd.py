@@ -11,8 +11,10 @@
   as GIT_CONFIG_COUNT entries after any already set, the caller's `env` too. Git for Windows runs
   the auto maintenance a commit, merge or fetch starts in the foreground, under this call's
   timeout; a gc killed there leaves objects/maintenance.lock behind, git then skips maintenance
-  silently for good and loose objects pile up. The kit packs the store itself
-  (kitlib.hubjobs.store_upkeep).
+  silently for good and loose objects pile up. This reaches only the kit's own git children: a
+  git run outside the kit (an agent's shell, the owner's) still auto-repacks a store it shares.
+  The kit's daily store upkeep (kitlib.hubjobs.store_upkeep) runs gc and deletes the .idx-less
+  packs such a repack leaves when its delete is refused on Windows.
 - Every call has a timeout (`GIT_TIMEOUT` seconds unless the caller passes another, or None for
   none). A hung git (a lock file held elsewhere) becomes a failed call, never a hang.
 - Every git child starts in its own job object (kitlib.proc.job, no breakaway), and a timeout ends

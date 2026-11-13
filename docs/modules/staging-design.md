@@ -83,7 +83,7 @@ The hub job `staging-promote` (`kitlib/hubjobs/staging_promote.py`, every 600 s)
 
 ## State
 
-The promote lock (in the git common dir), the attempts folder, the promotion's own tree (`<worktrees_dir>/promote`), the gate's log folder (`land-promote` under the gate log base), and the promotion records the gaps branch's `gate_ok.record_tested_pass` writes.
+The promote lock (in the git common dir), the attempts folder, the promotion's own tree (`<worktrees_dir>/promote`), the gate's log folder (`land-promote` under the gate log base), and the promotion records `gate_ok.record_tested_pass` writes.
 
 ## Errors
 
@@ -96,7 +96,6 @@ Exit codes: 0 done, behind, not due or a skip; 1 red; 2 usage or off; 4 held, di
 ## Gaps
 
 - **`promote_args` (slice E).** A repository's own promotion arguments are not read yet: every promotion runs the merged gate's selection as the kit computes it. This must close before a repository with its own promotion needs (retribution) turns staging on.
-- **The records.** `gate_ok.record_tested_pass` and the guard's reader are the gaps branch's; without them a promotion ends `failed` and main is not moved.
 
 ## Adding to it
 

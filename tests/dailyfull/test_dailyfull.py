@@ -339,7 +339,7 @@ class TreeIsMain(Case):
 
 
 class TreeIsMainWithStagingOn(Case):
-    """KIT-STAGING-ON-GAPS item 6: with staging on and the daily worktree set to the main
+    """With staging on and the daily worktree set to the main
     checkout, a scheduled run is recorded red `infra` (the plain run's refusal), never a repeating
     exit 2 that records nothing. Slice C1 retired `--if-due`, the form that skipped the staging
     read there and exited 2; the schedule runs the plain form."""

@@ -20,7 +20,7 @@ green writes S's promotion record and moves main to S (kitlib.staging.advance). 
      M not an ancestor of S: an attempt that ends diverged.
   6. The gate, its slot booked now or never (BOOK: no_wait). A machine-lock refusal (busy,
      timeout, reserved, hold, no lock): a skip, nothing recorded (the next hub tick asks again). FAILED: ends red. Any other refusal: ends error.
-  7. OK: the promotion record of S on M (`write_record`, the gaps branch's
+  7. OK: the promotion record of S on M (`write_record`,
      gate_ok.record_tested_pass(kind 'promotion')): the pre-push guard lets main move to S only
      with it. Not written: ends failed. Written: an attempt at tested, then advance.
 
@@ -90,13 +90,12 @@ def write_record(main, sha, base, cfg_base, started, out, full):
     """The promotion record of `sha` tested on `base` (gate_ok.record_tested_pass, kind
     'promotion'); RecordNotWritten when it is not written. `full`: the run was escalated (every
     step in full); else it was the merged gate's selection, and the record says so."""
-    tested = getattr(gate_ok, 'record_tested_pass', None)
-    if tested is None:
-        raise RecordNotWritten('this kit has no gate_ok.record_tested_pass (the tested records)')
     try:
-        tested(main, sha, 'promotion', gate_ok.gate_config(cfg_base), runner.kit_identity(),
-               place.repo_name(cfg_base, main), started, runner.record_steps(out.facts['results']),
-               base=base, config_rev=base, source=out.facts.get('source'), full=full)
+        gate_ok.record_tested_pass(main, sha, 'promotion', gate_ok.gate_config(cfg_base),
+                                   runner.kit_identity(), place.repo_name(cfg_base, main),
+                                   started, runner.record_steps(out.facts['results']),
+                                   base=base, config_rev=base, source=out.facts.get('source'),
+                                   full=full)
     except Exception as e:      # noqa: BLE001 - any failure leaves main where it is
         raise RecordNotWritten('%s: %s' % (type(e).__name__, e))
 

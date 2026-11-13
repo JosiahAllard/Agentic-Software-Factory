@@ -1,7 +1,7 @@
 """kitlib.staging.promote: one promotion run, in a scratch repository with a bare remote and a
 staging branch (tests/dailyfull/test_promote.StagingCase), the merged gate run for real on the
-scratch machine-lock store. Stood in: the promotion record (gate_ok.record_tested_pass is the gaps
-branch's), the landing lock (a stand-in that logs its takes) and the main checkout's sync (the
+scratch machine-lock store. Stood in: the promotion record (write_record's own call is WriteRecord's),
+the landing lock (a stand-in that logs its takes) and the main checkout's sync (the
 landing's sync_checkout: tests/landing/test_sync_checkout.py)."""
 import os
 import stat
@@ -367,7 +367,7 @@ class WriteRecord(Case):
         def stub(main, sha, kind, gate_config, kit, repo, started, steps, **kw):
             seen.append(dict(main=main, sha=sha, kind=kind, gate_config=gate_config, kit=kit,
                              repo=repo, started=started, steps=steps, **kw))
-        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=stub):
+        with mock.patch.object(gate_ok, 'record_tested_pass', new=stub):
             for full in (False, True):
                 SP.write_record(self.main_dir, tip, base, cfg, '2026-11-12T04:00:00Z', out, full)
         self.assertEqual([s['full'] for s in seen], [False, True])
@@ -381,15 +381,12 @@ class WriteRecord(Case):
         self.assertEqual(s['steps'], [{'name': 'unit', 'result': 'pass', 'seconds': 1.5},
                                       {'name': 'lint', 'result': 'reused', 'seconds': 0.0}])
 
-    def test_a_missing_or_raising_record_tested_pass_is_record_not_written(self):
+    def test_a_raising_record_tested_pass_is_record_not_written(self):
         out = G.Outcome(G.OK, [], results=[])
-        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=None):
-            with self.assertRaisesRegex(SP.RecordNotWritten, 'no gate_ok.record_tested_pass'):
-                SP.write_record(self.main_dir, 'a' * 40, 'b' * 40, self.cfg(), 'x', out, False)
 
         def boom(*a, **k):
             raise OSError('read-only')
-        with mock.patch.object(gate_ok, 'record_tested_pass', create=True, new=boom):
+        with mock.patch.object(gate_ok, 'record_tested_pass', new=boom):
             with self.assertRaisesRegex(SP.RecordNotWritten, '^OSError: read-only$'):
                 SP.write_record(self.main_dir, 'a' * 40, 'b' * 40, self.cfg(), 'x', out, False)
 

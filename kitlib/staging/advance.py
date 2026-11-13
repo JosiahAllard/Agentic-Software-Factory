@@ -49,8 +49,7 @@ LOCK_POLL_S = 5
 REFUSED_MARK = 'pre-push: refused'      # the kit pre-push hook's refusal (kitlib.guard.prepush)
 # Its refusals that say only that the hook could not read what it judges by (a remote list, git's
 # ancestry, an object list): a failed push, tried again, never a refused hold.
-# TODO(KIT-STAGING-BRANCH): import kitlib.guard.prepush.TRANSIENT_PREFIX (kit/staging-on-gaps)
-# once that lands, in place of this local string.
+# It is kitlib.guard.prepush.TRANSIENT_PREFIX, copied: guard is a higher layer than staging.
 TRANSIENT = REFUSED_MARK + ', cannot '
 
 

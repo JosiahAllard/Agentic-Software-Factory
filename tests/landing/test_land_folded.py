@@ -98,10 +98,11 @@ class OutOfTheQueue(FoldCase):
     leaves no queue entry behind and the landing behind it gets the turn. Given back, it books
     again with what is left of its --wait; that running out first, it ends FOLDED."""
 
-    def member(self, q):
-        """The landing of `q`, run in a thread that the anchor's booking (`book`, its book=)
-        starts once the anchor holds its slot, and returns only once `q`'s landing waits in the
-        landing queue behind it, so the anchor folds a submission whose landing is queued."""
+    def member(self, q, **kw):
+        """The landing of `q` (`kw`: more of its Lander keywords), run in a thread that the
+        anchor's booking (`book`, its book=) starts once the anchor holds its slot, and returns
+        only once `q`'s landing waits in the landing queue behind it, so the anchor folds a
+        submission whose landing is queued."""
         m = types.SimpleNamespace(said=[], results={}, waiting=threading.Event())
         m.slug = place.slug_of('+'.join(q.branches))
         prefix = ('waiting: %s is folded into the batch of the landing run '
@@ -118,7 +119,7 @@ class OutOfTheQueue(FoldCase):
             except BaseException as e:     # noqa: BLE001 - the test reads it
                 m.results['error'] = e
         m.lander = self.lander(q.branches[0], self.main, q.tips[0], submitted=q.sub,
-                               wait_s=HANG_S, poll_s=0.05, say=say)
+                               wait_s=HANG_S, poll_s=0.05, say=say, **kw)
         m.thread = threading.Thread(target=run)
         m.entries = lambda: [e for e in lockqueue.load(self.store)['entries']
                              if e.get('slug') == m.slug]
@@ -226,6 +227,38 @@ class OutOfTheQueue(FoldCase):
         self.assertEqual((two['verdict'], two['run_id'], two['folded_into'], two['batch']),
                          ('pass', b.run_id, None, ['kit/two']))
         self.assertEqual(self.record('kit/one')['verdict'], 'fail')
+
+    def test_its_booking_not_given_while_the_fold_runs_ends_it_folded(self):
+        """TheFoldedLanding's not-run case while the anchor still runs: the member's booking
+        fails (LockError) once the anchor released its slot, before it finished the records.
+        turn_check reads the fold still running (WAIT): FOLDED, not NOT RUN, nothing written, no
+        queue entry."""
+        def refused(kind, repo, slug, **kw):
+            lockrun.book(kind, repo, slug, **kw).release(1, 'done')    # queued, then not given
+            raise LockError(6, 'the queue is full')
+        a = self.queued(['one'])
+        b = self.queued(['two'])
+        m = self.member(b, book=refused)
+        anchor = self.landing(a, book=m.book)
+        close, seen = anchor.close_pulled, {}
+
+        def closing():
+            m.thread.join(HANG_S)
+            seen['ended'] = not m.thread.is_alive()
+            seen['two'], seen['entries'] = self.record('kit/two'), m.entries()
+            return close()
+        anchor.close_pulled = closing
+        out = anchor.run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertTrue(seen['ended'], m.said)
+        got = self.outcome(m)
+        self.assertEqual((got.code, got.lines), (G.OK, [self.folded_line(b, a)]))
+        self.assertEqual((seen['two']['verdict'], seen['two']['folded_into']),
+                         (result.RUNNING, a.run_id))
+        self.assertEqual(seen['entries'], [])
+        self.assertEqual(len(m.calls()), 1)
+        two = self.record('kit/two')
+        self.assertEqual((two['verdict'], two['folded_into']), ('pass', a.run_id))
 
     def test_its_wait_running_out_while_the_fold_runs_ends_it_folded(self):
         """Its --wait runs out (here: its deadline set to now) while it waits out of the queue

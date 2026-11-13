@@ -207,9 +207,12 @@ A submitted landing (kitlib.landing.submit; `land.py --submit`) is this landing 
 process: its records are written `running` before it starts, and every outcome finishes them.
 At its turn (the booking given) it reads its first record (submit.turn): folded into another
 landing's batch, it says FOLDED and ends, writing nothing more (that landing finishes its
-records); folded into one that still runs, it gives the turn back and books again until that one
-lands them or gives them back; else it marks the record turn_at, so no landing folds it from
-then on. A booking that fails is checked the same way before its NOT RUN or REFUSED is written.
+records); folded into one that still runs, it releases its slot and waits out of the landing
+queue, a look at its records every poll (wait_folded): finished by that landing, it says FOLDED;
+given back, it books again with what is left of its --wait; that running out first, it says
+FOLDED. Else it marks the record turn_at, so no landing folds it from then on. A booking that
+fails is checked the same way (folded, or folded into one that still runs: FOLDED) before its
+NOT RUN or REFUSED is written.
 
 Folding (docs/gate-landing.md "Folding queued submissions"), on by default ("landing".batch_max, default
 5; a .kit.json that sets it to 1 folds nothing): a submitted landing whose locked checks

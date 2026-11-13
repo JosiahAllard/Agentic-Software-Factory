@@ -627,9 +627,21 @@ class CombinesChanges(unittest.TestCase):
         ("both sides' first line once", XO, XT, SIX + b'x\no\nt\n', [SIX], False),
         ("both sides' first line once, theirs first", XO, XT, SIX + b'x\nt\no\n', [SIX], False),
         ("both sides' first line twice, together", XO, XT, SIX + b'x\nx\no\nt\n', [SIX], False),
-        ("a side's run that begins the other's, once", SIX + b'x\n', XT, XT, [SIX], False),
-        ("a side's run that begins the other's, whole", SIX + b'x\n', XT, SIX + b'x\nx\nt\n',
-         [SIX], True),
+        # a side's run X the other's holds whole: X then X Y is X Y, held once
+        ("a side's run that begins the other's, once", SIX + b'x\n', XT, XT, [SIX], True),
+        ("a side's run that ends ours, once", XT, SIX + b't\n', XT, [SIX], True),
+        ("a side's run inside the other's, once", SIX + b't1\nx\nt2\n', SIX + b'x\n',
+         SIX + b't1\nx\nt2\n', [SIX], True),
+        ("a side's run that begins the other's, twice", SIX + b'x\n', XT, SIX + b'x\nx\nt\n',
+         [SIX], False),
+        ("a side's run that begins the other's, twice, apart", SIX + b'x\n', XT,
+         SIX + b'x\nt\nx\n', [SIX], False),
+        ("a side's run the other holds after its own, reordered", SIX + b'x\n',
+         SIX + b't\nx\n', SIX + b'x\nt\n', [SIX], False),
+        ("a side's run the other holds only apart", SIX + b'x1\nx2\n', SIX + b'x1\nt\nx2\n',
+         SIX + b'x1\nt\nx2\n', [SIX], False),
+        ("a side's run the other holds, with a new line", SIX + b'x\n', XT,
+         SIX + b'x\nt\nnew\n', [SIX], False),
         ('two JSON rows merged into one object', ROW_B, ROW_C, MERGED_BC, [rows()], False),
         ('rows added in one place, interleaved', AC, B, SIX + b'{\na\n}\n{\nb\n}\n{\nc\n}\n',
          [SIX], False),
@@ -690,11 +702,41 @@ class CombinesChanges(unittest.TestCase):
         dropped = edges(b'r1', b's1', b's2').replace(b'  },\n  {\n', b'', 1)   # two rows as one
         self.assertIs(oc.combines_changes(ours, theirs, dropped, [base]), False)
 
+    def test_module_map_rows_one_side_adds_first_of_the_others_are_held_once(self):
+        # main adds row r1; the branch adds r1 then its own rows (kit/staging-slice-c's merge of
+        # main 1e4432740): the branch's rows, as they are, join both; r1 twice does not
+        ours, theirs, base = edges(b'r1', b's1', b's2'), edges(b'r1'), edges()
+        self.assertIs(oc.combines_changes(ours, theirs, ours, [base]), True)
+        twice = edges(b'r1', b'r1', b's1', b's2')
+        self.assertIs(oc.combines_changes(ours, theirs, twice, [base]), False)
+
     def test_a_join_past_its_cost_bound_is_refused(self):
-        ours, theirs, result = self.XO, self.XT, SIX + b'x\no\nx\nt\n'   # 6 equal pairs a side
-        self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), True)
-        with mock.patch.object(oc, 'JOIN_PAIRS_MAX', 5):
-            self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), False)
+        held = (SIX + b'x\n', self.XT, self.XT)             # a block the other's holds, once
+        for ours, theirs, result in [(self.XO, self.XT, SIX + b'x\no\nx\nt\n'), held]:
+            with self.subTest(result):                      # 6 equal pairs a side
+                self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), True)
+                with mock.patch.object(oc, 'JOIN_PAIRS_MAX', 5):
+                    self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), False)
+
+    def test_a_held_block_is_found_in_linear_line_comparisons(self):
+        compared = [0]
+
+        class Line(object):
+            def __init__(self, text):
+                self.text = text
+
+            def __eq__(self, other):
+                compared[0] += 1
+                return self.text == other.text
+
+        def lines(*texts):                  # each its own object: a list compare skips none
+            return [Line(t) for t in texts]
+
+        run, sub = lines(*'a' * 4000 + 'b'), lines(*'a' * 2000 + 'b')  # by slices: ~4 million
+        self.assertIs(oc._holds(run, sub), True)
+        self.assertLess(compared[0], 4 * (len(run) + len(sub)))
+        self.assertIs(oc._holds(run, lines('a', 'b', 'a')), False)
+        self.assertIs(oc._holds(run[:-1], sub), False)
 
 
 @real_git('commit-tree for a forged parent and an octopus merge: the fake has none')

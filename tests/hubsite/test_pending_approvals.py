@@ -87,6 +87,12 @@ class Clocked(unittest.TestCase):
         self.t = T0
         self.store.put('approvals', 'A-001', decided(status))
 
+    def otherwise(self):
+        """The repository is named `alpha` and its coordinator session is keyed `coord`."""
+        self.names = {REPO: 'alpha'}
+        self.api._session_keys = lambda: {'coord', 'zeta'}
+        self.api.coordinators = lambda: {'coord': 'alpha'}
+
     def pending(self, key):
         status, obj = self.api.call('GET', BASE + '/pending', AGENT, None, {'for': key})
         self.assertEqual(status, 200, obj)
@@ -103,6 +109,20 @@ class ApiPendingCase(Clocked):
         self.assertEqual(self.pending('kit'), [('approval', 'A-001', 'kit')])
         self.assertEqual(self.pending('pm'), [('approval', 'A-001', 'kit')])
         self.assertEqual(self.pending('zeta'), [])
+
+    def test_a_coordinator_keyed_otherwise_is_listed(self):
+        self.otherwise()
+        self.decide()
+        self.assertEqual(self.pending('coord'), [('approval', 'A-001', 'coord')])
+        self.assertEqual(self.pending('pm'), [('approval', 'A-001', 'coord')])
+        self.assertEqual(self.pending('alpha'), [])
+
+    def test_the_name_comes_before_a_coordinator_session_when_both_are_live(self):
+        self.otherwise()
+        self.api._session_keys = lambda: {'alpha', 'coord', 'zeta'}
+        self.decide()
+        self.assertEqual(self.pending('alpha'), [('approval', 'A-001', 'alpha')])
+        self.assertEqual(self.pending('coord'), [])
 
     def test_no_configured_repository_is_the_pms(self):
         self.names = {}
@@ -267,6 +287,12 @@ class PushCase(Clocked):
         self.assertEqual(self.pending('kit'), [('approval', 'A-001', 'kit')])
         self.assertEqual(self.sent(), [('pm', 'Decided by the owner')])
 
+    def test_a_coordinator_keyed_otherwise_is_not_pushed_after_pending_read(self):
+        self.otherwise()
+        self.decide()
+        self.assertEqual(self.pending('coord'), [('approval', 'A-001', 'coord')])
+        self.assertEqual(self.sent(), [('pm', 'Decided by the owner')])
+
     def test_no_repository_name_tells_the_pm(self):
         self.names = {}
         self.decide()
@@ -358,7 +384,7 @@ class RoutingGitCase(unittest.TestCase):
         self.views = backlog.Views(servesources._repo_pairs({'sessions_file': sessions}))
         self.store = Store.open(os.path.join(self.root, 'store'))
         self.addCleanup(self.store.close)
-        self.api = api.Api(self.store, session_keys=lambda: {'kit', 'other'},
+        self.api = api.Api(self.store, session_keys=lambda: {'kit', 'other'}, coordinators=dict,
                            repo_name=serverepos._repo_name(
                                self.views, remote_ids=serverepos._RemoteIds(clock=lambda: self.now)))
         now = datetime.datetime.now(datetime.timezone.utc).timestamp()

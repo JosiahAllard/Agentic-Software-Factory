@@ -164,8 +164,9 @@ to a key other than `pm`), so a session told by push with no wait open keeps its
 lists the items routed to `pm`, every answered question, whoever it is from (the PM logs each
 ruling), and every decided approval; a filed question only when it is routed to `pm` (its asker
 reads it). An approval has no `from`: it is for the coordinator of its
-repository, the session key named as the configured repository whose origin remote is the
-approval's `repo` (Api's repo_name), while that key is in sessions.json, else for `pm`. A
+repository, the configured repository whose origin remote is the approval's `repo` (Api's
+repo_name): the first of its coordinator keys (coordinator_keys, the name first, then its
+coordinator sessions) that is in sessions.json, else for `pm`. A
 skill edit has no `from` either: it is for the kit's coordinator, the key Api's kit_key gives
 (kit_session_key), on the same terms. A wait
 `for=pm` is also woken when an item's route turns to `pm` with no write. All of
@@ -644,8 +645,9 @@ class Api(object):
         free-text names, stories and notes are the PM's), and the key that is to handle it now
         as `route` (module docstring "Routes"). With for_key, only the items for that key; for
         AGENT_FROM, the items routed to it, every question and every approval. An approval's
-        `from` is its repository's coordinator key (repo_key). Reading never changes an item:
-        what a filtered read leaves out stays pending for every other reader."""
+        `from` is its repository's coordinator key (the first of coordinator_keys that is a
+        session key). Reading never changes an item: what a filtered read leaves out stays
+        pending for every other reader."""
         return [d for d in self._routed()[0] if _for(d, for_key)]
 
     def route_change_in(self):
@@ -657,7 +659,7 @@ class Api(object):
     def _routed(self):
         """([item], `now` of the next route change or None): the pending items with `from` and
         `route`. Hand-overs of items no longer pending are forgotten here. Each approval's
-        repository is resolved (repo_key) once per call, however many approvals name it, the
+        repository's coordinator keys are resolved (coordinator_keys) once per call, however many approvals name it, the
         kit coordinator's key (kit_session_key) once for every skill edit, and sessions.json is
         read once for all of them (sessions_once)."""
         with sessions_once():
@@ -676,8 +678,11 @@ class Api(object):
                 # no `from`: its repository's coordinator
                 repo = d['repo'] if isinstance(d['repo'], str) else ''
                 if repo not in repo_keys:
-                    repo_keys[repo] = self.repo_key(repo)
-                sender = repo_keys[repo]
+                    repo_keys[repo] = self.coordinator_keys(repo)
+                cands = repo_keys[repo]
+                if cands and keys is None:
+                    keys = self.session_keys()      # read once, and only when it can matter
+                sender = next((k for k in cands if k in keys), '') or (cands or [''])[0]
             elif d['kind'] == 'skill_edit':
                 if kit is None:
                     kit = self.kit_session_key()    # the kit's coordinator commits it

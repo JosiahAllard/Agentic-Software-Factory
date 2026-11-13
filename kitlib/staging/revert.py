@@ -45,6 +45,15 @@ def _out(r, what):
     return cmd.text(r.out).strip(), None
 
 
+def by_hand(root, landing):
+    """The `git revert` that undoes `landing` by hand: `-m 1` for a merge, none for a commit
+    pushed straight to staging (git refuses `-m` there). Git failing to say: the merge form."""
+    parents, _ = _out(cmd.call(['rev-list', '--parents', '-1', landing], root), 'rev-list')
+    if parents is not None and len(parents.split()) == 2:
+        return 'git revert %s' % landing
+    return 'git revert -m 1 %s' % landing
+
+
 def message(merge, subject):
     """The revert commit's message."""
     return 'Revert landing %s: %s\n\nThis undoes landing %s (mainline 1).\n\n%s %s\n' % (
@@ -88,8 +97,9 @@ def prepare(root, merge, base, made=None):
             return None, why
     if made.status == CONFLICT:
         return None, ('the revert of %s does not apply cleanly on %s: it conflicts in %s; revert '
-                      'it by hand on a branch from %s: git revert -m 1 %s' % (
-                          merge[:10], base[:10], ', '.join(made.paths), base[:10], merge))
+                      'it by hand on a branch from %s: %s' % (
+                          merge[:10], base[:10], ', '.join(made.paths), base[:10],
+                          by_hand(root, merge)))
     if made.status == EMPTY:
         return None, '%s already holds no change of %s: there is nothing to revert' % (
             base[:10], merge[:10])

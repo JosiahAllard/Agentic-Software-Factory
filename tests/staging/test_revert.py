@@ -137,6 +137,16 @@ class Prepare(Case):
         self.assertEqual(refs.resolve('refs/heads/' + V.branch_of(merge), self.root,
                                       known=True), ('', None))
 
+    def test_a_conflict_of_a_commit_pushed_straight_gives_the_revert_with_no_mainline(self):
+        self.put('before', **{'a.txt': 'one\n'})
+        straight = self.put('straight', **{'a.txt': 'landed\n'})
+        tip = self.put('rewrites it', **{'a.txt': 'rewritten\n'})
+        got, why = V.prepare(self.root, straight, tip)
+        self.assertIsNone(got)
+        self.assertTrue(why.endswith('by hand on a branch from %s: git revert %s' % (
+            tip[:10], straight)), why)
+        self.assertNotIn('-m 1', why)
+
 
 if __name__ == '__main__':
     unittest.main()

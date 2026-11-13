@@ -344,9 +344,10 @@ class RefusalLog(unittest.TestCase):
             a = FakeAdapter(parse_error=payload_error(error, 'refused'))
             self.assertEqual(run(a, {}, allow), (3, 'deny guard-error\n'))
             self.assertIn('(ValueError: refused)', a.last.reason)
+        self.assertEqual(run(Several.Multi(()), {}, allow), (3, 'deny guard-error\n'))
         run(FakeAdapter(), {}, lambda *x, **k: Decision('deny', 'some-rule', 'why'))
         self.assertEqual([r.get('error') for r in self.rows()],
-                         ['payload-JSONDecodeError', 'cwd-not-absolute', '-', '-', '-', '-'])
+                         ['payload-JSONDecodeError', 'cwd-not-absolute', '-', '-', '-', 'no-action', '-'])
 
     def test_a_host_screen_deny_is_logged_once_for_a_call_of_several_actions(self):
         a = Several.Multi(('a', 'b', 'c'), screen=lambda act: Decision('deny', 'host-rule', 'no') if act.path != 'a' else None)

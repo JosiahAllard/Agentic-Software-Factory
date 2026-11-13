@@ -36,8 +36,9 @@ lives here once:
         whatever made it, is then logged before run returns: one line in
         <pm_data>/audit/refusals.jsonl (kitlib.guard.refusal_log; docs/guard-core.md "Refusal log"),
         with the role of the Action the guard judged and, for a guard-error, error_kind's token.
-        The line never changes the answer or the exit code; the host reads the answer when the hook exits, so the log adds its time (no
-        process, at most refusal_log.BOUND seconds of lock wait plus file reads) to the hook's.
+        The line never changes the answer or the exit code; the host reads the answer when the
+        hook exits, so the log adds its time (no process, at most refusal_log.BOUND seconds of
+        lock wait plus file reads) to the hook's.
   failure(e, role, entry, args)       that guard-error Decision
   error_kind(e, stage)                its refusal-log token: the adapter site's, else <stage>-<type>
   ready(guard)

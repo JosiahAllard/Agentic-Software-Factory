@@ -77,9 +77,10 @@ class Clocked(unittest.TestCase):
         self.store = Store.open(os.path.join(self.root, 'store'), clock=lambda: iso(self.t))
         self.addCleanup(self.store.close)
         self.names = {REPO: 'kit'}
+        # coordinators: none beyond the name (the push reads them; not this machine's sessions.json)
         self.api = api.Api(self.store, clock=lambda: iso(self.t),
                            session_keys=lambda: {'kit', 'zeta'},
-                           repo_name=lambda repo: self.names.get(repo))
+                           repo_name=lambda repo: self.names.get(repo), coordinators=dict)
         self.store.put('approvals', 'A-001', request(T0 - 60))
 
     def decide(self, status='approved'):

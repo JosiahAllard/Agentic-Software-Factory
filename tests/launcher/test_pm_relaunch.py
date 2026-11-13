@@ -283,7 +283,7 @@ class OnLinux(Base):
                          dict(self.coords, pm_session_id=FORK, pm_name=NEW, pm_account=1))
 
     def test_crossover_what_if_on_linux_finds_the_pm_by_its_process_alone(self):
-        pm = dict(self.pm_process(), Name='claude')         # no registry record: Linux cannot match one
+        pm = dict(self.pm_process(), Name='claude')         # no registry record: found by its process alone
         host = ForkHost(self.h.root, procs=[pm])
         with mock.patch('kitlib.platform.NAME', 'linux'):
             out = relaunch.crossover(self.h.settings, host, '1', NEW, what_if=True)

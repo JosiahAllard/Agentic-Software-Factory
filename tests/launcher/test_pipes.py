@@ -64,9 +64,6 @@ class Registry(unittest.TestCase):
         self.assertFalse(pipes.is_live(dict(r, pid=0), Ctime({0: 5007})))
         self.assertFalse(pipes.is_live(dict(r, procStart=None), Ctime({7: 5007})))
 
-    def test_the_peer_refusal_on_linux_is_gone(self):
-        self.assertFalse(hasattr(pipes, 'require_peer_support'))
-
     def test_find_takes_the_newest_live_record_of_the_name_started_after_the_launch(self):
         self.put(rec(1, 'x-a1', started=NOW_MS + 100))
         self.put(rec(2, 'x-a1', started=NOW_MS + 900))          # newest, but dead

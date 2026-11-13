@@ -22,16 +22,15 @@ from hosts.claude.adapter.host import ClaudeAdapter
 from kitlib.hubsite import push
 from kitlib.launcher import pipes
 from kitlib.launcher import settings as S
+# kitlib.proc.process binds its backend at its first import, and HubPush's default ctime imports
+# it: imported here, on the real platform, before on_windows or on_linux pins kitlib.platform.NAME.
+from kitlib.proc import process  # noqa: F401
 
 TOKEN = 'k' * 32
 
 
 def on_windows(test):
-    """Run `test` as on Windows: its records name pipes, which on Linux are no peer address.
-    kitlib.proc.process binds its backend when first imported, so it is imported here first, on
-    the real platform: HubPush's default ctime would otherwise bind Windows's on Linux for every
-    later test."""
-    from kitlib.proc import process  # noqa: F401
+    """Run `test` as on Windows: its records name pipes, which on Linux are no peer address."""
     p = mock.patch('kitlib.platform.NAME', 'windows')
     p.start()
     test.addCleanup(p.stop)
@@ -476,6 +475,12 @@ class LinuxDeliver(unittest.TestCase):
         self.m.put(self.m.reg, key, {'peerToken': TOKEN, 'procStart': raw, 'procStartFt': lstart(3601)})
         with self.assertRaises(ValueError):
             peer.read_token(self.m.reg, rec)
+
+    def test_the_pm_resolves_by_its_session_id_from_an_lstart_record(self):
+        self.linux_session(51, 'Project Manager', sid='pm-sid-old')
+        self.linux_session(52, 'renamed', sid='pm-sid', after_boot=3700)
+        self.m.put(self.m.state, 'coordinators.json', {'pm_session_id': 'pm-sid'})
+        self.assertEqual(self.m.hub().resolve(push.PM_KEY).record['pid'], 52)
 
     def test_a_process_of_another_second_or_boot_is_not_live(self):
         self.linux_session(43, 'x-a1', ctime=kit_ctime(3601))

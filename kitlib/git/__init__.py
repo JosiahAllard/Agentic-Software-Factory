@@ -4,7 +4,7 @@ branch and ancestry queries (ARCHITECTURE.md).
   cmd    call/run/run_text: every git child, environment scrubbed, timeout always set
   repo   classify (MAIN/LINKED/NONE/UNKNOWN), common_dir, worktrees, toplevel, check_write
   refs   resolve, tree_of, current_branch, is_ancestor, is_fast_forward, merge_in_progress, status,
-         default_base (the one default-base rule)
+         default_base (the one default-base rule), parse_merge_tree
   batch  one git process for many reads: cat_file, commits, ancestry, CatFile, fixture_env
   cache  a test process's memo of a full hash's resolve (off unless enable()); clear()
 """
@@ -18,6 +18,6 @@ from .repo import (  # noqa: F401
 )
 from .refs import (  # noqa: F401
     bad_rev, branch_tip, current_branch, default_base, head, is_ancestor, is_clean,
-    is_fast_forward, is_sha, ls_remote, merge_base, merge_in_progress, parse_porcelain_z, remote_tip, resolve, status,
+    is_fast_forward, is_sha, ls_remote, merge_base, merge_in_progress, parse_merge_tree, parse_porcelain_z, remote_tip, resolve, status,
     tree_of,
 )

@@ -19,6 +19,8 @@ Low-level design of `kitlib/staging`: the promotion of a staging branch to the m
 |---|---|
 | `staging/changes.py` | What is untested (first-parent `M..<remote>/<staging>`, with the oldest committer time) and whether a promotion is due |
 | `staging/record.py` | The phase record: one folder per attempt, its phases, reading the attempts back |
+| `staging/culprit.py` | The culprit hunt after a red: the landings of M..S, the suspects, the probes in order, the verdict |
+| `staging/revert.py` | The revert of one landing as a commit object on the staging tip, and its local `revert/<sha10>` branch |
 | `staging/advance.py` | `Mover`: the phases after the test, the landing lock, the push and its retries, the sync |
 | `staging/promote.py` | `run` (one promotion run), `look` (the hub job's look), `status_lines` |
 | `hubjobs/staging_promote.py` | The hub's timed job that starts a run and announces the ends |
@@ -33,7 +35,7 @@ Low-level design of `kitlib/staging`: the promotion of a staging branch to the m
 3. **Recovery.** An attempt in a live phase (record.LIVE) is moved on from that phase ("Phases and recovery"), and the run ends there.
 4. **Due?** (`changes.due`): `"staging".promote_after_landings` untested commits (default 4), or the oldest of them `promote_after_hours` old (default 6); never with none. `--force` skips only this check.
 5. **Held?** A tip that already ended in a hold (record.HOLDS: red, refused, diverged, failed, error) is never tested again, so a tip that keeps failing is not gated on every hub tick ("Errors" says how a hold is cleared). M not an ancestor of S ends `diverged`.
-6. **The gate**: `kitlib.gate.runner.merged_gate(main, cfg_at_M, M, full, slug 'promote', tree <worktrees_dir>/promote)`, the tree made with `dailyfull.prepare` at S. The gate and hook config are M's, as a landing reads them. `full` (every step in full) when M..S changes the gate's config (`gate.reuse.config_hits`) or git cannot list the change, as at a landing. The slot is booked now or never (`BOOK`: the lock's `no_wait`), so a detached run never waits out a hub tick and background runs never queue behind it. A machine-lock refusal (busy, timeout, reserved, hold, no lock) is a skip that records nothing; the next tick asks again. FAILED ends `red`; any other refusal (`NO_STEP` included) ends `error`; a gate that tested another commit than S ends `error`.
+6. **The gate**: `kitlib.gate.runner.merged_gate(main, cfg_at_M, M, full, slug 'promote', tree <worktrees_dir>/promote)`, the tree made with `dailyfull.prepare` at S. The gate and hook config are M's, as a landing reads them. `full` (every step in full) when M..S changes the gate's config (`gate.reuse.config_hits`) or git cannot list the change, as at a landing. The slot is booked now or never (`BOOK`: the lock's `no_wait`), so a detached run never waits out a hub tick and background runs never queue behind it. A machine-lock refusal (busy, timeout, reserved, hold, no lock) is a skip that records nothing; the next tick asks again. FAILED ends `red`, written before anything else, and then hunts its culprit under the same lock ("Culprit and revert"); any other refusal (`NO_STEP` included) ends `error`; a gate that tested another commit than S ends `error`.
 7. **The promotion record** of S on M (`write_record`: `gate_ok.record_tested_pass(kind 'promotion', base=M, config_rev=M, source, full)`). Not written: the attempt ends `failed` and main is never pushed.
 8. **The attempt** starts at `tested` and `advance.Mover` moves it on.
 
@@ -43,7 +45,7 @@ The gate's slot is booked and released inside `merged_gate` (`slot=None`: `gated
 
 One folder per attempt, `<gate log base>/promote/<stamp>-<sha10>/promote.json` (`kitlib.records.place.log_base`: `"landing".log_dir`, else the machine's `<kit temp>/<repo>-gate`). The stamp is local time to the microsecond, so attempts of one second read back in the order they started. It is never in the daily run's results folder: a promotion green is never a daily green, and never makes the daily run skip as `unchanged`.
 
-Fields (schema 1): `schema`, `via` (`promotion`), `sha` (S), `base` (M, full hash), `phase`, `started`, `updated`, `pid`, `log_dir`, `why`, `tries` (the pushes tried), `announced`, `history` (`[[phase, time], ...]`).
+Fields (schema 1): `schema`, `via` (`promotion`), `sha` (S), `base` (M, full hash), `phase`, `started`, `updated`, `pid`, `log_dir`, `why`, `tries` (the pushes tried), `announced`, `history` (`[[phase, time], ...]`). A red attempt adds `culprit` (`verdict`, `end`, `merge`, `by`, `suspects`, `probes` (`[{sha, what, verdict, red, why}]`), `red` (the steps hunted), `mode`; while the hunt runs only `verdict` `hunting`, `pid` and `red`) and, once a culprit is found, `revert` (`branch`, `base`, `commit`, `note`; or `why` and `base` when none was made).
 
 | Phase | Kind | Meaning |
 |---|---|---|
@@ -72,12 +74,27 @@ Records are written atomically, and only by the process holding the promote lock
 
 There is no `synced` phase: `pushed` goes straight to `done` once the sync has been tried.
 
+## Culprit and revert
+
+`culprit.after_red`, called by `run` once a red attempt is written, still under the promote lock. It finds the landing of M..S that turned S red and prepares its revert for the coordinator to review. It replaces the "REVERT DUE" line of the staging plan's v3: nothing is reverted, pushed or landed by itself, and no reviewer is skipped.
+
+- **The steps hunted** are the red run's FAIL steps less the gate's own (`dailyfull.bisect.NOT_STEPS` via `bisectable`): a red of the gate's own or an infra step alone is not hunted, and the attempt gets no `culprit`.
+- **The landings** are every first-parent commit of M..S (`changes.first_parent`, the listing `untested` reads), each with the paths it changed against its first parent.
+- **The suspects** are the landings any red step selects, as one set across every red step: a step's globs and content rule (`steps.selects`, read at S, `always` and `manual` set aside); a step with neither, or one M's gate lacks, takes every landing. A landing that changed a failing test's file (`rerun.cover_step`, the file of its class in that step's folder) or a path under a failing runner's scope is a hit, and the hits are the suspects when there are any.
+- **The order.** S is probed first: green is a flake and the hunt ends. With one suspect its revert onto S (`revert.make`) is probed: green confirms it (`culprit <sha10> (confirmed by revert)`). Otherwise (several suspects, none, a revert that conflicts or is empty, or one still red) `dailyfull.bisect.search` runs over M and the landings, at most `DEFAULT_PROBES` probes, S's verdict reused: the first red landing is the culprit (`by bisect`); M red too ends `on-main` with no revert; the cap ends `capped` naming the range left.
+- **A probe** is `bisect.Prober` (gate_mode `bisect`, slug `promote-hunt`, the failing tests alone first, then the whole steps) in the promotion's own tree. The narrowed probe reruns S's named failing tests; a whole-step probe runs that commit's own gate in the daily form (`dailyfull.plan`: each step's `daily_cmd`, else `full_cmd`, else `cmd`, no `merged_args`), as the daily bisect does. Never the promotion's own argv: a change-selecting cmd (`kit_tests.py --select` against M) selects nothing at M or at a revert, so a red already on main, or a revert that only drops the selection, would probe green. Its lines are said as `promote: hunt`. The tree is put back at S after every probe off the chain, and at the end.
+- **The budget.** The whole hunt has `HUNT_BUDGET_S` (4 h), its slot waits included: each probe's slot waits for at most the time left (`wait_s`, never `no_wait`), so a probe queues behind other work as the daily bisect does, and the hunt never holds the machine past the budget. None left, or a probe given up after it ran out, ends `inconclusive (budget)`. A probe that cannot run (the lock refused, the tree could not be switched) ends `inconclusive`.
+- **The revert** (`revert.make`) is a commit object made with `git merge-tree --write-tree --merge-base <landing> <S> <landing>^1` and `git commit-tree -p <S>`: it undoes only that landing's own changes (mainline 1) and keeps everything landed after it. Its author and committer are the kit's (`revert.AUTHOR`), never the machine's; its message names the landing and ends with `Reverts-landing: <full sha>`, so the landing that lands it reopens what that landing closed ("Reopen at a revert" in Gaps). No working tree or index is touched. A conflict or a revert with nothing to undo makes no commit and is said as `NO REVERT`; a conflict's line names the paths and the revert to make by hand on a branch from the staging tip: `git revert -m 1 <landing>` for a merge, `git revert <landing>` for a commit pushed straight to staging (`revert.by_hand`).
+- **The branch.** `revert.prepare` makes the local branch `revert/<landing sha10>` in the main checkout at the revert onto `<remote>/<staging>` as it is now, fetched again (S's revert reused when staging has not moved). A branch of that name at another commit is left as it is and the line says so. Nothing is pushed. The line `promote: REVERT PREPARED - local branch ...` and the hub item `promote-revert` hand it to the coordinator, who reviews it, gates it and lands it (`new_worktree.py --existing revert/<sha10>`) like any branch.
+- **A dead hunt.** A run that dies mid-hunt leaves `culprit.verdict` `hunting`; the next look, which holds the promote lock, marks it `stopped` and announces the red.
+- **By hand.** `tools/promote.py --force` runs the hunt in the foreground after a red, within the same budget.
+
 ## The trigger
 
 The hub job `staging-promote` (`kitlib/hubjobs/staging_promote.py`, every 600 s) runs no gate itself. For each repository `launcher.repos` names it calls `promote.look`: no fetch, the promote lock probed and let go.
 
 - Staging off there: nothing, said nowhere. The promote lock held (a run's pid alive): `busy`, nothing.
-- Under the lock it announces each attempt that ended red, refused, diverged, failed or error and is not yet announced: one job push to the PM, word `promote-<end>`, detail `<repo>:<sha10>`, then the record is marked announced. A newer push of the same word replaces one the hub still owes (these words are not in the push worker's `JOB_EACH`): a known limit.
+- Under the lock it announces each attempt that ended red, refused, diverged, failed or error and is not yet announced: one job push to the PM, word `promote-<end>`, detail `<repo>:<sha10>`, then the record is marked announced. A red with a revert branch prepared is announced as `promote-revert` instead, detail `<repo>:<landing sha10>` (`record.Attempt.event`). A newer push of the same word replaces one the hub still owes (the `promote-<end>` words are not in the push worker's `JOB_EACH`): a known limit. `promote-revert` is in `JOB_EACH`, owed once per detail, so each prepared revert is its own item.
 - Owed (an attempt left live, or a promotion due at a tip not held): one detached `tools/promote.py -C <repo>` (`kitlib.lock.detach`). That run takes the promote lock itself before anything else, so two starts never run twice.
 - A repository whose config or git cannot be read, or a start that failed, is a note beside a start, else the job's failure (hub health shows it).
 
@@ -96,15 +113,16 @@ Exit codes: 0 done, behind, not due or a skip; 1 red; 2 usage or off; 4 held, di
 ## Gaps
 
 - **`promote_args` (slice E).** A repository's own promotion arguments are not read yet: every promotion runs the merged gate's selection as the kit computes it. A repository whose patch needs `promote_args` must not switch to staging before slice E lands (docs/gate-landing.md "Switching a repo").
+- **`suspects_cmd` (slice E).** A repository's own suspect rule is not read yet: the suspects are the kit's ("Culprit and revert"), from M's gate steps and the failing tests. No schema or `.kit.json` setting exists for it until slice E.
 - **Reopen at a revert (slice D1).** A revert of a landing on staging carries a `Reverts-landing: <merge sha>` line, and the landing that lands it reopens what that landing closed (`kitlib.backlog.reopen`, docs/backlog-store.md "Reopen at a revert"). The landing must name a full sha on the first-parent chain of the base the revert merged onto; anything else is a NOTE and reopens nothing. Records the close unblocked are not blocked again. Each branch of a stacked batch now closes with its own merge, so a revert of one branch's landing finds its closes; reverting an earlier branch of a batch landed before this finds nothing (those closes all name the batch's last merge), and a NOTE says so.
 
 ## Adding to it
 
-A new end phase goes in `record.ENDS` (and `HOLDS` and `ANNOUNCE` when it holds or is announced), gets its event word in the hub job's `EVENTS`, and its exit code in `promote.CODES`. A new trigger condition goes in `changes.py` and is read by both `run` and `look`.
+A new end phase goes in `record.ENDS` (and `HOLDS` and `ANNOUNCE` when it holds or is announced), gets its event word in the hub job's `EVENTS`, and its exit code in `promote.CODES`. A new trigger condition goes in `changes.py` and is read by both `run` and `look`. A new hunt end goes in `culprit.py` beside `FOUND`..`BUDGET`, with its step in `hunt`; a new field of a hunt's verdict in the record goes in `after_red` and this doc's "The phase record".
 
 ## Tests
 
-`tests/staging`: due at the count and age boundaries and their settings; the phase record and its order; each phase's move and recovery, the push retries, a guard refusal, the landing lock busy, dead and timed out; a promotion green, red, held, behind, diverged, skipped by the machine lock, and refused by a real pre-push hook on real git. `tests/hubjobs/test_staging_promote.py`: the trigger.
+`tests/staging`: due at the count and age boundaries and their settings; the phase record and its order; each phase's move and recovery, the push retries, a guard refusal, the landing lock busy, dead and timed out; a promotion green, red, held, behind, diverged, skipped by the machine lock, and refused by a real pre-push hook on real git; the hunt's order, suspects and budget with stand-in probes (`test_culprit.py`), the revert and its branch (`test_revert.py`, on the fake git only; real git's `merge-tree --merge-base` is covered by its rows in `tests/git/test_fake_differential.py`), and the hunt run for real after a red: confirmed by revert and by bisect, on-main, the revert on a staging tip that moved, its slot waits, a hunt that raises releasing its slot, a dead hunt stopped (`test_promote.py` Hunt), and the probes' daily form (`HuntDailyForm`). `tests/hubjobs/test_staging_promote.py`: the trigger and `promote-revert`.
 
 ## Reference
 

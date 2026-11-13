@@ -436,6 +436,20 @@ def parse_porcelain_z(out):
     return entries
 
 
+def parse_merge_tree(raw):
+    """`(tree, conflicted paths)` from `git merge-tree --write-tree --name-only --no-messages -z`
+    (the tree OID, then each conflicted path once, NUL-terminated). A newline after the OID is
+    tolerated as well as a NUL."""
+    tokens = raw.split('\0')
+    head = tokens[0]
+    if '\n' in head:
+        head, rest = head.split('\n', 1)
+        tokens = [rest] + tokens[1:]
+    else:
+        tokens = tokens[1:]
+    return head.strip(), {t for t in tokens if t not in ('', '\n')}
+
+
 def status(cwd, untracked='all', renames=True):
     """`([(xy, path)], None)` for the work tree at `cwd` (`??` marks untracked; ignored files are
     left out), or `(None, why)`. `untracked` is git's --untracked-files value. `renames=False`

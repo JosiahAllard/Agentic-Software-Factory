@@ -824,15 +824,8 @@ class JoinedMerges(OwnerCommitsCase):
 
 
 class MergeTreePieces(unittest.TestCase):
-    """The merge-tree parse and merge_owned on their own (moved from tests/commit)."""
-
-    def test_parse_merge_tree_layouts(self):
-        oid = '1' * 40
-        self.assertEqual(oc.parse_merge_tree(oid + '\0p.txt\0'), (oid, {'p.txt'}))
-        self.assertEqual(oc.parse_merge_tree(oid + '\np.txt\0'), (oid, {'p.txt'}))
-        self.assertEqual(oc.parse_merge_tree(oid + '\n'), (oid, set()))
-        self.assertEqual(oc.parse_merge_tree(oid + '\0p.txt\0 q dir/r.txt\0'),
-                         (oid, {'p.txt', ' q dir/r.txt'}))
+    """merge_owned on its own (moved from tests/commit; the merge-tree parse moved to
+    kitlib.git.refs: tests/git/test_git.py ParseMergeTreeTest)."""
 
     def test_no_merge_or_an_octopus_owns_nothing(self):
         self.assertEqual(oc.merge_owned('.', owner.Rules(), {'a.txt'}, []), (set(), None))

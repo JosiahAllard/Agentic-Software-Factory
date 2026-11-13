@@ -19,7 +19,10 @@ green writes S's promotion record and moves main to S (kitlib.staging.advance). 
      tested again; a new staging tip is a fresh attempt.
      M not an ancestor of S: an attempt that ends diverged.
   6. The gate, its slot booked now or never (BOOK: no_wait). A machine-lock refusal (busy,
-     timeout, reserved, hold, no lock): a skip, nothing recorded (the next hub tick asks again). FAILED: ends red. Any other refusal: ends error.
+     timeout, reserved, hold, no lock): a skip, nothing recorded (the next hub tick asks again).
+     FAILED: ends red, then the culprit hunt and its revert branch (kitlib.staging.culprit
+     after_red, `hunter`), still under the promote lock, its probes' slots waiting within
+     culprit.HUNT_BUDGET_S. Any other refusal: ends error.
   7. OK: the promotion record of S on M (`write_record`,
      gate_ok.record_tested_pass(kind 'promotion')): the pre-push guard lets main move to S only
      with it. Not written: ends failed. Written: an attempt at tested, then advance.
@@ -41,12 +44,14 @@ from kitlib.config.load import load_at
 from kitlib.config.types import ConfigError
 from kitlib.dailyfull import promote as P
 from kitlib.fs.treelock import TreeBusy, TreeLock, TreeLockError, describe
+from kitlib.gate import rerun
 from kitlib.gate import reuse
 from kitlib.gate import runner
 from kitlib.git import repo
 from kitlib.records import gate_ok, place
 from kitlib.staging import advance as A
 from kitlib.staging import changes as C
+from kitlib.staging import culprit as CU
 from kitlib.staging import record as R
 
 LOCK_FILE = 'kit-staging-promote.lock'
@@ -105,11 +110,12 @@ def code_of(a):
 
 
 def run(main, cfg, say=_quiet, force=False, book_kw=None, git=D.git, gate=runner.merged_gate,
-        record=write_record, mover=None, clock=time.time):
+        record=write_record, mover=None, clock=time.time, hunter=CU.after_red):
     """One promotion run of the repository whose main checkout is `main` (its config `cfg`): a
     G.Outcome (the module docstring). `book_kw`: more of the gate's booking (kitlib.lock.run
-    book), over BOOK: now or never. `gate`, `record`, `mover(main, cfg2, staging, git, say)`
-    and `clock` are stand-ins a test passes."""
+    book), over BOOK: now or never (the hunt's probes drop no_wait). `gate`, `record`,
+    `mover(main, cfg2, staging, git, say)`, `clock` and `hunter(ctx, attempt, out, say)` are
+    stand-ins a test passes."""
     lock, why = lock_for(main)
     if lock is None:
         return G.Outcome(G.REFUSED, ['REFUSED: the promote lock: %s' % why])
@@ -125,12 +131,13 @@ def run(main, cfg, say=_quiet, force=False, book_kw=None, git=D.git, gate=runner
             say('promote: took over the promote lock from a run that is gone (%s)'
                 % describe(lock.took_over))
         book = dict(BOOK, **(book_kw or {}))
-        return _held(main, cfg, say, force, book, git, gate, record, mover or A.Mover, clock)
+        return _held(main, cfg, say, force, book, git, gate, record, mover or A.Mover, clock,
+                     hunter)
     finally:
         lock.release()
 
 
-def _held(main, cfg, say, force, book, git, gate, record, mover, clock):
+def _held(main, cfg, say, force, book, git, gate, record, mover, clock, hunter):
     why = D.fetch(main, cfg.remote, git)
     if why:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
@@ -177,7 +184,7 @@ def _held(main, cfg, say, force, book, git, gate, record, mover, clock):
                                          tip[:10], held.phase, staging), R.line(held)])
     try:
         return _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate,
-                     record, move)
+                     record, move, hunter)
     except R.RecordError as e:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
 
@@ -192,7 +199,8 @@ def _ended(where, tip, base, phase, why, log_dir=None):
     return G.Outcome(code_of(a), ['promote: %s - %s' % (phase.upper(), why), R.line(a)])
 
 
-def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate, record, move):
+def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate, record, move,
+          hunter):
     if git(main, 'merge-base', '--is-ancestor', base, tip)[0] != 0:
         return _ended(where, tip, base, 'diverged', '%s/%s (%s) has commits that are not on %s '
                       '(%s)' % (cfg.remote, P.main_of(cfg), base[:10], staging, tip[:10]))
@@ -223,8 +231,13 @@ def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate
         return G.Outcome(G.OK, ['promote: SKIPPED (%s) - %s; nothing recorded, the next run asks '
                                 'again' % (cause, '; '.join(out.lines))], skipped=cause)
     if out.code == G.FAILED:
-        return _ended(where, tip, base, 'red', out.facts.get('verdict') or 'the gate failed',
-                      log_dir)
+        why = out.facts.get('verdict') or 'the gate failed'
+        a = R.start(where, tip, base, 'red', why=why, log_dir=log_dir)
+        ctx = {'main': main, 'cfg': cfg, 'cfg_base': cfg_base, 'staging': staging, 'wt': wt,
+               'tip': tip, 'base': base, 'book': book, 'git': git,
+               'since': rerun.since_of(started), 'log_dir': log_dir}
+        lines = ['promote: RED - %s' % why] + hunter(ctx, a, out, say)
+        return G.Outcome(code_of(a), lines + [R.line(a)], log_dir=log_dir)
     if out.code != G.OK:
         return _ended(where, tip, base, 'error', '; '.join(out.lines) or 'the gate refused',
                       log_dir)
@@ -254,7 +267,8 @@ def look(main, cfg, announce, git=D.git, clock=time.time):
       error    git or the lock could not say (note: why)
     The ends a hub item is owed for (record.unannounced) are given to `announce(attempt)` while
     the promote lock is held, and marked announced once it returns: one each, whatever the
-    verdict but off and busy."""
+    verdict but off and busy. A red attempt whose culprit hunt is still marked hunting is from a
+    run that is gone (a live one holds the lock): it is marked stopped first."""
     two, why = P.staging_read(main, cfg, git)
     if why:
         return 'error', why
@@ -272,6 +286,9 @@ def look(main, cfg, announce, git=D.git, clock=time.time):
     try:
         found = R.attempts(folder(cfg, main))
         for a in R.unannounced(found):
+            if R.hunting(a):        # the lock is free, so the run that hunted is gone
+                a.rec['culprit'] = dict(a.rec['culprit'], verdict=CU.STOPPED)
+                a.write()
             announce(a)
             a.rec['announced'] = True
             a.write()

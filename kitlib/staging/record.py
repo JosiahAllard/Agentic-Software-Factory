@@ -18,6 +18,11 @@ The record (SCHEMA 1):
   tries       the pushes tried
   announced   True once the hub job has pushed its hub item (ANNOUNCE)
   history     [[phase, time], ...], oldest first
+  culprit     a red attempt's culprit hunt (kitlib.staging.culprit after_red): {verdict, red,
+              pid} while it runs (verdict HUNTING; `stopped` once the hub job's look found that
+              run gone), then {end, verdict, merge, by, suspects, probes, red[, mode]}
+  revert      for a culprit found: {branch, base, commit, note} (the local branch prepared), or
+              {why[, base]} when none could be
 
 Phases: tested (green, its record written) -> pushing -> pushed (main is S on the remote) -> done
 (the main checkout's local main synced as far as it safely can). The ends: red (a step failed),
@@ -27,7 +32,7 @@ made or verified in PUSH_TRIES tries, or the tested record could not be written)
 refused to run on the tip). HOLDS never test the same tip again (failed among them, so a tip
 whose push or record keeps failing is not gated again on every hub tick): a new staging tip is a
 fresh attempt, and a refused one waits for the owner's action as well. ANNOUNCE get one hub item
-each.
+each (Attempt.event: a red one whose culprit's revert branch was prepared is word `revert`).
 
 The records are written atomically (kitlib.fs.atomic) and only by the run holding the promote
 lock (kitlib.staging.promote.lock_for), the hub job's `announced` mark included.
@@ -45,6 +50,7 @@ LIVE = ('tested', 'pushing', 'pushed')
 ENDS = ('done', 'red', 'behind', 'refused', 'diverged', 'failed', 'error')
 HOLDS = ('red', 'refused', 'diverged', 'failed', 'error')
 ANNOUNCE = ('red', 'refused', 'diverged', 'failed', 'error')
+HUNTING = 'hunting'     # a culprit hunt's verdict while it runs (kitlib.staging.culprit)
 
 
 class RecordError(Exception):
@@ -81,6 +87,13 @@ class Attempt(object):
 
     def live(self):
         return self.phase in LIVE
+
+    def event(self):
+        """`(word, detail id)` of this attempt's hub item: ('revert', the culprit's sha10) when a
+        revert branch was prepared, else (its phase, its sha10)."""
+        if (self.rec.get('revert') or {}).get('branch'):
+            return 'revert', ((self.rec.get('culprit') or {}).get('merge') or '?')[:10]
+        return self.phase, (self.sha or '?')[:10]
 
     def set(self, phase, why=None, **more):
         """Move to `phase` (LIVE or ENDS) and write the record; `why` replaces the reason when
@@ -149,10 +162,24 @@ def unannounced(found):
     return [a for a in found if a.phase in ANNOUNCE and not a.rec.get('announced')]
 
 
+def hunting(a):
+    """Whether attempt `a`'s culprit hunt is marked as running (kitlib.staging.culprit HUNTING)."""
+    return (a.rec.get('culprit') or {}).get('verdict') == HUNTING
+
+
 def line(a):
-    """The status line of attempt `a`."""
+    """The status line of attempt `a`, with its hunt's verdict and revert branch when it has
+    them."""
     r = a.rec
-    return 'promote   %s %s %s at %s%s' % (
+    hunt, rev = r.get('culprit') or {}, r.get('revert') or {}
+    more = ''
+    if hunt.get('verdict'):
+        more += '; hunt: %s' % hunt['verdict']
+    if rev.get('branch'):
+        more += '; revert branch %s' % rev['branch']
+    elif rev.get('why'):
+        more += '; no revert: %s' % rev['why']
+    return 'promote   %s %s %s at %s%s%s' % (
         (r.get('phase') or '?').upper(), (r.get('sha') or '?')[:10],
         'on main %s' % (r.get('base') or '?')[:10], r.get('updated') or r.get('started') or '?',
-        ' - %s' % r['why'] if r.get('why') else '')
+        ' - %s' % r['why'] if r.get('why') else '', more)

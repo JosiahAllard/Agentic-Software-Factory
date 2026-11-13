@@ -120,6 +120,26 @@ class Reading(Case):
                         line)
         self.assertTrue(line.endswith(' - unit failed'), line)
 
+    def test_the_status_line_ends_with_the_hunt_and_its_revert(self):
+        a = R.start(self.dir, S1, BASE, 'red', why='unit failed')
+        a.rec['culprit'] = {'verdict': 'culprit %s (by bisect)' % S2[:10], 'merge': S2}
+        a.rec['revert'] = {'branch': 'revert/' + S2[:10], 'commit': BASE}
+        self.assertTrue(R.line(a).endswith(' - unit failed; hunt: culprit %s (by bisect); revert '
+                                           'branch revert/%s' % (S2[:10], S2[:10])), R.line(a))
+        a.rec['revert'] = {'why': 'conflicts in a.txt'}
+        self.assertTrue(R.line(a).endswith('; no revert: conflicts in a.txt'), R.line(a))
+
+    def test_the_event_is_revert_of_the_culprit_only_with_a_branch(self):
+        a = R.start(self.dir, S1, BASE, 'red')
+        self.assertEqual(a.event(), ('red', S1[:10]))
+        a.rec['culprit'] = {'verdict': R.HUNTING}
+        self.assertTrue(R.hunting(a))
+        a.rec['culprit'] = {'verdict': 'culprit', 'merge': S2}
+        a.rec['revert'] = {'why': 'conflicts in a.txt'}
+        self.assertEqual((a.event(), R.hunting(a)), (('red', S1[:10]), False))
+        a.rec['revert'] = {'branch': 'revert/' + S2[:10]}
+        self.assertEqual(a.event(), ('revert', S2[:10]))
+
 
 if __name__ == '__main__':
     unittest.main()

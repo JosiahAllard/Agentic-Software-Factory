@@ -284,7 +284,16 @@ JOB_EACH = {'stale-code': 'The hub server (serve.py, job name hub) will not rest
                           'maintenance or gc process alive: git skips its own maintenance while '
                           'that file is there. Detail is its age (<hours>h); hub health '
                           'jobs.store-upkeep names the path. The hub never removes it: plan a '
-                          'window to move it aside. Pushed again each daily pass while it stays.'}
+                          'window to move it aside. Pushed again each daily pass while it stays.',
+            'promote-revert': 'The hub staging-promote job: a promotion of a staging branch ended '
+                              'red, and its culprit hunt found the landing that turned it red. '
+                              'Detail is <repo>:<landing sha10>. The local branch '
+                              'revert/<landing sha10> in that repository holds its revert, with '
+                              'a Reverts-landing line; nothing was pushed or landed. Hand it to '
+                              'that repository\'s coordinator to review, then gate and land '
+                              '(new_worktree.py --existing revert/<landing sha10>); never land '
+                              'it unreviewed. `tools/promote.py --status` there shows the '
+                              'attempt and the hunt.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
                'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}

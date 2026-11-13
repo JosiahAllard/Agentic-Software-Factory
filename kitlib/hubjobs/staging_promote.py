@@ -15,7 +15,10 @@ before anything else, so two starts never run twice.
 An attempt that ended red, refused, diverged, failed or error gets one job push to the PM, word
 `promote-<end>` (EVENTS), detail `<repo>:<sha10>`, and is marked announced in its record; the PM
 raises it with the owner. A newer push of this job replaces one the hub still owes
-(push.PushWorker.job_event: these words are not in JOB_EACH), a known limit.
+(push.PushWorker.job_event: these words are not in JOB_EACH), a known limit. A red attempt whose
+culprit hunt prepared a revert branch (kitlib.staging.culprit) is word `promote-revert` instead,
+detail `<repo>:<culprit's sha10>` (record.Attempt.event): in JOB_EACH, so it is owed once per
+detail, and its text tells the PM to hand the branch to the coordinator.
 
 Outcomes: a start is a success whose note names it; nothing to start is a skip; a repository
 whose config or git cannot be read, whose look raised (an announce that failed: that end stays
@@ -30,7 +33,7 @@ from kitlib.hubsite import jobs
 
 NAME = 'staging-promote'
 EVERY_S = 600
-EVENTS = ('red', 'refused', 'diverged', 'failed', 'error')     # promote-<end>
+EVENTS = ('red', 'refused', 'diverged', 'failed', 'error', 'revert')    # promote-<word>
 
 
 class PromoteFailed(Exception):
@@ -72,7 +75,8 @@ class PromoteJob(object):
                 break
 
             def announce(a, name=name):
-                ctx.event('promote-%s' % a.phase, '%s:%s' % (name, (a.sha or '?')[:10]))
+                word, sha10 = a.event()
+                ctx.event('promote-%s' % word, '%s:%s' % (name, sha10))
             try:
                 verdict, note = self.look(root, announce)
             except Exception as e:  # noqa: BLE001 - one repository never stops the pass

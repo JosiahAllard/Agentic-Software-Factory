@@ -75,6 +75,13 @@ class Parse(unittest.TestCase):
         for bad in ('x', {'tool_name': 5}, {'tool_name': 'Bash', 'tool_input': ['x']}):
             with self.assertRaises((AttributeError, ValueError, TypeError), msg=bad):
                 ADAPTER.parse('PreToolUse', bad)
+        # each refusal of its own tags its ValueError with the refusal log's token for the site
+        for bad, error in (('x', 'payload-not-object'), ({'tool_name': 5}, 'tool-name-not-text'),
+                           ({'tool_name': 'Read', 'tool_input': {'file_path': 3}}, 'read-field-not-text')):
+            with self.subTest(error=error):
+                with self.assertRaises(ValueError) as caught:
+                    ADAPTER.parse('PreToolUse', bad)
+                self.assertEqual(getattr(caught.exception, 'error', None), error)
         # a tool that reads no tool_input does not trip on its shape, as before the split
         self.assertEqual(ADAPTER.parse('PreToolUse', {'tool_name': 'mcp__x__y', 'tool_input': ['x']}).kind, 'mcp')
 

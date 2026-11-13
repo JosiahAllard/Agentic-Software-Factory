@@ -35,10 +35,11 @@ lives here once:
         reason keeps its format; the record is rewritten only after the answer is written. A deny,
         whatever made it, is then logged before run returns: one line in
         <pm_data>/audit/refusals.jsonl (kitlib.guard.refusal_log; docs/guard-core.md "Refusal log"),
-        with the role of the Action the guard judged. The line never changes the answer or the
-        exit code; the host reads the answer when the hook exits, so the log adds its time (no
+        with the role of the Action the guard judged and, for a guard-error, error_kind's token.
+        The line never changes the answer or the exit code; the host reads the answer when the hook exits, so the log adds its time (no
         process, at most refusal_log.BOUND seconds of lock wait plus file reads) to the hook's.
   failure(e, role, entry, args)       that guard-error Decision
+  error_kind(e, stage)                its refusal-log token: the adapter site's, else <stage>-<type>
   ready(guard)
         raises PlatformUnsupported when the running platform is not one kitlib.guard declares
         ready (READY_PLATFORMS): run() checks it once the guard imports, before any Action is
@@ -85,15 +86,30 @@ import dataclasses
 import io
 import json
 import os
+import re
 import sys
 import threading
 import time
 
-from kitlib.host import Decision, degrade
+from kitlib.host import Decision, degrade, payload_error
 
 ERROR = 'guard-error'
 TIMEOUT = 'guard-timeout'
 TAG = '[kit guard: rule=%s role=%s]'
+ERROR_CAP = 64                                  # the longest error token the refusal log keeps
+ERROR_TOKEN = re.compile(r'[A-Za-z0-9-]+\Z')
+
+
+def error_kind(e, stage):
+    """The refusal log's `error` token for a guard that failed with `e` at `stage` (payload, parse,
+    guard or decide): the refusing site's own token (kitlib.host.payload_error), else
+    `<stage>-<exception type>`; None (logged as absent) for a token that is not 1 to ERROR_CAP
+    letters, digits and '-', so no text the payload chose reaches the log."""
+    token = getattr(e, 'error', None)
+    if token is None:
+        token = '%s-%s' % (stage, type(e).__name__)
+    ok = isinstance(token, str) and len(token) <= ERROR_CAP and ERROR_TOKEN.match(token)
+    return token if ok else None
 
 
 def reproduce(entry, args=()):
@@ -246,15 +262,19 @@ def run(adapter, event_name, stdin, stdout, environ=None, entry=None, deadline=N
         kit=None):
     environ = os.environ if environ is None else environ
     entry = (entry or sys.argv[0] or 'hook').replace(os.sep, '/')
-    payload = action = None
+    payload = action = error = None
+    stage = 'payload'
     try:
         payload = json.loads(stdin.read() or '{}')
+        stage = 'parse'
         action = adapter.parse(event_name, payload)
         actions = action if isinstance(action, tuple) else (action,)
         if not actions:
-            raise ValueError('the payload parsed into no action')
+            raise payload_error('no-action', 'the payload parsed into no action')
+        stage = 'guard'
         from kitlib import guard
         ready(guard)
+        stage = 'decide'
         decision = _judge(adapter, guard, actions, environ, deadline, started)
         if decision is None:                    # still deciding at the deadline
             role = _role(adapter, payload, action)
@@ -268,6 +288,7 @@ def run(adapter, event_name, stdin, stdout, environ=None, entry=None, deadline=N
                 decision = degrade(decision, caps)
     except Exception as e:                      # fail closed, every tool
         decision = failure(e, _role(adapter, payload, action), entry, args)
+        error = error_kind(e, stage)
     text, code = adapter.render(event_name, decision)
     text, settle = _notice(adapter, event_name, kit, payload, environ, text)
     if text:
@@ -278,15 +299,15 @@ def run(adapter, event_name, stdin, stdout, environ=None, entry=None, deadline=N
         except Exception:
             pass
     if decision.verdict == 'deny':
-        _log(adapter, payload, action, decision, environ)
+        _log(adapter, payload, action, decision, environ, error)
     return code
 
 
-def _log(adapter, payload, action, decision, environ):
+def _log(adapter, payload, action, decision, environ, error=None):
     """The refusal log's line for the deny run() answered (kitlib.guard.refusal_log), once the
     answer is written: the call's first Action as the guard judged it (unidentified()), and its
-    role, or None and the payload's role when parse refused the payload. Never raises: the line is
-    a record, not part of the answer."""
+    role, or None and the payload's role when parse refused the payload; `error`, a guard-error's
+    error_kind token. Never raises: the line is a record, not part of the answer."""
     try:
         from kitlib.guard import refusal_log
         first = action[0] if isinstance(action, tuple) and action else action
@@ -295,7 +316,7 @@ def _log(adapter, payload, action, decision, environ):
         else:
             first = None
         refusal_log.record(decision, first, getattr(adapter, 'name', None), _role(adapter, payload, first),
-                           environ)
+                           environ, error=error)
     except Exception:
         pass
 

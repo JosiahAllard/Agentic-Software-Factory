@@ -2,6 +2,7 @@
 worktree's git common dir, with the git children (`_run`), the common dir and the machine lock
 stubbed; every pack is a file in a temporary folder."""
 import os
+import stat
 import tempfile
 import threading
 import time
@@ -222,8 +223,9 @@ class Prune(UpkeepCase):
                                     'slot released'])
         self.assertEqual(self.booked[0][3]['resource'], land.queue_key(self.common))
         self.assertIn('pruned 1 .idx-less pack: pack-0a.pack', out)
-        self.assertNotIn('finding', out)
-        self.assertEqual(self.events, [])
+        self.assertIn('finding: pack-2c.pack has no .idx (10 d old), kept by .keep', out)
+        self.assertEqual(out.count('finding'), 1)
+        self.assertEqual(self.events, [('findings', '1')])
         for path in doomed:
             self.assertFalse(os.path.exists(path), path)
         for path in keep:
@@ -240,13 +242,78 @@ class Prune(UpkeepCase):
         for path in young:
             self.assertTrue(os.path.exists(path), path)
 
-    def test_an_idx_that_appears_before_the_delete_keeps_the_pack(self):
+    def test_an_idx_or_keep_that_appears_before_the_delete_keeps_the_pack(self):
+        for suffix in ('.idx', '.keep'):
+            with self.subTest(suffix=suffix):
+                pack, = self.siblings('pack-0a', OLD, ('.pack',))
+                listed = su.orphans(self.common, NOW)
+                late = self.place('objects/pack/pack-0a' + suffix, 0)
+                with mock.patch.object(su, 'orphans', return_value=listed):
+                    self.assertEqual(su.prune(self.common, NOW),
+                                     ([], ['pack-0a.pack kept: it has a %s now' % suffix]))
+                self.assertTrue(os.path.exists(pack))
+                os.remove(late)
+
+    def test_a_pack_a_multi_pack_index_lists_is_kept(self):
+        for midx in ('objects/pack/multi-pack-index',
+                     'objects/pack/multi-pack-index.d/multi-pack-index-1f.midx'):
+            for name in (b'pack-0a.idx', b'pack-0a.pack'):
+                with self.subTest(midx=midx, name=name):
+                    listed, = self.siblings('pack-0a', OLD, ('.pack',))
+                    other, = self.siblings('pack-1b', OLD, ('.pack',))
+                    path = self.place(midx, 0)
+                    with open(path, 'wb') as f:
+                        f.write(b'MIDX\x01\x01PNAM\0' + name + b'\0pack-9f.idx\0\0')
+                    gone, kept = su.prune(self.common, NOW)
+                    self.assertEqual(gone, ['pack-1b.pack'])
+                    self.assertEqual(kept, ['pack-0a.pack kept: the multi-pack-index lists it'])
+                    self.assertTrue(os.path.exists(listed))
+                    self.assertFalse(os.path.exists(other))
+                    os.remove(path)
+
+    def test_an_unreadable_multi_pack_index_prunes_nothing_and_says_so(self):
         pack, = self.siblings('pack-0a', OLD, ('.pack',))
-        listed = su.orphans(self.common, NOW)
-        self.place('objects/pack/pack-0a.idx', 0)
-        with mock.patch.object(su, 'orphans', return_value=listed):
-            self.assertEqual(su.prune(self.common, NOW), ([], []))
+        os.makedirs(os.path.join(self.pack, 'multi-pack-index'))     # open() refuses a folder
+        self.loose = 10
+        out = self.run_job()
+        self.assertIsInstance(out, str)
+        self.assertIn('no pack pruned: the multi-pack-index could not be read', out)
         self.assertTrue(os.path.exists(pack))
+        self.assertEqual(self.events, [('findings', '1')])
+
+    def test_a_read_only_orphan_and_its_siblings_are_deleted(self):
+        doomed = self.siblings('pack-0a', OLD, ('.pack', '.rev'))
+        for path in doomed:
+            os.chmod(path, stat.S_IREAD)
+        self.addCleanup(lambda: [os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+                                 for p in doomed if os.path.exists(p)])
+        self.assertEqual(su.prune(self.common, NOW), (['pack-0a.pack'], []))
+        for path in doomed:
+            self.assertFalse(os.path.exists(path), path)
+
+    def test_a_sibling_refused_after_its_pack_went_is_named(self):
+        pack, rev = self.siblings('pack-0a', OLD, ('.pack', '.rev'))
+        real = su.fsreplace.remove
+
+        def remove(path):
+            if path == rev:
+                raise PermissionError(32, 'in use by another process')
+            real(path)
+        with mock.patch.object(su.fsreplace, 'remove', side_effect=remove):
+            gone, kept = su.prune(self.common, NOW)
+        self.assertEqual(gone, ['pack-0a.pack'])
+        (note,) = kept
+        self.assertTrue(note.startswith('pack-0a.rev kept: '), note)
+        self.assertFalse(os.path.exists(pack))
+        self.assertTrue(os.path.exists(rev))
+
+    def test_a_stop_between_the_steps_deletes_nothing(self):
+        pack, = self.siblings('pack-0a', OLD, ('.pack',))
+        self.stop_after_graph = self.stop.set
+        out = self.run_job()
+        self.assertIsInstance(out, jobs.Skip)
+        self.assertTrue(os.path.exists(pack))
+        self.assertIn('finding: pack-0a.pack has no .idx', out.note)
 
     def test_a_refused_delete_keeps_the_pack_names_it_and_the_pass_succeeds(self):
         held = self.siblings('pack-0a', OLD, ('.pack', '.rev'))

@@ -22,20 +22,27 @@ in order:
      WAIT_S, or an owner or game hold, skips both to the next pass. Inside the slot, in order:
      a. The prune: each `pack-<hex>.pack` in objects/pack (a regular file) with no `.idx` and no
         `.keep` beside it and older than PACK_AGE_S (orphans) is deleted, then its `.rev`,
-        `.mtimes` and `.bitmap` (SIBLINGS). git cannot read a pack without its `.idx`, so nothing
+        `.mtimes` and `.bitmap` (SIBLINGS), each made writable first (git writes packs
+        read-only, and Windows refuses to delete a read-only file). git reads a pack through its
+        `.idx`, or through a multi-pack-index that lists it (git skips the `.idx` of a pack the
+        MIDX names), so a pack whose name appears in objects/pack/multi-pack-index or any
+        multi-pack-index.d/*.midx is kept and named in the note; a multi-pack-index that cannot
+        be read keeps every pack that pass, with a note. What is left no git can read, so nothing
         reachable is lost. Such packs are left when a repack's delete is refused on Windows
         because another git holds the file open. git renames a new pack into place just before
-        its `.idx`, so a young one is never touched, and the `.idx` and `.keep` are checked again
-        just before each delete. No path but a `.pack` and SIBLINGS is ever removed. A delete
-        still refused after kitlib.fs.replace.remove's retries (a file in use) keeps that pack
-        and its siblings; it is named in the note and retried next pass, never a failure.
+        its `.idx`, so a young one is never touched, and the `.idx`, `.keep` and multi-pack-index
+        are checked again just before each delete. No path but a `.pack` and SIBLINGS is ever
+        removed. A delete still refused after kitlib.fs.replace.remove's retries (a file in use)
+        keeps that pack and its siblings; it is named in the note and retried next pass, never a
+        failure.
      b. `git gc` only when `count-objects -v` reports LOOSE_MIN loose objects or more (git's own
         gc.auto default, not measured here), as `-c gc.writeCommitGraph=false -c gc.packRefs=false
         -c pack.threads=CORES gc --quiet`, untimed: step 1 wrote the graph, and packing refs would
         race the ref writes of landings and backlog writes.
 
-An orphan still there after the pass (a young one is none) is a finding: named in the pass's note
-and pushed as the job event `findings` with their count (see Pushes).
+An orphan still there after the pass (a young one is none), and an old .idx-less pack kept by its
+`.keep` (never deleted), is a finding: named in the pass's note and pushed as the job event
+`findings` with their count (see Pushes).
 
 The recurrence check: an objects/maintenance.lock older than LOCK_AGE_S while no git process that
 could hold it is alive (lock_holders: a git whose command line names maintenance or gc, or whose
@@ -65,6 +72,7 @@ kitlib.git.cmd.call.
 import json
 import os
 import re
+import stat
 import subprocess
 import tempfile
 import time
@@ -147,10 +155,9 @@ def _slot_run(slot, args, cwd):
     return cmd.Result(code, b'', text)
 
 
-def orphans(common, now):
-    """[(path, age seconds)] of the common dir's deletable packs (module doc, step 2a): each
-    regular file in objects/pack named PACK_NAME, older than PACK_AGE_S, with no .idx and no
-    .keep beside it. Reads only."""
+def _idx_less(common, now):
+    """[(path, age seconds, has .keep)]: each regular file in the common dir's objects/pack named
+    PACK_NAME, older than PACK_AGE_S, with no .idx beside it. Reads only."""
     folder = os.path.join(common, 'objects', 'pack')
     try:
         names = sorted(os.listdir(folder))
@@ -162,36 +169,80 @@ def orphans(common, now):
         if not PACK_NAME.match(name) or os.path.islink(path) or not os.path.isfile(path):
             continue
         age = _age(path, now)
-        if age is not None and age >= PACK_AGE_S and _unindexed(path):
-            out.append((path, age))
+        stem = path[:-len('.pack')]
+        if age is not None and age >= PACK_AGE_S and not os.path.lexists(stem + '.idx'):
+            out.append((path, age, os.path.lexists(stem + '.keep')))
     return out
 
 
-def _unindexed(pack):
-    """Whether the .pack at `pack` has neither an .idx nor a .keep beside it."""
+def orphans(common, now):
+    """[(path, age seconds)] of the common dir's prune candidates (module doc, step 2a): the
+    .idx-less packs older than PACK_AGE_S with no .keep. Reads only."""
+    return [(path, age) for path, age, keep in _idx_less(common, now) if not keep]
+
+
+def _kept_why(pack, listed):
+    """None when the .pack at `pack` may be deleted, else why not: an .idx or a .keep now beside
+    it, or its .idx name or its own in `listed` (the multi-pack-index bytes)."""
     stem = pack[:-len('.pack')]
-    return not os.path.lexists(stem + '.idx') and not os.path.lexists(stem + '.keep')
+    for suffix in ('.idx', '.keep'):
+        if os.path.lexists(stem + suffix):
+            return 'it has a %s now' % suffix
+    name = os.path.basename(stem).encode('ascii')
+    if name + b'.idx' in listed or name + b'.pack' in listed:
+        return 'the multi-pack-index lists it'
+    return None
+
+
+def _midx(folder):
+    """The bytes of objects/pack/multi-pack-index and every multi-pack-index.d/*.midx in
+    `folder`, joined (b'' when there is none). A pack's name in it (its PNAM chunk holds them as
+    plain bytes) means git may read that pack without its .idx. OSError when one cannot be read."""
+    paths = [os.path.join(folder, 'multi-pack-index')]
+    chain = os.path.join(folder, 'multi-pack-index.d')
+    if os.path.lexists(chain):
+        paths += [os.path.join(chain, n) for n in sorted(os.listdir(chain)) if n.endswith('.midx')]
+    parts = []
+    for path in paths:
+        try:
+            with open(path, 'rb') as f:
+                parts.append(f.read())
+        except FileNotFoundError:
+            continue
+    return b'\0'.join(parts)
 
 
 def scan(common, now):
-    """[finding text] for each of the common dir's orphans. Reads only."""
-    return ['%s has no .idx (%s old)' % (os.path.basename(path), _span(age))
-            for path, age in orphans(common, now)]
+    """[finding text] for each of the common dir's old .idx-less packs: an orphan, or one kept by
+    its .keep. Reads only."""
+    return ['%s has no .idx (%s old)%s' % (os.path.basename(path), _span(age),
+                                          ', kept by .keep' if keep else '')
+            for path, age, keep in _idx_less(common, now)]
 
 
 def prune(common, now):
     """`([deleted pack name], [note])`: each of the common dir's orphans deleted, the .pack first
-    (its .idx and .keep checked again just before), then its SIBLINGS; nothing else is removed.
-    A remove still refused after kitlib.fs.replace.remove's retries is a note, never an error: a
+    (_kept_why checked again just before, a pack it keeps named in a note), then its SIBLINGS, each made writable first; nothing
+    else is removed. A multi-pack-index that cannot be read deletes nothing, with a note. A
+    remove still refused after kitlib.fs.replace.remove's retries is a note, never an error: a
     refused .pack keeps its siblings and is retried next pass (a sibling refused after its .pack
-    went is only named: git reads none of them without the .idx)."""
+    went is only named: no git reads it without its pack)."""
+    found = orphans(common, now)
+    if not found:
+        return [], []
+    try:
+        listed = _midx(os.path.join(common, 'objects', 'pack'))
+    except OSError as e:
+        return [], ['no pack pruned: the multi-pack-index could not be read (%s)' % e]
     gone, kept = [], []
-    for pack, _age_s in orphans(common, now):
+    for pack, _age_s in found:
         name = os.path.basename(pack)
-        if not _unindexed(pack):
+        why = _kept_why(pack, listed)
+        if why:
+            kept.append('%s kept: %s' % (name, why))
             continue
         try:
-            fsreplace.remove(pack)
+            _remove(pack)
         except OSError as e:
             kept.append('%s kept (retried next pass): %s' % (name, e))
             continue
@@ -199,10 +250,21 @@ def prune(common, now):
         for suffix in SIBLINGS:
             path = pack[:-len('.pack')] + suffix
             try:
-                fsreplace.remove(path)
+                _remove(path)
             except OSError as e:
                 kept.append('%s kept: %s' % (os.path.basename(path), e))
     return gone, kept
+
+
+def _remove(path):
+    """kitlib.fs.replace.remove of a file the prune chose, its read-only bit cleared first (git
+    writes packs read-only; Windows refuses to delete such a file). A file already gone is no
+    error."""
+    try:
+        os.chmod(path, os.stat(path).st_mode | stat.S_IWRITE)
+    except FileNotFoundError:
+        return
+    fsreplace.remove(path)
 
 
 def lock_age(common, now):

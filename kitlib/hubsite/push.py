@@ -1047,8 +1047,9 @@ class PushWorker(object):
 
     def _live_session(self, doc, asker):
         """The first key with a live session (the delivery object's `resolve`, None for none)
-        of: question doc's asker, then the coordinator of the record's repository and of the
-        question's repo, each through Api.repo_key and as it is. None when none is live or the
+        of: question doc's asker, then the coordinators of the record's repository and of the
+        question's repo, each through _repo_keys (Api.coordinator_keys: its name, then its
+        coordinator sessions) and as it is. None when none is live or the
         delivery object cannot tell (no `resolve`; a key whose resolve raised counts as not
         live, logged: _first_live)."""
         if not callable(getattr(self.push, 'resolve', None)):

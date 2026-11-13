@@ -1039,6 +1039,18 @@ class ApprovalRouteTest(PushCase):
         self.assertEqual(self.push.to(self.NAME), [])
         self.assertEqual(self.worker._outbox, {}, 'its written try ends it')
 
+    def test_an_approval_its_coordinator_already_holds_is_not_pushed_to_it_again(self):
+        # the held compare is against the key it goes to, `kit`: one against the repository's
+        # name would push it to `kit` all the same. handed_to stands in for the hand-over: Api
+        # pending lists an approval as its repo_key's, so no `pending --for kit` makes this one
+        self.route({'kit'})
+        self.api.handed_to = lambda kind, doc_id: 'kit' if (kind, doc_id) == ('approval', 'A-001') else None
+        self.decide()
+        self.assertEqual([r for r, _t in self.push.calls], [push.PM_KEY])
+        self.later(push.schedule(1))
+        self.assertEqual(self.push.to('kit'), [])
+        self.assertEqual(self.worker._outbox, {})
+
 
 class FiledPushCase(PushCase):
     """A question bound to a record, answered and filed through the Api: who hears it depends on

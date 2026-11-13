@@ -444,7 +444,10 @@ def _restore_why_not(snap, ctx, rec, branch, tip):
     if not head or not _git_answer(refs.is_ancestor(full, head, ctx.root), what):
         return '%s no longer holds its stopped tip %s' % (branch, tip)
     _base, main = narrow._code_main(ctx)
-    if main and _git_answer(refs.is_ancestor(full, main, ctx.root), what):
+    # Landed: in main, off its first-parent chain (a landing's --no-ff merge). A branch with no
+    # commits of its own stopped at a main commit, on that chain, and comes back.
+    if main and _git_answer(refs.is_ancestor(full, main, ctx.root), what) \
+            and not _git_answer(refs.on_first_parent(full, main, ctx.root), what):
         return 'its stopped tip %s has landed on %s' % (tip, ctx.code_main)
     holding, _dead, _why = ctx.in_flight_split(snap)
     lead = '; a lead may re-pull it (the pull-collision row)'
@@ -470,7 +473,9 @@ def restore_pull(snap, ctx, rec):
     `(changes, lines, note)`, all empty when there is none. The pull comes back (`state:
     pulled`, `pulled_by` the branch, `pulled_at` today) only while the branch is live by `next`'s
     test (offer.live_branches: a local, remote-tracking or worktree branch by that name), still
-    holds the stopped tip, which is on neither the local nor the remote main branch, and its scope neither collides with another live pull nor folds
+    holds the stopped tip, which has not landed on the code main (merged into it, off its
+    first-parent chain: a branch with no commits of its own stops on that chain), and its scope
+    neither collides with another live pull nor folds
     into one's work (those are a lead's call, the pull-collision row). Otherwise the record opens
     as before. `note` is the body line that says which, and ends the stopped pull's wait. A git
     that cannot say fails (_restore_why_not)."""

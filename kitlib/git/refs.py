@@ -291,6 +291,24 @@ def is_ancestor(ancestor, descendant, cwd):
     return None, _failed('rev-list -n 1 %s' % spec, r, out)
 
 
+def on_first_parent(sha, base, cwd):
+    """`(True/False, None)`: whether the commit `sha` (a full hash) is on the first-parent chain
+    of `base`; `(None, why)` when git cannot tell. A landing merges a branch with `--no-ff`, so a
+    landed tip is in `base` off that chain, and a branch with no commits of its own stops on it.
+    The walk from `base` stops at the first commit `sha` holds, so it reads only the chain since
+    `sha`: `sha` is on the chain when it is `base` or that commit's first parent."""
+    held, why = is_ancestor(sha, base, cwd)
+    if not held:
+        return held, why
+    out, why = cmd.run_text(['rev-list', '--first-parent', '--parents', base, '^' + sha], cwd)
+    if out is None:
+        return None, why
+    if not out:
+        return True, None                   # `base` is `sha`
+    last = out.split('\n')[-1].split()
+    return len(last) > 1 and last[1] == sha, None
+
+
 def _failed(what, r, out):
     if r.err or out:
         return 'git %s exited %s: %s' % (what, r.rc, r.err or out[:80])

@@ -190,11 +190,12 @@ class PullTakeover(StoreCase):
         self.ctx.main_branch = 'store-main'
         self.ctx.code_main = 'code-main'
         self.repo.git('branch', 'code-main')
-        self.repo.git('checkout', '-q', 'code-main')
+        self.repo.git('checkout', '-q', '-b', GONE)
         self.repo.write('landed/tip.txt', 'x\n')
         self.repo.commit('work', 'landed')
         tip = self.repo.git('rev-parse', 'HEAD')
-        self.repo.git('branch', GONE)
+        self.repo.git('checkout', '-q', 'code-main')
+        self.repo.git('merge', '-q', '--no-ff', '-m', 'Merge %s' % GONE, GONE)   # as a landing
         self.repo.git('checkout', '-q', 'main')
         self.seed(self.pulled('DEAD', GONE))
         why = plan_claim._restore_why_not(self.store.load(), self.ctx, self.get('DEAD'), GONE, tip)
@@ -236,7 +237,9 @@ class CodeMainOriginFirst(StoreCase):
         self.repo.write('landed/tip.txt', 'x\n')
         self.repo.commit('work', 'landed')
         tip = self.repo.git('rev-parse', 'HEAD')
-        self.repo.git('push', '-q', 'origin', '%s:refs/heads/main' % GONE)
+        self.repo.git('checkout', '-q', '-b', 'landing', 'main')
+        self.repo.git('merge', '-q', '--no-ff', '-m', 'Merge %s' % GONE, GONE)   # as a landing
+        self.repo.git('push', '-q', 'origin', 'landing:refs/heads/main')
         self.repo.git('checkout', '-q', 'main')
         self.seed(self.pulled('DEAD', GONE))
         why = plan_claim._restore_why_not(self.store.load(), self.ctx, self.get('DEAD'), GONE, tip)

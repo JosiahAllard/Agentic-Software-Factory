@@ -116,6 +116,17 @@ class Unblock(RestoreCase):
         self.assertIn('  pull by %s not restored: no branch or worktree by that name' % OTHER,
                       change.lines)
 
+    def test_a_fresh_branch_at_main_gets_its_pull_back(self):
+        # A branch with no commits of its own stops at a main commit: on main's first-parent
+        # chain, so not landed (the landed half of the pair: the two tests below).
+        self.repo.git('branch', '-f', OTHER, 'main')
+        self.pulled()
+        self.block()
+        self.repo.write('later.txt', 'later\n')
+        self.repo.commit('main moves on', 'later.txt')
+        self.unblock()
+        self.assert_pulled('FOO', OTHER)
+
     def test_a_landed_tip_is_not_restored(self):
         self.pulled()
         self.block()

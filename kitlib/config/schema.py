@@ -331,6 +331,8 @@ SECTIONS = {
     'staging': {
         'branch': Field(Str(pattern=r'[A-Za-z0-9][A-Za-z0-9._/-]*', what='a branch name'), None,
                         'the staging branch: landings merge onto <remote>/<branch> and push to it, and work branches start from it (the work base, kitlib.config.work_base); unset: off, the work base is repo.main_branch; read from <remote>/<repo.main_branch>, never from the branch being merged onto (docs/gate-landing.md "Staging branch")'),
+        'promote_after_landings': Field(Int(1), 4, 'a promotion is due when this many first-parent commits on the staging branch are not on the main branch (kitlib.staging.changes; docs/modules/staging-design.md "Promotion")'),
+        'promote_after_hours': Field(Int(1), 6, 'or when the oldest of them is this many hours old'),
     },
     'tool_tests': {
         'mentions': Field(Enum('path', 'tokens'), 'path', 'how a tool mention is found'),

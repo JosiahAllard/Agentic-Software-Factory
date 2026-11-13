@@ -178,6 +178,25 @@ class RefusedBeforeAnyMerge(LandCase):
         self.assertNotIn('merge', self.repo.git('reflog', '-n', '5', 'main'))
 
 
+class HeldByStuck(unittest.TestCase):
+    """Lander.held_by on a stuck record: final at once, before the holder or the lock is looked
+    at (a stand-in Lander with no attributes fails on any other path), a gone holder included."""
+
+    REC = {'token': 't', 'pid': 7, 'branches': ['kit/x'], 'phase': 'stuck'}
+
+    def test_a_stuck_record_is_final_and_never_broken(self):
+        why, final = land.Lander.held_by(mock.Mock(spec=[]), dict(self.REC))
+        self.assertTrue(final)
+        self.assertIn('a stuck landing is cleared by hand', why)
+
+    def test_held_by_asks_is_stuck(self):
+        with mock.patch.object(landing, 'is_stuck', return_value=True) as stuck:
+            why, final = land.Lander.held_by(mock.Mock(spec=[]), dict(self.REC, phase='gate'))
+        self.assertTrue(final)
+        self.assertIn('cleared by hand', why)
+        stuck.assert_called_once()
+
+
 class PushCase(LandCase):
     def assert_stuck(self, out, tip):
         self.assertEqual(out.code, G.STUCK, out.lines)

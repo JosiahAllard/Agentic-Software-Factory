@@ -52,7 +52,8 @@ SHARED = (
     'backlog', 'checkout_guard', 'codemap', 'commit', 'coord_state', 'daily_full', 'doc_budget',
     'doc_index', 'forbidden', 'gate', 'land', 'landed', 'ledger', 'machine_paths', 'module_map',
     'new_worktree',
-    'pieces', 'preflight', 'pytests', 'quality_scorecard', 'redfirst', 'review_pack', 'stack_skill',
+    'pieces', 'preflight', 'promote', 'pytests', 'quality_scorecard', 'redfirst', 'review_pack',
+    'stack_skill',
     'sync_base', 'tool_deps', 'trailers', 'verdict', 'worktree_paths',
     'worktree_remove',
 )

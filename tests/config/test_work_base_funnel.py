@@ -25,6 +25,9 @@ NEW_REPO = 'the --main-branch argument of a new repo'
 PMDATA = "the PM data repository's own main"
 STAGING_FROM = 'main as fetched, where the staging setting is read from'
 LANDER_MAIN = "the lander's main checkout is on the main branch, staging or not"
+PROMOTED = ('the main branch a staging promotion moves to its tested tip (pushed, read back and '
+            'fast-forwarded in the main checkout), never the work base, which is the staging '
+            'branch')
 
 # 'path:qualname' -> (reads in it, why that function reads the main branch, not the work base).
 ALLOWED = {
@@ -86,6 +89,13 @@ ALLOWED = {
         (2, "the lock's main checkout branch; its base is the work base"),
     'kitlib/records/landing.py:describe':
         (1, "the lock record's main_branch field: the base the landing holds, already chosen"),
+    'kitlib/staging/advance.py:Mover._based': (1, PROMOTED),
+    'kitlib/staging/advance.py:Mover._main_now': (1, PROMOTED),
+    'kitlib/staging/advance.py:Mover._take': (1, PROMOTED + ' (the landing lock label)'),
+    'kitlib/staging/advance.py:Mover.advance': (1, PROMOTED + ' (the DONE line)'),
+    'kitlib/staging/advance.py:sync_main': (3, PROMOTED + ' (the main checkout synced to it)'),
+    'kitlib/staging/changes.py:untested':
+        (1, "the staging branch's untested commits are those the tested main branch lacks"),
     'kitlib/worktree/remove_checks.py:settings':
         (1, 'the main branch, protected beside the work base (is_base)'),
     'tools/machine_setup.py:main': (1, NEW_REPO),

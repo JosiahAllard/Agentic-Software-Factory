@@ -15,7 +15,7 @@ Low-level design of `kitlib/gate`, `kitlib/loadnode` and `kitlib/dailyfull`. The
 - **Pinned tools**: `gate.py` and `land.py` started from a kit checkout re-run themselves from an export of pushed main, so a branch cannot gate itself with its own gate.
 - **The config a tree is judged by is the base's**: the merge base for a branch, main for a landing; the repo hook module is read from the same commit.
 - **No gate and no landing while the stash stack holds an entry.**
-- **The daily full run** is the only scheduled full-repo run: every step in its daily form, on main. A red is bisected to the first-parent commit that turned it red, and a backlog record is filed for the red it reproduced.
+- **The daily full run** is the only scheduled full-repo run: every step in its daily form, on main. A red is bisected to the first-parent commit that turned it red, and a backlog record is filed for the red it reproduced. With a staging branch, the promotion run between daily runs runs the merged-tree gate (`runner.merged_gate`) on the staging tip in its own tree and slug `promote` (docs/modules/staging-design.md "Promotion").
 - **Load nodes** are other boxes the main machine may send heavy runs to: a registry, ssh, a mirror of main refreshed after each landing. A gate on a node writes the same records.
 - `gate` knows nothing of verdicts, the landing queue or the backlog: `landing` is above it.
 
@@ -29,7 +29,7 @@ Low-level design of `kitlib/gate`, `kitlib/loadnode` and `kitlib/dailyfull`. The
 | `gate/budget.py`, `gatecap.py`, `measure.py`, `stop.py`, `stash.py`, `caller.py`, `gitstatus.py`, `pin.py` | One concern each |
 | `gate/strict_defaults.py` | The kit's default strict landing paths (owner-only) |
 | `loadnode/` | `registry`, `remote`, `route`, `dispatch`, `job`, `box`, `frames`, `reply`, `mirror`, and the node's side of a gate and of a landing's gate |
-| `dailyfull/` | The run, `bisect`, `file` (the record it files), `promote` (staging to main) |
+| `dailyfull/` | The run, `bisect`, `file` (the record it files), `promote` (staging to main; also the push the promotion run makes, docs/modules/staging-design.md) |
 
 ## State
 

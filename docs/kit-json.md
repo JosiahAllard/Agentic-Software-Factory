@@ -138,6 +138,8 @@ Off with no file, each switched on by its key: `repo.push_block` (a push to main
 - `redfirst.hold_wait` (int >= 0, default 60): seconds a held throwaway tree is re-checked before it is left
 - `review_pack.coauthor` (bool, default false): list the branch's commits with no Co-Authored-By trailer, judged by the trailers rule; a warning, never a block
 - `staging.branch` (a branch name): the staging branch: landings merge onto <remote>/<branch> and push to it, and work branches start from it (the work base, kitlib.config.work_base); unset: off, the work base is repo.main_branch; read from <remote>/<repo.main_branch>, never from the branch being merged onto (docs/gate-landing.md "Staging branch")
+- `staging.promote_after_landings` (int >= 1, default 4): a promotion is due when this many first-parent commits on the staging branch are not on the main branch (kitlib.staging.changes; docs/modules/staging-design.md "Promotion")
+- `staging.promote_after_hours` (int >= 1, default 6): or when the oldest of them is this many hours old
 - `tool_tests.mentions` (path|tokens, default "path"): how a tool mention is found
 - `tool_tests.selector_files` (list of string, default ["tool_deps.py", "pytests.py"]): changes that select every test
 - `tool_tests.extra` (map file -> list of string, default {}): file -> test modules it selects

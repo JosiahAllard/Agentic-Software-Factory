@@ -20,7 +20,7 @@ Low-level design of the base layer: `platform`, `proc`, `fs`, `schedtask`, the w
 |---|---|
 | `platform/__init__.py`, `api.py`, `dll.py`, `mask.py`, `jobparts.py` | `NAME`, `backend()`, `ProcError`, the contract's names, lazy DLLs, the processor-mask arithmetic, the job parts both backends share |
 | `platform/windows/` | The Win32 bindings and every Windows primitive: process, cpu topology, job object, pipes, the TCP table, the pid shield, the console hook, the window watch |
-| `platform/linux/` | `contain` (cgroup or fallback containment: the tiers, the probe, the carrier and the Jobs), `contain_cgroup` (its cgroup v2 and systemd calls), `contain_proc` (its /proc reads), `contain_scripts` (its stub, watchdog and starter scripts), `cpu`, `process`, `hardware`, `locks`, `paths`, `detach`, `schedule`, `tcp` (the /proc/net listeners) |
+| `platform/linux/` | `contain` (cgroup or fallback containment: the tiers, the probe, the carrier and the Jobs), `contain_cgroup` (its cgroup v2 and systemd calls), `contain_proc` (its /proc reads), `contain_scripts` (its stub, watchdog and starter scripts), `cpu`, `process`, `hardware`, `locks`, `paths`, `detach`, `schedule`, `tcp` (the /proc/net listeners), `unixsock` (a Unix socket connect checked by SO_PEERCRED and ctime) |
 | `proc/` | The OS-neutral face: `spawn`, `job`, `process`, `listing`, `daemons`, `bash`, `tcp`, `console` (installs the hook) |
 | `fs/` | `atomic`, `replace`, `rmtree`, `treelock`, `writelock` |
 | `schedtask/` | The interpreter a task runs, the task command line, register, read, remove; the fake-able host object |

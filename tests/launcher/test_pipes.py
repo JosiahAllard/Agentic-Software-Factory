@@ -64,14 +64,8 @@ class Registry(unittest.TestCase):
         self.assertFalse(pipes.is_live(dict(r, pid=0), Ctime({0: 5007})))
         self.assertFalse(pipes.is_live(dict(r, procStart=None), Ctime({7: 5007})))
 
-    def test_linux_refuses_peer_support_plainly_and_windows_does_not(self):
-        with mock.patch('kitlib.platform.NAME', 'linux'):
-            with self.assertRaises(S.LaunchError) as cm:
-                pipes.require_peer_support()
-        self.assertIn('Linux peer support is deferred', str(cm.exception))
-        self.assertIn('docs/launcher.md', str(cm.exception))
-        with mock.patch('kitlib.platform.NAME', 'windows'):
-            pipes.require_peer_support()
+    def test_the_peer_refusal_on_linux_is_gone(self):
+        self.assertFalse(hasattr(pipes, 'require_peer_support'))
 
     def test_find_takes_the_newest_live_record_of_the_name_started_after_the_launch(self):
         self.put(rec(1, 'x-a1', started=NOW_MS + 100))
@@ -142,6 +136,71 @@ class Registry(unittest.TestCase):
         self.assertTrue(pipes.remove(self.h.settings, 'x-a1'))
         self.assertFalse(pipes.remove(self.h.settings, 'x-a1'), 'already gone')
         self.assertEqual(self.h.read_state(pipes.PIPES), {'y-a2': {'pid': 9}})
+
+
+BOOT = 0x1234abcd << 64 | 0x77        # a 128-bit boot id, as linux.process.boot() gives it
+BTIME = 1793903389 - 3600             # the boot's epoch second: Thu Nov  5 17:29:49 2026 UTC
+TCK = 100
+LSTART = 'Thu Nov  5 18:29:49 2026'   # an hour after boot; ps pads a day 1-9 with a blank
+
+
+def linux_ctime(seconds_after_boot, extra_ticks=0, boot=BOOT):
+    return boot << 64 | (seconds_after_boot * TCK + extra_ticks)
+
+
+class LinuxStart(unittest.TestCase):
+    """On Linux Claude Code's procStart is ps lstart text, matched to the kit's ctime through
+    kitlib.platform.linux.process.wall_start (btime + starttime ticks, floored)."""
+
+    def setUp(self):
+        for target, value in (('kitlib.platform.NAME', 'linux'),
+                              ('kitlib.platform.linux.process.boot', lambda: BOOT),
+                              ('kitlib.platform.linux.process._btime', lambda: BTIME),
+                              ('kitlib.platform.linux.process._clk_tck', lambda: TCK)):
+            p = mock.patch(target, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_an_lstart_text_is_a_start_time_its_blanks_made_one(self):
+        self.assertEqual(pipes.start_text(LSTART), 'Thu Nov 5 18:29:49 2026')
+        self.assertEqual(pipes.start_text(' Thu Nov 5  18:29:49 2026\n'), 'Thu Nov 5 18:29:49 2026')
+        self.assertEqual(pipes.proc_start({'procStart': LSTART}), 'Thu Nov 5 18:29:49 2026')
+        self.assertIsNone(pipes.start_text('Sun Nov 12 09:05:01 2026'), 'the 12th is a Thursday')
+        for bad in ('Thu Nov 31 18:29:49 2026', 'Thu Xyz  5 18:29:49 2026', 'Thu Nov  5 25:29:49 2026',
+                    'Do Nov  5 18:29:49 2026', 'Thu Nov  5 18:29 2026', 'Thu Nov  5 18:29:49'):
+            self.assertIsNone(pipes.start_text(bad), bad)
+        self.assertEqual(pipes.start_text('123'), '123')
+        self.assertIsNone(pipes.start_text('１２３'), 'only ASCII digits')
+
+    def test_off_linux_an_lstart_text_is_no_start_time(self):
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            self.assertIsNone(pipes.start_text(LSTART))
+            self.assertIsNone(pipes.proc_start({'procStart': LSTART}))
+
+    def test_an_lstart_record_is_live_while_its_pid_runs_from_that_second(self):
+        r = rec(7, 'x', start_val=LSTART)
+        now = linux_ctime(3600, extra_ticks=99)          # 18:29:49.99 floors to the record's second
+        self.assertEqual(pipes.live_ctime(r, Ctime({7: now})), now)
+        self.assertTrue(pipes.is_live(r, Ctime({7: now})))
+        self.assertIsNone(pipes.live_ctime(r, Ctime({7: linux_ctime(3601)})), 'a pid reused a second later')
+        self.assertIsNone(pipes.live_ctime(r, Ctime({7: linux_ctime(3600, boot=BOOT + 1)})),
+                          'another boot')
+        self.assertIsNone(pipes.live_ctime(r, Ctime({})), 'a dead pid')
+        self.assertIsNone(pipes.live_ctime(r, Ctime({7: now}, fails={7})))
+
+    def test_without_btime_or_the_boot_id_no_lstart_record_is_live(self):
+        r = rec(7, 'x', start_val=LSTART)
+        with mock.patch('kitlib.platform.linux.process._btime', lambda: None):
+            self.assertIsNone(pipes.live_ctime(r, Ctime({7: linux_ctime(3600)})))
+
+        def unreadable():
+            raise OSError('no boot id')
+        with mock.patch('kitlib.platform.linux.process.boot', unreadable):
+            self.assertIsNone(pipes.live_ctime(r, Ctime({7: linux_ctime(3600)})))
+
+    def test_a_digits_record_still_matches_the_ctime_itself(self):
+        self.assertEqual(pipes.live_ctime(rec(7, 'x'), Ctime({7: 5007})), 5007)
+        self.assertIsNone(pipes.live_ctime(rec(7, 'x'), Ctime({7: 5008})))
 
 
 class Launcher(unittest.TestCase):

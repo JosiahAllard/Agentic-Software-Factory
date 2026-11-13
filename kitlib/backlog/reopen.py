@@ -59,24 +59,6 @@ def shas(values):
     return out
 
 
-def on_chain(root, sha, base):
-    """`(True or False, None)`: whether the commit `sha` is on the first-parent chain of `base`;
-    or `(None, why)`. The walk from `base` stops at the first commit `sha` holds, so it reads only
-    the chain since `sha`: `sha` is on the chain when it is `base` or that commit's first parent."""
-    r = cmd.call(['merge-base', '--is-ancestor', sha, base], root)
-    if r.rc == 1:
-        return False, None
-    if r.rc != 0:
-        return None, _one_line(r.err or 'exit %s' % r.rc)
-    out, why = cmd.run_text(['rev-list', '--first-parent', '--parents', base, '^' + sha], root)
-    if out is None:
-        return None, why
-    if not out:
-        return True, None                   # `base` is `sha`
-    last = out.split('\n')[-1].split()
-    return len(last) > 1 and last[1] == sha, None
-
-
 class _Landing(object):
     """One reverted landing: `merge`, its full sha; `branch`, the branch it merged, from its
     subject (None when the subject is no landing's); `ids`, the ids its Closes lines name."""
@@ -101,7 +83,7 @@ def _landing(root, sha, base, branch):
                     'checked)')
     if cmd.call(['cat-file', '-e', '%s^{commit}' % sha], root).rc != 0:
         return note('which is no commit this clone has')
-    held, why = on_chain(root, sha, base)
+    held, why = refs.on_first_parent(sha, base, root)
     if held is None:
         return (None, 'WARNING: %s landed, and whether the merge %s its Reverts-landing line names '
                 'is on the first-parent chain of %s could not be told (%s), so nothing was '

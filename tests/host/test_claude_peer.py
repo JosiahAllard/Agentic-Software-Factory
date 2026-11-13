@@ -5,20 +5,35 @@ test's own."""
 import hashlib
 import json
 import os
+import re
 import shutil
+import socket
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 import uuid
+
+from tests.platforms import posix_only, windows_only
 
 from hosts.claude.adapter import peer
 from hosts.claude.adapter.host import ClaudeAdapter
 from kitlib.hubsite import push
 from kitlib.launcher import pipes
 from kitlib.launcher import settings as S
+# kitlib.proc.process binds its backend at its first import, and HubPush's default ctime imports
+# it: imported here, on the real platform, before on_windows or on_linux pins kitlib.platform.NAME.
+from kitlib.proc import process  # noqa: F401
 
 TOKEN = 'k' * 32
+
+
+def on_windows(test):
+    """Run `test` as on Windows: its records name pipes, which on Linux are no peer address."""
+    p = mock.patch('kitlib.platform.NAME', 'windows')
+    p.start()
+    test.addCleanup(p.stop)
 
 
 def pipe_name(n):
@@ -50,7 +65,9 @@ class Machine(object):
         return write
 
     def session(self, pid, name, sid=None, live=True, folder=None, key=True, start=None,
-                pipe=None, key_start=None):
+                pipe=None, key_start=None, ctime=None):
+        """A registry record (and its key file) of pid; live: the fake process table has pid at
+        ctime (default: start itself, as Windows' FILETIME procStart is)."""
         start = 7000 + pid if start is None else start
         rec = {'pid': pid, 'procStart': str(start), 'sessionId': sid or 'sid-%d' % pid,
                'startedAt': 1000 * pid, 'peerProtocol': 1, 'entrypoint': 'cli',
@@ -61,7 +78,7 @@ class Machine(object):
             self.put(folder, os.path.basename(peer.key_path(folder, rec)),
                      {'peerToken': TOKEN, 'procStart': str(start if key_start is None else key_start)})
         if live:
-            self.procs[pid] = start
+            self.procs[pid] = start if ctime is None else ctime
         return rec
 
     def put(self, folder, name, data):
@@ -79,6 +96,9 @@ def frames(packet):
 
 
 class Packet(unittest.TestCase):
+    def setUp(self):
+        on_windows(self)
+
     def test_an_auth_frame_then_a_prompting_cross_session_message(self):
         src = peer.source_pipe()
         self.assertTrue(src.startswith(peer.SOURCE_PREFIX))
@@ -132,6 +152,7 @@ class Packet(unittest.TestCase):
 
 class Resolve(unittest.TestCase):
     def setUp(self):
+        on_windows(self)
         self.m = Machine(self)
 
     def test_a_launcher_key_is_its_sessions_json_name(self):
@@ -226,6 +247,7 @@ class Resolve(unittest.TestCase):
 
 class Deliver(unittest.TestCase):
     def setUp(self):
+        on_windows(self)
         self.m = Machine(self)
 
     def test_no_live_session_is_no_session_and_nothing_is_written(self):
@@ -282,6 +304,7 @@ class Deliver(unittest.TestCase):
         self.assertLess(worst, push.STOP_S)
 
 
+@windows_only('a named pipe and the kill-on-close helper are Windows features')
 class RealPipe(unittest.TestCase):
     """write_once through the hidden helper to a pipe this process serves."""
 
@@ -325,6 +348,349 @@ class RealPipe(unittest.TestCase):
     def test_a_bad_target_is_not_written_without_a_helper(self):
         self.assertEqual(peer.write_once('not a pipe', os.getpid(), self.creation, b'x'), push.NOT_WRITTEN)
         self.assertEqual(peer.write_once(self.pipe, os.getpid(), self.creation, b''), push.NOT_WRITTEN)
+
+
+BOOT = 0x5eed << 64 | 0x1d             # a 128-bit boot id, as kitlib.platform.linux.process.boot gives it
+BTIME = 1793903389 - 3600               # the boot's epoch second: Thu Nov  5 17:29:49 2026 UTC
+TCK = 100
+DAYS = ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
+MONTHS = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
+
+
+def lstart(after_boot):
+    """`LC_ALL=C TZ=UTC ps -o lstart=` of a process started after_boot seconds after BTIME, trimmed
+    at the ends as Claude Code trims it: a day 1-9 keeps ps's double blank."""
+    t = time.gmtime(BTIME + after_boot)
+    return '%s %s %2d %02d:%02d:%02d %d' % (DAYS[t.tm_wday], MONTHS[t.tm_mon - 1], t.tm_mday,
+                                            t.tm_hour, t.tm_min, t.tm_sec, t.tm_year)
+
+
+def kit_ctime(after_boot, ticks=0):
+    """The kit's Linux ctime of that process: (boot << 64) | starttime ticks."""
+    return BOOT << 64 | (after_boot * TCK + ticks)
+
+
+def sock_path(n):
+    return '/run/user/1000/cc-socks/%d.sock' % n
+
+
+def on_linux(test, uid=1000):
+    """Run `test` as on Linux: platform NAME, this boot, its btime and tick rate, this user's uid."""
+    for p in (mock.patch('kitlib.platform.NAME', 'linux'),
+              mock.patch('kitlib.platform.linux.process.boot', lambda: BOOT),
+              mock.patch('kitlib.platform.linux.process._btime', lambda: BTIME),
+              mock.patch('kitlib.platform.linux.process._clk_tck', lambda: TCK),
+              mock.patch('os.getuid', lambda: uid, create=True)):    # absent on Windows
+        p.start()
+        test.addCleanup(p.stop)
+
+
+class LinuxAddress(unittest.TestCase):
+    """The Linux peer address: a socket in a folder Claude Code itself listens in, hashed lexically."""
+
+    def setUp(self):
+        on_linux(self)
+
+    def test_a_socket_in_a_cc_socks_folder_is_its_lexical_normal_form(self):
+        for value, want in (('/tmp/cc-socks/123.sock', None),
+                            ('/tmp/cc-socks-1000/123-deadbeef.sock', None),
+                            ('/run/user/1000/cc-socks/0123456789abcdef.sock', None),
+                            ('/tmp/./cc-socks//123.sock', '/tmp/cc-socks/123.sock'),
+                            ('/run/user/1000/cc-socks/abc.sock/', '/run/user/1000/cc-socks/abc.sock')):
+            self.assertEqual(peer.canonical_socket(value), want or value, value)
+            self.assertEqual(peer.canonical_address(value), want or value, value)
+
+    def test_anything_claude_would_not_listen_on_is_refused(self):
+        for value in (None, 7, 'tmp/cc-socks/1.sock', '//tmp/cc-socks/1.sock', '/tmp/cc-socks/1.sock\0',
+                      '/tmp/cc-socks/../cc-socks/1.sock', '/tmp/cc-socks-1001/1.sock',
+                      '/run/user/1001/cc-socks/1.sock', '/tmp/cc-socks-01000/1.sock', '/tmp/other/1.sock',
+                      '/tmp/cc-socks/x/1.sock', '/tmp/cc-socks/1.sockx', '/tmp/cc-socks/ABC.sock',
+                      '/tmp/cc-socks/1-DEADBEEF.sock', '/tmp/cc-socks/1-deadbee.sock',
+                      '/tmp/cc-socks/0123456789abcdef0.sock', '/tmp/cc-socks/.sock',
+                      r'\\.\pipe\LOCAL\cc-msg-1'):
+            with self.assertRaises(ValueError, msg=repr(value)):
+                peer.canonical_socket(value)
+        self.assertEqual(len('/run/user/1000/cc-socks/'), 24)
+        fits = '/run/user/1000/cc-socks/' + '1' * 78 + '.sock'               # 107 bytes
+        self.assertEqual(peer.canonical_socket(fits), fits, '107 bytes fit sun_path')
+        with self.assertRaises(ValueError):
+            peer.canonical_socket(fits.replace('/1', '/11'))                   # 108
+
+    def test_the_key_file_hashes_the_lexical_path_never_the_resolved_one(self):
+        rec = {'pid': 77, 'messagingSocketPath': '/tmp//cc-socks/./77.sock'}
+        with mock.patch('posixpath.realpath', side_effect=AssertionError('resolved')), \
+                mock.patch('os.path.realpath', side_effect=AssertionError('resolved')):
+            got = peer.key_path('/reg', rec)
+        self.assertEqual(got, os.path.join('/reg', '77.%s.key' % hashlib.sha256(b'/tmp/cc-socks/77.sock').hexdigest()))
+
+    def test_off_linux_the_address_is_a_pipe(self):
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            self.assertEqual(peer.canonical_address(r'\\.\PIPE\local\Cc-Msg-q'), r'\\.\pipe\local\cc-msg-q')
+            with self.assertRaises(ValueError):
+                peer.canonical_address('/tmp/cc-socks/1.sock')
+
+    def test_the_linux_source_is_a_socket_path_under_a_root_folder(self):
+        src = peer.source_pipe()
+        self.assertRegex(src, r'\A/pm-kit/kit-hub-[0-9a-f]{16}\.sock\Z')
+        self.assertNotEqual(src, peer.source_pipe())
+        _auth, msg = frames(peer.build_packet(TOKEN, src, 'hi'))
+        self.assertEqual(msg['from'], 'uds:' + src)
+        self.assertRegex(msg['from'][4:], r'\A/\S*\.sock\Z')       # Claude's own check of `from`
+
+
+class LinuxDeliver(unittest.TestCase):
+    """HubPush on Linux: an lstart procStart matched to the kit's ctime, the socket path the target."""
+
+    def setUp(self):
+        on_linux(self)
+        self.m = Machine(self)
+
+    def linux_session(self, pid, name, after_boot=3600, **kw):
+        kw.setdefault('start', lstart(after_boot))
+        kw.setdefault('ctime', kit_ctime(after_boot, ticks=37))
+        return self.m.session(pid, name, pipe=sock_path(pid), **kw)
+
+    def test_a_linux_session_gets_the_packet_at_its_socket_with_the_kit_ctime(self):
+        self.linux_session(41, 'x-a1')
+        sent = self.m.hub().deliver('x-a1', 'EX-7 answered')
+        self.assertEqual(sent, push.Sent(push.WRITTEN, 'x-a1', 'sid-41', False))
+        (path, pid, creation, packet), = self.m.writes
+        self.assertEqual((path, pid, creation), (sock_path(41), 41, kit_ctime(3600, ticks=37)))
+        self.assertGreaterEqual(creation, 2 ** 64, 'a Linux ctime carries the boot above 64 bits')
+        auth, msg = frames(packet)
+        self.assertEqual(auth['token'], TOKEN)
+        self.assertTrue(msg['from'].startswith('uds:/pm-kit/kit-hub-'))
+
+    def test_a_day_1_to_9_lstart_key_matches_through_read_token(self):
+        raw = lstart(3600)
+        self.assertIn('Nov  5 ', raw, 'ps pads a day 1-9 with a blank; Claude keeps it')
+        rec = self.linux_session(42, 'x-a1')
+        self.assertEqual(peer.read_token(self.m.reg, rec), TOKEN)
+        trimmed = dict(rec, procStart=' '.join(raw.split()))        # a record that lost the blank
+        key = os.path.basename(peer.key_path(self.m.reg, rec))
+        self.assertEqual(peer.read_token(self.m.reg, trimmed), TOKEN)
+        self.m.put(self.m.reg, key, {'peerToken': TOKEN, 'procStart': lstart(3601)})
+        with self.assertRaises(ValueError):
+            peer.read_token(self.m.reg, rec)
+        self.m.put(self.m.reg, key, {'peerToken': TOKEN, 'procStart': raw, 'procStartFt': lstart(3601)})
+        with self.assertRaises(ValueError):
+            peer.read_token(self.m.reg, rec)
+
+    def test_the_pm_resolves_by_its_session_id_from_an_lstart_record(self):
+        self.linux_session(51, 'Project Manager', sid='pm-sid-old')
+        self.linux_session(52, 'renamed', sid='pm-sid', after_boot=3700)
+        self.m.put(self.m.state, 'coordinators.json', {'pm_session_id': 'pm-sid'})
+        self.assertEqual(self.m.hub().resolve(push.PM_KEY).record['pid'], 52)
+
+    def test_a_process_of_another_second_or_boot_is_not_live(self):
+        self.linux_session(43, 'x-a1', ctime=kit_ctime(3601))
+        self.linux_session(44, 'y-a1', ctime=(BOOT + 1) << 64 | 3600 * TCK)
+        self.assertIsNone(self.m.hub().resolve('x-a1'))
+        self.assertIsNone(self.m.hub().resolve('y-a1'))
+        self.assertEqual(self.m.hub().deliver('x-a1', 'hi').state, push.NO_SESSION)
+        self.assertEqual(self.m.writes, [])
+
+    def test_several_live_linux_records_take_pipes_json_else_the_newest_ctime(self):
+        old = self.linux_session(31, 'x-a1', after_boot=3600)
+        self.linux_session(32, 'x-a1', after_boot=3700)
+        self.linux_session(33, 'x-a1', after_boot=3650)
+        t = self.m.hub().resolve('x-a1')
+        self.assertEqual((t.record['pid'], t.ambiguous), (32, True))
+        self.m.put(self.m.state, pipes.PIPES, {'x-a1': {'pid': 31, 'proc_start': pipes.proc_start(old)}})
+        t = self.m.hub().resolve('x-a1')
+        self.assertEqual((t.record['pid'], t.ambiguous), (31, False))
+
+    def test_a_record_that_ended_after_resolve_is_not_written(self):
+        self.linux_session(45, 'x-a1')
+        hub = self.m.hub()
+        resolve = hub.resolve
+
+        def resolve_then_end(recipient):
+            got = resolve(recipient)
+            del self.m.procs[45]
+            return got
+        hub.resolve = resolve_then_end
+        self.assertEqual(hub.deliver('x-a1', 'hi').state, push.NOT_WRITTEN)
+        self.assertEqual(self.m.writes, [])
+
+
+class FakeSock(object):
+    """unixsock.connect's socket: each send takes the next scripted step, a count (at most what is
+    left) or an exception to raise."""
+
+    def __init__(self, *steps, pause=0):
+        self.steps, self.pause, self.got, self.timeouts, self.closed = list(steps), pause, b'', [], False
+
+    def settimeout(self, value):
+        self.timeouts.append(value)
+
+    def send(self, data):
+        step = self.steps.pop(0) if self.steps else len(data)
+        if isinstance(step, BaseException):
+            raise step
+        if self.pause:
+            time.sleep(self.pause)
+        self.got += bytes(data[:step])
+        return min(step, len(data))
+
+    def close(self):
+        self.closed = True
+
+
+class LinuxWriteOnce(unittest.TestCase):
+    """write_once on Linux: the request checked, unixsock.connect, then a send loop whose count
+    maps to the state."""
+
+    PACKET = b'{"type":"auth"}\n{"type":"user"}\n'
+    CREATION = BOOT << 64 | 360037
+
+    def setUp(self):
+        on_linux(self)
+
+    def write(self, connected, path=sock_path(9), pid=9, creation=CREATION, packet=PACKET, timeout=2):
+        with mock.patch('kitlib.platform.linux.unixsock.connect') as connect:
+            if isinstance(connected, BaseException):
+                connect.side_effect = connected
+            else:
+                connect.return_value = connected
+            got = peer.write_once(path, pid, creation, packet, timeout)
+        return got, connect
+
+    def test_a_bad_request_never_connects(self):
+        for bad in ({'path': '/tmp/other/9.sock'}, {'path': r'\\.\pipe\LOCAL\cc-msg-9'}, {'pid': 0},
+                    {'pid': True}, {'pid': 2 ** 32}, {'creation': 0}, {'creation': '1'},
+                    {'packet': b''}, {'packet': 'text'}, {'packet': b'x' * (peer.MAX_PACKET_BYTES + 1)},
+                    {'timeout': 0}, {'timeout': 11}, {'timeout': float('nan')}):
+            got, connect = self.write(FakeSock(), **bad)
+            self.assertEqual(got, push.NOT_WRITTEN, bad)
+            connect.assert_not_called()
+
+    def test_a_creation_past_64_bits_is_a_linux_ctime_and_is_taken(self):
+        sock = FakeSock()
+        got, connect = self.write(sock, path='/run/user/1000/cc-socks//9.sock')
+        self.assertEqual(got, push.WRITTEN)
+        connect.assert_called_once_with(sock_path(9), 9, self.CREATION, 2)
+        self.assertEqual(sock.got, self.PACKET)
+        self.assertTrue(sock.closed)
+
+    def test_a_refused_connect_is_not_written(self):
+        from kitlib.platform import ProcError
+        for error in (ProcError('socket-process-identity-mismatch'), ProcError('socket-folder-unsafe'),
+                      ConnectionRefusedError(111, 'refused'), OSError('no AF_UNIX')):
+            self.assertEqual(self.write(error)[0], push.NOT_WRITTEN, error)
+
+    def test_every_byte_sent_is_written_and_the_socket_closed(self):
+        sock = FakeSock(3, 5)
+        self.assertEqual(self.write(sock)[0], push.WRITTEN)
+        self.assertEqual(sock.got, self.PACKET)
+        self.assertTrue(sock.closed)
+        self.assertTrue(all(0 < t <= 2 for t in sock.timeouts), sock.timeouts)
+
+    def test_a_first_send_that_fails_is_not_written(self):
+        for step in (socket.timeout('timed out'), BrokenPipeError(32, 'pipe'), 0):
+            sock = FakeSock(step)
+            self.assertEqual(self.write(sock)[0], push.NOT_WRITTEN, step)
+            self.assertEqual(sock.got, b'')
+            self.assertTrue(sock.closed)
+
+    def test_a_send_cut_off_after_some_bytes_is_uncertain(self):
+        for steps in ((5, BrokenPipeError(32, 'pipe')), (5, socket.timeout('timed out')), (5, 0)):
+            sock = FakeSock(*steps)
+            self.assertEqual(self.write(sock)[0], push.UNCERTAIN, steps)
+            self.assertEqual(sock.got, self.PACKET[:5])
+            self.assertTrue(sock.closed)
+
+    def test_the_deadline_bounds_the_whole_send(self):
+        sock = FakeSock(4, 4, 4, pause=0.15)
+        got, _ = self.write(sock, timeout=0.2)
+        self.assertEqual(got, push.UNCERTAIN)
+        self.assertEqual(len(sock.got), 8, 'the third send starts past the deadline')
+
+
+
+@posix_only('a Unix socket: Windows CPython has no AF_UNIX')
+class RealSocket(unittest.TestCase):
+    """write_once to a Unix socket this process serves, in a 0700 temp folder taken as a cc-socks
+    folder (peer.SOCK_DIRS patched), its server checked by SO_PEERCRED and ctime."""
+
+    def setUp(self):
+        from kitlib.proc.process import proc_ctime
+        self.folder = tempfile.mkdtemp(prefix='kit-sock-')
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        os.chmod(self.folder, 0o700)
+        dirs = (re.compile(re.escape(self.folder) + r'(?:-(0|[1-9][0-9]*))?\Z'),)
+        p = mock.patch.object(peer, 'SOCK_DIRS', dirs)
+        p.start()
+        self.addCleanup(p.stop)
+        self.path = os.path.join(self.folder, '%d.sock' % os.getpid())
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(self.server.close)
+        self.server.bind(self.path)
+        self.server.listen(2)
+        self.creation = proc_ctime(os.getpid())
+        self.proc_ctime = proc_ctime
+        self.received, self.errors = [], []
+
+    def listen(self):
+        def receive():
+            try:
+                self.server.settimeout(5)
+                conn, _ = self.server.accept()
+                with conn:
+                    conn.settimeout(5)
+                    data = b''
+                    while True:
+                        chunk = conn.recv(65536)
+                        if not chunk:
+                            break
+                        data += chunk
+                self.received.extend(frames(data))
+            except Exception as error:
+                self.errors.append(type(error).__name__)
+        t = threading.Thread(target=receive)
+        t.start()
+        return t
+
+    def packet(self):
+        return peer.build_packet(TOKEN, peer.source_pipe(), 'T-3 done')
+
+    def unread(self):
+        """What a connection the write left in the backlog carried: b'' when it sent nothing."""
+        self.server.settimeout(0.5)
+        try:
+            conn, _ = self.server.accept()
+        except OSError:
+            return b''
+        with conn:
+            conn.settimeout(1)
+            return conn.recv(65536)
+
+    def test_one_write_reaches_the_socket_as_the_auth_and_message_frames(self):
+        t = self.listen()
+        self.assertEqual(peer.write_once(self.path, os.getpid(), self.creation, self.packet()), push.WRITTEN)
+        t.join(10)
+        self.assertEqual(self.errors, [])
+        self.assertEqual([f['type'] for f in self.received], ['auth', 'user'])
+        self.assertEqual(self.received[0]['token'], TOKEN)
+        self.assertIn('\nT-3 done\n', self.received[1]['message']['content'])
+
+    def test_a_listener_whose_pid_is_not_the_records_is_not_written(self):
+        parent = os.getppid()
+        parent_ctime = self.proc_ctime(parent)
+        self.assertIsNotNone(parent_ctime)
+        self.assertEqual(peer.write_once(self.path, parent, parent_ctime, self.packet()), push.NOT_WRITTEN)
+        self.assertEqual(self.unread(), b'')
+
+    def test_another_creation_time_is_not_written(self):
+        self.assertEqual(peer.write_once(self.path, os.getpid(), self.creation + 1, self.packet()),
+                         push.NOT_WRITTEN)
+        self.assertEqual(self.unread(), b'')
+
+    def test_a_folder_others_may_write_is_not_written(self):
+        os.chmod(self.folder, 0o770)
+        self.addCleanup(os.chmod, self.folder, 0o700)
+        self.assertEqual(peer.write_once(self.path, os.getpid(), self.creation, self.packet()), push.NOT_WRITTEN)
+        self.assertEqual(self.unread(), b'')
 
 
 if __name__ == '__main__':

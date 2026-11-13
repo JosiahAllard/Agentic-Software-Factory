@@ -253,21 +253,37 @@ class Refusals(Base):
             self.refused('--name must be a session name on one line', name=bad)
 
 
-class LinuxRefusal(Base):
-    def test_relaunch_and_crossover_refuse_plainly_on_linux_before_anything_starts(self):
-        host = ForkHost(self.h.root, procs=[self.pm_process()])
+class OnLinux(Base):
+    """Linux has peer support now (its lstart procStart matched by kitlib.launcher.pipes): pm-relaunch
+    and pm-crossover take the same fork path as on Windows."""
+
+    def setUp(self):
+        Base.setUp(self)
+        # the Started line asks the kit's tmux server (linuxwin.anchor_check), which reads os.getuid
+        p = mock.patch('kitlib.launcher.linuxwin.anchor_check', return_value=(False, None))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_relaunch_on_linux_forks_and_names_the_fork_in_coordinators_json(self):
+        host = ForkHost(self.h.root, procs=[dict(self.pm_process(), Name='claude')])
+        delivery = Delivery()
         with mock.patch('kitlib.platform.NAME', 'linux'):
-            with self.assertRaises(LaunchError) as cm:
-                relaunch.relaunch(self.h.settings, host, NEW, Delivery())
-            self.assertIn('Linux peer support is deferred', str(cm.exception))
-            with self.assertRaises(LaunchError) as cm:
-                relaunch.crossover(self.h.settings, host, 1)
-            self.assertIn('Linux peer support is deferred', str(cm.exception))
-        self.assertEqual(host.opened, [], 'no window opened')
-        self.assertEqual(self.h.read_state('coordinators.json'), self.coords)
+            out = relaunch.relaunch(self.h.settings, host, NEW, delivery)
+        self.assertEqual(len(host.opened), 1, out)
+        self.assertEqual(self.h.read_state('coordinators.json'), dict(self.coords, pm_session_id=FORK, pm_name=NEW))
+        self.assertEqual(len(delivery.calls), 1, 'the old PM is told to stand down')
+        self.assertNotIn('deferred', ' '.join(out))
+
+    def test_crossover_on_linux_starts_the_fresh_pm(self):
+        host = ForkHost(self.h.root, procs=[dict(self.pm_process(), Name='claude')])
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            out = relaunch.crossover(self.h.settings, host, '1', NEW, delivery=Delivery())
+        self.assertEqual(len(host.opened), 1, out)
+        self.assertEqual(self.h.read_state('coordinators.json'),
+                         dict(self.coords, pm_session_id=FORK, pm_name=NEW, pm_account=1))
 
     def test_crossover_what_if_on_linux_finds_the_pm_by_its_process_alone(self):
-        pm = dict(self.pm_process(), Name='claude')         # no registry record: Linux cannot match one
+        pm = dict(self.pm_process(), Name='claude')         # no registry record: found by its process alone
         host = ForkHost(self.h.root, procs=[pm])
         with mock.patch('kitlib.platform.NAME', 'linux'):
             out = relaunch.crossover(self.h.settings, host, '1', NEW, what_if=True)

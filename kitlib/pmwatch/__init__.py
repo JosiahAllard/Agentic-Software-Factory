@@ -465,11 +465,8 @@ def rc_check(sessions, reader, dirs=None, ctime=None, rc_pids=None, accounts=Non
                            for p in listing.list_processes()}
 
     def alive(r):
-        try:
-            now = ctime(r.get("pid"))
-        except (OSError, ValueError, TypeError):
-            return False
-        return now is not None and r.get("proc_start") is not None and str(now) == str(r["proc_start"])
+        # the launcher's one liveness test (an lstart procStart on Linux too)
+        return pipes.is_live({"pid": r.get("pid"), "procStart": r.get("proc_start")}, ctime)
 
     def names():
         return set(watched_sessions(sessions)) | {stop.PM_RC_NAME}

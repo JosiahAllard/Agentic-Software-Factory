@@ -20,8 +20,15 @@
 - Every git child starts in its own job object (kitlib.proc.job, no breakaway), and a timeout ends
   the job: the whole tree, not just the process started here. Under PowerShell `git` is
   Git/cmd/git.exe, a launcher whose child (the real git) holds the pipes; killing only the
-  launcher left that child running and the call blocked on its pipes until it ended. The job is
-  not kill-on-close, so what a finished git leaves running (a background daemon) lives on.
+  launcher left that child running and the call blocked on its pipes until it ended. A read
+  that takes no lock (`killable`: a kitlib.git.cache.READS subcommand outside `LOCKING_READS`)
+  runs in a kill-on-close job, so it ends with this process even when this process dies mid-call
+  (a `git log` sat idle for hours once its parent had gone). It also gets `READ_ENV`
+  (GIT_OPTIONAL_LOCKS=0), a belt in case one of them takes an optional lock after all; the
+  guarantee is the verb list. A git that may write, or a read in LOCKING_READS, keeps a job that
+  is not kill-on-close (the comment in `_run` says why). Either way a git that ends normally
+  leaves what it started (a background daemon) running: kill-on-close is dropped before the job
+  is closed.
 - A network read (`fetch`, `ls-remote`: `NETWORK_READS`) also gets `NETWORK_ENV`, the caller's
   `env` too: GIT_TERMINAL_PROMPT=0 and GCM_INTERACTIVE=never, so a remote that wants credentials
   fails instead of waiting on a prompt nobody can answer (the first covers git's own terminal
@@ -56,11 +63,13 @@ from . import cache
 
 SCRUB_ENV = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CEILING_DIRECTORIES')
 LOCALE_ENV = {'LC_ALL': 'C', 'LANGUAGE': 'C'}
+READ_ENV = {'GIT_OPTIONAL_LOCKS': '0'}      # a killable read: a belt (the module docstring)
 NETWORK_READS = ('fetch', 'ls-remote')
 NETWORK_ENV = {'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never',
                'GIT_HTTP_LOW_SPEED_LIMIT': '1000', 'GIT_HTTP_LOW_SPEED_TIME': '60'}
 # git's global options that take a separate value: skipped to find the subcommand.
-_VALUE_OPTIONS = ('-c', '-C', '--git-dir', '--work-tree', '--namespace', '--config-env')
+_VALUE_OPTIONS = ('-c', '-C', '--git-dir', '--work-tree', '--namespace', '--config-env',
+                  '--attr-source', '--shallow-file')
 # Config entries every git child gets: no auto gc, no auto maintenance (see the module docstring).
 AUTO_MAINTENANCE_OFF = (('maintenance.auto', 'false'), ('gc.auto', '0'))
 GIT_TIMEOUT = 30          # seconds
@@ -116,6 +125,20 @@ def subcommand(args):
     return ''
 
 
+# Reads (kitlib.git.cache.READS) that may still take index.lock: a work-tree `diff` refreshes the
+# index (refresh_index_quietly) and `describe --dirty` updates it, GIT_OPTIONAL_LOCKS=0 or not
+# (git documents it for status). Killed there, they would leave the lock, so they are not killable.
+LOCKING_READS = frozenset(('diff', 'describe'))
+
+
+def killable(args):
+    """True when a git child of `args` runs in a kill-on-close job and gets READ_ENV: its
+    subcommand is a read (kitlib.git.cache.READS: never writes a ref, the index, the config or the
+    work tree) and not one of LOCKING_READS."""
+    sub = subcommand(args)
+    return sub in cache.READS and sub not in LOCKING_READS
+
+
 def with_network_env(env=None):
     """`env` (a mapping, left unchanged; None: scrubbed_env()) with NETWORK_ENV set, a new dict:
     the `env` for a push through call() that must fail rather than wait on a credential prompt."""
@@ -161,10 +184,12 @@ def config_entries(env, pairs):
 
 def child_env(env=None, args=()):
     """The environment a git child gets: `env` (None: scrubbed_env()) with LOCALE_ENV set,
-    AUTO_MAINTENANCE_OFF appended to its config entries, and NETWORK_ENV too when `args` is a
-    network read."""
+    AUTO_MAINTENANCE_OFF appended to its config entries, NETWORK_ENV too when `args` is a
+    network read, and READ_ENV when it is a killable read (killable)."""
     out = network_env(args, scrubbed_env() if env is None else env)
     out.update(LOCALE_ENV)
+    if killable(args):
+        out.update(READ_ENV)
     out.update(config_entries(out, AUTO_MAINTENANCE_OFF))
     return out
 
@@ -210,14 +235,25 @@ def _run(argv, cwd=None, input=None, timeout=None, env=None):
     The exchange runs on its own thread (input is written there too, so a git that stops reading
     cannot block the caller), and the caller waits for it with the deadline. After the tree is
     ended the pipes close and the thread finishes; if something outside the job still holds a pipe
-    the thread is left to it after KILL_GRACE and the call returns anyway."""
+    the thread is left to it after KILL_GRACE and the call returns anyway.
+
+    A killable read's job is kill-on-close until the read has ended, then not (the module
+    docstring)."""
     from kitlib.proc import job as _job
-    job = _job.Job(kill_on_close=False, short=True)
+    # A killable read is killed with its job when this process dies, or raises, mid-call: it
+    # writes nothing and takes no lock (READ_ENV is a belt for that). A git that may write (commit,
+    # merge, update-ref, fetch, push, status's index refresh), or a read in LOCKING_READS (diff,
+    # describe: an index refresh), keeps a job that is not kill-on-close: killed holding a lock,
+    # with no exit handler run (TerminateJobObject, SIGKILL), it leaves its index.lock or ref .lock
+    # behind and every later git in that repository refuses until it is removed; left to finish,
+    # it releases them. A hung one is still ended by the timeout while this process lives.
+    job = _job.Job(kill_on_close=killable(argv[1:]), short=True)
     try:
         p = job.start(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                       stdin=subprocess.PIPE if input is not None else None)
         if timeout is None:
             out, err = p.communicate(input)
+            job.end(kill=False)             # ended: what it left running (a daemon) lives on
             return p.returncode, out, err
         box = {}
 
@@ -240,6 +276,7 @@ def _run(argv, cwd=None, input=None, timeout=None, env=None):
         if 'exc' in box:
             raise box['exc']
         out, err = box['out']
+        job.end(kill=False)
         return p.returncode, out, err
     finally:
         job.close()

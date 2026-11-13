@@ -77,7 +77,7 @@ Off with no file, each switched on by its key: `repo.push_block` (a push to main
 - `commit.merge_fold` (bool, default false): commit.py folds a merge commit
 - `commit.coauthor_families` (list of string, default []): accepted Co-Authored-By families beyond Claude
 - `daily_full.enabled` (bool, default false): daily_full.py runs at all (opt-in; it is never scheduled by the kit)
-- `daily_full.ref` (string): the ref it tests; default <remote>/<main branch>
+- `daily_full.ref` (string): the ref it tests; default <remote>/<staging branch> while staging is on, else <remote>/<main branch>
 - `daily_full.worktree` (repo path): its detached worktree; default <worktrees_dir>/daily-full
 - `daily_full.kind` (a kind name, default "daily-full"): the kinds-table kind the run books
 - `daily_full.max_wait` (int >= 0, default 7200): seconds it waits for its lock slot before it skips

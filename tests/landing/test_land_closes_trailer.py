@@ -10,7 +10,7 @@ from unittest import mock
 import kitlib.config as kconfig
 from kitlib import gate as G
 from kitlib.config import pmdata
-from kitlib.backlog import at_landing, offer
+from kitlib.backlog import at_landing, offer, reopen
 from kitlib.backlog import store as smod
 from kitlib.backlog import store_folder
 from kitlib.landing import lander as land
@@ -417,29 +417,39 @@ class TrailerValues(unittest.TestCase):
 
 class BatchBase(unittest.TestCase):
     """Lander.close_pulled: the base each batch branch's Closes and Part-of lines are read down
-    to, and the WARNING a batch not merged as a stack gets."""
+    to, the merge each branch closes with (its own in a stacked batch, so a later revert of that
+    one landing finds its closes: kitlib.backlog.reopen), and the WARNING a batch not merged as a
+    stack gets. The reopen after each close is given the same branch, merge, tip and base."""
 
     def close(self, branches, merges):
         tips = [c * 40 for c in 'abc'[:len(branches)]]
         lander = land.Lander('.', branches, 'm' * 40, tips)
         lander.expect_main, lander.merges = 'm' * 40, list(merges)
         lander.merge = merges[-1] if merges else None
-        with mock.patch.object(at_landing, 'close_landed', return_value=['closed']) as cl:
+        with mock.patch.object(at_landing, 'close_landed', return_value=['closed']) as cl, \
+                mock.patch.object(reopen, 'reopen_reverted', return_value=[]) as ro:
             lines = lander.close_pulled()
+        self.merged = [c.args[3] for c in cl.call_args_list]
+        self.assertEqual([c.args[2:] for c in ro.call_args_list],
+                         [(c.args[2], c.args[3], c.kwargs['tip'], c.kwargs['base'])
+                          for c in cl.call_args_list])
         return lines, [c.kwargs['base'] for c in cl.call_args_list]
 
     def test_a_stacked_batch_reads_down_to_the_previous_merge_and_warns_nothing(self):
         lines, bases = self.close(['kit/one', 'kit/two'], ['1' * 40, '2' * 40])
         self.assertEqual(bases, ['m' * 40, '1' * 40])
+        self.assertEqual(self.merged, ['1' * 40, '2' * 40])    # each branch its own merge
         self.assertEqual(lines, ['closed', 'closed'])
 
     def test_one_branch_warns_nothing(self):
         lines, bases = self.close(['kit/one'], ['1' * 40])
         self.assertEqual((lines, bases), (['closed'], ['m' * 40]))
+        self.assertEqual(self.merged, ['1' * 40])
 
     def test_a_batch_not_merged_as_a_stack_warns_for_each_branch_after_the_first(self):
         lines, bases = self.close(['kit/one', 'kit/two', 'kit/three'], ['1' * 40])
         self.assertEqual(bases, ['m' * 40] * 3)             # unchanged: the base for each
+        self.assertEqual(self.merged, ['1' * 40] * 3)       # the batch's last merge for each
         warn = [l for l in lines if l.startswith('WARNING')]
         self.assertEqual(len(warn), 2, lines)
         self.assertEqual(lines[0], 'closed')                # the first branch: no warning
@@ -448,6 +458,21 @@ class BatchBase(unittest.TestCase):
             self.assertIn("so %s's Closes and Part-of lines" % b, w)
             self.assertTrue(w.endswith('git log --format=%%B %s --not %s' % (t, 'm' * 40)), w)
         self.assertEqual(lines[1:3], [warn[0], 'closed'])   # each before its branch's lines
+
+    def test_a_reopen_that_raises_is_a_warning_and_the_next_branch_goes_on(self):
+        lander = land.Lander('.', ['kit/one', 'kit/two'], 'm' * 40, ['a' * 40, 'b' * 40])
+        lander.expect_main, lander.merges = 'm' * 40, ['1' * 40, '2' * 40]
+        lander.merge = '2' * 40
+        with mock.patch.object(at_landing, 'close_landed', return_value=['closed']), \
+                mock.patch.object(reopen, 'reopen_reverted',
+                                  side_effect=[RuntimeError('boom'), ['reopened X']]):
+            lines = lander.close_pulled()
+        self.assertEqual(lines[0], 'closed')
+        self.assertTrue(lines[1].startswith('WARNING: kit/one landed, and reopening'), lines)
+        self.assertIn('RuntimeError: boom', lines[1])
+        self.assertTrue(lines[1].endswith('git log --format=%%B %s --not %s'
+                                          % ('a' * 40, 'm' * 40)), lines[1])
+        self.assertEqual(lines[2:], ['closed', 'reopened X'])
 
 
 if __name__ == '__main__':

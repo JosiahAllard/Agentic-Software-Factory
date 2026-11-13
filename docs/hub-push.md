@@ -261,7 +261,7 @@ common dir of the PM data worktree only:
    ends. When the lock gives no slot within 10 min, or an owner or game hold is in place, the gc
    waits for the next pass.
 
-The job deletes nothing itself. A `.pack` with no `.idx` that is more than a day old is a finding:
+Inside the same slot, before the gc, each pass deletes a `.pack` with no `.idx` that is more than a day old, not kept by a `.keep` and not named by a multi-pack-index, together with its `.rev`, `.mtimes` and `.bitmap`, and a delete refused because the file is in use is a note, retried next pass. An old `.idx`-less pack still there after the pass (one a `.keep` holds, a multi-pack-index names, or whose delete was refused) is a finding:
 each pass names it in its health note. The pass pushes `findings` with their count as the detail
 only when the count differs from the one last pushed, or when that push is a day old (`REPUSH_S`).
 The last pushed state is kept in `store-upkeep-pushed.json` in the git common dir, so a hub restart

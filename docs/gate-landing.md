@@ -191,3 +191,12 @@ The landing tool (`tools/land.py`), after the gate is switched. Landings into a 
 3. Point every landing caller (lander agents, coordinators, auto-landers, landing scripts) at `python <kit>/tools/land.py BRANCH... --expect-tip SHA... [--wait S] -C <repo>` (hosts/claude/shell/agents/lander.md), or with `--reviewed-by <reviewer id>` per branch then `--submit` to return at once and wait on the printed `wait-result` command ("Submitting a landing"). `--expect-main` is optional ("Landing", step 4). A script that merged several branches and gated once becomes one batch call. The repo's own land wrapper is retired with the gate wrappers.
 4. Check from the main checkout: `python <kit>/tools/land.py --queue` prints `landing lock: free` and `landing queue: empty`. Land one doc-only branch through land.py, then read its result record (`gate.py wait-result BRANCH --tip SHA --kind land -C <repo>`).
 5. `gate.py land` stays as the one-branch form with `--wait` 0; move its callers to land.py.
+
+Turning staging on ("Staging branch"), in this order:
+1. The landing queue is empty and the landing lock is free (`land.py --queue` prints `landing lock: free` and `landing queue: empty`).
+2. The `.kit.json` `"staging"` setting lands on main, as any change does (staging is still off, so that landing pushes main).
+3. Fetch, so `<remote>/<main>` holds the setting's landing.
+4. The owner runs `git push origin <new origin/main sha>:refs/heads/staging` (with `<remote>` and the configured staging branch when they are not `origin` and `staging`): the staging branch starts at exactly the main that carries the setting.
+5. Landings resume; they now merge onto the staging branch.
+
+Why this order: a staging branch made before the setting lands lacks the setting's own landing, which went to main. Landings then merge onto staging and never onto main, so main is never behind the staging tip again and every promotion ends `diverged` (docs/modules/staging-design.md). A repo whose promotion needs arguments of its own (`promote_args`) does not turn staging on before slice E lands (docs/modules/staging-design.md "Gaps").

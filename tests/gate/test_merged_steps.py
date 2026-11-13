@@ -62,5 +62,32 @@ class MergedSteps(fixtures.GateRepoCase):
         self.assertEqual(full_why, runner.NO_STEP_FULL)
 
 
+NEEDS_PROMOTION = ('import sys; print("args", sys.argv[1:]); '
+                   'sys.exit(0 if sys.argv[1:] == ["--merged", "--promotion"] else 1)')
+
+
+class PromoteArgs(fixtures.GateRepoCase):
+    """merged_gate(promote=True), a staging promotion's merged gate (kitlib.staging.promote), runs
+    a step's promote_args after its merged_args; a landing's merged gate does not."""
+    GATE = {'steps': [{'name': 'hold', 'always': True, 'cmd': ['{python}', '-c', NEEDS_PROMOTION],
+                       'merged_args': ['--merged'], 'promote_args': ['--promotion']}]}
+
+    def run_merged(self, wt, **kw):
+        cfg = kconfig.load_at(wt, self.main)
+        return runner.merged_gate(wt, cfg, self.main, log_dir=self.logs, book_kw=self.book_kw,
+                                  tree=wt, **kw)
+
+    def test_promote_args_run_in_a_promotion_alone(self):
+        wt, _ = self.branch('code', {'a.py': 'x = 1\n'})
+        out = self.run_merged(wt, promote=True)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual([(r['name'], r['status']) for r in out.results], [('hold', 'PASS')])
+        out = self.run_merged(wt)
+        self.assertNotEqual(out.code, G.OK, out.lines)
+        self.assertEqual([(r['name'], r['status']) for r in out.results], [('hold', 'FAIL')])
+        out = self.run_merged(wt, full=True, promote=True)
+        self.assertEqual(out.code, G.OK, out.lines)
+
+
 if __name__ == '__main__':
     unittest.main()

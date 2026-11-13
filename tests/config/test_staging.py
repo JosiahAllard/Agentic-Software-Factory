@@ -135,6 +135,13 @@ class Overlay(unittest.TestCase):
         self.assertIn('staging read from %s' % self.bad, str(cm.exception))
         self.assertIn('the main branch itself', str(cm.exception))
 
+    def test_a_suspects_cmd_placeholder_typo_there_is_refused(self):
+        typo = self.commit({'staging': {'branch': 'stg', 'suspects_cmd': ['x', '{test_file}']}})
+        with self.assertRaises(kconfig.ConfigError) as cm:
+            kconfig.load_at(self.fx.root, self.plain, staging_from=typo)
+        self.assertIn('staging read from %s' % typo, str(cm.exception))
+        self.assertIn('"staging".suspects_cmd: unknown placeholder(s) {test_file}', str(cm.exception))
+
     def test_a_revision_git_cannot_show_is_refused(self):
         with self.assertRaises(kconfig.ConfigError):
             kconfig.load_at(self.fx.root, self.plain, staging_from='refs/remotes/origin/nothing')

@@ -1127,13 +1127,14 @@ def _red_record(top, cfg, head, mb, started, results, chosen, logs, no, say, ful
 # ---------------------------------------------------------------- the merged-tree gate
 
 def merged_gate(root, cfg, base, full=False, slug='land', log_dir=None, say=None, book_kw=None,
-                reuse=None, slot=None, tree=None, docs=False):
+                reuse=None, slot=None, tree=None, docs=False, promote=False):
     """_merged_gate() with its source (kitlib.gate.detect) in facts['source'] and as the last
     line. With no "gate" section in `cfg` the gate is detected from the merged tree, plus the
     steps `base` owes (detect.effective). `slot`: the Slot the landing already holds; the steps
     run in it and no second slot is booked (gated). `tree`: the checkout holding the merge (a
     landing's landing tree, landing.merge); default `root`. `docs`: a docs-only merge may run
-    only its docs steps (_merged_gate)."""
+    only its docs steps (_merged_gate). `promote`: a staging promotion's gate, each step's
+    promote_args appended after its merged_args (steps.build)."""
     try:
         eff = detect.effective(cfg, tree or root, base=base)
     except detect.DetectError as e:
@@ -1141,13 +1142,14 @@ def merged_gate(root, cfg, base, full=False, slug='land', log_dir=None, say=None
     if eff.source == detect.AUTO:
         (say or _quiet)(detect.label(eff))
     out = _merged_gate(root, cfg, eff, base, full=full, slug=slug, log_dir=log_dir, say=say,
-                       book_kw=book_kw, reuse=reuse, slot=slot, tree=tree, docs=docs)
+                       book_kw=book_kw, reuse=reuse, slot=slot, tree=tree, docs=docs,
+                       promote=promote)
     out.facts['source'] = eff.source
     out.lines.append(detect.label(eff))
     return out
 
 
-def _merged_choice(cfg, eff, tree, base, full, docs):
+def _merged_choice(cfg, eff, tree, base, full, docs, promote=False):
     """What _merged_gate selects at HEAD of `tree` against `base`, running nothing: (head,
     changed, chosen, docs, empty), or the REFUSED Outcome it would end with."""
     empty = detect.nothing_detected(eff)
@@ -1160,7 +1162,8 @@ def _merged_choice(cfg, eff, tree, base, full, docs):
     from kitlib.gate import reuse as R     # reuse imports this module; `reuse` is the planner
     docs = bool(docs) and not (full or empty) and R.docs_only_change(cfg, eff.gate, changed)
     try:
-        all_steps = S.build(eff.gate, tree, base, cfg.tools_dir, merged=True, full=full)
+        all_steps = S.build(eff.gate, tree, base, cfg.tools_dir, merged=True, full=full,
+                            promote=promote)
         chosen, _ = S.select(eff.gate, all_steps, changed, full=full, docs=docs,
                              read=S.working_tree_reader(tree))
     except S.GateConfigError as e:
@@ -1189,7 +1192,7 @@ def merged_steps(root, cfg, base, full=False, tree=None, docs=False):
 
 
 def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, say=None,
-                 book_kw=None, reuse=None, slot=None, tree=None, docs=False):
+                 book_kw=None, reuse=None, slot=None, tree=None, docs=False, promote=False):
     """Gate the merged tree at HEAD of `tree` (a landing's merge, in its landing tree; default
     `root`) against `base` (the main it was merged into). The steps run in `tree`, and their hook
     checks get it as ctx['root']; the repository's name and its log folder are `root`'s (the main
@@ -1199,7 +1202,8 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     whose diff changes a gate config file, landing.mergedgate config_escalate) every non-manual step
     is selected, as gate.py --full selects them, and each runs its full_cmd where it has one. A
     step whose result needs an ignored cache the fresh landing tree lacks must be `always` or
-    rebuild it in `setup`. Each step's merged_args are appended. Outcome codes:
+    rebuild it in `setup`. Each step's merged_args are appended, and with `promote` its
+    promote_args after them. Outcome codes:
     OK, FAILED, REFUSED (also when no step is selected: no step covers the change, every step is
     manual, or each is dropped by another's skip_if_selected) or a machine lock code; facts verdict,
     results, log_dir, head, windows (as the branch gate's), docs. Check steps run the hook module
@@ -1218,7 +1222,7 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     say = say or _quiet
     tree = tree or root
     gate = eff.gate
-    picked = _merged_choice(cfg, eff, tree, base, full, docs)
+    picked = _merged_choice(cfg, eff, tree, base, full, docs, promote)
     if isinstance(picked, G.Outcome):
         return picked
     head, changed, chosen, docs, empty = picked

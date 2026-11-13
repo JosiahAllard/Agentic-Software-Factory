@@ -606,6 +606,65 @@ class HuntDailyForm(Case):
         self.assertNotIn('revert', self.attempts()[-1].rec)
 
 
+class PromoteArgs(Case):
+    """The promotion's merged gate runs a step's promote_args after its merged_args."""
+    NEEDS = ['{python}', '-c', 'import sys; print("ok"); '
+             'sys.exit(0 if sys.argv[1:] == ["--merged", "--promotion"] else 1)']
+    GATE = {'steps': [{'name': 'unit', 'always': True, 'cmd': NEEDS, 'pass': '^ok$',
+                       'merged_args': ['--merged'], 'promote_args': ['--promotion']}]}
+
+    def test_a_step_that_needs_its_promote_args_passes_and_main_moves(self):
+        tip = self.land()
+        out = self.run_promote()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.remote_main(), tip)
+
+
+# suspects_cmd: the landing that added RED, read from {landings_file}; `fail` as argv[2] exits 1.
+NAMES_RED = ['{python}', '-c', 'import json, sys; lands = json.load(open(sys.argv[1])); '
+             '[print("suspect " + x["sha"]) for x in lands if "RED" in x["paths"]]; '
+             'sys.exit(1 if sys.argv[2:] == ["fail"] else 0)', '{landings_file}']
+
+
+class HuntSuspectsCmd(Case):
+    """A repository's "staging".suspects_cmd names the suspects; one that fails gives the kit's."""
+    KIT = dict(Case.KIT, staging={'branch': 'staging', 'suspects_cmd': NAMES_RED})
+
+    def test_its_one_suspect_is_confirmed_by_revert(self):
+        self.land()
+        culprit = self.land_red()
+        self.land()
+        said = []
+        out = self.run_promote(say=said.append)
+        found = self.attempts()[-1].rec['culprit']
+        self.assertEqual((found['end'], found['merge'], found['by']),
+                         (CU.FOUND, culprit, CU.BY_REVERT), out.lines)
+        self.assertEqual((found['suspects'], found['suspects_from']), ([culprit], CU.FROM_CMD))
+        self.assertNotIn('suspects_why', found)
+        self.assertIn('promote: hunt: suspects_cmd named 1 suspect(s)', said)
+        folder = self.attempts()[-1].folder
+        for name in (CU.TESTS_FILE, CU.LANDINGS_FILE, CU.SUSPECTS_LOG):
+            self.assertTrue(os.path.isfile(os.path.join(folder, name)), name)
+
+
+class HuntSuspectsCmdFails(Case):
+    KIT = dict(Case.KIT, staging={'branch': 'staging', 'suspects_cmd': NAMES_RED + ['fail']})
+
+    def test_the_kit_s_suspects_are_used_and_the_line_says_why(self):
+        self.land()
+        culprit = self.land_red()
+        self.land()
+        said = []
+        out = self.run_promote(say=said.append)
+        found = self.attempts()[-1].rec['culprit']
+        self.assertEqual((found['merge'], found['by']), (culprit, CU.BY_BISECT), out.lines)
+        self.assertEqual((len(found['suspects']), found['suspects_from']), (3, CU.FROM_KIT))
+        self.assertTrue(found['suspects_why'].startswith('suspects_cmd exited 1 ('), found)
+        line = [x for x in said if x.startswith('promote: hunt: suspects_cmd exited 1 (')]
+        self.assertEqual(len(line), 1, said)
+        self.assertTrue(line[0].endswith("; the kit's suspects are used"), line)
+
+
 class Off(StagingCase):
     KIT = dict({'daily_full': {'enabled': True, 'kind': 'engine-test'}}, **LOGS)
 

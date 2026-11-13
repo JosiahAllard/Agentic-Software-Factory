@@ -140,6 +140,7 @@ Off with no file, each switched on by its key: `repo.push_block` (a push to main
 - `staging.branch` (a branch name): the staging branch: landings merge onto <remote>/<branch> and push to it, and work branches start from it (the work base, kitlib.config.work_base); unset: off, the work base is repo.main_branch; read from <remote>/<repo.main_branch>, never from the branch being merged onto (docs/gate-landing.md "Staging branch")
 - `staging.promote_after_landings` (int >= 1, default 4): a promotion is due when this many first-parent commits on the staging branch are not on the main branch (kitlib.staging.changes; docs/modules/staging-design.md "Promotion")
 - `staging.promote_after_hours` (int >= 1, default 6): or when the oldest of them is this many hours old
+- `staging.suspects_cmd` (list of string): the repository's own suspects after a red promotion, run in the promotion's tree at the staging tip: {python} {root} {base} {here} {tools} as a step's, plus {tests_file} and {landings_file}; prints `suspect <sha40>` lines; unset, or failing: the kit's suspects (docs/modules/staging-design.md "Culprit and revert")
 - `tool_tests.mentions` (path|tokens, default "path"): how a tool mention is found
 - `tool_tests.selector_files` (list of string, default ["tool_deps.py", "pytests.py"]): changes that select every test
 - `tool_tests.extra` (map file -> list of string, default {}): file -> test modules it selects

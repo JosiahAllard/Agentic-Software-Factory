@@ -7,6 +7,10 @@ python's code, which counts as written where it runs
 a PowerShell brace is doubled.
 
 Backslashes are built from BS so no editor or shell on this machine can rewrite them."""
+import os
+
+from kitlib import kitroot
+
 from . import world as W
 from .world import bash, event, ps
 
@@ -156,6 +160,8 @@ ROWS = [
      'deny', 'git-hooks-path', None),
     ('git-hooks-path: -\\c bash unescapes', lambda w: bash('git -\\c core.hooksPath=/dev/null commit -m x', w.wt),
      'deny', 'git-hooks-path', None),
+    ('git-hooks-path: config set to the kit\'s own githooks', lambda w: bash(
+        'git config core.hooksPath "%s"' % W.fwd(os.path.join(kitroot.root(), 'githooks')), w.wt), None, None, None),
     ('git-hooks-path: --get', lambda w: bash('git config --get core.hooksPath', w.wt), None, None, None),
     ('git-hooks-path: a bare read', lambda w: bash('git config core.hooksPath', w.wt), None, None, None),
     ('git-hooks-path: another key', lambda w: bash('git config user.name x', w.wt), None, None, None),

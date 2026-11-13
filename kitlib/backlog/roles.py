@@ -26,11 +26,11 @@ reaches a subagent. The role files are not owner paths: a change to a file's `mo
 be read is in no group (its role is unlisted), and with none readable only the owner is listed.
 """
 import collections
-import os
 
 from kitlib import content as _content
+from kitlib import kitroot
 
-KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+KIT = kitroot.root()
 _ROSTER = _content.roster(KIT)
 
 

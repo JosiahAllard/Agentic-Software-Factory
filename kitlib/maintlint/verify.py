@@ -32,6 +32,8 @@ import re
 
 from kitlib.backlog import scope as scmod
 from kitlib.backlog import stale
+# A landing's close subject, `closes <ID>: landed <merge sha>`: one pattern, beside its writer.
+from kitlib.backlog.at_landing import LANDED_CLOSE
 from kitlib.git import batch
 from kitlib.git import cmd as gitcmd
 
@@ -158,7 +160,6 @@ def landed_pulls(snap, root, remote, base, cmd, tips=branch_tips):
     return out, []
 
 
-LANDED_CLOSE = re.compile(r'^closes (\S+): landed ([0-9a-f]{40})$')
 # Every subject that ends a record (kitlib.backlog.plan_end's close, retire and delete).
 ENDS = re.compile(r'^(?:closes|retires|deletes) (\S+): ')
 

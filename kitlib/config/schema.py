@@ -219,7 +219,7 @@ SECTIONS = {
     },
     'daily_full': {
         'enabled': Field(Bool(), False, 'daily_full.py runs at all (opt-in; it is never scheduled by the kit)'),
-        'ref': Field(Str(), None, 'the ref it tests; default <remote>/<main branch>'),
+        'ref': Field(Str(), None, 'the ref it tests; default <remote>/<staging branch> while staging is on, else <remote>/<main branch>'),
         'worktree': Field(RelPath(), None, 'its detached worktree; default <worktrees_dir>/daily-full'),
         'kind': Field(Str(pattern=NAME_RE, what='a kind name'), 'daily-full', 'the kinds-table kind the run books'),
         'max_wait': Field(Int(0), 7200, 'seconds it waits for its lock slot before it skips'),

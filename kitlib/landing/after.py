@@ -6,7 +6,7 @@ every attribute is Lander.__init__'s.
 
 import re
 
-from kitlib.backlog import at_landing
+from kitlib.backlog import at_landing, reopen
 from kitlib.landing import cleanup
 from kitlib.git import cmd
 from kitlib.records import place
@@ -90,6 +90,10 @@ class After(object):
         Each branch's `Closes:` lines are read from its tip down to the main it was merged onto
         (the batch's previous merge, else the base), so a stacked branch never re-reads the
         lines of the branch merged before it; the batch's other branches are no holder to tell.
+        Each branch of a batch merged as a stack closes with its own merge (self.merges[i]), so a
+        later revert of that one landing finds its closes; else every branch closes with the
+        batch's last merge (self.merge). Then what the landings its `Reverts-landing:` lines name
+        closed is reopened (kitlib.backlog.reopen), read the same way and guarded the same way.
         The ids of each branch's `closed <id> in the backlog store` lines go in self.closed, for
         the landing feed (post_landing).
         A batch not merged as a stack (fewer merges than branches) reads every branch's lines down
@@ -109,9 +113,10 @@ class After(object):
                     'Part-of line of that branch can release records %s holds instead of closing '
                     'them; see the lines read with: git log --format=%%B %s --not %s'
                     % (len(self.merges), len(self.pairs), b, str(base)[:10], b, t, base))
+            merge = self.merges[i] if stacked else self.merge
             try:
                 said = at_landing.close_landed(
-                    self.root, self.cfg, b, self.merge, tip=t, base=base,
+                    self.root, self.cfg, b, merge, tip=t, base=base,
                     batch=[o for o in self.branches if o != b])
                 lines.extend(said)
                 self.closed[b] = [m.group(1) for m in map(_CLOSED.match, said) if m]
@@ -126,6 +131,13 @@ class After(object):
                 lines.append('WARNING: %s landed, and closing the records it holds pulled in the '
                              'backlog store stopped (%s); see what is left with: %s' % (
                                  b, ' '.join(what.split()), ' and '.join(hows)))
+            try:
+                lines.extend(reopen.reopen_reverted(self.root, self.cfg, b, merge, t, base))
+            except BaseException as e:
+                lines.append('WARNING: %s landed, and reopening what the landings its '
+                             'Reverts-landing lines name closed stopped (%s); see those lines '
+                             'with: git log --format=%%B %s --not %s'
+                             % (b, ' '.join(_what(e).split()), t, base))
         return lines
 
     def clean_up(self):

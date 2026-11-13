@@ -2298,6 +2298,18 @@ class AMergeThatJoinsBothSides(JoinCase):
         rules = C.kconfig.load(self.wt).owner_rules()
         self.assertEqual(ownerrules.violations(self.wt, rules, 'HEAD', [main]), ([], None))
 
+    def test_a_side_whose_rows_begin_with_the_others_is_committed_as_it_is(self):
+        # main adds X, the branch X then Y; the result X Y holds X once (rules._block_joins)
+        held = SEVEN.replace('line 3\n', 'line 3\nmain row\nbranch row\n')
+        tip, main = self.conflict(SEVEN.replace('line 3\n', 'line 3\nmain row\n'), held,
+                                  'A-001', 'A-002')
+        self.put(self.F, held)
+        code, out = self.commit('merge main', 'work.txt', self.F)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, main])
+        rules = C.kconfig.load(self.wt).owner_rules()
+        self.assertEqual(ownerrules.violations(self.wt, rules, 'HEAD', [main]), ([], None))
+
     def test_a_union_with_a_line_neither_side_has_is_refused(self):
         tip, _ = self.merge_additions('A-001', 'A-002')
         self.put(self.F, self.UNION.replace('branch row\n', 'branch row\nagent row\n'))

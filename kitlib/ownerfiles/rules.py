@@ -34,8 +34,9 @@ A `"owner".shrink_only` path (rules.is_shrink_only) does not count for a one-par
 whose change to it only deletes lines (deletes_only); each commit is judged on its own.
 An owner-only path does not count for a two-parent commit whose copy of it only joins the
 changes of its parents (joined_merge: every line a base line both kept or a line one parent
-added, each once and in its parent's order; none either parent deleted, none dropped); every
-commit on either side is still judged on its own.
+added, each once and in its parent's order, a parent's added lines the other's hold whole held
+once in them; none either parent deleted, none dropped); every commit on either side is still
+judged on its own.
 
 The author email is what the committer says it is (`--author`, GIT_AUTHOR_EMAIL): this check
 stops a plain agent commit, not an agent that forges the owner's identity. The guard's
@@ -668,13 +669,23 @@ def _blocks(base, kept, added):
     return blocks
 
 
+def _holds(run, sub):
+    """True when `sub`'s lines are one whole, contiguous run of `run`'s lines, in order."""
+    n = len(sub)
+    return any(run[i] == sub[0] and run[i:i + n] == sub for i in range(len(run) - n + 1))
+
+
 def _block_joins(ours, theirs):
-    """The ways the result may hold two sides' blocks (_blocks) of one place: one side's alone; a
-    block both add alike, once; else both whole, in either order. Lines the blocks share are
-    never held once for both (two JSON rows that start and end alike stay two rows), so one
-    side's lines never sit inside the other's. Every way is as long as the others."""
-    if not ours or not theirs or ours == theirs:
+    """The ways the result may hold two sides' blocks (_blocks) of one place: one side's alone;
+    a block that holds the other's whole and contiguous (_holds; a block both add alike is one),
+    alone, as it is; else both whole, in either order. So the other's block is never held twice,
+    and lines the blocks share are never held once for both unless one block holds the other's
+    whole (two JSON rows that start and end alike stay two rows): one side's lines never sit
+    inside the other's otherwise. Every way is as long as the others."""
+    if not ours or not theirs:
         return [ours or theirs]
+    if _holds(ours, theirs) or _holds(theirs, ours):
+        return [ours if len(ours) >= len(theirs) else theirs]
     return [ours + theirs, theirs + ours]
 
 
@@ -697,9 +708,11 @@ def combines_changes(ours, theirs, result, bases):
     of `bases`, compared line by line (_lines: a changed line end is a changed line): against each
     base, as difflib matches each side to it (_side), `result` holds the base lines both sides
     kept, in order, and between each two of them the lines each side added there, each side's
-    whole and in its order (_block_joins: the two sides in either order; a block both add alike,
-    once). So it holds no line neither side has, no line more often than the sides add it, no
-    line either side deleted, no side's lines inside the other's, and drops or moves nothing. No
+    whole and in its order (_block_joins: the two sides in either order; a block that holds the
+    other's whole and contiguous, a block both add alike among them, alone as it is). So it holds
+    no line neither side has, no line more often than the sides add it, no line either side
+    deleted, no side's lines inside the other's but a block the other's holds whole, never held
+    twice, and drops or moves nothing. No
     base, a NUL byte in any copy (not text), or a check past its bound (JOIN_PAIRS_MAX) is
     False. A join difflib
     matches otherwise than the agent read it is refused too: an approval is the way left."""

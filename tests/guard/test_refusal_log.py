@@ -51,7 +51,7 @@ class Entry(unittest.TestCase):
             fields = refusal_log.entry(Decision('deny'), None, None, 'main', {}, NOW)
         self.assertEqual([fields[k] for k in refusal_log.FIELDS[1:10]],
                          ['-', 'unknown', 'main', '-', '-', '-', '-', '-', '-'])
-        self.assertEqual((fields['error'], fields['instead_given']), ('-', False))
+        self.assertEqual((fields.get('error'), fields['instead_given']), ('-', False))
 
     def test_a_main_sessions_action_has_no_agent_role(self):
         fields = refusal_log.entry(DENY, Action('edit', agent_role='worker'), 'claude', 'main', {}, NOW)

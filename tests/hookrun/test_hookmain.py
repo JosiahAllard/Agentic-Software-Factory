@@ -329,7 +329,7 @@ class RefusalLog(unittest.TestCase):
             gate.wait(5)
             return Decision('allow')
         self.assertEqual(run(FakeAdapter(), {'who': 'a1'}, slow, deadline=0.05), (3, 'deny guard-timeout\n'))
-        self.assertEqual([(r['rule'], r['role'], r['error']) for r in self.rows()],
+        self.assertEqual([(r['rule'], r['role'], r.get('error')) for r in self.rows()],
                          [('guard-error', 'main', 'decide-RuntimeError'), ('guard-error', 'main', 'parse-ValueError'),
                           ('guard-timeout', 'subagent', '-')])
 
@@ -345,7 +345,7 @@ class RefusalLog(unittest.TestCase):
             self.assertEqual(run(a, {}, allow), (3, 'deny guard-error\n'))
             self.assertIn('(ValueError: refused)', a.last.reason)
         run(FakeAdapter(), {}, lambda *x, **k: Decision('deny', 'some-rule', 'why'))
-        self.assertEqual([r['error'] for r in self.rows()],
+        self.assertEqual([r.get('error') for r in self.rows()],
                          ['payload-JSONDecodeError', 'cwd-not-absolute', '-', '-', '-', '-'])
 
     def test_a_host_screen_deny_is_logged_once_for_a_call_of_several_actions(self):

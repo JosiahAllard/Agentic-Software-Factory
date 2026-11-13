@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 from kitlib.dailyfull import promote as P
+from kitlib.guard import prepush
 from kitlib.records import landing as LL
 from kitlib.staging import advance as A
 from kitlib.staging import record as R
@@ -339,6 +340,14 @@ class Pushes(Case):
             self.mover().advance(a)
         self.assertEqual(self.log[-1], ('release',))
         self.assertEqual(a.phase, 'pushing')    # the next run recovers it
+
+
+class TransientCopy(unittest.TestCase):
+    """advance.TRANSIENT is a copy of prepush.TRANSIENT_PREFIX (staging may not import guard, a
+    higher layer): the two never differ."""
+
+    def test_the_copy_is_the_guards_transient_prefix(self):
+        self.assertEqual(A.TRANSIENT, prepush.TRANSIENT_PREFIX)
 
 
 class LandingLock(Case):

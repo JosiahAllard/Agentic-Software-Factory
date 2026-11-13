@@ -629,7 +629,7 @@ class Lander(Checks, Merge, MergedGate, Push, After):
 
     def held_by(self, rec):
         """`(None, False)` when a gone holder's lock was broken and taken; else `(why, final)`."""
-        if rec.get('phase') == 'stuck':
+        if landing.is_stuck(rec):
             return ('%s: a stuck landing is cleared by hand, as its STUCK report says'
                     % landing.describe(rec)), True
         if not rec.get('token') or self.lock.holder_state(rec) != 'dead':

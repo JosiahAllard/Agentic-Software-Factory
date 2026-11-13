@@ -168,6 +168,12 @@ store's git push (the `push` setting).
   or slots the pull left free, push `fill` to the PM once per episode, detail `<key>:<free>:<why>`.
   A PM hold (`launch.py fill-hold`) or the usage stand-down (every account at its week limit) sends nothing:
   no nudge, no waits notice, no pull, no PM event (docs/hub-fill.md "PM hold and usage").
+  `staging-promote` (`kitlib/hubjobs/staging_promote.py`, every 600 s; docs/modules/staging-design.md
+  "The trigger") looks at each `launcher.repos` repository with staging on, with no fetch, and runs no
+  gate itself: when a promotion is due, or a run left an attempt unfinished, it starts one detached
+  `tools/promote.py -C <repo>`; a promotion run holding the promote lock is a skip. Each attempt that
+  ended red, refused, diverged, failed or error is pushed once, word `promote-<end>`, detail
+  `<repo>:<sha10>` (not in `JOB_EACH`, so a newer one replaces one still owed).
   `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/session-watch.md) runs the
   session checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind
   (`idle`, `stopped`, `limit`, `usage`, `reset`, `bgfail`, `locknotice`, `remote`, `error`) with its

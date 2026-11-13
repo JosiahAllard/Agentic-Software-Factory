@@ -140,63 +140,17 @@ class Push(object):
         return None
 
     def sync_main(self):
-        """Step 10, after the verified push: the main checkout's main fast-forwarded to the merge
-        (`git merge --ff-only` there) when that is safe: HEAD on main, no merge in progress, main
-        an ancestor of the merge, and no local change or untracked file on a path the merge
-        changes (a local edit elsewhere is carried). Else nothing in the main checkout moves, and
-        a WARNING says why and how to bring it there. [] or [WARNING lines]; never raises git's
-        failures. A landing onto a staging branch moves nothing in the main checkout: its main is
-        not the base, and a landing never moves it; the main branch moves on the remote only when
-        staging is promoted (docs/gate-landing.md "Staging branch")."""
+        """Step 10, after the verified push: the main checkout's main brought to the merge
+        (sync_checkout). [] or [WARNING lines]; never raises git's failures. A landing onto a
+        staging branch moves nothing in the main checkout: its main is not the base, and a
+        landing never moves it; the main branch moves on the remote only when staging is
+        promoted (docs/gate-landing.md "Staging branch")."""
         self.synced = True
         if self.staging:
             return []
-        main_b, remote = self.base_branch, self.cfg.remote
-        g = 'git -C "%s"' % self.root
-        ff = '%s merge --ff-only %s/%s' % (g, remote, main_b)
-        main = self.ref(self.main_ref)
-        if main == self.merge:
-            return []
-        lead = 'WARNING: %s landed at %s, and the main checkout\'s %s (%s) was not fast-forwarded to it' % (
-            self.branch, self.merge[:10], main_b, (main or '?')[:10])
-        if not main:
-            return ['%s: it cannot be read; bring it there with: %s' % (lead, ff)]
-        out, why = cmd.run_text(['log', '--format=%H %s', main, '--not', self.merge], self.root)
-        if out is None:
-            return ['%s: git cannot tell whether it has commits the landing lacks (%s); check, '
-                    'then: %s' % (lead, why, ff)]
-        own = [l for l in out.splitlines() if l.strip()]
-        if own:
-            return ['%s: it has %d commit(s) made in the main checkout that the landing did not '
-                    'gate or push: %s. They are kept: rebase them onto %s/%s (or set them aside), '
-                    'then: %s' % (lead, len(own), '; '.join(l[:10] + l[40:] for l in own[:10]),
-                                  remote, main_b, ff)]
-        current, why = refs.current_branch(self.root)
-        if current != main_b:
-            return ['%s: the main checkout is on %s, not %s; switch back, then: %s' % (
-                lead, current or why or 'no branch (detached)', main_b, ff)]
-        merging, why = refs.merge_in_progress(self.root)
-        if merging is not False:
-            return ['%s: %s; finish it, then: %s' % (
-                lead, 'a merge is in progress there' if merging else 'git cannot tell whether a '
-                'merge is in progress there (%s)' % why, ff)]
-        entries, why = gitstatus.status(self.root)
-        changed, why2 = runner.changed_between(self.root, main, self.merge)
-        if entries is None or changed is None:
-            return ['%s: git cannot tell whether local changes are in the way (%s); check, then: %s'
-                    % (lead, why or why2, ff)]
-        theirs = set(os.path.normcase(p) for p in changed)
-        clash = [(xy, p) for xy, p in entries if os.path.normcase(p) in theirs]
-        if clash:
-            return ['%s: local changes there are on paths the merge changes (%s); keep or drop '
-                    'them, then: %s' % (lead, _paths(clash), ff)]
-        r = self.git('merge', '--ff-only', '--quiet', self.merge, timeout=MERGE_TIMEOUT)
-        now = self.ref(self.main_ref)
-        if r.rc != 0 or now != self.merge:
-            return ['%s: `git merge --ff-only` did not bring it there (%s); %s' % (
-                lead, r.err or 'exit %s' % r.rc if r.rc else 'main is at %s' % (now or '?')[:10],
-                ff)]
-        return []
+        return sync_checkout(self.root, self.cfg, self.base_branch, self.merge,
+                             what='%s landed at %s' % (self.branch, self.merge[:10]),
+                             env=self.git_env)
 
     def recover(self, e):
         """After an exception `e` under the lock: release it before the merge; after the merge
@@ -589,3 +543,62 @@ class Push(object):
                                   ': %s' % '; '.join(l[:10] + l[40:] for l in own[:10])
                                   if own else '', main_b, upstream), []))
         return steps
+
+
+def sync_checkout(root, cfg, main_b, target, what=None, env=None):
+    """The main checkout `root`'s branch `main_b` fast-forwarded to `target`, a commit already on
+    `<remote>/<main_b>` (`git merge --ff-only` there), when that is safe: HEAD on `main_b`, no
+    merge in progress, `main_b` an ancestor of `target`, and no local change or untracked file on
+    a path `target` changes (a local edit elsewhere is carried). Else nothing in the main checkout
+    moves, and a WARNING says why and how to bring it there; `what` (default `<remote>/<main_b>
+    moved to <target>`) is what the WARNING says moved. The merge runs with `env` (None: this
+    process's). [] or [WARNING lines]; never raises git's failures. The landing's step 10
+    (Push.sync_main) and the staging promotion (kitlib.staging.advance.sync_main) call it."""
+    remote = cfg.remote
+    g = 'git -C "%s"' % root
+    ff = '%s merge --ff-only %s/%s' % (g, remote, main_b)
+    head_ref = 'refs/heads/%s' % main_b
+    main, _ = refs.resolve(head_ref, root)
+    if main == target:
+        return []
+    what = what or '%s/%s moved to %s' % (remote, main_b, target[:10])
+    lead = 'WARNING: %s, and the main checkout\'s %s (%s) was not fast-forwarded to it' % (
+        what, main_b, (main or '?')[:10])
+    if not main:
+        return ['%s: it cannot be read; bring it there with: %s' % (lead, ff)]
+    out, why = cmd.run_text(['log', '--format=%H %s', main, '--not', target], root)
+    if out is None:
+        return ['%s: git cannot tell whether it has commits %s lacks (%s); check, then: %s'
+                % (lead, target[:10], why, ff)]
+    own = [l for l in out.splitlines() if l.strip()]
+    if own:
+        return ['%s: it has %d commit(s) made in the main checkout that %s lacks, never gated '
+                'or pushed: %s. They are kept: rebase them onto %s/%s (or set them aside), '
+                'then: %s' % (lead, len(own), target[:10],
+                              '; '.join(l[:10] + l[40:] for l in own[:10]), remote, main_b, ff)]
+    current, why = refs.current_branch(root)
+    if current != main_b:
+        return ['%s: the main checkout is on %s, not %s; switch back, then: %s' % (
+            lead, current or why or 'no branch (detached)', main_b, ff)]
+    merging, why = refs.merge_in_progress(root)
+    if merging is not False:
+        return ['%s: %s; finish it, then: %s' % (
+            lead, 'a merge is in progress there' if merging else 'git cannot tell whether a '
+            'merge is in progress there (%s)' % why, ff)]
+    entries, why = gitstatus.status(root)
+    changed, why2 = runner.changed_between(root, main, target)
+    if entries is None or changed is None:
+        return ['%s: git cannot tell whether local changes are in the way (%s); check, then: %s'
+                % (lead, why or why2, ff)]
+    theirs = set(os.path.normcase(p) for p in changed)
+    clash = [(xy, p) for xy, p in entries if os.path.normcase(p) in theirs]
+    if clash:
+        return ['%s: local changes there are on paths the merge changes (%s); keep or drop '
+                'them, then: %s' % (lead, _paths(clash), ff)]
+    r = cmd.call(['merge', '--ff-only', '--quiet', target], root, timeout=MERGE_TIMEOUT, env=env)
+    now, _ = refs.resolve(head_ref, root)
+    if r.rc != 0 or now != target:
+        return ['%s: `git merge --ff-only` did not bring it there (%s); %s' % (
+            lead, r.err or 'exit %s' % r.rc if r.rc else 'main is at %s' % (now or '?')[:10],
+            ff)]
+    return []

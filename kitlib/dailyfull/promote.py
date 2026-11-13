@@ -6,6 +6,10 @@ staging branch fast-forwards the main branch to exactly that commit: a plain
 hook. What the push did is read back from the remote (`ls-remote`), never inferred from git's
 exit code. Nothing here moves the main checkout's local main or its working tree.
 
+kitlib.staging (the diff-selected promotion between daily runs, tools/promote.py) calls promote()
+here too, with a push that keeps git's whole output; this module never imports it. When a
+promotion is due is kitlib.staging.changes'.
+
 Every local git read goes through the caller's `git(cwd, *args) -> (rc, out, err)`
 (kitlib.dailyfull.git), so a test can stand in for it; the push and the remote read are
 parameters too. Nothing here prints or exits.
@@ -19,8 +23,6 @@ from kitlib.config.types import ConfigError
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs
 
-DUE_COUNT = 4            # landings on staging not yet tested: an --if-due run is due at this many
-DUE_HOURS = 6.0          # or when the oldest of them is this many hours old
 OK = ('promoted', 'current')     # the statuses that exit 0; every other one exits 4
 # A `show` of a path the commit does not hold (kitlib.config.load._git_show's words): no .kit.json
 MISSING = ('does not exist in', 'exists on disk, but not in')
@@ -55,46 +57,12 @@ def staging_read(main, cfg, git):
     return two, None
 
 
-def last_tested(results):
-    """The sha of the latest run that tested a commit (a skip, or a result with no sha, is not
-    one), or None. `results`: kitlib.dailyfull.results' list, oldest first."""
-    for r in reversed(results):
-        if r.get('verdict') != 'skipped' and r.get('sha'):
-            return r['sha']
-    return None
-
-
-def untested(main, cfg, staging, results, git):
-    """`((count, oldest), None)`: the first-parent commits of `<remote>/<staging>` past the last
-    tested commit (or past `<remote>/<main>` when there is none, or it is not an ancestor of the
-    staging tip), and the committer time (epoch seconds) of the oldest of them, None when there
-    are none. `(None, why)` when git cannot say."""
-    tip = '%s/%s' % (cfg.remote, staging)
-    base = last_tested(results)
-    if base is not None and git(main, 'merge-base', '--is-ancestor', base, tip)[0] != 0:
-        base = None
-    base = base or '%s/%s' % (cfg.remote, main_of(cfg))
-    rc, out, err = git(main, 'log', '--first-parent', '--format=%ct', '%s..%s' % (base, tip))
-    if rc != 0:
-        return None, 'git log %s..%s failed: %s' % (base, tip, err or 'exit %d' % rc)
-    times = [int(t) for t in out.split()]
-    return (len(times), min(times) if times else None), None
-
-
-def due(count, oldest, now):
-    """Whether an --if-due run is due: DUE_COUNT untested commits, or the oldest of them
-    DUE_HOURS old (`oldest` and `now` in epoch seconds). Pure."""
-    if count >= DUE_COUNT:
-        return True
-    return bool(count) and oldest is not None and (now - oldest) / 3600.0 >= DUE_HOURS
-
-
 def push_args(remote, sha, main_b):
     """The one push a promotion makes: no force, no lease, no --no-verify, no delete."""
     return ['push', '--quiet', remote, '%s:refs/heads/%s' % (sha, main_b)]
 
 
-def _push(args, cwd):
+def run_push(args, cwd):
     """`(rc, err)` of the push: the landing's push timeout and environment (kitlib.git.cmd
     PUSH_TIMEOUT, with_network_env), so a credential prompt fails instead of waiting. rc None:
     git did not start or did not answer in time."""
@@ -111,8 +79,8 @@ def _known(git, cwd, sha):
 
 
 def promote(wt, cfg, sha, staging, git, push=None, ls_remote=None):
-    """Fast-forward `<remote>/<main>` to `sha`, a commit a green daily run tested, read in the
-    daily worktree `wt`. A dict `{status, main, from, to, why}`; status is one of:
+    """Fast-forward `<remote>/<main>` to `sha`, a commit a green run tested (the daily full run,
+    or a promotion run), read in the checkout `wt`. A dict `{status, main, from, to, why}`; status is one of:
       promoted     the remote's main is `sha` after the push
       current      the remote's main already holds `sha`: nothing to do (no push)
       off-staging  `sha` is not on `<remote>/<staging>`: never pushed
@@ -120,7 +88,7 @@ def promote(wt, cfg, sha, staging, git, push=None, ls_remote=None):
       not-promoted the remote's main is still behind `sha` after the push (git's first line)
       unknown      the remote's main cannot be read or placed after the push
     """
-    push, ls_remote = push or _push, ls_remote or refs.ls_remote
+    push, ls_remote = push or run_push, ls_remote or refs.ls_remote
     remote, main_b = cfg.remote, main_of(cfg)
     got = {'status': None, 'main': main_b, 'from': None, 'to': sha, 'why': None}
 

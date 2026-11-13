@@ -60,6 +60,8 @@ A landing never trusts the stored facts: it runs the check again under its lock,
 
 kitlib/gate/reuse.py: a per-step cache of gate results, read and written by a branch gate (a rerun reuses) and by a landing's merged-tree gate, a batch landing included (`reuse.branch_plan`, `reuse.planner`). A step with `reuse` is not run when a pass of its key is stored within `"landing".reuse_max_age_h` hours and no fail or warn of that key is. It is fail-closed: any doubt or error runs the step, and its `gate: reuse:` line says why.
 
+A promotion of the staging branch to main (`promote.py`, docs/modules/staging-design.md "Promotion") runs its merged-tree gate with no planner (`reuse=None`): every selected step runs fresh, and nothing is reused.
+
 **The key** (`reuse.step_key`) is the sha256 of the canonical JSON of:
 
 - the step's name, argv and cwd, with the checkout's root written `<root>` and the kit's `<kit>` (so a worktree and the main checkout make one key, and the landing's `merged_args` another);

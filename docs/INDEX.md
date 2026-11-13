@@ -31,6 +31,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/modules/worktree-design.md` | low-level design: worktrees, classify, remove, sweep, scratch trees, preflight | changing worktree tools | kw: design, lld, worktree, sweep, preflight, scratch
 - `docs/modules/commit-design.md` | low-level design: commit, sync base, review pack | changing commit checks | kw: design, lld, commit, sync-base, review-pack
 - `docs/modules/gate-design.md` | low-level design: the gate, reuse, rerun, load nodes, daily full run | changing the gate | kw: design, lld, gate, reuse, rerun, daily-full, load-nodes
+- `docs/modules/staging-design.md` | low-level design: the staging branch promoted to main, the phase record, recovery, the hub trigger | changing promotion | kw: design, lld, staging, promotion, promote
 - `docs/modules/landing-design.md` | low-level design: verdict queue, landing steps, what a landing runs, batch, cleanup | changing landing | kw: design, lld, landing, verdict, merged-gate, strict
 - `docs/modules/guard-design.md` | low-level design: guard rules, parser, role policy, hook runner, agent view | changing the guard or a hook | kw: design, lld, guard, hookrun, role-policy
 - `docs/modules/install-design.md` | low-level design: kit export, machine setup, installers, templates | changing install or refresh | kw: design, lld, install, pluginsource, machine-setup, export

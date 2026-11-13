@@ -12,6 +12,7 @@ import for that): kitlib never imports a host, the host is chosen at the edge.
   SessionTrailer            the session line its commits carry (attribution.session_trailer)
   HostCapabilities          what the host's hooks can carry (hosts.json "capabilities")
   degrade(decision, caps)   the one way a verdict the host cannot show is lowered
+  payload_error(error, message)   the ValueError an adapter raises for a payload it refuses
   HostAdapter, SessionHost, CommandHost   what an adapter supplies
   registry                  hosts.json read as data: names, selection, adapter module names
 
@@ -88,6 +89,15 @@ class Decision:
     def __post_init__(self):
         if self.verdict not in VERDICTS:
             raise ValueError('unknown verdict: %r' % (self.verdict,))
+
+
+def payload_error(error, message):
+    """A plain ValueError(`message`) for a hook payload an adapter refuses, with `error` set to the
+    fixed token (letters, digits, '-') that names the refusing site in the refusal log's `error`
+    field (kitlib.hookrun.main.error_kind). The message, and not the token, goes into the deny."""
+    e = ValueError(message)
+    e.error = error
+    return e
 
 
 @dataclass(frozen=True)

@@ -22,10 +22,12 @@ Every read of a Claude Code hook payload's field names is here, and nowhere in k
 
 A payload that is not an object (null, [], 0, "", false included), or a tool_input of the wrong
 shape for its tool, raises: the hook denies it (fail closed), as it did when the guard read the
-payload itself.
+payload itself. A refusal of its own raises kitlib.host.payload_error, a plain ValueError tagged
+with its site's token (payload-not-object, tool-name-not-text, read-field-not-text) for the
+refusal log.
 """
 from kitlib.host import agentname
-from kitlib.host import Action
+from kitlib.host import Action, payload_error
 
 FILE_TOOLS = {'Edit': 'file_path', 'Write': 'file_path', 'MultiEdit': 'file_path',
               'NotebookEdit': 'notebook_path'}
@@ -44,7 +46,7 @@ def _object(payload):
     """`payload` itself when it is a JSON object; anything else (null, a list, a number, a string,
     false) raises, so the hook denies it (fail closed) rather than read it as an empty payload."""
     if not isinstance(payload, dict):
-        raise ValueError('a hook payload is a JSON object, not %r' % (payload,))
+        raise payload_error('payload-not-object', 'a hook payload is a JSON object, not %r' % (payload,))
     return payload
 
 
@@ -57,7 +59,7 @@ def parse(event_name, payload):
         return Action(KINDS[event_name], **base)
     tool = ev.get('tool_name') or ''
     if not isinstance(tool, str):
-        raise ValueError('tool_name must be a string, not %r' % (tool,))
+        raise payload_error('tool-name-not-text', 'tool_name must be a string, not %r' % (tool,))
     ti = ev.get('tool_input') or {}
     if tool in FILE_TOOLS:
         key = FILE_TOOLS[tool]
@@ -88,4 +90,4 @@ def read(tool, ti, base):
 
 def _text(tool, key, value):
     if value is not None and not isinstance(value, str):
-        raise ValueError('%s %s must be a string, not %r' % (tool, key, value))
+        raise payload_error('read-field-not-text', '%s %s must be a string, not %r' % (tool, key, value))

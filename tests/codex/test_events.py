@@ -138,6 +138,37 @@ class Kinds(unittest.TestCase):
         with self.assertRaises(ValueError):
             parse('Stop', {'cwd': CWD})
 
+    def test_each_refusal_names_its_own_site(self):
+        """Every raise site tags its plain ValueError with its own `error` token, the refusal log's
+        record of which payload shape failed (kitlib.hookrun.main.error_kind)."""
+        def patch(*body):
+            return event('apply_patch', {'command': '\n'.join(('*** Begin Patch',) + body + ('*** End Patch',))})
+        sites = [
+            ('PreToolUse', None, 'payload-not-object'),
+            ('PreToolUse', dict(bash('pwd'), hook_event_name='PostToolUse'), 'event-mismatch'),
+            ('Stop', {'cwd': CWD}, 'event-unhooked'),
+            ('PreToolUse', event('', {}), 'tool-name-missing'),
+            ('PreToolUse', dict(bash('pwd'), cwd='relative'), 'cwd-not-absolute'),
+            ('PreToolUse', event('Write', {}), 'file-target-missing'),
+            ('PreToolUse', event('write_stdin', {'session_id': 1, 'extra': 1}), 'stdin-input-unknown'),
+            ('PreToolUse', event('Bash', 'pwd'), 'shell-input-not-object'),
+            ('PreToolUse', event('exec_command', {'cmd': '', 'shell': 'pwsh.exe'}), 'shell-command-missing'),
+            ('PreToolUse', bash('pwd', workdir=''), 'shell-workdir-invalid'),
+            ('PreToolUse', event('exec_command', {'cmd': [3], 'shell': 'pwsh.exe'}), 'shell-argv-invalid'),
+            ('PreToolUse', event('apply_patch', {'command': None}), 'patch-not-text'),
+            ('PreToolUse', event('apply_patch', {'command': ''}), 'patch-envelope'),
+            ('PreToolUse', patch('*** Add File: '), 'patch-target-invalid'),
+            ('PreToolUse', patch('*** Update File: a', '*** Move to: b', '*** Move to: c'), 'patch-rename-invalid'),
+            ('PreToolUse', patch('*** Add File: a', '+ok', '*** Mystery: b'), 'patch-directive'),
+        ]
+        for name, payload, error in sites:
+            with self.subTest(error=error):
+                with self.assertRaises(ValueError) as caught:
+                    parse(name, payload)
+                self.assertIs(type(caught.exception), ValueError)
+                self.assertEqual(getattr(caught.exception, 'error', None), error)
+        self.assertEqual(len({error for _, _, error in sites}), len(sites))
+
 
 if __name__ == '__main__':
     unittest.main()

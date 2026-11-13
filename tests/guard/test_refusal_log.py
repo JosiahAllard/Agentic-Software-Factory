@@ -36,12 +36,12 @@ ACTION = Action('shell', tool='PowerShell', path=SECRET_PATH, command=SECRET_COM
 class Entry(unittest.TestCase):
     def test_the_fields_in_order_and_nothing_the_call_touched(self):
         env = {sessionmark.SESSION_NAME_ENV: 'kit-coordinator'}
-        fields = refusal_log.entry(DENY, ACTION, 'claude', 'subagent', env, NOW)
+        fields = refusal_log.entry(DENY, ACTION, 'claude', 'subagent', env, NOW, error='decide-AttributeError')
         self.assertEqual(tuple(fields), refusal_log.FIELDS)
         self.assertEqual(dict(fields, repo=None), {
             'utc': '2026-10-20T09:08:07Z', 'host': 'claude', 'rule': 'some-rule', 'role': 'subagent',
             'agent_role': 'worker', 'agent': 'agent-7', 'session': 'kit-coordinator', 'tool': 'PowerShell',
-            'kind': 'shell', 'repo': None, 'instead_given': True})
+            'kind': 'shell', 'repo': None, 'error': 'decide-AttributeError', 'instead_given': True})
         text = json.dumps(fields)
         for secret in ('push', 'private', 'journal', 'other thing', 'You ran'):
             self.assertNotIn(secret, text)
@@ -51,7 +51,7 @@ class Entry(unittest.TestCase):
             fields = refusal_log.entry(Decision('deny'), None, None, 'main', {}, NOW)
         self.assertEqual([fields[k] for k in refusal_log.FIELDS[1:10]],
                          ['-', 'unknown', 'main', '-', '-', '-', '-', '-', '-'])
-        self.assertIs(fields['instead_given'], False)
+        self.assertEqual((fields.get('error'), fields['instead_given']), ('-', False))
 
     def test_a_main_sessions_action_has_no_agent_role(self):
         fields = refusal_log.entry(DENY, Action('edit', agent_role='worker'), 'claude', 'main', {}, NOW)

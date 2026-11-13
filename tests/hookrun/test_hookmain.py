@@ -329,8 +329,25 @@ class RefusalLog(unittest.TestCase):
             gate.wait(5)
             return Decision('allow')
         self.assertEqual(run(FakeAdapter(), {'who': 'a1'}, slow, deadline=0.05), (3, 'deny guard-timeout\n'))
-        self.assertEqual([(r['rule'], r['role']) for r in self.rows()],
-                         [('guard-error', 'main'), ('guard-error', 'main'), ('guard-timeout', 'subagent')])
+        self.assertEqual([(r['rule'], r['role'], r.get('error')) for r in self.rows()],
+                         [('guard-error', 'main', 'decide-RuntimeError'), ('guard-error', 'main', 'parse-ValueError'),
+                          ('guard-timeout', 'subagent', '-')])
+
+    def test_a_guard_error_logs_what_failed_as_a_closed_token(self):
+        """The site's own token for an adapter's refusal (kitlib.host.payload_error), else the stage
+        and the exception's type; a token outside [A-Za-z0-9-] or past ERROR_CAP is logged as `-`,
+        and the deny's reason still names the plain ValueError."""
+        from kitlib.host import payload_error
+        allow = lambda *x, **k: Decision('allow')                                       # noqa: E731
+        hookrun.run(FakeAdapter(), 'PreToolUse', io.StringIO('{bad'), io.StringIO(), environ={}, entry='h')
+        for error in ('cwd-not-absolute', 'bad token!', 'x' * (hookrun.ERROR_CAP + 1), 3):
+            a = FakeAdapter(parse_error=payload_error(error, 'refused'))
+            self.assertEqual(run(a, {}, allow), (3, 'deny guard-error\n'))
+            self.assertIn('(ValueError: refused)', a.last.reason)
+        self.assertEqual(run(Several.Multi(()), {}, allow), (3, 'deny guard-error\n'))
+        run(FakeAdapter(), {}, lambda *x, **k: Decision('deny', 'some-rule', 'why'))
+        self.assertEqual([r.get('error') for r in self.rows()],
+                         ['payload-JSONDecodeError', 'cwd-not-absolute', '-', '-', '-', 'no-action', '-'])
 
     def test_a_host_screen_deny_is_logged_once_for_a_call_of_several_actions(self):
         a = Several.Multi(('a', 'b', 'c'), screen=lambda act: Decision('deny', 'host-rule', 'no') if act.path != 'a' else None)

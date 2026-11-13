@@ -31,6 +31,8 @@ client's payload has been captured yet (hosts/codex/README.md, "Not verified").
       session, and a child inherits its parent's PM_KIT_ROLE, so only the role policy applies.
 
 PM_KIT_ROLE is not in the payload: the guard reads it from the hook's own environment.
+Every refusal raises kitlib.host.payload_error: a plain ValueError tagged with its own site's token
+(cwd-not-absolute, shell-command-missing, patch-directive, ...), which the refusal log records.
 """
 import dataclasses
 import ntpath
@@ -38,7 +40,7 @@ import os
 import posixpath
 
 from kitlib import platform
-from kitlib.host import Action
+from kitlib.host import Action, payload_error
 
 
 @dataclasses.dataclass(frozen=True)
@@ -127,23 +129,23 @@ def patch_targets(command):
     moves to, in order; `Move` for a rename's new name. A patch of any other shape is a ValueError,
     so an ambiguous patch fails before any of it is judged."""
     if not isinstance(command, str):
-        raise ValueError('apply_patch requires a string command')
+        raise payload_error('patch-not-text', 'apply_patch requires a string command')
     lines = command.strip().splitlines()
     if len(lines) < 3 or lines[0] != '*** Begin Patch' or lines[-1] != '*** End Patch':
-        raise ValueError('expected one complete apply_patch envelope')
+        raise payload_error('patch-envelope', 'expected one complete apply_patch envelope')
     targets, operation, body, moved = [], None, False, False
     for line in lines[1:-1]:
         header = next((h for h in PATCH_HEADERS if line.startswith('*** %s File: ' % h)), None)
         if header:
             target = line.split(': ', 1)[1]
             if not target.strip() or '\x00' in target:
-                raise ValueError('patch target is empty or invalid')
+                raise payload_error('patch-target-invalid', 'patch target is empty or invalid')
             targets.append((header, target))
             operation, body, moved = header, False, False
         elif line.startswith('*** Move to: '):
             target = line[len('*** Move to: '):]
             if operation != 'Update' or body or moved or not target.strip() or '\x00' in target:
-                raise ValueError('invalid patch rename')
+                raise payload_error('patch-rename-invalid', 'invalid patch rename')
             targets.append(('Move', target))
             moved = True
         elif line == '*** End of File' and operation == 'Update':
@@ -153,9 +155,9 @@ def patch_targets(command):
         elif operation == 'Update' and (line.startswith(('+', '-', ' ', '@@')) or line == ''):
             body = True
         else:
-            raise ValueError('unsupported or malformed patch directive')
+            raise payload_error('patch-directive', 'unsupported or malformed patch directive')
     if not targets:
-        raise ValueError('patch has no file actions')
+        raise payload_error('patch-empty', 'patch has no file actions')
     return tuple(targets)
 
 
@@ -167,7 +169,7 @@ def _argv(command, data):
     """(command text, data) for a legacy argv list: `[shell, flag, text]` names its interpreter;
     any other list is its words joined."""
     if not command or not all(isinstance(w, str) for w in command):
-        raise ValueError('a shell argv is a list of strings')
+        raise payload_error('shell-argv-invalid', 'a shell argv is a list of strings')
     if len(command) >= 3 and command[-2].lower() in ARGV_FLAGS and dialect(command[0]):
         return command[-1], dict(data, shell=data.get('shell') or command[0])
     return ' '.join(command), data
@@ -175,16 +177,16 @@ def _argv(command, data):
 
 def _shell(tool, data, cwd):
     if not isinstance(data, dict):
-        raise ValueError('shell input must be an object')
+        raise payload_error('shell-input-not-object', 'shell input must be an object')
     command = data.get('command', data.get('cmd'))
     if isinstance(command, list):
         command, data = _argv(command, data)
     if not isinstance(command, str) or not command.strip():
-        raise ValueError('shell command is required')
+        raise payload_error('shell-command-missing', 'shell command is required')
     workdir = data.get('workdir')
     if workdir is not None:
         if not isinstance(workdir, str) or not workdir:
-            raise ValueError('shell workdir must be a path')
+            raise payload_error('shell-workdir-invalid', 'shell workdir must be a path')
         workdir = workdir if absolute(workdir) else os.path.normpath(os.path.join(cwd, workdir))
     kind, refusal = shell_kind(tool, data)
     if is_cmd(data.get('shell')):
@@ -199,20 +201,20 @@ def _shell(tool, data, cwd):
 
 def parse(event_name, payload):
     if not isinstance(payload, dict):
-        raise ValueError('a %s payload is an object' % event_name)
+        raise payload_error('payload-not-object', 'a %s payload is an object' % event_name)
     named = payload.get('hook_event_name')
     if named is not None and named != event_name:
-        raise ValueError('the payload is a %r event, not %s' % (named, event_name))
+        raise payload_error('event-mismatch', 'the payload is a %r event, not %s' % (named, event_name))
     cwd = payload.get('cwd')
     if event_name in KINDS:
         return Action(KINDS[event_name], cwd=cwd if isinstance(cwd, str) else None)
     if event_name != TOOL_EVENT:
-        raise ValueError('not an event the kit hooks on Codex: %r' % (event_name,))
+        raise payload_error('event-unhooked', 'not an event the kit hooks on Codex: %r' % (event_name,))
     tool, data = payload.get('tool_name'), payload.get('tool_input')
     if not isinstance(tool, str) or not tool:
-        raise ValueError('tool_name is required')
+        raise payload_error('tool-name-missing', 'tool_name is required')
     if not absolute(cwd):
-        raise ValueError('cwd must be absolute')
+        raise payload_error('cwd-not-absolute', 'cwd must be absolute')
     if tool == PATCH:
         command = data.get('command', data.get('input')) if isinstance(data, dict) else data
         return tuple(Action('edit', tool=tool, path=path, cwd=cwd, retarget=_patch_line(op))
@@ -222,11 +224,11 @@ def parse(event_name, payload):
     if tool in FILE_TOOLS:
         key = FILE_TOOLS[tool]
         if not isinstance(data, dict) or not isinstance(data.get(key), str) or not data[key]:
-            raise ValueError('file edit requires a literal target')
+            raise payload_error('file-target-missing', 'file edit requires a literal target')
         return Action('edit', tool=tool, path=data[key], cwd=cwd, retarget='%s(%s="{path}")' % (tool, key))
     if tool == STDIN:
         if not isinstance(data, dict) or set(data) - STDIN_KEYS:
-            raise ValueError('unrecognized stdin transport input')
+            raise payload_error('stdin-input-unknown', 'unrecognized stdin transport input')
         if data.get('chars') not in (None, ''):
             return CodexAction('other', tool=tool, cwd=cwd,
                                refusal='text sent to a running process is input the guard never sees')

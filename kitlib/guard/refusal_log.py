@@ -7,7 +7,7 @@ left untracked, and refused to every session's own edit (docs/guard.md rule `pm-
 A line holds FIELDS and nothing else: the UTC time, the host, the rule, the role tag the deny's
 reason carries ('main' or 'subagent'), the subagent's role name and identity, the session's name
 (the launcher's PM_KIT_SESSION_NAME), the tool and the Action's kind, the repository the call ran
-in (the name of its main checkout's folder, repo_of) and whether the deny gave an Instead.
+in (its main checkout's folder name, repo_of), a guard-error's `error` token, whether it gave an Instead.
 Never the reason, the command, the path, the working directory or the Instead text: those carry
 what a call touched, and a count needs none of it. MISSING stands for an absent value; a deny
 with no rule is UNKNOWN_RULE.
@@ -21,7 +21,7 @@ BOUND seconds. The log is best effort: record() never raises and never changes a
 pm_data, a machine config that cannot be read, a fenced test process's real home
 (kitlib.config.user.HomeFenced), a busy lock or a failed write: no line.
 
-  entry(decision, action, host, role, environ, now)
+  entry(decision, action, host, role, environ, now, error)
                                      the line's fields, in FIELDS order
   repo_of(action, environ)           the repository name for the line, MISSING when unknown or
                                      when it could name the account (see its docstring)
@@ -29,7 +29,7 @@ pm_data, a machine config that cannot be read, a fenced test process's real home
   append(pm_data, fields, wait)      make the folder when missing and append the line under the
                                      lock; Busy when the lock stayed held for `wait` seconds,
                                      OSError or kitlib.fs.treelock.TreeLockError when it cannot
-  record(decision, action, host, role, environ, home, now)
+  record(decision, action, host, role, environ, home, now, error)
                                      the whole step for a deny: the log's path when a line was
                                      appended, else None; never raises
 """
@@ -44,7 +44,7 @@ from kitlib.host import sessionmark
 FOLDER = 'audit'
 FILE = 'refusals.jsonl'
 FIELDS = ('utc', 'host', 'rule', 'role', 'agent_role', 'agent', 'session', 'tool', 'kind', 'repo',
-          'instead_given')
+          'error', 'instead_given')
 MISSING = '-'
 UNKNOWN_RULE = 'unknown'
 LOCK_FILE = '.refusals.lock'   # beside the log, in the audit folder nothing commits
@@ -97,7 +97,7 @@ def repo_of(action, environ=None):
     return name
 
 
-def entry(decision, action, host, role, environ=None, now=None):
+def entry(decision, action, host, role, environ=None, now=None, error=None):
     env = os.environ if environ is None else environ
     now = now or datetime.datetime.now(datetime.timezone.utc)
     utc = now.astimezone(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -112,7 +112,7 @@ def entry(decision, action, host, role, environ=None, now=None):
         _text(env.get(sessionmark.SESSION_NAME_ENV)),
         _text(getattr(action, 'tool', None) if action is not None else None),
         _text(getattr(action, 'kind', None) if action is not None else None),
-        repo_of(action, env),
+        repo_of(action, env), _text(error),
     )
     fields = collections.OrderedDict(zip(FIELDS, values))
     fields['instead_given'] = bool(getattr(decision, 'instead', None))
@@ -154,7 +154,7 @@ def _location(home):
     return place.fs_location(home, fallback=_none)
 
 
-def record(decision, action, host, role, environ=None, home=None, now=None):
+def record(decision, action, host, role, environ=None, home=None, now=None, error=None):
     try:
         if getattr(decision, 'verdict', None) != 'deny':
             return None
@@ -162,7 +162,7 @@ def record(decision, action, host, role, environ=None, home=None, now=None):
         settings = pmdata.machine_settings(home, location=_location(home))
         if not settings or not settings.get('path'):
             return None
-        return append(settings['path'], entry(decision, action, host, role, environ, now), WAIT)
+        return append(settings['path'], entry(decision, action, host, role, environ, now, error), WAIT)
     except (KeyboardInterrupt, SystemExit):
         raise
     except BaseException:                       # HomeFenced too: a log line is never worth a verdict

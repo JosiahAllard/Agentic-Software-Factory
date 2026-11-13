@@ -87,6 +87,12 @@ class Clocked(unittest.TestCase):
         self.t = T0
         self.store.put('approvals', 'A-001', decided(status))
 
+    def otherwise(self):
+        """The repository is named `alpha` and its coordinator session is keyed `coord`."""
+        self.names = {REPO: 'alpha'}
+        self.api._session_keys = lambda: {'coord', 'zeta'}
+        self.api.coordinators = lambda: {'coord': 'alpha'}
+
     def pending(self, key):
         status, obj = self.api.call('GET', BASE + '/pending', AGENT, None, {'for': key})
         self.assertEqual(status, 200, obj)
@@ -103,6 +109,13 @@ class ApiPendingCase(Clocked):
         self.assertEqual(self.pending('kit'), [('approval', 'A-001', 'kit')])
         self.assertEqual(self.pending('pm'), [('approval', 'A-001', 'kit')])
         self.assertEqual(self.pending('zeta'), [])
+
+    def test_a_coordinator_keyed_otherwise_is_listed(self):
+        self.otherwise()
+        self.decide()
+        self.assertEqual(self.pending('coord'), [('approval', 'A-001', 'coord')])
+        self.assertEqual(self.pending('pm'), [('approval', 'A-001', 'coord')])
+        self.assertEqual(self.pending('alpha'), [])
 
     def test_no_configured_repository_is_the_pms(self):
         self.names = {}
@@ -265,6 +278,12 @@ class PushCase(Clocked):
     def test_held_by_the_coordinator_goes_to_the_pm_alone(self):
         self.decide()
         self.assertEqual(self.pending('kit'), [('approval', 'A-001', 'kit')])
+        self.assertEqual(self.sent(), [('pm', 'Decided by the owner')])
+
+    def test_a_coordinator_keyed_otherwise_is_not_pushed_after_pending_read(self):
+        self.otherwise()
+        self.decide()
+        self.assertEqual(self.pending('coord'), [('approval', 'A-001', 'coord')])
         self.assertEqual(self.sent(), [('pm', 'Decided by the owner')])
 
     def test_no_repository_name_tells_the_pm(self):

@@ -644,7 +644,7 @@ class Api(object):
         free-text names, stories and notes are the PM's), and the key that is to handle it now
         as `route` (module docstring "Routes"). With for_key, only the items for that key; for
         AGENT_FROM, the items routed to it, every question and every approval. An approval's
-        `from` is its repository's coordinator key (repo_key). Reading never changes an item:
+        `from` is its repository's coordinator key (the first of coordinator_keys that is a session key). Reading never changes an item:
         what a filtered read leaves out stays pending for every other reader."""
         return [d for d in self._routed()[0] if _for(d, for_key)]
 
@@ -676,8 +676,11 @@ class Api(object):
                 # no `from`: its repository's coordinator
                 repo = d['repo'] if isinstance(d['repo'], str) else ''
                 if repo not in repo_keys:
-                    repo_keys[repo] = self.repo_key(repo)
-                sender = repo_keys[repo]
+                    repo_keys[repo] = self.coordinator_keys(repo)
+                if keys is None:
+                    keys = self.session_keys()
+                cands = repo_keys[repo]
+                sender = next((k for k in cands if k in keys), (cands or [''])[0])
             elif d['kind'] == 'skill_edit':
                 if kit is None:
                     kit = self.kit_session_key()    # the kit's coordinator commits it

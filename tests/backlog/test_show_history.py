@@ -194,6 +194,22 @@ class MainStoreUncommittedClose(StoreCase):
         self.assertIn("the store's history could not be read: git did not answer", said)
         self.assertNotIn('the id is unknown', said)
 
+    def test_the_closing_commit_lookup_is_timed_and_a_timeout_is_a_clear_failure(self):
+        r, root, store, ctx = self.main_store()
+        seen = []
+
+        def hung(argv, cwd=None, input=None, timeout=None, env=None):
+            seen.append((argv, timeout))
+            raise subprocess.TimeoutExpired(argv, timeout)
+        with mock.patch.object(cmd, '_run', side_effect=hung):
+            with self.assertRaises(Failure) as cm:
+                store_read._last_closing(root, 'FOO', 'HEAD')
+        (argv, timeout), = seen
+        self.assertIn('--grep', argv)
+        self.assertEqual(timeout, cmd.GIT_TIMEOUT)
+        self.assertEqual(str(cm.exception), 'cannot read the store history: git log -1 '
+                         '--format=%%h %%s timed out after %d seconds' % cmd.GIT_TIMEOUT)
+
     def test_once_committed_it_names_the_closing_commit(self):
         r, root, store, ctx = self.main_store()
         store.write(lambda s: plan_end.plan_close(s, ctx, 'FOO', 'the work is finished'))

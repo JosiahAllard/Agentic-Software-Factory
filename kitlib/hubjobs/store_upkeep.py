@@ -3,27 +3,47 @@ worktree shares with the kit's checkouts (docs/hub-push.md "Store upkeep").
 
   make(sources) -> jobs.Job | None   the job; None when this machine has no PM data worktree
   StoreUpkeep(root, book=None, clock=None, holders=None)   its run(ctx): one pass
-  scan(common, now)                  [finding text] for the common dir's .idx-less packs
+  orphans(common, now)               [(path, age)] of the common dir's deletable .idx-less packs
+  scan(common, now)                  [finding text] for those packs
+  prune(common, now)                 ([deleted pack name], [note for each file kept]) of those packs
   lock_age(common, now)              seconds since objects/maintenance.lock changed, or None
   lock_holders(snapshot, command_line)   [pid] of live git processes that may hold that lock
 
-Kit git calls through kitlib.git.cmd run with auto gc and auto maintenance off, so nothing packs
-the store by itself any more; this job does, on the common dir of the PM data worktree only. One
-pass, in order:
+Kit git calls through kitlib.git.cmd run with auto gc and auto maintenance off. Gits run outside
+the kit (agents' shells, the owner's) do not, and still auto-repack the store the PM data worktree
+shares. This job packs and prunes it, on the common dir of the PM data worktree only. One pass,
+in order:
 
   1. `git commit-graph write --reachable --changed-paths --split`, untimed: the commit graph with
      Bloom filters, which a path-limited history walk (the backlog's) reads.
-  2. `git gc` only when `count-objects -v` reports LOOSE_MIN loose objects or more (git's own
-     gc.auto default, not measured here), as `-c gc.writeCommitGraph=false -c gc.packRefs=false
-     -c pack.threads=CORES gc --quiet`, untimed: step 1 wrote the graph, and packing refs would
-     race the ref writes of landings and backlog writes. It runs inside a machine-lock slot
-     (kind KIND, CORES cpu slots, slug SLUG) that holds the landing resource of that common dir
+  2. When there is a pack to prune or a gc to run, a machine-lock slot (kind KIND, CORES cpu
+     slots, slug SLUG) that holds the landing resource of that common dir
      (kitlib.landing.lander.queue_key), so no landing runs beside it. A lock that stays busy for
-     WAIT_S, or an owner or game hold, skips the gc to the next pass.
+     WAIT_S, or an owner or game hold, skips both to the next pass. Inside the slot, in order:
+     a. The prune: each `pack-<hex>.pack` in objects/pack (a regular file) with no `.idx` and no
+        `.keep` beside it and older than PACK_AGE_S (orphans) is deleted, then its `.rev`,
+        `.mtimes` and `.bitmap` (SIBLINGS), each made writable first (git writes packs
+        read-only, and Windows refuses to delete a read-only file). git reads a pack through its
+        `.idx`, or through a multi-pack-index that lists it (git skips the `.idx` of a pack the
+        MIDX names), so a pack whose name appears in objects/pack/multi-pack-index or any
+        multi-pack-index.d/*.midx is kept and named in the note; a multi-pack-index that cannot
+        be read keeps every pack that pass, with a note. What is left no git can read, so nothing
+        reachable is lost. Such packs are left when a repack's delete is refused on Windows
+        because another git holds the file open. git renames a new pack into place just before
+        its `.idx`, so a young one is never touched. The multi-pack-index is read once per prune,
+        after the orphans are listed; the `.idx` and `.keep` are checked again just before each
+        delete. No path but a `.pack` and SIBLINGS is ever
+        removed. A delete still refused after kitlib.fs.replace.remove's retries (a file in use)
+        keeps that pack and its siblings; it is named in the note and retried next pass, never a
+        failure.
+     b. `git gc` only when `count-objects -v` reports LOOSE_MIN loose objects or more (git's own
+        gc.auto default, not measured here), as `-c gc.writeCommitGraph=false -c gc.packRefs=false
+        -c pack.threads=CORES gc --quiet`, untimed: step 1 wrote the graph, and packing refs would
+        race the ref writes of landings and backlog writes.
 
-It deletes nothing itself. A `.pack` with no `.idx` beside it older than PACK_AGE_S is a finding:
-named in the pass's note and pushed as the job event `findings` with their count (see Pushes). git's own gc may
-still prune what it prunes.
+An orphan still there after the pass (a young one is none), and an old .idx-less pack kept by its
+`.keep` (never deleted), is a finding: named in the pass's note and pushed as the job event
+`findings` with their count (see Pushes).
 
 The recurrence check: an objects/maintenance.lock older than LOCK_AGE_S while no git process that
 could hold it is alive (lock_holders: a git whose command line names maintenance or gc, or whose
@@ -42,17 +62,18 @@ restart does not push them again.
 Outcomes (kitlib.hubsite.jobs): the note says what each step did; a pass that only found nothing
 to do is still a success (the commit graph is rewritten each time). A git step that fails, or a
 lock refusal other than busy or hold, is a failure that names it; the other step still runs. A
-stop asked between the steps ends the pass as a skip.
+stop asked between the steps ends the pass as a skip, before the prune and the gc.
 
 The gc runs in the slot's own job (Slot.start, with kitlib.git.cmd.child_env; Slot.wait watches
 it): on the slot's cores, ended by a stop of the run, and ended with the slot when the hub ends,
 so it never runs on after the landing resource is free. A gc ended that way can leave a temporary
-or .idx-less pack, which a later pass's scan names. The other git children run through
+pack, which stays, or an .idx-less one, which a later pass prunes. The other git children run through
 kitlib.git.cmd.call.
 """
-import glob
 import json
 import os
+import re
+import stat
 import subprocess
 import tempfile
 import time
@@ -79,6 +100,8 @@ CORES = 2
 SLUG = 'store-upkeep'
 WAIT_S = 600                        # the longest wait for the slot before the gc is skipped
 PACK_AGE_S = 86400                  # an .idx-less .pack younger than this may be a pack being written
+PACK_NAME = re.compile(r'pack-[0-9a-f]+\.pack\Z')     # git's own name for a finished pack
+SIBLINGS = ('.rev', '.mtimes', '.bitmap')   # what a prune removes after the .pack: never .idx, .keep
 LOCK_AGE_S = 12 * 3600              # a maintenance.lock younger than this may be a maintenance running
 GRAPH = ['commit-graph', 'write', '--reachable', '--changed-paths', '--split']
 GC = ['-c', 'gc.writeCommitGraph=false', '-c', 'gc.packRefs=false',
@@ -133,15 +156,118 @@ def _slot_run(slot, args, cwd):
     return cmd.Result(code, b'', text)
 
 
+def _idx_less(common, now):
+    """[(path, age seconds, has .keep)]: each regular file in the common dir's objects/pack named
+    PACK_NAME, older than PACK_AGE_S, with no .idx beside it. Reads only."""
+    folder = os.path.join(common, 'objects', 'pack')
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        path = os.path.join(folder, name)
+        if not PACK_NAME.match(name) or os.path.islink(path) or not os.path.isfile(path):
+            continue
+        age = _age(path, now)
+        stem = path[:-len('.pack')]
+        if age is not None and age >= PACK_AGE_S and not os.path.lexists(stem + '.idx'):
+            out.append((path, age, os.path.lexists(stem + '.keep')))
+    return out
+
+
+def orphans(common, now):
+    """[(path, age seconds)] of the common dir's prune candidates (module doc, step 2a): the
+    .idx-less packs older than PACK_AGE_S with no .keep. Reads only."""
+    return [(path, age) for path, age, keep in _idx_less(common, now) if not keep]
+
+
+def _kept_why(pack, listed):
+    """None when the .pack at `pack` may be deleted, else why not: an .idx or a .keep now beside
+    it, or its .idx name or its own in `listed` (the multi-pack-index bytes)."""
+    stem = pack[:-len('.pack')]
+    for suffix in ('.idx', '.keep'):
+        if os.path.lexists(stem + suffix):
+            return 'it has a %s now' % suffix
+    name = os.path.basename(stem).encode('ascii')
+    if name + b'.idx' in listed or name + b'.pack' in listed:
+        return 'the multi-pack-index lists it'
+    return None
+
+
+def _midx(folder):
+    """The bytes of objects/pack/multi-pack-index and every multi-pack-index.d/*.midx in
+    `folder`, joined (b'' when there is none). A pack's name in it (its PNAM chunk holds them as
+    plain bytes) means git may read that pack without its .idx. OSError when one cannot be read."""
+    paths = [os.path.join(folder, 'multi-pack-index')]
+    chain = os.path.join(folder, 'multi-pack-index.d')
+    if os.path.lexists(chain):
+        paths += [os.path.join(chain, n) for n in sorted(os.listdir(chain)) if n.endswith('.midx')]
+    parts = []
+    for path in paths:
+        try:
+            with open(path, 'rb') as f:
+                parts.append(f.read())
+        except FileNotFoundError:
+            continue
+    return b'\0'.join(parts)
+
+
 def scan(common, now):
-    """[finding text] for the common dir `common`: each .pack with no .idx beside it older than
-    PACK_AGE_S. Reads only."""
-    found = []
-    for pack in sorted(glob.glob(os.path.join(glob.escape(common), 'objects', 'pack', '*.pack'))):
-        age = _age(pack, now)
-        if age is not None and age >= PACK_AGE_S and not os.path.exists(pack[:-5] + '.idx'):
-            found.append('%s has no .idx (%s old)' % (os.path.basename(pack), _span(age)))
-    return found
+    """[finding text] for each of the common dir's old .idx-less packs: an orphan, or one kept by
+    its .keep. Reads only."""
+    return ['%s has no .idx (%s old)%s' % (os.path.basename(path), _span(age),
+                                          ', kept by .keep' if keep else '')
+            for path, age, keep in _idx_less(common, now)]
+
+
+def prune(common, now):
+    """`([deleted pack name], [note])`: each of the common dir's orphans deleted, the .pack first
+    (_kept_why checked again just before, a pack it keeps named in a note), then its SIBLINGS, each made writable first; nothing
+    else is removed. A multi-pack-index that cannot be read deletes nothing, with a note. A
+    remove still refused after kitlib.fs.replace.remove's retries is a note, never an error: a
+    refused .pack keeps its siblings and is retried next pass (a sibling refused after its .pack
+    went is only named: no git reads it without its pack)."""
+    found = orphans(common, now)
+    if not found:
+        return [], []
+    try:
+        listed = _midx(os.path.join(common, 'objects', 'pack'))
+    except OSError as e:
+        return [], ['no pack pruned: the multi-pack-index could not be read (%s)' % e]
+    gone, kept = [], []
+    for pack, _age_s in found:
+        name = os.path.basename(pack)
+        why = _kept_why(pack, listed)
+        if why:
+            kept.append('%s kept: %s' % (name, why))
+            continue
+        try:
+            _remove(pack)
+        except OSError as e:
+            kept.append('%s kept (retried next pass): %s' % (name, e))
+            continue
+        gone.append(name)
+        for suffix in SIBLINGS:
+            path = pack[:-len('.pack')] + suffix
+            try:
+                _remove(path)
+            except OSError as e:
+                kept.append('%s kept: %s' % (os.path.basename(path), e))
+    return gone, kept
+
+
+def _remove(path):
+    """kitlib.fs.replace.remove of a file the prune chose, its read-only bit cleared first (git
+    writes packs read-only; Windows refuses to delete such a file). A link is removed as it is,
+    its target never made writable. A file already gone is no error."""
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        return
+    if not stat.S_ISLNK(mode):
+        os.chmod(path, mode | stat.S_IWRITE)
+    fsreplace.remove(path)
 
 
 def lock_age(common, now):
@@ -224,25 +350,27 @@ class StoreUpkeep(object):
         if not common:
             raise UpkeepFailed('the git common dir of %s: %s' % (self.root, why))
         now = self.clock()
-        findings = scan(common, now)
         pushes = {}                 # event -> (detail, key), handed to the PM at the pass's end
-        if findings:
-            pushes['findings'] = (str(len(findings)),) * 2
-        notes, errors = [], []
-        self._stale_lock(pushes, common, now, findings, notes)
+        notes, errors, stale = [], [], []
+        self._stale_lock(pushes, common, now, stale, notes)
         try:                        # a step that raises still lets the pushes go out
             r = _run(GRAPH, self.root, timeout=None)
             if r.rc == 0:
                 notes.append('commit graph written')
             else:
                 errors.append(_failed('commit-graph write', r))
-            if ctx.stop.is_set():
-                return jobs.Skip('; '.join(notes + errors + ['stopped before the gc']
-                                           + _finding_notes(findings)))
-            self._gc(common, notes, errors)
+            stopped = ctx.stop.is_set()
+            if not stopped:
+                self._slot_step(common, now, notes, errors)
         finally:
+            left = scan(common, now)        # the orphans the prune did not delete
+            if left:
+                pushes['findings'] = (str(len(left)),) * 2
             self._push(ctx, common, now, pushes)
-        text = '; '.join(notes + errors + _finding_notes(findings))
+        findings = _finding_notes(left + stale)
+        if stopped:
+            return jobs.Skip('; '.join(notes + errors + ['stopped before the gc'] + findings))
+        text = '; '.join(notes + errors + findings)
         if errors:
             raise UpkeepFailed(text)
         return text
@@ -306,30 +434,45 @@ class StoreUpkeep(object):
             except OSError:
                 pass
 
-    def _gc(self, common, notes, errors):
+    def _slot_step(self, common, now, notes, errors):
+        """Step 2 of the module doc: the prune, then the gc when the loose count calls for one,
+        inside one slot, booked only when either has work."""
         r = _run(['count-objects', '-v'], self.root)
         count = loose_count(cmd.text(r.out or b'')) if r.rc == 0 else None
         if count is None:
             errors.append(_failed('count-objects', r) if r.rc != 0 else
                           'count-objects gave no loose count')
-            return
-        if count < LOOSE_MIN:
+        elif count < LOOSE_MIN:
             notes.append('%d loose objects, under %d: no gc' % (count, LOOSE_MIN))
+        gc = count is not None and count >= LOOSE_MIN
+        to_prune = bool(orphans(common, now))
+        if not (gc or to_prune):
             return
+        what = ' and '.join(w for w, on in (('prune', to_prune), ('gc', gc)) if on)
         try:
             slot = self.book(KIND, _repo_name(common), SLUG, cores=CORES, wait_s=WAIT_S,
-                             cmd=['git', 'gc'], resource=lander.queue_key(common),
-                             note='store upkeep: git gc of %s' % common)
+                             cmd=['git', 'gc'] if gc else None, resource=lander.queue_key(common),
+                             note='store upkeep: %s of %s' % (what, common))
         except LockError as e:
             if e.code in NOT_NOW:
-                notes.append('%d loose objects; gc skipped to the next pass: the machine lock '
-                             'gave no slot (exit %d: %s)' % (count, e.code, e.message))
+                notes.append('%s%s skipped to the next pass: the machine lock gave no slot '
+                             '(exit %d: %s)' % ('%d loose objects; ' % count if gc else '', what,
+                                               e.code, e.message))
             else:
-                errors.append('gc not run: the machine lock refused it (exit %d: %s)'
-                              % (e.code, e.message))
+                errors.append('%s not run: the machine lock refused it (exit %d: %s)'
+                              % (what, e.code, e.message))
             return
         with slot:
-            r = _slot_run(slot, GC, self.root)
+            if to_prune:
+                gone, kept = prune(common, now)
+                if gone:
+                    notes.append('pruned %d .idx-less pack%s: %s' % (
+                        len(gone), '' if len(gone) == 1 else 's', ', '.join(gone)))
+                notes.extend(kept)
+            if gc:
+                r = _slot_run(slot, GC, self.root)
+        if not gc:
+            return
         if r.rc == 0:
             notes.append('gc packed %d loose objects' % count)
         else:

@@ -129,6 +129,8 @@ class Prepare(Case):
         got, why = V.prepare(self.root, merge, tip)
         self.assertIsNone(got)
         self.assertIn('conflicts in a.txt', why)
+        self.assertTrue(why.endswith('by hand on a branch from %s: git revert -m 1 %s' % (
+            tip[:10], merge)), why)
         got, why = V.prepare(self.root, merge, tip, made=V.Made(V.EMPTY, None, []))
         self.assertIsNone(got)
         self.assertIn('nothing to revert', why)

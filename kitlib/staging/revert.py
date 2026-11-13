@@ -87,8 +87,9 @@ def prepare(root, merge, base, made=None):
         if made is None:
             return None, why
     if made.status == CONFLICT:
-        return None, 'the revert of %s does not apply cleanly on %s: it conflicts in %s' % (
-            merge[:10], base[:10], ', '.join(made.paths))
+        return None, ('the revert of %s does not apply cleanly on %s: it conflicts in %s; revert '
+                      'it by hand on a branch from %s: git revert -m 1 %s' % (
+                          merge[:10], base[:10], ', '.join(made.paths), base[:10], merge))
     if made.status == EMPTY:
         return None, '%s already holds no change of %s: there is nothing to revert' % (
             base[:10], merge[:10])

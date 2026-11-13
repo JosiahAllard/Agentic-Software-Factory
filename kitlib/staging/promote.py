@@ -234,7 +234,7 @@ def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate
         why = out.facts.get('verdict') or 'the gate failed'
         a = R.start(where, tip, base, 'red', why=why, log_dir=log_dir)
         ctx = {'main': main, 'cfg': cfg, 'cfg_base': cfg_base, 'staging': staging, 'wt': wt,
-               'tip': tip, 'base': base, 'full': full, 'book': book, 'git': git,
+               'tip': tip, 'base': base, 'book': book, 'git': git,
                'since': rerun.since_of(started), 'log_dir': log_dir}
         lines = ['promote: RED - %s' % why] + hunter(ctx, a, out, say)
         return G.Outcome(code_of(a), lines + [R.line(a)], log_dir=log_dir)

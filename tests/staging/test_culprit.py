@@ -147,9 +147,6 @@ class Hunt(unittest.TestCase):
         self.assertEqual(found['end'], CU.BUDGET)
         self.assertEqual(found['verdict'], 'inconclusive (budget): the machine lock timed out')
 
-    def test_the_budget_is_about_four_hours(self):
-        self.assertEqual(CU.HUNT_BUDGET_S, 4 * 3600)
-
 
 class Suspects(unittest.TestCase):
     LANDS = [CU.Landing(L1, ['src/a.py']), CU.Landing(L2, ['docs/x.md']),

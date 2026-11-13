@@ -19,8 +19,9 @@ across every red step together (bisect.bisectable names them: `gate`, `windows` 
 red are never hunted).
 
 The hunt, in this order, every probe a kitlib.dailyfull.bisect Prober's (failing tests only when
-S's logs name them, else the whole red steps; each probe runs that commit's own gate with the
-argv the promotion ran, merged_args and all):
+S's logs name them, else the whole red steps; a whole-step probe runs that commit's own gate in
+the daily form, kitlib.dailyfull.plan, as the daily bisect does: a change-selecting cmd such as
+`--select` against M would select nothing at M or at a revert, and probe green there):
 
   1. S. Green: FLAKE, and nothing more. Inconclusive: the hunt stops there.
   2. One suspect: its revert on S (kitlib.staging.revert make) is probed. Green: the culprit,
@@ -205,17 +206,6 @@ def say_as_hunt(say):
     return said
 
 
-def plan_for(base, full):
-    """The Prober's plan: the steps at a probed commit as the promotion ran them (its argv:
-    full_cmd when `full`, merged_args, `base` the promotion's M), each set to continue."""
-    def plan(cfg, wt, sha):
-        gate = detect.effective(cfg, wt).gate
-        built = S.build(gate, wt, base, cfg.tools_dir, merged=True, full=full)
-        chosen, _ = S.select(gate, built, [], full=True)
-        return [s._replace(cont=True) for s in chosen]
-    return plan
-
-
 def bound(prober):
     """`probe(sha, wait_s)` of a Prober: its slot waits at most `wait_s` (never now-or-never)."""
     def probe(sha, wait_s):
@@ -234,7 +224,7 @@ def red_steps(out):
 def after_red(ctx, attempt, out, say, clock=time.time, budget=HUNT_BUDGET_S, make=V.make):
     """The hunt after the promotion of `attempt` (record.Attempt, ended red) failed with the gate
     outcome `out`, and the revert branch of its culprit: the lines to say. `ctx`: {main, cfg (the
-    main checkout's), cfg_base (M's), staging, wt (the promotion's tree), tip, base, full, book
+    main checkout's), cfg_base (M's), staging, wt (the promotion's tree), tip, base, book
     (the gate's booking), git, since (the gate's start, epoch seconds), log_dir}. Writes the
     attempt's `culprit` (and, for a culprit, `revert`); nothing when no red step can be hunted
     (red_steps). RecordError passes through."""
@@ -274,7 +264,7 @@ def _hunt(ctx, red, results, say, clock, deadline, budget, make):
     sus = suspects(specs, red, lands, failing, S.working_tree_reader(wt))
     prober = B.Prober(wt, red, gate['kind'], place.repo_name(ctx['cfg_base'], main), SLUG,
                       ctx['log_dir'], say_as_hunt(say), ctx.get('book') or {}, git,
-                      plan_for(base, ctx.get('full')), steps=results)
+                      D.plan, steps=results)
     probe, chain = bound(prober), {x.sha for x in lands} | {base}
 
     def probe_at(sha, wait_s):

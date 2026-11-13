@@ -519,6 +519,41 @@ class Hunt(Case):
         self.assertNotIn('revert', self.attempts()[-1].rec)
         self.assertEqual(self.branch(tip), '')
 
+    def test_a_staging_tip_moved_since_the_test_gets_the_revert_on_its_new_tip(self):
+        tip = self.land_red()
+        moved = []
+
+        def gate(*a, **k):
+            out = self.gate(*a, **k)
+            moved.append(self.land())           # a landing while the promotion ran
+            return out
+        self.run_promote(gate=gate)
+        a, later = self.attempts()[-1], moved[0]
+        self.assertEqual((a.rec['culprit']['merge'], a.rec['culprit']['by']), (tip, CU.BY_REVERT))
+        revert = self.branch(tip)
+        self.assertEqual((a.rec['revert']['base'], a.rec['revert']['commit']), (later, revert))
+        self.assertEqual(self.repo.git('rev-parse', revert + '^1'), later)
+        names = self.repo.git('ls-tree', '--name-only', revert).split()
+        self.assertNotIn('RED', names)
+        self.assertIn('landed-2.txt', names)
+
+    def test_a_hunt_that_raises_leaves_no_slot_held_and_the_look_stops_it(self):
+        self.land_red()
+        real, calls = runner.run_steps, []
+
+        def run_steps(*a, **k):
+            calls.append(1)
+            if len(calls) > 1:              # the gate's own run is the first: a probe raises
+                raise RuntimeError('boom')
+            return real(*a, **k)
+        with mock.patch.object(runner, 'run_steps', side_effect=run_steps):
+            with self.assertRaises(RuntimeError):
+                self.run_promote()
+        self.assertTrue(R.hunting(self.attempts()[-1]))
+        self.assertEqual(self.store.live_runs(), [])
+        SP.look(self.main_dir, self.cfg(), lambda a: None)
+        self.assertEqual(self.attempts()[-1].rec['culprit']['verdict'], CU.STOPPED)
+
     def test_the_probes_wait_for_their_slot_within_the_budget_and_the_gate_never_waits(self):
         self.land_red()
         self.run_promote()
@@ -542,6 +577,33 @@ class Hunt(Case):
         self.assertEqual([x.rec['culprit']['verdict'] for x in announced], [CU.STOPPED])
         self.assertEqual(self.attempts()[-1].rec['culprit']['verdict'], CU.STOPPED)
         self.assertEqual(self.attempts()[-1].event(), ('red', tip[:10]))
+
+
+# A step whose cmd selects by the change, as `kit_tests.py --select` does: it runs (and sees RED)
+# only where a landed-*.txt shows a landing to select; its daily_cmd runs everything.
+SELECTING = ['{python}', '-c', 'import glob, os, sys; print("ok"); sys.exit(1 if os.path.exists('
+             '"RED") and ("--daily" in sys.argv or glob.glob("landed-*.txt")) else 0)']
+
+
+class HuntDailyForm(Case):
+    """A whole-step probe runs the daily form (kitlib.dailyfull.plan), never the promotion's
+    change-selecting cmd: that selects nothing at main or at a revert, and would probe green."""
+    GATE = {'steps': [{'name': 'unit', 'always': True, 'cmd': SELECTING,
+                       'daily_cmd': SELECTING + ['--daily'], 'pass': '^ok$'}]}
+
+    def test_main_red_already_is_on_main_and_never_a_revert_confirmed_by_selecting_nothing(self):
+        self.land_red()
+        self.repo.git('push', '-q', 'origin', 'HEAD:refs/heads/main', cwd=self.stg)
+        base = self.remote_main()
+        tip = self.land()
+        out = self.run_promote()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        found = self.attempts()[-1].rec['culprit']
+        self.assertEqual(found['end'], CU.ON_MAIN, found)
+        self.assertEqual([(p['what'], p['verdict']) for p in found['probes']],
+                         [('S', 'red'), ('revert of %s' % tip[:10], 'red'), ('bisect', 'red')])
+        self.assertEqual(found['probes'][2]['sha'], base)
+        self.assertNotIn('revert', self.attempts()[-1].rec)
 
 
 class Off(StagingCase):

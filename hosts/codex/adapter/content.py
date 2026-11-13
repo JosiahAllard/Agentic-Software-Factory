@@ -137,6 +137,7 @@ TOOLS = {
     'skill': 'the skill', 'ask-owner': 'request_user_input',
     'cron-create': 'a schedule%s' % NOT_AVAILABLE, 'cron-list': 'the schedules%s' % NOT_AVAILABLE,
     'cron-delete': 'a schedule%s' % NOT_AVAILABLE, 'web-search': 'WebSearch', 'web-fetch': 'WebFetch',
+    'mcp-blender': 'the %s MCP server tools' % BLENDER_NAME, 'mcp-suno': 'no Codex Suno tool',
 }
 # The tokens whose Codex value no hosts.json field holds.
 TOKENS = {

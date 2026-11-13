@@ -59,10 +59,19 @@ class Render(unittest.TestCase):
                          dict({n: 'mcp__plugin_pm-kit_%s' % n for n in claude_content.MCP_SERVERS},
                               suno='mcp__suno'))
 
-    def test_the_owners_skills_are_hidden_sync_left_on_and_artifact_kept(self):
+    def test_an_mcp_capability_never_lifts_its_servers_session_deny(self):
+        c = types.SimpleNamespace(roles=[role(['mcp-blender', 'mcp-suno'])])
+        deny = claude_content.session_settings(c)['permissions']['deny']
+        self.assertIn(BLENDER, deny)
+        self.assertIn('mcp__suno', deny)
+        with mock.patch.dict(claude_content.TOOLS, {'mcp-blender': BLENDER}):     # even named exactly
+            self.assertIn(BLENDER, claude_content.session_settings(c)['permissions']['deny'])
+
+    def test_the_owners_skills_are_hidden_sync_left_on_and_artifact_cut(self):
         got = claude_content.session_settings(types.SimpleNamespace(roles=[]))
         self.assertNotIn('syncClaudeAiSkills', got)        # false would move the account's synced skills away
-        bundled = ('claude-api', 'claude-in-chrome', 'code-review', 'dataviz', 'fewer-permission-prompts',
+        bundled = ('artifact-capabilities', 'artifact-design', 'artifact-diagramming',
+                   'claude-api', 'claude-in-chrome', 'code-review', 'dataviz', 'fewer-permission-prompts',
                    'init', 'keybindings-help', 'loop', 'plugin-authoring', 'run', 'schedule',
                    'security-review', 'simplify', 'update-config', 'workflow-authoring')
         synced = ['anthropic-skills:' + n for n in (
@@ -70,10 +79,7 @@ class Render(unittest.TestCase):
             'docs', 'docx', 'google-workspace', 'import-memory', 'morning', 'pdf', 'pptx', 'skill-creator',
             'xlsx')]
         self.assertEqual(got['skillOverrides'], {n: 'user-invocable-only' for n in list(bundled) + synced})
-        for kept in ('artifact-design', 'artifact-diagramming', 'artifact-capabilities'):
-            self.assertNotIn(kept, got['skillOverrides'])
-        self.assertNotIn('Artifact', claude_content.SESSION_CUT)
-        self.assertNotIn('Artifact', got['permissions']['deny'])
+        self.assertIn('Artifact', got['permissions']['deny'])     # the PM's alone: it starts with no settings
 
     def test_every_server_the_cut_denies_is_one_mcp_can_take_back(self):
         servers = [e for e in claude_content.SESSION_CUT if e.startswith('mcp__')]
@@ -197,6 +203,12 @@ class Launch(Base):
                          brief=self.brief, account='1', plan=False)
         self.assertIn(sessionsettings.MISSING % self.rendered, out)
         self.assertNotIn('--settings', self.opened())
+
+    def test_a_pm_starts_with_no_settings_and_refuses_mcp(self):
+        start.start(self.h.settings, self.host, repo='alpha', account='1', agent='pm-kit:pm')
+        self.assertNotIn('--settings', self.opened())
+        with self.assertRaisesRegex(LaunchError, '--mcp is not for the PM'):
+            start.start(self.h.settings, self.host, repo='alpha', account='1', agent='pm-kit:pm', mcp=['hub'])
 
     def test_a_host_without_a_spec_passes_none_and_refuses_mcp(self):
         self.host.session_spec = None

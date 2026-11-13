@@ -37,9 +37,11 @@ them alone, never does):
   submitted   a story the owner submitted (or submitted again): to the PM only; a skill edit
               the owner submitted: to the kit's coordinator (Api.kit_session_key) and the PM
   sent        a note the owner sent the PM (to_pm): to the PM only
-Recipients: the item's `from` (a launcher key, or a to-do's free name; for an approval, which has
-no `from`, Api.repo_key of its repo) unless it is the PM's (PM_KEY, OWNER_FROM, empty, or
-is_pm), and the PM (PM_KEY) always, once.
+Recipients: the item's `from` (a launcher key, or a to-do's free name) unless it is the PM's
+(PM_KEY, OWNER_FROM, empty, or is_pm), and the PM (PM_KEY) always, once. An approval has no
+`from` (its header's is Api.repo_key of its repo): it goes to that repository's coordinator, the
+first live key of Api.coordinator_keys (its name, then its coordinator sessions, as the kit's
+`kit`); with none live, its first coordinator session, else the name (_coordinator).
 
 Filed answers (`filed`, by the question's `filed_as`, kitlib.hubsite.api _filed_as):
   pulled      its asker alone: someone is working on the record (the PM when the PM asked,
@@ -865,17 +867,20 @@ class PushWorker(object):
         if kind == 'question' and event in ('filed', 'standing'):
             self._fire_filed(key, doc_id, doc, base, event)
             return
+        to = None
         if kind == 'approval':
             sender = self._repo_key(doc.get('repo'))    # no `from`: its repository's coordinator
+            to = self._coordinator(doc.get('repo'))     # that coordinator's live session key
         elif kind in ('story', 'to_pm'):
             sender = ''                 # the owner's own, for the PM
         elif kind == 'skill_edit':
             sender = self._kit_key()    # the kit's coordinator commits it
         else:
             sender = doc.get('from') if isinstance(doc.get('from'), str) else ''
+        to = sender if to is None else to
         keys = [PM_KEY]
-        if event != 'added' and sender and sender not in (PM_KEY, OWNER_FROM) and not self._is_pm(sender):
-            keys.insert(0, sender)
+        if event != 'added' and to and to not in (PM_KEY, OWNER_FROM) and not self._is_pm(to):
+            keys.insert(0, to)
         now = self.clock()
         fp = self._print(kind, doc, now_at)
         first = self._first(kind, base, fp)         # not a re-answer or a re-done
@@ -1045,12 +1050,10 @@ class PushWorker(object):
         of: question doc's asker, then the coordinator of the record's repository and of the
         question's repo, each through Api.repo_key and as it is. None when none is live or the
         delivery object cannot tell (no `resolve`; a key whose resolve raised counts as not
-        live, logged)."""
-        resolve = getattr(self.push, 'resolve', None)
-        if not callable(resolve):
+        live, logged: _first_live)."""
+        if not callable(getattr(self.push, 'resolve', None)):
             return None
         record = doc.get('record') if isinstance(doc.get('record'), dict) else {}
-        keys = []
         with sessions_once():           # sessions.json is read once for the whole walk
             rrepo = record.get('repo')
             if isinstance(rrepo, str) and rrepo and rrepo.lower() == self._pm_folder().lower():
@@ -1060,6 +1063,17 @@ class PushWorker(object):
                 rkeys = self._repo_keys(rrepo)
             cands = ([asker] + rkeys + [rrepo] + self._repo_keys(doc.get('repo'))
                      + [doc.get('repo')])
+        return self._first_live(cands)
+
+    def _first_live(self, cands):
+        """The first of keys `cands` with a live session (the delivery object's `resolve`),
+        each tried once, never the PM's (PM_KEY, OWNER_FROM, is_pm). None when none is live or
+        the delivery object cannot tell (no `resolve`; a key whose resolve raised counts as not
+        live, logged)."""
+        resolve = getattr(self.push, 'resolve', None)
+        if not callable(resolve):
+            return None
+        keys = []
         for k in cands:
             if isinstance(k, str) and k and k not in keys and k not in (PM_KEY, OWNER_FROM):
                 keys.append(k)
@@ -1072,6 +1086,18 @@ class PushWorker(object):
             except Exception as e:      # noqa: BLE001 - a host fault: the PM hears it
                 self.log('push: resolve(%s) failed: %s' % (field(k), type(e).__name__))
         return None
+
+    def _coordinator(self, repo):
+        """The key an approval of `repo` is pushed to: the first live of _repo_keys(repo)
+        (Api.coordinator_keys: the repository's name, then its coordinator sessions); with none
+        live, or no way to tell, its first coordinator session (a session's key before the
+        name, as Api.kit_session_keys), else the name. '' when the repository has none."""
+        with sessions_once():           # sessions.json is read once for the whole walk
+            keys = [k for k in self._repo_keys(repo) if k]
+        live = self._first_live(keys)
+        if live is not None:
+            return live
+        return (keys[1:] + keys[:1] or [''])[0]
 
     def _asked_by(self, entry):
         """True when the entry's item is from a session other than the PM's (a recipient)."""

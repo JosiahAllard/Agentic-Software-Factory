@@ -993,6 +993,53 @@ class ResolvingPush(FakePush):
         return ('sid-' + key) if key in self.live else None
 
 
+class ApprovalRouteTest(PushCase):
+    """An approval goes to its repository's coordinator by session, as the kit's `kit`, not by the
+    repository's name, which no session has (docs/hub-push.md "Push notifications")."""
+    NAME = 'Agentic-Project_Manager-Kit'
+    REPO = 'example.org/team/kit'
+
+    def route(self, live):
+        self.api = api.Api(self.store, clock=self.ticks, session_keys=lambda: {'kit', 'zeta'},
+                           repo_name=lambda repo: self.NAME if repo == self.REPO else None,
+                           coordinators=lambda: {'kit': self.NAME, 'zeta': 'Other-Repo'})
+        self.push = ResolvingPush(live)
+        self.push.states[self.NAME] = push.NO_SESSION      # no session is keyed by the name
+        self.worker = self.make()
+
+    def decide(self):
+        self.store.put('approvals', 'A-001', {
+            'title': 'T', 'op': 'x', 'line': 'x', 'args_sha256': 'a' * 64,
+            'status': 'approved', 'kind': 'op', 'repo': self.REPO,
+            'created_at': '1970-01-12T13:00:00+00:00', 'decided_at': '1970-01-12T13:46:00+00:00'})
+        self.worker.poll()
+
+    def test_an_approval_is_written_to_its_live_coordinator_keyed_otherwise_than_its_repo(self):
+        # red proof: before this change it went to the repository's name, NO_SESSION every try
+        self.route({'kit'})
+        self.decide()
+        self.assertEqual(sorted(r for r, _t in self.push.calls), ['kit', push.PM_KEY])
+        self.assertIn(' route:kit attempt:1', self.push.to('kit')[0])
+        self.assertEqual(self.undelivered(), [], 'every try was written')
+        self.assertEqual(self.worker._outbox, {}, 'sent once: nothing more is owed')
+        self.later(push.schedule(1))
+        self.assertEqual(self.attempts('kit'), [1])
+
+    def test_with_no_coordinator_live_it_waits_on_the_coordinators_session_key(self):
+        self.route(())
+        self.push.states['kit'] = push.NO_SESSION
+        self.decide()
+        self.assertEqual(sorted(r for r, _t in self.push.calls), ['kit', push.PM_KEY])
+        self.assertEqual([(u['recipient'], u['reason']) for u in self.undelivered()],
+                         [('kit', push.NO_SESSION)])
+        self.push.live.add('kit')               # the coordinator starts
+        del self.push.states['kit']
+        self.later(push.schedule(1))
+        self.assertEqual(self.attempts('kit'), [1, 2])
+        self.assertEqual(self.push.to(self.NAME), [])
+        self.assertEqual(self.worker._outbox, {}, 'its written try ends it')
+
+
 class FiledPushCase(PushCase):
     """A question bound to a record, answered and filed through the Api: who hears it depends on
     what the filing did to the record (docs/hub-push.md "Push notifications", "Filed answers")."""

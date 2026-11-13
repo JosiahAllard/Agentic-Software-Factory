@@ -77,7 +77,7 @@ LIST_TIMEOUT = 120    # seconds
 # combines_changes' cost bounds, past which it refuses (False). JOIN_PAIRS_MAX: the equal line
 # pairs between a base and a side, which difflib's matching grows with (docs/module-map.json,
 # 3,855 lines, has about 1 million: 0.6 s for the whole check). JOIN_STATES_MAX: the readings of
-# the result its line-by-line check keeps at once (1 for that file).
+# the result its place-by-place check keeps at once (1 for that file).
 JOIN_PAIRS_MAX = 8000000
 JOIN_STATES_MAX = 1000
 TRAILER = 'Owner-Approval'          # the one key; kitlib.config.owner refuses it as its own trailer
@@ -658,48 +658,65 @@ def _side(base, side):
     return kept, added
 
 
-def _rows(base, kept, added, shared):
-    """One side's copy as `(line, key)` rows, without the base lines the other side deleted
-    (`kept`: those both keep): key g for base line g, `(g, n)` for line n of the run both sides
-    add alike in gap g (`shared`), None for a line only this side adds."""
-    rows = []
+def _blocks(base, kept, added):
+    """One side's added lines between the base lines both sides keep (`kept`): block i is the
+    lines it adds after the i-th of them (block 0: before the first), in its order. A base line
+    the other side deleted is left out, so the side's runs around it are one block."""
+    blocks = [[]]
     for g, run in enumerate(added):
-        rows += [(line, (g, n) if g in shared else None) for n, line in enumerate(run)]
+        blocks[-1] += run
         if g < len(base) and kept[g]:
-            rows.append((base[g], g))
-    return rows
+            blocks.append([])
+    return blocks
 
 
-def _joins(ours, theirs, result):
-    """True when `result`'s lines read in order as all the rows of `ours` and `theirs` (_rows)
-    interleaved, each side's in its order: a keyed row taken from both sides at once, a None row
-    from its own side alone. More than JOIN_STATES_MAX readings at once is False."""
-    states = {(0, 0)}
-    for line in result:
+def _block_joins(ours, theirs):
+    """The ways the result may hold two sides' blocks (_blocks) of one place, each side's lines
+    together and in its order: one side's alone; a block both add alike, once; else both whole,
+    in either order, or their common first and last lines once around the rest of each, in
+    either order."""
+    if not ours or not theirs or ours == theirs:
+        return [ours or theirs]
+    p = 0
+    while p < min(len(ours), len(theirs)) and ours[p] == theirs[p]:
+        p += 1
+    s = 0
+    while s < min(len(ours), len(theirs)) - p and ours[-1 - s] == theirs[-1 - s]:
+        s += 1
+    mo, mt = ours[p:len(ours) - s], theirs[p:len(theirs) - s]
+    head, tail = ours[:p], ours[len(ours) - s:]
+    joins = [ours + theirs, theirs + ours, head + mo + mt + tail, head + mt + mo + tail]
+    return [j for n, j in enumerate(joins) if j not in joins[:n]]
+
+
+def _joins(kept_lines, ours, theirs, result):
+    """True when `result`'s lines read as each place's blocks of `ours` and `theirs` joined
+    (_block_joins), the base lines both keep (`kept_lines`) between them in order. More than
+    JOIN_STATES_MAX readings at once is False."""
+    states = {0}
+    for i, (o, t) in enumerate(zip(ours, theirs)):
+        line = kept_lines[i:i + 1]
         found = set()
-        for j, k in states:
-            o = ours[j] if j < len(ours) else (None, None)
-            t = theirs[k] if k < len(theirs) else (None, None)
-            if o[0] == line and o[1] is None:
-                found.add((j + 1, k))
-            if t[0] == line and t[1] is None:
-                found.add((j, k + 1))
-            if o[0] == line and o[1] is not None and o[1] == t[1]:
-                found.add((j + 1, k + 1))
+        for p in states:
+            for join in _block_joins(o, t):
+                end = p + len(join) + len(line)
+                if result[p:end] == join + line:
+                    found.add(end)
         if not found or len(found) > JOIN_STATES_MAX:
             return False
         states = found
-    return (len(ours), len(theirs)) in states
+    return len(result) in states
 
 
 def combines_changes(ours, theirs, result, bases):
     """True when `result` (bytes) only joins the changes `ours` and `theirs` made from every one
     of `bases`, compared line by line (_lines: a changed line end is a changed line): against each
     base, as difflib matches each side to it (_side), `result` holds the base lines both sides
-    kept, in order, and every line either side added, each once and in its side's order, the two
-    sides' added lines in any order between the kept lines around them (a run both add alike in
-    one place, once). So it holds no line neither side has, no second copy of an added line, no
-    line either side deleted, and drops or moves nothing. No base, a NUL byte in any copy (not
+    kept, in order, and between each two of them the lines each side added there, each side's
+    together and in its order (_block_joins: the two sides in either order; a block both add
+    alike, or the first and last lines both blocks share, once). So it holds no line neither
+    side has, no second copy of an added line, no line either side deleted, no side's lines
+    inside the other's, and drops or moves nothing. No base, a NUL byte in any copy (not
     text), or a check past its bounds (JOIN_PAIRS_MAX, JOIN_STATES_MAX) is False. A join difflib
     matches otherwise than the agent read it is refused too: an approval is the way left."""
     copies = [ours, theirs, result] + list(bases)
@@ -715,8 +732,8 @@ def combines_changes(ours, theirs, result, bases):
         kept_o, added_o = _side(b, o)
         kept_t, added_t = _side(b, t)
         kept = [x and y for x, y in zip(kept_o, kept_t)]
-        shared = {g for g, run in enumerate(added_o) if run and run == added_t[g]}
-        if not _joins(_rows(b, kept, added_o, shared), _rows(b, kept, added_t, shared), r):
+        if not _joins([line for line, k in zip(b, kept) if k], _blocks(b, kept, added_o),
+                      _blocks(b, kept, added_t), r):
             return False
     return True
 

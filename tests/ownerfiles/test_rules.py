@@ -604,14 +604,27 @@ class CombinesChanges(unittest.TestCase):
     BOTH = drop(SIX, 2, 5)
     CRLF = SIX.replace(b'\n', b'\r\n')
     AO, AT = SIX + b'o\n', SIX + b't\n'
-    TWO = SIX + b'x\no\n', SIX + b'x\nt\n', SIX + b'x\nx\no\nt\n'     # read two ways at its x
+    XO, XT = SIX + b'x\no\n', SIX + b'x\nt\n'                     # both add x first
+    AC, B = SIX + b'{\na\n}\n{\nc\n}\n', SIX + b'{\nb\n}\n'
     CASES = [
         # (name, ours, theirs, result, bases, combines)
         ("both sides' additions, ours first", AO, AT, SIX + b'o\nt\n', [SIX], True),
         ("both sides' additions, theirs first", AO, AT, SIX + b't\no\n', [SIX], True),
         ('an addition and a deletion', AO, T, T + b'o\n', [SIX], True),
-        ('rows added in one place, interleaved', SIX + b'{\na\n}\n{\nc\n}\n', SIX + b'{\nb\n}\n',
-         SIX + b'{\na\n}\n{\nb\n}\n{\nc\n}\n', [SIX], True),
+        ("both sides' first line once", XO, XT, SIX + b'x\no\nt\n', [SIX], True),
+        ("both sides' first line once, theirs first", XO, XT, SIX + b'x\nt\no\n', [SIX], True),
+        ('both sides whole', XO, XT, SIX + b'x\no\nx\nt\n', [SIX], True),
+        ("both sides' first line twice, together", XO, XT, SIX + b'x\nx\no\nt\n', [SIX], False),
+        ('rows added in one place, interleaved', AC, B, SIX + b'{\na\n}\n{\nb\n}\n{\nc\n}\n',
+         [SIX], False),
+        ("one side's row nested in the other's", AC, B, SIX + b'{\na\n{\nb\n}\n}\n{\nc\n}\n',
+         [SIX], False),
+        ('additions to a file with no last line end', b'a\no\nb', b'a\nt\nb', b'a\no\nt\nb',
+         [b'a\nb'], True),
+        ('additions to a file with no last line end, one added', b'a\no\nb', b'a\nt\nb',
+         b'a\no\nt\nb\n', [b'a\nb'], False),
+        ('additions to an empty base', b'o\n', b't\n', b't\no\n', [b''], True),
+        ('additions to an empty base, one dropped', b'o\n', b't\n', b't\n', [b''], False),
         ('JSON rows added after a row of their shape, theirs first', ROW_B, ROW_C,
          rows(b'c', b'b'), [rows()], True),
         ('JSON rows added after a row of their shape, ours first', ROW_B, ROW_C,
@@ -651,9 +664,10 @@ class CombinesChanges(unittest.TestCase):
                 self.assertIs(oc.combines_changes(ours, theirs, result, bases), combines)
 
     def test_a_join_past_either_cost_bound_is_refused(self):
-        ours, theirs, result = self.TWO
+        # ours adds x, theirs x twice: x,x,x reads whole (6 pairs) or with x once, 2 readings
+        ours, theirs, result = SIX + b'x\n', SIX + b'x\nx\n', SIX + b'x\nx\nx\n'
         self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), True)
-        for bound, value in [('JOIN_PAIRS_MAX', 5), ('JOIN_STATES_MAX', 1)]:   # 6 pairs, 2 states
+        for bound, value in [('JOIN_PAIRS_MAX', 5), ('JOIN_STATES_MAX', 1)]:
             with self.subTest(bound), mock.patch.object(oc, bound, value):
                 self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), False)
 

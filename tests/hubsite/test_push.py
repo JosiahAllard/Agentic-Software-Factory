@@ -996,7 +996,7 @@ class ResolvingPush(FakePush):
 class ApprovalRouteTest(PushCase):
     """An approval goes to its repository's coordinator by session, as the kit's `kit`, not by the
     repository's name, which no session has (docs/hub-push.md "Push notifications")."""
-    NAME = 'Agentic-Project_Manager-Kit'
+    NAME = 'Example-Repo'
     REPO = 'example.org/team/kit'
 
     def route(self, live):

@@ -100,6 +100,20 @@ class CmdTest(unittest.TestCase):
             git.call(['fetch'], '.', env={'PATH': 'p'})
         self.assertEqual([self._config(env) for env in seen], [off, off])
 
+    def test_a_read_takes_no_optional_lock_and_a_writer_keeps_its_own(self):
+        # A read's job ends its tree when the parent dies: with no optional lock (an index refresh)
+        # it holds no lock a kill could leave behind.
+        seen = []
+
+        def fake(*a, **kw):
+            seen.append(kw['env'])
+            return 0, b'', b''
+        with mock.patch.object(cmd, '_run', side_effect=fake):
+            git.call(['-c', 'core.x=y', 'diff', 'HEAD'], '.', env={'PATH': 'p'})
+            git.call(['commit', '-m', 'x'], '.', env={'PATH': 'p'})
+        self.assertEqual(seen[0].get('GIT_OPTIONAL_LOCKS'), '0')
+        self.assertNotIn('GIT_OPTIONAL_LOCKS', seen[1])
+
     def test_auto_maintenance_entries_go_after_the_callers_own(self):
         mine = {'GIT_CONFIG_COUNT': '2', 'GIT_CONFIG_KEY_0': 'core.x', 'GIT_CONFIG_VALUE_0': 'y',
                 'GIT_CONFIG_KEY_1': 'maintenance.auto', 'GIT_CONFIG_VALUE_1': 'true'}
@@ -599,6 +613,49 @@ class AKilledRealGitIsNoAncestryAnswer(RepoFixture):
         self.assertEqual(seen, [(0, 1, b'', b'')])          # killed: exit 1, nothing printed
         self.assertIsNone(got, 'a git ended by taskkill was read as an answer')
         self.assertIn('printed nothing', why)
+
+
+# The parent of a read git: it says `started` once the git is in its job, then waits on it. The git
+# (cat-file --batch, a cache.READS verb) inherits this process's stdin, the test's pipe, and waits.
+READ_UNDER_A_PARENT = '''
+import sys
+from kitlib.git import cmd
+from kitlib.proc import job
+start = job.Job.start
+def started(self, *a, **kw):
+    p = start(self, *a, **kw)
+    print('started', flush=True)
+    return p
+job.Job.start = started
+cmd.call(['cat-file', '--batch'], sys.argv[1], timeout=None)
+'''
+
+
+@real_git('the git process itself: a read git whose parent was killed')
+class AReadGitEndsWithItsParent(unittest.TestCase):
+
+    def test_a_read_git_ends_when_its_parent_dies_without_a_wait(self):
+        r = gitfixture.TempRepo()
+        self.addCleanup(r.cleanup)
+        parent = subprocess.Popen([sys.executable, '-c', READ_UNDER_A_PARENT, r.root],
+                                  cwd=gitfixture.KIT, env=gitfixture.fixture_env(),
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0)
+        self.addCleanup(parent.wait)
+        self.addCleanup(parent.stdout.close)
+        self.addCleanup(parent.stdin.close)     # first: an orphaned git then reads end of file
+        self.addCleanup(lambda: parent.poll() is None and parent.kill())
+        self.assertEqual(parent.stdout.readline().strip(), b'started')
+        parent.kill()                           # no wait, no finally: the parent just dies
+        # A byte with no newline asks cat-file nothing; a write fails only once no process holds
+        # the pipe's read end: the parent, git, and on Windows the launcher's real git under it.
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            try:
+                parent.stdin.write(b'x')        # unbuffered: each write reaches the pipe
+            except OSError:
+                return
+            time.sleep(0.1)
+        self.fail('the read git outlived its parent')
 
 
 def kill_git(match):

@@ -586,15 +586,74 @@ def drop(text, *numbers):
     return b''.join(r for n, r in enumerate(rows, 1) if n not in numbers)
 
 
-class CombinesDeletions(unittest.TestCase):
-    """oc.combines_deletions: a merge's copy that only joins the deletions both sides made from
-    the base (ours drops line 2, theirs line 5, unless a case says otherwise)."""
+def rows(*names):
+    """A JSON-shaped list of rows: a, then one row per name, then z. Every row starts and ends
+    alike, so difflib may place an added row one line off (oc._side moves it back)."""
+    return b'[\n' + b''.join(b' {\n  %s\n },\n' % n for n in (b'a',) + names) + b' {\n  z\n }\n]\n'
+
+
+ROW_B, ROW_C = rows(b'b'), rows(b'c')
+MERGED_BC = rows(b'b').replace(b'  b\n', b'  b\n  c\n')         # rows b and c as one object
+
+
+def edges(*names):
+    """A list shaped like docs/module-map.json's edges: rows a, one per name, then z, each
+    `  {`, `"from"`, `"kind"`, `  },`. difflib matches rows added in one place as a run from a
+    `"from"` line to the `  },` `  {` after it, so two sides' runs there end alike, as at the
+    real union of main bfb644aa1 into kit/staging-slice-c."""
+    row = b'  {\n   "from": "%s",\n   "kind": "build"\n  },\n'
+    return (b'[\n' + b''.join(row % n for n in (b'a',) + names)
+            + b'  {\n   "from": "z",\n   "kind": "build"\n  }\n]\n')
+
+
+class CombinesChanges(unittest.TestCase):
+    """oc.combines_changes: a merge's copy that only joins the changes both sides made from the
+    base (ours drops line 2, theirs line 5, or each adds a row after line 6, unless a case says
+    otherwise)."""
 
     O, T = drop(SIX, 2), drop(SIX, 5)
     BOTH = drop(SIX, 2, 5)
     CRLF = SIX.replace(b'\n', b'\r\n')
+    AO, AT = SIX + b'o\n', SIX + b't\n'
+    XO, XT = SIX + b'x\no\n', SIX + b'x\nt\n'                     # both add x first
+    AC, B = SIX + b'{\na\n}\n{\nc\n}\n', SIX + b'{\nb\n}\n'
     CASES = [
         # (name, ours, theirs, result, bases, combines)
+        ("both sides' additions, ours first", AO, AT, SIX + b'o\nt\n', [SIX], True),
+        ("both sides' additions, theirs first", AO, AT, SIX + b't\no\n', [SIX], True),
+        ('an addition and a deletion', AO, T, T + b'o\n', [SIX], True),
+        ('both sides whole, ours first', XO, XT, SIX + b'x\no\nx\nt\n', [SIX], True),
+        ('both sides whole, theirs first', XO, XT, SIX + b'x\nt\nx\no\n', [SIX], True),
+        ("both sides' first line once", XO, XT, SIX + b'x\no\nt\n', [SIX], False),
+        ("both sides' first line once, theirs first", XO, XT, SIX + b'x\nt\no\n', [SIX], False),
+        ("both sides' first line twice, together", XO, XT, SIX + b'x\nx\no\nt\n', [SIX], False),
+        ("a side's run that begins the other's, once", SIX + b'x\n', XT, XT, [SIX], False),
+        ("a side's run that begins the other's, whole", SIX + b'x\n', XT, SIX + b'x\nx\nt\n',
+         [SIX], True),
+        ('two JSON rows merged into one object', ROW_B, ROW_C, MERGED_BC, [rows()], False),
+        ('rows added in one place, interleaved', AC, B, SIX + b'{\na\n}\n{\nb\n}\n{\nc\n}\n',
+         [SIX], False),
+        ("one side's row nested in the other's", AC, B, SIX + b'{\na\n{\nb\n}\n}\n{\nc\n}\n',
+         [SIX], False),
+        ('additions to a file with no last line end', b'a\no\nb', b'a\nt\nb', b'a\no\nt\nb',
+         [b'a\nb'], True),
+        ('additions to a file with no last line end, one added', b'a\no\nb', b'a\nt\nb',
+         b'a\no\nt\nb\n', [b'a\nb'], False),
+        ('additions to an empty base', b'o\n', b't\n', b't\no\n', [b''], True),
+        ('additions to an empty base, one dropped', b'o\n', b't\n', b't\n', [b''], False),
+        ('JSON rows added after a row of their shape, theirs first', ROW_B, ROW_C,
+         rows(b'c', b'b'), [rows()], True),
+        ('JSON rows added after a row of their shape, ours first', ROW_B, ROW_C,
+         rows(b'b', b'c'), [rows()], True),
+        ('the same addition on both sides, once', AO, AO, AO, [SIX], True),
+        ('the same addition on both sides, twice', AO, AO, AO + b'o\n', [SIX], False),
+        ('additions with a line neither side has', AO, AT, SIX + b'o\nnew\nt\n', [SIX], False),
+        ('an added line twice', AO, AT, SIX + b'o\nt\no\n', [SIX], False),
+        ("a side's additions reordered", SIX + b'o1\no2\n', AT, SIX + b'o2\nt\no1\n', [SIX],
+         False),
+        ('a line one side deleted kept beside an addition', AO, T, AO, [SIX], False),
+        ('a line both kept dropped beside the additions', AO, AT, drop(SIX + b'o\nt\n', 1),
+         [SIX], False),
         ("both sides' deletions", O, T, BOTH, [SIX], True),
         ('the same deletion on both sides', O, O, O, [SIX], True),
         ('CRLF lines deleted', drop(CRLF, 2), drop(CRLF, 5), drop(CRLF, 2, 5), [CRLF], True),
@@ -618,14 +677,32 @@ class CombinesDeletions(unittest.TestCase):
     def test_the_table(self):
         for name, ours, theirs, result, bases, combines in self.CASES:
             with self.subTest(name):
-                self.assertIs(oc.combines_deletions(ours, theirs, result, bases), combines)
+                self.assertIs(oc.combines_changes(ours, theirs, result, bases), combines)
+
+    def test_module_map_rows_that_end_alike_join_whole(self):
+        ours, theirs, base = edges(b's1', b's2'), edges(b'r1'), edges()
+        lines = oc._lines(base)
+        for side in (ours, theirs):                # the runs end alike, as the real ones did
+            added = [run for run in oc._side(lines, oc._lines(side))[1] if run]
+            self.assertEqual([run[-2:] for run in added], [[b'  },\n', b'  {\n']])
+        for result in (edges(b'r1', b's1', b's2'), edges(b's1', b's2', b'r1')):
+            self.assertIs(oc.combines_changes(ours, theirs, result, [base]), True)
+        dropped = edges(b'r1', b's1', b's2').replace(b'  },\n  {\n', b'', 1)   # two rows as one
+        self.assertIs(oc.combines_changes(ours, theirs, dropped, [base]), False)
+
+    def test_a_join_past_its_cost_bound_is_refused(self):
+        ours, theirs, result = self.XO, self.XT, SIX + b'x\no\nx\nt\n'   # 6 equal pairs a side
+        self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), True)
+        with mock.patch.object(oc, 'JOIN_PAIRS_MAX', 5):
+            self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), False)
 
 
 @real_git('commit-tree for a forged parent and an octopus merge: the fake has none')
-class DeletionMerges(OwnerCommitsCase):
-    """oc.violations and a two-parent commit whose owner-only copy only joins the deletions both
-    sides made (deletion_merge): the merge is not a violation; any other resolution is, and every
-    commit on either side is still judged on its own."""
+class JoinedMerges(OwnerCommitsCase):
+    """oc.violations and a two-parent commit whose owner-only copy only joins the changes both
+    sides made (joined_merge; here deletions, the additions in tests/commit): the merge is not a
+    violation; any other resolution is, and every commit on either side is still judged on its
+    own."""
 
     def setUp(self):
         OwnerCommitsCase.setUp(self)

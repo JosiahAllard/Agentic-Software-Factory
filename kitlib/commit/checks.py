@@ -64,12 +64,12 @@ def shrunk_paths(root, rules, paths, revs=('HEAD',)):
             and ownerrules.deletes_only(root, p, list(revs))[0]}
 
 
-def deletion_merge_paths(root, rules, paths, head, landed=()):
+def joined_merge_paths(root, rules, paths, head, landed=()):
     """Before staging, during a merge in progress of the one commit `head`: the owner-only paths
-    among `paths` that the merge may commit as the join of both sides' deletions, those that no
+    among `paths` that the merge may commit as the join of both sides' changes, those that no
     commit on either side (other than those reachable from `landed`) changes without the owner as
     its author or an approval the hub verifies (ownerrules.non_owner_paths, ours_unapproved). Each
-    is judged again on its staged copy in _stage (staged_deletion_merges). A git failure exempts
+    is judged again on its staged copy in _stage (staged_unjoined). A git failure exempts
     nothing."""
     theirs, _why = ownerrules.non_owner_paths(root, rules, head, landed)
     if theirs is None:
@@ -80,15 +80,15 @@ def deletion_merge_paths(root, rules, paths, head, landed=()):
     return set(paths) - theirs - ours
 
 
-def staged_deletion_merges(root, paths, head, merge_head):
-    """`(the paths among `paths` whose staged copy does NOT only combine the deletions of `head`
-    and `merge_head` (ownerrules.deletion_merge, the predicate gate land and pre-push judge the
+def staged_unjoined(root, paths, head, merge_head):
+    """`(the paths among `paths` whose staged copy does NOT only join the changes of `head`
+    and `merge_head` (ownerrules.joined_merge, the predicate gate land and pre-push judge the
     merge commit by), why)`: an unmerged entry or one git cannot list fails, and a git failure
     fails every path left, with `why` saying so."""
     bad = []
     for i, p in enumerate(sorted(paths)):
         known, entry = ownerrules.index_entry(root, p)
-        joins, why = (ownerrules.deletion_merge(root, p, head, merge_head, entry) if known
+        joins, why = (ownerrules.joined_merge(root, p, head, merge_head, entry) if known
                       else (False, None))
         if joins is None:
             return bad + sorted(paths)[i:], why

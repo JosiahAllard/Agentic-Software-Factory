@@ -68,8 +68,9 @@ Folding (docs/gate-landing.md "Folding queued submissions"; the protocol at `tur
 also keeps the landing's flags (flags_of). A submitted landing at its turn folds the submissions
 queued behind it into its batch (foldable, take: their records then name its run in folded_into
 and its pid), and gives back what it does not land (give_back). A folded landing's process, at
-its turn or when its booking fails, finds its records folded (turn: FOLDED), says so in its output
-and ends, writing nothing; follow then gives the outcome from the folding landing's output.
+its turn or when its booking fails, finds its records folded (turn: FOLDED, or WAIT while the
+folding landing runs), says so in its output and ends, writing nothing; follow then gives the
+outcome from the folding landing's output. `land.py --queue` names the folds (folded).
 
 Trust: `--submitted <payload>` is a flag any caller can pass, and the landing it runs writes the
 records and the output the payload names, so restore runs only a payload submit itself wrote for
@@ -966,15 +967,15 @@ def _is_pid(pid):
 def turn(root, runs, output, given=True, alive=None):
     """Whose turn the submitted landing of `runs` (restore's, this process's) has: `(MINE, rec)`
     when it lands its own branches, `(FOLDED, rec)` when another landing folded them into its
-    batch and lands them (this landing then writes nothing more and ends), `(WAIT, rec)` while
-    the landing they were folded into still runs (it may yet give them back). `rec` is the batch's
-    first record as read. `given` True: the landing holds its turn (its machine-lock slot), and
-    MINE marks the first record turn_at (under its lock, while it is not folded), so no landing
-    folds it from then on; False (the booking failed): nothing is marked, and a fold whose
-    landing still runs is FOLDED. A record that is not this submission's is MINE (the landing's
-    own checks decide). Folded into a landing that died: the records are taken back (folded_into
-    cleared, this process's pid) and it is this landing's turn. Each run's fold_dropped is set
-    from the record: a landing that gave it back from its batch said so."""
+    batch and finished their records (this landing then writes nothing more and ends), `(WAIT,
+    rec)` while the landing they were folded into still runs (it lands them or gives them back).
+    `rec` is the batch's first record as read. `given` True: the landing holds its turn (its
+    machine-lock slot), and MINE marks the first record turn_at (under its lock, while it is not
+    folded), so no landing folds it from then on; False (no booking held): nothing is marked. A
+    record that is not this submission's is MINE (the landing's own checks decide). Folded into a
+    landing that died: the records are taken back (folded_into cleared, this process's pid) and
+    it is this landing's turn. Each run's fold_dropped is set from the record: a landing that
+    gave it back from its batch said so."""
     first = runs[0]
     for _ in range(100):        # each pass changes or ends; a record changing that often: MINE
         rec, _ = result.read(root, first.branch, 'land', legacy=False)
@@ -987,7 +988,7 @@ def turn(root, runs, output, given=True, alive=None):
             if rec.get('verdict') != result.RUNNING:
                 return FOLDED, rec
             if result.running_state(rec, alive=alive) != 'dead':
-                return (WAIT if given else FOLDED), rec
+                return WAIT, rec
             _reclaim(root, runs, output, into)
             continue
         if not given or rec.get('verdict') != result.RUNNING or rec.get('turn_at'):
@@ -1019,18 +1020,9 @@ def foldable(root, own_run_id, alive=None):
     folded into no landing, and whose first record has no turn_at, no fold_dropped and the live
     pid of its own landing (claimed: restore). Older kits' payloads (no flags) are left out.
     Oldest by started_at, then (one second) by when the payload was written. Read only."""
-    try:
-        folder = result.result_dir(root)
-        names = sorted(os.listdir(folder))
-    except (OSError, result.ResultError):
-        return []
     units = []
-    for name in names:
-        if not name.endswith(PAYLOAD_EXT):
-            continue
-        payload = os.path.join(folder, name)
-        rid = run_id_of(payload)
-        if not rid or rid == own_run_id:
+    for payload, rid in _payloads(root):
+        if rid == own_run_id:
             continue
         unit = _unit(root, payload, rid, alive)
         if unit is not None:
@@ -1038,7 +1030,28 @@ def foldable(root, own_run_id, alive=None):
     return sorted(units, key=lambda u: (u['started_at'] or '', u['queued_ns'], u['run_id']))
 
 
-def _unit(root, payload, rid, alive):
+def _payloads(root):
+    """The payload files in the result folder, each with the run_id its name holds: a list of
+    (path, run_id); [] when there is no result folder."""
+    try:
+        folder = result.result_dir(root)
+        names = sorted(os.listdir(folder))
+    except (OSError, result.ResultError):
+        return []
+    found = []
+    for name in names:
+        if name.endswith(PAYLOAD_EXT):
+            payload = os.path.join(folder, name)
+            rid = run_id_of(payload)
+            if rid:
+                found.append((payload, rid))
+    return found
+
+
+def _read_payload(root, payload, rid):
+    """The payload of the submission `rid` at `payload`, as the folding reads it: (data, items,
+    branches), items a (branch, tip, base, run_id, started_at) per branch; None when it is of an
+    older kit (no flags), cannot be read, or is not at the paths files() names for it."""
     try:
         with open(payload, encoding='utf-8') as f:
             data = json.loads(f.read())
@@ -1046,9 +1059,6 @@ def _unit(root, payload, rid, alive):
             return None
         items = [(i['branch'], i['tip'], i.get('base'), i['run_id'], i['started_at'])
                  for i in data['runs']]
-        output = data.get('output')
-        replaced = [r for r in data.get('replaced') or [] if isinstance(r, dict)]
-        queued_ns = os.stat(payload).st_mtime_ns    # started_at is whole seconds: the tie
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return None
     if not items or any(i[3] != rid for i in items):
@@ -1058,8 +1068,42 @@ def _unit(root, payload, rid, alive):
         want, want_output = files(root, branches, rid)
     except result.ResultError:
         return None
+    output = data.get('output')
     if not _same_path(payload, want) or not isinstance(output, str) \
             or not _same_path(output, want_output):
+        return None
+    return data, items, branches
+
+
+def folded(root):
+    """Read only, for `land.py --queue`: each submission another landing folded into its batch,
+    in payload name order, as a dict {run_id, branches, folded_into, running}: its payload's
+    first branch's land record is its run's and names folded_into (running: that landing has not
+    finished it yet). [] when there is no result folder."""
+    found = []
+    for payload, rid in _payloads(root):
+        got = _read_payload(root, payload, rid)
+        if got is None:
+            continue
+        branches = got[2]
+        rec, _ = result.read(root, branches[0], 'land', legacy=False)
+        if isinstance(rec, dict) and rec.get('run_id') == rid and rec.get('folded_into'):
+            found.append({'run_id': rid, 'branches': branches,
+                          'folded_into': rec['folded_into'],
+                          'running': rec.get('verdict') == result.RUNNING})
+    return found
+
+
+def _unit(root, payload, rid, alive):
+    got = _read_payload(root, payload, rid)
+    if got is None:
+        return None
+    data, items, branches = got
+    try:
+        output = data['output']
+        replaced = [r for r in data.get('replaced') or [] if isinstance(r, dict)]
+        queued_ns = os.stat(payload).st_mtime_ns    # started_at is whole seconds: the tie
+    except (OSError, TypeError, AttributeError):
         return None
     orig = None
     for n, (b, t, _base, _rid, _at) in enumerate(items):

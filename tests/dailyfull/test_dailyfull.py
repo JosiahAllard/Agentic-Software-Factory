@@ -125,6 +125,18 @@ class Runs(Case):
         self.assertEqual(r['red'], ['unit', 'second'])
 
 
+class DefaultRef(Case):
+    """With no "daily_full".ref the run tests <remote>/<work base>: the staging branch while
+    `"staging".branch` is set, else the main branch (docs/daily-full.md)."""
+    KIT = dict(Case.KIT, staging={'branch': 'staging'})
+
+    def test_the_default_ref_is_the_staging_branch_with_staging_on_and_main_with_it_off(self):
+        cfg = self.cfg()
+        self.assertEqual(D.settings(cfg, self.main_dir)['ref'], 'origin/staging')
+        cfg._raw.pop('staging')
+        self.assertEqual(D.settings(cfg, self.main_dir)['ref'], 'origin/main')
+
+
 class Green(Case):
     def test_green(self):
         o = self.run_daily()

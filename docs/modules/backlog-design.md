@@ -27,7 +27,7 @@ Low-level design of `kitlib/backlog`. The high-level design is ARCHITECTURE.md (
 | `offer.py`, `landable.py`, `stale.py`, `find.py`, `check.py` | The offer and its rank; may a branch land; stale records; find; the named checks |
 | `policy.py`, `roles.py` | Who may run what; the owner's map (owner-only) |
 | `opener.py` | Open the configured store and map a verb to its plan |
-| `at_landing.py`, `narrowed.py`, `pull_branch.py` | The store at a landing; the narrowed-record check `commit.py` runs; the main-branch rule for `pull` |
+| `at_landing.py`, `reopen.py`, `narrowed.py`, `pull_branch.py` | The store at a landing; reopening what a reverted landing closed; the narrowed-record check `commit.py` runs; the main-branch rule for `pull` |
 | `audit.py`, `audit_check.py`, `ledger.py`, `errors.py`, `retarget.py` | The audit log and its check; rulings for readers; the four stops; retarget a moved path |
 
 ## State

@@ -39,8 +39,15 @@ class ShortCallers(unittest.TestCase):
         self.assertIs(asked.get('short'), True)
         self.assertEqual(asked.get('kill_on_close', True), want['kill_on_close'])   # its default
 
-    def test_a_git_call_is_short_and_released_on_close(self):
-        self.check(lambda: cmd._run(['git', '--version']), kill_on_close=False)
+    def test_a_git_call_is_short_and_killed_on_close_only_for_a_read_that_takes_no_lock(self):
+        rows = ((['--version'], False), (['commit', '-m', 'x'], False),
+                (['diff', 'HEAD'], False), (['describe', '--dirty'], False),     # LOCKING_READS
+                (['--attr-source', 'log', 'commit'], False),   # a value option's value, not the verb
+                (['log', '-1'], True), (['-c', 'core.x=y', 'cat-file', '--batch'], True))
+        for args, kill in rows:
+            with self.subTest(args=args):
+                Refusing.asked = []
+                self.check(lambda: cmd._run(['git'] + args), kill_on_close=kill)
 
     def test_an_inflight_look_is_short_and_killed_on_close(self):
         self.check(lambda: inflight.run(['git', '--version'], '.', 5), kill_on_close=True)

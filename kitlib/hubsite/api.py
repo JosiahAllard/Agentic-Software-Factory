@@ -677,10 +677,10 @@ class Api(object):
                 repo = d['repo'] if isinstance(d['repo'], str) else ''
                 if repo not in repo_keys:
                     repo_keys[repo] = self.coordinator_keys(repo)
-                if keys is None:
-                    keys = self.session_keys()
                 cands = repo_keys[repo]
-                sender = next((k for k in cands if k in keys), (cands or [''])[0])
+                if cands and keys is None:
+                    keys = self.session_keys()      # read once, and only when it can matter
+                sender = next((k for k in cands if k in keys), '') or (cands or [''])[0]
             elif d['kind'] == 'skill_edit':
                 if kit is None:
                     kit = self.kit_session_key()    # the kit's coordinator commits it

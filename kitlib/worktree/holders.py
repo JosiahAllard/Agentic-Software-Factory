@@ -467,16 +467,21 @@ def link_reason(path):
 
 
 CASE_SENSITIVE_KEEPER = '*.local.*'
+# What that glob means: one stem, `.local.`, one extension (settings.local.json), never a dotted,
+# package-qualified name such as a Gradle report TEST-org.x.api.local.FooTest.xml.
+LOCAL_KEEPER = re.compile(r'[^./]+\.local\.[^./]+\Z')
 
 
 def keepers_in(root, rel, keepers, budget=None):
     """The keepers inside the build-output entry `rel` of the tree at `root`, as `!! ` lines: each
-    file whose own name, or path from `root`, matches a `keepers` glob (case-insensitive, except `*.local.*`). A walk
+    file whose own name, or path from `root`, matches a `keepers` glob (case-insensitive, except `*.local.*`: case-sensitive, one stem and one extension). A walk
     error, or a walk past `budget[0]` entries (shared across one tree), is a line too: what could
     not be read in full is not known to be safe."""
     # `*.local.*` is the one case-sensitive glob: a .NET framework DLL such as System.Transactions.Local.dll
     # is not a user's local-settings file. Every other glob keeps matching case-insensitively.
-    patterns = [path_glob(g, 0 if g == CASE_SENSITIVE_KEEPER else re.IGNORECASE) for g in keepers]
+    # It is also narrowed to LOCAL_KEEPER (one stem, one extension), not a plain glob.
+    patterns = [LOCAL_KEEPER if g == CASE_SENSITIVE_KEEPER else path_glob(g, re.IGNORECASE)
+                for g in keepers]
     hits = []
     budget = [WALK_MAX] if budget is None else budget
 

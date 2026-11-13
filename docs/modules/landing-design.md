@@ -19,7 +19,7 @@ Low-level design of `kitlib/landing`. The high-level design is ARCHITECTURE.md (
 - **Scope at landing**: every path a branch changes falls in a record it holds. A breach of a narrowed record refuses; otherwise it warns.
 - **Owner-only changes** are judged by `ownerfiles`, on the commits, not the net blob.
 - **A commit with no agent trailer warns.** It never refuses a landing.
-- **After the push**: the records named by `Closes:` close, the branch's remote branch, worktree and local branch go, the load nodes' mirror of main refreshes, the hub's landing feed gets the event. A failure after the push is reported; it never undoes the landing.
+- **After the push**: the records named by `Closes:` close (each branch of a batch merged as a stack with its own merge, else every branch with the batch's last merge: `After.close_pulled`), what the landings its `Reverts-landing:` lines name closed is reopened (`kitlib.backlog.reopen`, docs/backlog-store.md "Reopen at a revert"), the branch's remote branch, worktree and local branch go, the load nodes' mirror of main refreshes, the hub's landing feed gets the event. A failure after the push is reported; it never undoes the landing.
 - **The result is one `RESULT` line** in the result record: `pass land` with `LANDED`, or the reason (`NOT LANDED:`, `STUCK:`, `REFUSED:`, `BUSY:`, `NOT RUN:`, `GATE FAILED:`, `RERUN VOID:`). A caller waits on the record and reports the line as it is.
 
 ## Packages and files

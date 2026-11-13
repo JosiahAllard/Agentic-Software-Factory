@@ -33,6 +33,7 @@ Neither creates a store or adds the store's fetch refspec when the remote has no
 ancestry_refusal moves no ref: it fetches the store's objects with an empty --refmap.
 """
 import os
+import re
 
 from kitlib import kitroot
 import kitlib.config as kconfig
@@ -250,6 +251,29 @@ def part_trailers(root, tip, base):
     they name (closes_ids). Or `(None, why)`."""
     values, why = _branch_values(root, tip, base, PART_KEY)
     return (None, why) if values is None else ((bool(values), closes_ids(values)), None)
+
+
+# The line that makes a landing the revert of an earlier one (kitlib.backlog.reopen): `Reverts-
+# landing: <merge sha>`, the full sha of that landing's merge on the work base.
+REVERTS_KEY = 'Reverts-landing:'
+
+
+def reverts_trailers(root, tip, base):
+    """`(values, None)`: the values of the `Reverts-landing:` lines in the messages of the commits
+    `tip` has and `base` does not, merges included (kitlib.backlog.reopen reads the shas); or
+    `(None, why)`."""
+    return _branch_values(root, tip, base, REVERTS_KEY)
+
+
+def landed_reason(merge):
+    """The reason a landing closes a record with (close_landed): also the subject of its commit,
+    `closes <ID>: landed <merge sha>`, which LANDED_CLOSE reads back."""
+    return 'landed %s' % merge
+
+
+# The subject of a landing's close (landed_reason under plan_end's `closes <ID>: `): the record id
+# and the full merge sha. kitlib.backlog.reopen and kitlib.maintlint.verify read it.
+LANDED_CLOSE = re.compile(r'^closes (\S+): landed ([0-9a-f]{40})$')
 
 
 # A live-proof record carries a `requires: live-run` line (LIVE_PROOF; offer.unmet_requires reads
@@ -546,7 +570,7 @@ class _Act(object):
             self.args = ['--as', branch, 'release', rid, '--reason', '"%s"' % self.reason]
         else:
             self.verb, self.past, self.noun = 'close', 'closed', 'close'
-            self.reason = 'landed %s' % merge
+            self.reason = landed_reason(merge)
             self.args = ['close', rid, '--reason', '"%s"' % self.reason]
 
 
@@ -668,8 +692,8 @@ def _close_in(backend, root, cfg, branch, merge, session, command, named=(), see
     no store, as the landing's own store commands would find it."""
     seen = seen if seen is not None else _Seen()
     part = part if part is not None else _Part()
-    reason = 'landed %s' % merge
-    unread = backlog_command(root, 'landable', branch)
+    reason = landed_reason(merge)
+    unread =backlog_command(root, 'landable', branch)
     implicit = getattr(backend, 'implicit', False)
     where = getattr(backend, 'remote_ref', None) or smod.STORE_REF
     if getattr(backend, 'remote', None):

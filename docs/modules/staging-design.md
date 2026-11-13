@@ -95,7 +95,8 @@ Exit codes: 0 done, behind, not due or a skip; 1 red; 2 usage or off; 4 held, di
 
 ## Gaps
 
-- **`promote_args` (slice E).** A repository's own promotion arguments are not read yet: every promotion runs the merged gate's selection as the kit computes it. This must close before a repository with its own promotion needs turns staging on.
+- **`promote_args` (slice E).** A repository's own promotion arguments are not read yet: every promotion runs the merged gate's selection as the kit computes it. A repository whose patch needs `promote_args` must not switch to staging before slice E lands (docs/gate-landing.md "Switching a repo").
+- **Reopen at a revert (slice D1).** A revert of a landing on staging carries a `Reverts-landing: <merge sha>` line, and the landing that lands it reopens what that landing closed (`kitlib.backlog.reopen`, docs/backlog-store.md "Reopen at a revert"). The landing must name a full sha on the first-parent chain of the base the revert merged onto; anything else is a NOTE and reopens nothing. Records the close unblocked are not blocked again. Each branch of a stacked batch now closes with its own merge, so a revert of one branch's landing finds its closes; reverting an earlier branch of a batch landed before this finds nothing (those closes all name the batch's last merge), and a NOTE says so.
 
 ## Adding to it
 

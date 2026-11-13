@@ -74,12 +74,10 @@ from kitlib.git.refs import REGULAR_MODES, deletes_only     # named here too: ca
 Violation = collections.namedtuple('Violation', 'sha author paths why', defaults=('',))
 NOREPLACE = ['--no-replace-objects']
 LIST_TIMEOUT = 120    # seconds
-# combines_changes' cost bounds, past which it refuses (False). JOIN_PAIRS_MAX: the equal line
-# pairs between a base and a side, which difflib's matching grows with (docs/module-map.json,
-# 3,855 lines, has about 1 million: 0.6 s for the whole check). JOIN_STATES_MAX: the readings of
-# the result its place-by-place check keeps at once (1 for that file).
+# combines_changes' cost bound, past which it refuses (False): the equal line pairs between a
+# base and a side, which difflib's matching grows with (docs/module-map.json, 3,855 lines, has
+# about 1 million: 0.6 s for the whole check). The rest of the check is one pass over the result.
 JOIN_PAIRS_MAX = 8000000
-JOIN_STATES_MAX = 1000
 TRAILER = 'Owner-Approval'          # the one key; kitlib.config.owner refuses it as its own trailer
 # The id exactly as the hub issues it ('A-%03d', kitlib.hubsite.store): A-001 to A-999, then
 # A-1000 on; A-1, A-01 and A-000 are no id it writes (tests/ownerfiles/test_apply.py
@@ -671,41 +669,27 @@ def _blocks(base, kept, added):
 
 
 def _block_joins(ours, theirs):
-    """The ways the result may hold two sides' blocks (_blocks) of one place, each side's lines
-    together and in its order: one side's alone; a block both add alike, once; else both whole,
-    in either order, or their common first and last lines once around the rest of each, in
-    either order."""
+    """The ways the result may hold two sides' blocks (_blocks) of one place: one side's alone; a
+    block both add alike, once; else both whole, in either order. Lines the blocks share are
+    never held once for both (two JSON rows that start and end alike stay two rows), so one
+    side's lines never sit inside the other's. Every way is as long as the others."""
     if not ours or not theirs or ours == theirs:
         return [ours or theirs]
-    p = 0
-    while p < min(len(ours), len(theirs)) and ours[p] == theirs[p]:
-        p += 1
-    s = 0
-    while s < min(len(ours), len(theirs)) - p and ours[-1 - s] == theirs[-1 - s]:
-        s += 1
-    mo, mt = ours[p:len(ours) - s], theirs[p:len(theirs) - s]
-    head, tail = ours[:p], ours[len(ours) - s:]
-    joins = [ours + theirs, theirs + ours, head + mo + mt + tail, head + mt + mo + tail]
-    return [j for n, j in enumerate(joins) if j not in joins[:n]]
+    return [ours + theirs, theirs + ours]
 
 
 def _joins(kept_lines, ours, theirs, result):
-    """True when `result`'s lines read as each place's blocks of `ours` and `theirs` joined
-    (_block_joins), the base lines both keep (`kept_lines`) between them in order. More than
-    JOIN_STATES_MAX readings at once is False."""
-    states = {0}
+    """True when `result`'s lines are each place's blocks of `ours` and `theirs` joined
+    (_block_joins), the base lines both keep (`kept_lines`) between them in order."""
+    p = 0
     for i, (o, t) in enumerate(zip(ours, theirs)):
         line = kept_lines[i:i + 1]
-        found = set()
-        for p in states:
-            for join in _block_joins(o, t):
-                end = p + len(join) + len(line)
-                if result[p:end] == join + line:
-                    found.add(end)
-        if not found or len(found) > JOIN_STATES_MAX:
+        joins = _block_joins(o, t)
+        end = p + len(joins[0]) + len(line)
+        if not any(result[p:end] == join + line for join in joins):
             return False
-        states = found
-    return len(result) in states
+        p = end
+    return p == len(result)
 
 
 def combines_changes(ours, theirs, result, bases):
@@ -713,11 +697,11 @@ def combines_changes(ours, theirs, result, bases):
     of `bases`, compared line by line (_lines: a changed line end is a changed line): against each
     base, as difflib matches each side to it (_side), `result` holds the base lines both sides
     kept, in order, and between each two of them the lines each side added there, each side's
-    together and in its order (_block_joins: the two sides in either order; a block both add
-    alike, or the first and last lines both blocks share, once). So it holds no line neither
-    side has, no second copy of an added line, no line either side deleted, no side's lines
-    inside the other's, and drops or moves nothing. No base, a NUL byte in any copy (not
-    text), or a check past its bounds (JOIN_PAIRS_MAX, JOIN_STATES_MAX) is False. A join difflib
+    whole and in its order (_block_joins: the two sides in either order; a block both add alike,
+    once). So it holds no line neither side has, no line more often than the sides add it, no
+    line either side deleted, no side's lines inside the other's, and drops or moves nothing. No
+    base, a NUL byte in any copy (not text), or a check past its bound (JOIN_PAIRS_MAX) is
+    False. A join difflib
     matches otherwise than the agent read it is refused too: an approval is the way left."""
     copies = [ours, theirs, result] + list(bases)
     if not bases or any(b'\0' in c for c in copies):

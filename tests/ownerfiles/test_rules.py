@@ -593,6 +593,17 @@ def rows(*names):
 
 
 ROW_B, ROW_C = rows(b'b'), rows(b'c')
+MERGED_BC = rows(b'b').replace(b'  b\n', b'  b\n  c\n')         # rows b and c as one object
+
+
+def edges(*names):
+    """A list shaped like docs/module-map.json's edges: rows a, one per name, then z, each
+    `  {`, `"from"`, `"kind"`, `  },`. difflib matches rows added in one place as a run from a
+    `"from"` line to the `  },` `  {` after it, so two sides' runs there end alike, as at the
+    real union of main bfb644aa1 into kit/staging-slice-c."""
+    row = b'  {\n   "from": "%s",\n   "kind": "build"\n  },\n'
+    return (b'[\n' + b''.join(row % n for n in (b'a',) + names)
+            + b'  {\n   "from": "z",\n   "kind": "build"\n  }\n]\n')
 
 
 class CombinesChanges(unittest.TestCase):
@@ -611,10 +622,15 @@ class CombinesChanges(unittest.TestCase):
         ("both sides' additions, ours first", AO, AT, SIX + b'o\nt\n', [SIX], True),
         ("both sides' additions, theirs first", AO, AT, SIX + b't\no\n', [SIX], True),
         ('an addition and a deletion', AO, T, T + b'o\n', [SIX], True),
-        ("both sides' first line once", XO, XT, SIX + b'x\no\nt\n', [SIX], True),
-        ("both sides' first line once, theirs first", XO, XT, SIX + b'x\nt\no\n', [SIX], True),
-        ('both sides whole', XO, XT, SIX + b'x\no\nx\nt\n', [SIX], True),
+        ('both sides whole, ours first', XO, XT, SIX + b'x\no\nx\nt\n', [SIX], True),
+        ('both sides whole, theirs first', XO, XT, SIX + b'x\nt\nx\no\n', [SIX], True),
+        ("both sides' first line once", XO, XT, SIX + b'x\no\nt\n', [SIX], False),
+        ("both sides' first line once, theirs first", XO, XT, SIX + b'x\nt\no\n', [SIX], False),
         ("both sides' first line twice, together", XO, XT, SIX + b'x\nx\no\nt\n', [SIX], False),
+        ("a side's run that begins the other's, once", SIX + b'x\n', XT, XT, [SIX], False),
+        ("a side's run that begins the other's, whole", SIX + b'x\n', XT, SIX + b'x\nx\nt\n',
+         [SIX], True),
+        ('two JSON rows merged into one object', ROW_B, ROW_C, MERGED_BC, [rows()], False),
         ('rows added in one place, interleaved', AC, B, SIX + b'{\na\n}\n{\nb\n}\n{\nc\n}\n',
          [SIX], False),
         ("one side's row nested in the other's", AC, B, SIX + b'{\na\n{\nb\n}\n}\n{\nc\n}\n',
@@ -663,13 +679,22 @@ class CombinesChanges(unittest.TestCase):
             with self.subTest(name):
                 self.assertIs(oc.combines_changes(ours, theirs, result, bases), combines)
 
-    def test_a_join_past_either_cost_bound_is_refused(self):
-        # ours adds x, theirs x twice: x,x,x reads whole (6 pairs) or with x once, 2 readings
-        ours, theirs, result = SIX + b'x\n', SIX + b'x\nx\n', SIX + b'x\nx\nx\n'
+    def test_module_map_rows_that_end_alike_join_whole(self):
+        ours, theirs, base = edges(b's1', b's2'), edges(b'r1'), edges()
+        lines = oc._lines(base)
+        for side in (ours, theirs):                # the runs end alike, as the real ones did
+            added = [run for run in oc._side(lines, oc._lines(side))[1] if run]
+            self.assertEqual([run[-2:] for run in added], [[b'  },\n', b'  {\n']])
+        for result in (edges(b'r1', b's1', b's2'), edges(b's1', b's2', b'r1')):
+            self.assertIs(oc.combines_changes(ours, theirs, result, [base]), True)
+        dropped = edges(b'r1', b's1', b's2').replace(b'  },\n  {\n', b'', 1)   # two rows as one
+        self.assertIs(oc.combines_changes(ours, theirs, dropped, [base]), False)
+
+    def test_a_join_past_its_cost_bound_is_refused(self):
+        ours, theirs, result = self.XO, self.XT, SIX + b'x\no\nx\nt\n'   # 6 equal pairs a side
         self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), True)
-        for bound, value in [('JOIN_PAIRS_MAX', 5), ('JOIN_STATES_MAX', 1)]:
-            with self.subTest(bound), mock.patch.object(oc, bound, value):
-                self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), False)
+        with mock.patch.object(oc, 'JOIN_PAIRS_MAX', 5):
+            self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), False)
 
 
 @real_git('commit-tree for a forged parent and an octopus merge: the fake has none')

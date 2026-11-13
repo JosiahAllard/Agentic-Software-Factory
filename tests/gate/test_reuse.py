@@ -30,7 +30,8 @@ BRANCH = 'kit/feature'
 OK_CMD = ['{python}', '-c', 'print("ok")']
 IDENT = {'commit': 'a' * 40, 'python': os.path.normcase(os.path.abspath(sys.executable)),
          'clean': True}
-SRC = {'src/a.py': 'x = 1\n'}
+KIT_FILES = 'f' * 64        # reuse.kit_files_hash in a ReuseCase
+SRC ={'src/a.py': 'x = 1\n'}
 # RED_AWARE reads RED, so RED is declared
 UNIT = {'name': 'unit', 'always': True, 'globs': ['src/*', 'RED'], 'cmd': fixtures.RED_AWARE,
         'pass': '^ok$', 'reuse': True}
@@ -50,6 +51,11 @@ class ReuseCase(fixtures.GateRepoCase):
         fixtures.GateRepoCase.setUp(self)
         self.ident = dict(IDENT)
         p = mock.patch.object(runner, 'kit_identity', side_effect=lambda: dict(self.ident))
+        p.start()
+        self.addCleanup(p.stop)
+        # the kit's files never change under these tests, and hashing them all is about 0.4 s a
+        # read, several reads a gate; Identity and KitFiles test the real hash
+        p = mock.patch.object(reuse, 'kit_files_hash', return_value=KIT_FILES)
         p.start()
         self.addCleanup(p.stop)
         self.said = []

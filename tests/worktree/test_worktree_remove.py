@@ -17,7 +17,7 @@ from unittest import mock
 
 from kitlib.git import cmd
 from kitlib.worktree import holders, remove, remove_abandon, remove_checks
-from tests import gitfixture
+from tests import gitfixture, inproc
 from tests.realgit import real_git
 from tests.platforms import windows_only
 
@@ -26,6 +26,13 @@ TOOL = os.path.join(KIT, 'tools', 'worktree_remove.py')
 WINDOWS = os.name == 'nt'
 # The verbs not in kitlib.worktree.remove: the module each is in (run_verb).
 VERBS = {'check': remove_checks, 'abandon': remove_abandon, 'abandon_branch': remove_abandon}
+
+
+def commit_config(fx, text):
+    """`text` committed as the repository's `.kit.json` and pushed to its origin."""
+    fx.write('.kit.json', text)
+    fx.commit('config', '.kit.json')
+    fx.git('push', '-q', 'origin', 'main')
 
 
 class RemoveCase(unittest.TestCase):
@@ -37,17 +44,18 @@ class RemoveCase(unittest.TestCase):
         env = mock.patch.dict(os.environ, gitfixture.fixture_env(), clear=True)
         env.start()
         self.addCleanup(env.stop)
-        self.fx = gitfixture.TempRepo(branch='main', bare_remote=True)
+        prep = {}
+        if self.CONFIG is not None:     # committed and pushed once, in the template each test copies
+            text = json.dumps(self.CONFIG, indent=2) + '\n'
+            prep = dict(prepare=lambda fx: commit_config(fx, text),
+                        prepare_key=('test_worktree_remove.RemoveCase', text))
+        self.fx = gitfixture.TempRepo(branch='main', bare_remote=True, **prep)
         self.addCleanup(self.fx.cleanup)
         self.repo = os.path.realpath(self.fx.root)
         self.home = os.path.join(self.repo, '.claude', 'worktrees')
-        if self.CONFIG is not None:
-            self.configure(self.CONFIG)
 
     def configure(self, data):
-        self.fx.write('.kit.json', json.dumps(data, indent=2) + '\n')
-        self.fx.commit('config', '.kit.json')
-        self.fx.git('push', '-q', 'origin', 'main')
+        commit_config(self.fx, json.dumps(data, indent=2) + '\n')
 
     def git(self, *args, cwd=None, check=True):
         return self.fx.git(*args, cwd=cwd or self.repo, check=check)
@@ -1530,9 +1538,21 @@ class AbandonExpectLandedDirty(RemoveCase):
 
 
 class Cli(RemoveCase):
+    """tools/worktree_remove.py's command line: its main(argv) in this process (tests/inproc.py),
+    and one real start of the script (test_check_through_the_cli)."""
+
+    @classmethod
+    def setUpClass(cls):
+        with mock.patch.object(sys, 'path', list(sys.path)):    # the tool puts the kit on sys.path
+            cls.tool = inproc.load_tool('worktree_remove')
 
     def cli(self, *args, cwd=None):
-        done = subprocess.run([sys.executable, TOOL] + list(args), cwd=cwd or self.repo,
+        code, out, err = inproc.run_main(self.tool.main, args, gitfixture.fixture_env(),
+                                         cwd or self.repo)
+        return code, out + err
+
+    def child(self, *args):
+        done = subprocess.run([sys.executable, TOOL] + list(args), cwd=self.repo,
                               capture_output=True, text=True, encoding='utf-8', errors='replace',
                               env=gitfixture.fixture_env(), timeout=300)
         return done.returncode, (done.stdout or '') + (done.stderr or '')
@@ -1625,7 +1645,7 @@ class Cli(RemoveCase):
         self.assertIn('worktree_remove: refused: kit configuration:', out)
 
     def test_check_through_the_cli(self):
-        rc, out = self.cli('--check')
+        rc, out = self.child('--check')
         self.assertEqual(rc, 0, out)
         self.assertIn('clean     ', out)
 

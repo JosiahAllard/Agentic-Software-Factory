@@ -118,10 +118,11 @@ def is_python(path):
     return first.startswith(b'#!') and b'python' in first
 
 
-def _docstrings(tree):
-    """id() of every docstring node: the first string statement of a module, class or function."""
+def _docstrings(nodes):
+    """id() of every docstring node (the first string statement of a module, class or function)
+    among `nodes`, a module's nodes listed once by ast.walk."""
     out = set()
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             body = node.body
             if (body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant)
@@ -253,10 +254,11 @@ def _flag_labels(value, read_ints, names):
     return out
 
 
-def _flag_names(tree):
-    """{bare name: the console flags its value holds} for every name the module binds to one."""
+def _flag_names(nodes):
+    """{bare name: the console flags its value holds} for every name the module (its `nodes`, as
+    ast.walk lists them) binds to one."""
     assigns = []
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             for t in targets:
@@ -273,13 +275,13 @@ def _flag_names(tree):
     return names
 
 
-def _pythonw_code(tree):
+def _pythonw_code(nodes):
     """id() of every expression handed to pythonw in an argv written as a list or tuple whose
     first item's source text names pythonw: the items after it, and for an item that is a bare
     name, the items of a list or tuple a `for` over that name walks, and the value of each
-    assignment to such a name in the module."""
+    assignment to such a name in the module (its `nodes`, as ast.walk lists them)."""
     names, out = set(), set()
-    for node in ast.walk(tree):
+    for node in nodes:
         if (isinstance(node, (ast.List, ast.Tuple)) and node.elts
                 and 'pythonw' in ast.unparse(node.elts[0]).lower()):
             for e in node.elts[1:]:
@@ -287,7 +289,7 @@ def _pythonw_code(tree):
                     names.add(e.id)
                 else:
                     out.add(id(e))
-    for node in ast.walk(tree):
+    for node in nodes:
         if (isinstance(node, ast.For) and isinstance(node.target, ast.Name) and node.target.id in names
                 and isinstance(node.iter, (ast.List, ast.Tuple))):
             for e in node.iter.elts:
@@ -295,7 +297,7 @@ def _pythonw_code(tree):
                     names.add(e.id)
                 else:
                     out.add(id(e))
-    for node in ast.walk(tree):
+    for node in nodes:
         if isinstance(node, ast.Assign) and any(
                 isinstance(t, ast.Name) and t.id in names for t in node.targets):
             out.add(id(node.value))
@@ -308,12 +310,13 @@ class _Scan(ast.NodeVisitor):
         self.where = []
         self.os_names = set()
         self.found = []
-        self.docs = _docstrings(tree)
+        nodes = list(ast.walk(tree))    # walked once: each pass below reads this list
+        self.docs = _docstrings(nodes)
         self.pythonw_ok = set()         # id() of nodes inside the creationflags of a pythonw start
         self.flag_values = set()        # id() of nodes where an int literal is read as flags
         self.in_text = set()            # id() of nodes inside a string expression already read as code
         self.in_flags = set()           # id() of nodes inside a creationflags= value
-        for node in ast.walk(tree):
+        for node in nodes:
             if isinstance(node, ast.Import):
                 for a in node.names:
                     if a.name == 'os':
@@ -331,8 +334,8 @@ class _Scan(ast.NodeVisitor):
                 if node.value is not None and any(
                         isinstance(t, ast.Name) and FLAG_TARGET.search(t.id) for t in targets):
                     self.flag_values |= set(id(n) for n in ast.walk(node.value))
-        self.pythonw_code = _pythonw_code(tree)     # id() of string expressions pythonw runs
-        self.flag_names = _flag_names(tree)         # bare name -> the console flags it holds
+        self.pythonw_code = _pythonw_code(nodes)    # id() of string expressions pythonw runs
+        self.flag_names = _flag_names(nodes)        # bare name -> the console flags it holds
 
     def add(self, what, node):
         if what == 'DETACHED_PROCESS' and id(node) in self.pythonw_ok:

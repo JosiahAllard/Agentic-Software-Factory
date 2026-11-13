@@ -240,6 +240,9 @@ if mode == 'named':
     print('suspect ' + l[1]['sha'])
     print('suspect ' + l[1]['sha'])
     print('  suspect ' + l[0]['sha'] + '  ')
+elif mode == 'bad':
+    print('suspect ' + l[1]['sha'])
+    print('suspect ' + l[0]['sha'][:12])
 elif mode == 'foreign':
     print('suspect ' + 'f' * 40)
 elif mode == 'fail':
@@ -292,6 +295,11 @@ class CmdSuspects(unittest.TestCase):
         self.assertEqual(self.run_mode('foreign'),
                          (None, 'named ffffffffff, which is not a landing of M..S'))
 
+    def test_a_suspect_line_that_is_not_a_sha40_falls_back(self):
+        self.assertEqual(self.run_mode('bad'),
+                         (None, "printed a suspect line that is not a 40-hex sha: 'suspect %s'"
+                          % L1[:12]))
+
     def test_a_command_past_its_timeout_is_ended_and_falls_back(self):
         self.assertEqual(self.run_mode('slow', timeout=2),
                          (None, 'was still running after 2 s and was ended'))
@@ -315,6 +323,43 @@ class CmdSuspects(unittest.TestCase):
                                 os.path.join(self.folder, CU.TESTS_FILE),
                                 os.path.join(self.folder, CU.LANDINGS_FILE)])
         self.assertEqual((cwd, timeout), (self.folder, 7))
+
+
+class SuspectsOf(unittest.TestCase):
+    """_suspects_of: the command's timeout is the hunt's budget left when that is less."""
+
+    def setUp(self):
+        self.folder = tempfile.mkdtemp(prefix='kit-suspects-of-')
+        self.addCleanup(shutil.rmtree, self.folder, True)
+
+    def suspects_of(self, left, written):
+        cfg = mock.Mock(tools_dir='tools')
+        cfg.written.return_value = written
+        ctx = {'wt': self.folder, 'base': M, 'tip': L3, 'cfg_base': cfg, 'folder': self.folder}
+        seen, said, clock = [], [], Clock()
+
+        def run(argv, cwd, timeout):
+            seen.append(timeout)
+            return 0, ('suspect %s\n' % L2).encode(), b''
+        with mock.patch.object(CU.inflight, 'run', side_effect=run):
+            got = CU._suspects_of(ctx, ['unit'], [], set(), LANDS, {}, said.append, clock,
+                                  clock() + left)
+        return got, seen, said
+
+    def test_the_timeout_is_cut_to_the_budget_left(self):
+        (sus, origin, why), seen, said = self.suspects_of(90.5, ['x'])
+        self.assertEqual(seen, [90])
+        self.assertEqual(([x.sha for x in sus], origin, why), ([L2], CU.FROM_CMD, None))
+        self.assertEqual(said, ['promote: hunt: suspects_cmd named 1 suspect(s)'])
+
+    def test_more_budget_left_is_the_fixed_timeout(self):
+        _, seen, _ = self.suspects_of(CU.SUSPECTS_TIMEOUT_S * 3, ['x'])
+        self.assertEqual(seen, [CU.SUSPECTS_TIMEOUT_S])
+
+    def test_with_no_command_the_suspects_are_the_kit_s_and_nothing_runs(self):
+        (sus, origin, why), seen, _ = self.suspects_of(100, None)
+        self.assertEqual(([x.sha for x in sus], origin, why, seen),
+                         ([L1, L2, L3], CU.FROM_KIT, None, []))
 
 
 class Landings(unittest.TestCase):

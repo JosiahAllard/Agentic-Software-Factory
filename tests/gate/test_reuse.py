@@ -319,25 +319,6 @@ class CheckStep(unittest.TestCase):
         self.assertEqual(reuse.undeclared(None, step, 'a' * 40), 'not a configured step')
 
 
-class MergedOnlyArgs(unittest.TestCase):
-    """A step's promote_args, like its merged_args, run in a merged gate alone: no branch pass
-    serves it, and a {base} in them reads history."""
-    STEP = S.Step('t', ['x'], None, '.', [], [], (0,), False, False, [], False)
-
-    def test_promote_args_bar_the_input_key_as_merged_args_do(self):
-        spec = {'name': 't', 'cmd': ['x'], 'globs': ['src/*'], 'reuse': True}
-        self.assertIsNone(reuse.input_bar(spec, self.STEP))
-        self.assertEqual(reuse.input_bar(dict(spec, promote_args=['--promotion']), self.STEP),
-                         'it has promote_args: its landing argv never ran in a branch gate')
-        self.assertEqual(reuse.input_bar(dict(spec, merged_args=['--merged']), self.STEP),
-                         'it has merged_args: its landing argv never ran in a branch gate')
-
-    def test_a_base_in_promote_args_reads_history(self):
-        spec = {'name': 't', 'cmd': ['x'], 'globs': ['src/*'], 'promote_args': ['{base}']}
-        self.assertEqual(reuse.undeclared(spec, self.STEP, 'a' * 40),
-                         'its command names {base}: it reads git history')
-
-
 SHAKY = {'name': 'shaky', 'always': True, 'globs': ['src/*'], 'pass': '^ok$', 'warn': True,
          'reuse': True, 'cmd': ['{python}', '-c', 'import sys; print("ok"); sys.exit(1)']}
 

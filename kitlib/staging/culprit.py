@@ -166,15 +166,16 @@ def _write_json(path, value):
         json.dump(value, f, indent=1, sort_keys=True)
 
 
-def cmd_suspects(argv, values, folder, tests, lands, timeout, run=inflight.run):
+def cmd_suspects(argv, values, folder, tests, lands, timeout, run=None):
     """`([sha], None)`: the suspects the repository's `argv` ("staging".suspects_cmd) names, or
     `(None, why)` when it gives none to trust. `values`: the step placeholders (steps.mapping of
     the promotion's tree at S, which is also its working folder); `tests` the tests file's
     content; `lands` the landings of M..S. Writes TESTS_FILE and LANDINGS_FILE ({tests_file},
     {landings_file}) and the command's output, SUSPECTS_LOG, into `folder`. The command runs with
     no input in a job of its own (inflight.run), its whole tree ended after `timeout` s. Its
-    stdout lines `suspect <sha40>` are the suspects, in order, others ignored; exit 0 with none
-    is no suspect."""
+    stdout lines `suspect <sha40>` are the suspects, in order; a `suspect` line of another form
+    gives none to trust, other lines are ignored; exit 0 with none is no suspect. `run`: a
+    stand-in for inflight.run."""
     tests_file, landings_file = os.path.join(folder, TESTS_FILE), os.path.join(folder, LANDINGS_FILE)
     try:
         _write_json(tests_file, tests)
@@ -183,7 +184,7 @@ def cmd_suspects(argv, values, folder, tests, lands, timeout, run=inflight.run):
         return None, 'its files could not be written in %s: %s' % (folder, e)
     cmd = S.substitute(argv, dict(values, tests_file=tests_file, landings_file=landings_file))
     try:
-        rc, out, err = run(cmd, values['root'], timeout)
+        rc, out, err = (run or inflight.run)(cmd, values['root'], timeout)
     except OSError as e:
         return None, 'could not start (%s)' % e
     except subprocess.TimeoutExpired:
@@ -197,8 +198,12 @@ def cmd_suspects(argv, values, folder, tests, lands, timeout, run=inflight.run):
         pass                        # the log is evidence only
     if rc != 0:
         return None, 'exited %d (%s)' % (rc, os.path.join(folder, SUSPECTS_LOG))
-    named = [m.group(1) for m in (_SUSPECT.match(line.strip()) for line in text.splitlines())
-             if m]
+    lines = [line.strip() for line in text.splitlines()]
+    said = [line for line in lines if line.split(None, 1)[:1] == ['suspect']]
+    bad = [line for line in said if not _SUSPECT.match(line)]
+    if bad:
+        return None, 'printed a suspect line that is not a 40-hex sha: %r' % bad[0][:60]
+    named = [_SUSPECT.match(line).group(1) for line in said]
     known = {x.sha for x in lands}
     foreign = [sha for sha in named if sha not in known]
     if foreign:

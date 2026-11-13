@@ -32,8 +32,8 @@ no input key for the step.
 Fail closed. Anything that raises means every step runs. Nothing is read or stored:
   - for a step that runs no command, a check step, a step without `globs` or `content`.globs, a
     step whose globs match no file git shows (a mistyped glob, or one naming only ignored
-    files, would key it on its command alone), a step whose cmd, full_cmd, daily_cmd,
-    merged_args or promote_args names {base}, or whose argv holds the base commit;
+    files, would key it on its command alone), a step whose cmd, full_cmd, daily_cmd or
+    merged_args names {base}, or whose argv holds the base commit;
   - for an input that is not a plain file (a link, a folder: a nested repository or submodule),
     and for a step whose toolchain probe fails;
   - in a --full run, a branch gate's --only, or when "landing".reuse_max_age_h is 0;
@@ -54,8 +54,8 @@ landing_why lets reuse, the tip's gate-OK record serves a step the cache does no
 merge's tree is the record's tree, the record's base is the landing's base (--expect-main), its
 gate config hash is the landing's, its kit (runner.kit_identity: commit, interpreter, clean) is the
 kit gating the landing, and it ended within "landing".reuse_max_age_h hours. A step is taken from
-it when it asks for reuse, is no check step, has no merged_args or promote_args (its landing or
-promotion argv never ran at the tip) and the record says it passed; a step that declares a toolchain only when the record's input
+it when it asks for reuse, is no check step, has no merged_args (its landing argv never ran at the
+tip) and the record says it passed; a step that declares a toolchain only when the record's input
 key for it holds the digest its probes give now. Only in that mode, a step whose command names
 {base} or the base commit, or that declares no input, is not barred: the tree is the same tree, and
 the base is the same commit, so {base} and every tracked file are the ones the tip's run had (the
@@ -91,7 +91,7 @@ The record must also be of the tip, its input keys of INPUT_SCHEMA, the merge's 
 (base, tip), its gate config hash the landing's, and it must have ended within
 "landing".reuse_max_age_h hours; the INPUT TREE line says which failed. A step is taken from it
 when it asks for reuse, is no check step, runs a command, declares inputs (a step without globs
-is never served: there is nothing to compare), has no merged_args or promote_args, and the record says it passed
+is never served: there is nothing to compare), has no merged_args, and the record says it passed
 (not warned, nor was reused). Only on this path, and only because base_inputs and changed are
 equal, a step whose command names {base} or the base commit is not barred: what it reads of the
 base is the same. A step that reads history beyond the changed list and the base side of its
@@ -329,7 +329,7 @@ def same_tree(root, cfg, branch, tip, base, merge, now=None):
 def _from_record(same, spec, step):
     """The REUSED reason when the same-tree record `same` serves `step` (module docstring), or
     None."""
-    if same is None or undeclared(spec, step, None, same_tree=True) or _merged_only(spec):
+    if same is None or undeclared(spec, step, None, same_tree=True) or spec.get('merged_args'):
         return None
     results = [s.get('result') for s in same.record.get('steps') or [] if s.get('name') == step.name]
     if results != ['pass']:
@@ -408,7 +408,7 @@ def undeclared(spec, step, base, same_tree=False, input_tree=False):
     if same_tree:
         return None
     if not input_tree:
-        for k in ('cmd', 'full_cmd', 'daily_cmd', 'merged_args', 'promote_args'):
+        for k in ('cmd', 'full_cmd', 'daily_cmd', 'merged_args'):
             if any('{base}' in str(a) for a in spec.get(k) or []):
                 return 'its command names {base}: it reads git history'
         if base and any(base.lower() in str(a).lower() for a in step.cmd):
@@ -667,15 +667,9 @@ def input_bar(spec, step):
     why = undeclared(spec, step, None, input_tree=True)
     if why:
         return why
-    if _merged_only(spec):
-        return 'it has %s: its landing argv never ran in a branch gate' % _merged_only(spec)
+    if spec.get('merged_args'):
+        return 'it has merged_args: its landing argv never ran in a branch gate'
     return None
-
-
-def _merged_only(spec):
-    """The argument key of `spec` that a merged gate alone runs (merged_args, or a promotion's
-    promote_args: steps.build), or None."""
-    return next((k for k in ('merged_args', 'promote_args') if spec.get(k)), None)
 
 
 def input_parts(root, spec, step, base, head, trees, changed, kit, probes=None):

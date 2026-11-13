@@ -452,7 +452,7 @@ class LinuxDeliver(unittest.TestCase):
 
     def test_a_linux_session_gets_the_packet_at_its_socket_with_the_kit_ctime(self):
         self.linux_session(41, 'x-a1')
-        sent = self.m.hub().deliver('x-a1', 'Q-7 answered')
+        sent = self.m.hub().deliver('x-a1', 'EX-7 answered')
         self.assertEqual(sent, push.Sent(push.WRITTEN, 'x-a1', 'sid-41', False))
         (path, pid, creation, packet), = self.m.writes
         self.assertEqual((path, pid, creation), (sock_path(41), 41, kit_ctime(3600, ticks=37)))

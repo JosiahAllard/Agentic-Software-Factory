@@ -16,10 +16,10 @@ proved with the existing Windows suite.
 
 15. **Peer messaging and the bridge.** Peer messaging is built: `hosts/claude/adapter/peer.py`
     writes to Claude Code's Linux Unix socket through `kitlib/platform/linux/unixsock.py`, and
-    `pm-relaunch` and `pm-crossover` run on Linux (docs/launcher.md "PM relaunch"). Its live proof
-    with Claude Code is KIT-LINUX-PEER-LIVE-PROOF. Still open: the bridge's leader lock and
-    transport on Unix sockets (`optional/bridge/win/` has no Linux form; KIT-LINUX-BRIDGE-UNIXSOCK)
-    and `kitlib/machinesetup/procwatch.py` (KIT-LINUX-PROCWATCH). Risk High (networking).
+    `pm-relaunch` and `pm-crossover` run on Linux (docs/launcher.md "PM relaunch"). Still open: its
+    live proof with Claude Code on a Linux machine, the bridge's leader lock and transport on Unix
+    sockets (`optional/bridge/win/` has no Linux form) and `kitlib/machinesetup/procwatch.py`. Risk
+    High (networking).
 16. **Docs, the rest.** The owner setup docs' Linux blocks, and sorting the docs that mention
     PowerShell: most are Windows-internal and should say so.
 17. **CI legs.** There is no `.github`. `.github/workflows/` legs on the owner's self-hosted Linux
@@ -70,7 +70,7 @@ host as heavy.
 
 After each Claude Code update, re-run the tree-kill probe: the kit's detach and its lack of a pid shield on Linux rest on how Claude Code kills a call's tree (probe scripts on the reference VM, below).
 
-Inferred from the Claude Code 2.1.323 bundle, not yet seen live (KIT-LINUX-PEER-LIVE-PROOF):
+Inferred from the Claude Code 2.1.323 bundle, not yet seen live (the live proof, slice 15):
 its Linux messaging address, a Unix socket under a `cc-socks` folder (`peer.SOCK_DIRS`,
 `SOCK_NAME`), and its `procStart`, a `ps -o lstart` text. Unknown, to probe: its
 managed settings path (`/etc/claude-code`, machine setup step 5), and how the owner's self-hosted

@@ -30,8 +30,8 @@ registry entry of its own and gets no receipt back: `written` means the bytes re
                         SO_PEERCRED pid and its ctime checked) and a send loop within timeout
 
 The wire format and the write are here once: optional/bridge/hosts/claude (peer.py, sessions.py)
-imports canonical_pipe, sender_address, message_frames and write_once from this module (its Linux
-socket half is KIT-LINUX-BRIDGE-UNIXSOCK's).
+imports canonical_pipe, sender_address, message_frames and write_once from this module (the bridge's
+Linux socket half is still open, docs/linux-support-plan.md slice 15).
 
 Resolution: a launcher key is its sessions.json name; `pm` is coordinators.json's pm_session_id
 matched against the record's sessionId (a relaunched PM's fork matches by its id), then the names

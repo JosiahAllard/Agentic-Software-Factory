@@ -905,7 +905,7 @@ class QuotedWords(Base):
                                           cwd=self.w.wt))
                 (self.assertIn if named else self.assertNotIn)('write them out', d.reason)
 
-    def test_an_unread_word_its_own_pull_could_allow_names_the_form_not_the_coordinator(self):
+    def test_an_unread_word_its_own_pull_could_allow_says_write_them_out_not_the_coordinator(self):
         # builders' `set <their pull> --scope $B/x` (or $args, -C "$PWD") were told to ask the
         # coordinator; written out, the run is their own
         self.rec = pulled_by('kit/wt')

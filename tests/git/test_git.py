@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -109,7 +110,7 @@ class CmdTest(unittest.TestCase):
             seen.append(kw['env'])
             return 0, b'', b''
         with mock.patch.object(cmd, '_run', side_effect=fake):
-            git.call(['-c', 'core.x=y', 'diff', 'HEAD'], '.', env={'PATH': 'p'})
+            git.call(['-c', 'core.x=y', 'log', '-1'], '.', env={'PATH': 'p'})
             git.call(['commit', '-m', 'x'], '.', env={'PATH': 'p'})
         self.assertEqual(seen[0].get('GIT_OPTIONAL_LOCKS'), '0')
         self.assertNotIn('GIT_OPTIONAL_LOCKS', seen[1])
@@ -644,7 +645,11 @@ class AReadGitEndsWithItsParent(unittest.TestCase):
         self.addCleanup(parent.stdout.close)
         self.addCleanup(parent.stdin.close)     # first: an orphaned git then reads end of file
         self.addCleanup(lambda: parent.poll() is None and parent.kill())
-        self.assertEqual(parent.stdout.readline().strip(), b'started')
+        said = []                               # read on a thread: a parent that never says fails
+        reader = threading.Thread(target=lambda: said.append(parent.stdout.readline()), daemon=True)
+        reader.start()
+        reader.join(60)
+        self.assertEqual([line.strip() for line in said], [b'started'], 'the parent never started git')
         parent.kill()                           # no wait, no finally: the parent just dies
         # A byte with no newline asks cat-file nothing; a write fails only once no process holds
         # the pipe's read end: the parent, git, and on Windows the launcher's real git under it.

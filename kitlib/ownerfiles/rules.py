@@ -77,7 +77,8 @@ NOREPLACE = ['--no-replace-objects']
 LIST_TIMEOUT = 120    # seconds
 # combines_changes' cost bound, past which it refuses (False): the equal line pairs between a
 # base and a side, which difflib's matching grows with (docs/module-map.json, 3,855 lines, has
-# about 1 million: 0.6 s for the whole check). The rest of the check is one pass over the result.
+# about 1 million: 0.6 s for the whole check). The rest of the check is linear in the lines: one
+# pass over the result, and _holds' search of each place's two blocks.
 JOIN_PAIRS_MAX = 8000000
 TRAILER = 'Owner-Approval'          # the one key; kitlib.config.owner refuses it as its own trailer
 # The id exactly as the hub issues it ('A-%03d', kitlib.hubsite.store): A-001 to A-999, then
@@ -670,9 +671,25 @@ def _blocks(base, kept, added):
 
 
 def _holds(run, sub):
-    """True when `sub`'s lines are one whole, contiguous run of `run`'s lines, in order."""
-    n = len(sub)
-    return any(run[i] == sub[0] and run[i:i + n] == sub for i in range(len(run) - n + 1))
+    """True when `sub`'s lines (one or more) are one whole, contiguous run of `run`'s lines, in
+    order: a Knuth-Morris-Pratt search, so it compares lines a number of times linear in the two
+    lengths, never their product."""
+    fail, k = [0] * len(sub), 0
+    for i in range(1, len(sub)):
+        while k and sub[i] != sub[k]:
+            k = fail[k - 1]
+        if sub[i] == sub[k]:
+            k += 1
+        fail[i] = k
+    k = 0
+    for line in run:
+        while k and line != sub[k]:
+            k = fail[k - 1]
+        if line == sub[k]:
+            k += 1
+            if k == len(sub):
+                return True
+    return False
 
 
 def _block_joins(ours, theirs):

@@ -711,10 +711,32 @@ class CombinesChanges(unittest.TestCase):
         self.assertIs(oc.combines_changes(ours, theirs, twice, [base]), False)
 
     def test_a_join_past_its_cost_bound_is_refused(self):
-        ours, theirs, result = self.XO, self.XT, SIX + b'x\no\nx\nt\n'   # 6 equal pairs a side
-        self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), True)
-        with mock.patch.object(oc, 'JOIN_PAIRS_MAX', 5):
-            self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), False)
+        held = (SIX + b'x\n', self.XT, self.XT)             # a block the other's holds, once
+        for ours, theirs, result in [(self.XO, self.XT, SIX + b'x\no\nx\nt\n'), held]:
+            with self.subTest(result):                      # 6 equal pairs a side
+                self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), True)
+                with mock.patch.object(oc, 'JOIN_PAIRS_MAX', 5):
+                    self.assertIs(oc.combines_changes(ours, theirs, result, [SIX]), False)
+
+    def test_a_held_block_is_found_in_linear_line_comparisons(self):
+        compared = [0]
+
+        class Line(object):
+            def __init__(self, text):
+                self.text = text
+
+            def __eq__(self, other):
+                compared[0] += 1
+                return self.text == other.text
+
+        def lines(*texts):                  # each its own object: a list compare skips none
+            return [Line(t) for t in texts]
+
+        run, sub = lines(*'a' * 4000 + 'b'), lines(*'a' * 2000 + 'b')  # by slices: ~4 million
+        self.assertIs(oc._holds(run, sub), True)
+        self.assertLess(compared[0], 4 * (len(run) + len(sub)))
+        self.assertIs(oc._holds(run, lines('a', 'b', 'a')), False)
+        self.assertIs(oc._holds(run[:-1], sub), False)
 
 
 @real_git('commit-tree for a forged parent and an octopus merge: the fake has none')

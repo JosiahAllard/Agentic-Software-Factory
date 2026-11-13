@@ -167,21 +167,20 @@ def _one_word(cmd, w):
 
 
 def _unread(pairs, argv, who):
-    """The refusal's sentence naming the words read_argv could not read when they decided it, else
-    '': no verb read, or the run without its unread words, as its own pull, would be allowed (an
-    unread `-C "$PWD"` on a `close` the role may never take decides nothing)."""
+    """(the sentence naming the unread words, own), ('', False) when none or the run without them
+    (a `set` with no field read judged as set-text), as its own pull, is refused too (an unread
+    `-C "$PWD"` on a `close` decides nothing); own: a verb read, so the coordinator is not the way."""
     from kitlib.backlog import policy, roles
     words = [t for t, ok in pairs if ok is not True]
     if not words:
-        return ''
+        return '', False
     if argv.verb is not None:
-        given = dict(argv.given)
-        given.pop(policy.UNKNOWN, None)
+        given = dict(argv.given, **{policy.UNKNOWN: False, 'fields': argv.given.get('fields') or ['scope']})
         if policy.refusal(who, policy.sort(argv.verb, given, _Unheld()), (roles.OWN_PULL,)):
-            return ''
+            return '', False
     return ' The guard cannot read %s (computed, or a word that can split), so it judged the run ' \
            'as the strictest those words could make it; write them out.' \
-           % ', '.join('`%s`' % t for t in words)
+           % ', '.join('`%s`' % t for t in words), argv.verb is not None
 
 
 def role_run(event, ctx, cmd, inv, cwd, role):
@@ -211,8 +210,9 @@ def role_run(event, ctx, cmd, inv, cwd, role):
     # the rows were sorted as if the record were held (not read: the strictest); when the role
     # may not take the unheld row either, that row is the one to name
     text = policy.refusal(who, policy.sort(argv.verb, argv.given, _Unheld())) or text
+    unread, own = _unread(pairs, argv, who)     # own: written out, the own pull could allow it
     return rules.refuse(ROLE_RULE, role, '`%s`: %s (kitlib/backlog/roles.py).%s%s%s'
-                        % (rules.bare(cmd), text, _unread(pairs, argv, who), form, '' if instead else ' ' + ASK),
+                        % (rules.bare(cmd), text, unread, form, '' if instead or own else ' ' + ASK),
                         instead or read_alternative(ctx, cmd, here, argv))
 
 

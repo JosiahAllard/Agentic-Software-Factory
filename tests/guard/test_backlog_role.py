@@ -113,6 +113,14 @@ class Verbs(Base):
             with self.subTest(args):
                 self.allowed(self.cmd(self.bl(args)))
 
+    def test_help_passes_for_every_verb_under_every_role(self):
+        # a worker's `-C "$W" add --help` was refused as set-text; every word literal or double-quoted
+        for verb in policy.OPTIONS:
+            for agent_type in roles.ROLES + ('general-purpose',):
+                for args in ('-C "%s" %s --help' % (self.wt, verb), '-C "$W" %s -h' % verb):
+                    with self.subTest(args, agent_type=agent_type):
+                        self.allowed(self.cmd('python "%s" %s' % (self.tool, args), agent_type))
+
     def test_a_reviewer_and_a_built_in_agent_only_read(self):
         for agent_type in ('reviewer', 'test-runner', 'general-purpose', 'Explore'):
             with self.subTest(agent_type):
@@ -230,6 +238,10 @@ class OwnPull(Base):
                 self.rec = rec
                 self.refused(self.cmd(self.bl('set X-1 --scope s')))
                 self.refused(self.cmd(self.bl('release X-1')))
+
+    def test_another_branch_s_pull_names_the_coordinator(self):
+        self.rec = pulled_by('kit/other')
+        self.assertIn(backlogrole.ASK, self.refused(self.cmd(self.bl('set X-1 --scope s'))).reason)
 
     def test_as_another_branch_is_not_its_own(self):
         self.rec = pulled_by('kit/other')
@@ -886,11 +898,29 @@ class QuotedWords(Base):
         for args, named in (('set X-1 --scope s --priority "$P"', False),
                             ('set X-1 --scope s --unset "$F"', False),
                             ('set X-1 --scope s --priority $P', False),
+                            ('set X-1 --priority 2 $args', False),
                             ('block X-1 --on "$B" --reason r', True)):
             with self.subTest(args):
                 d = self.refused(self.cmd('python "%s" -C . %s' % (self.tool, args), 'strong-worker',
                                           cwd=self.w.wt))
                 (self.assertIn if named else self.assertNotIn)('write them out', d.reason)
+
+    def test_an_unread_word_its_own_pull_could_allow_names_the_form_not_the_coordinator(self):
+        # builders' `set <their pull> --scope $B/x` (or $args, -C "$PWD") were told to ask the
+        # coordinator; written out, the run is their own
+        self.rec = pulled_by('kit/wt')
+        for args, form in (('-C . set X-1 --scope $M/x', False), ('-C . set X-1 $args', False),
+                           ('-C . set X-1 "${a[@]}"', False), ('-C "$PWD" set X-1 --scope s', True),
+                           ('-C . set "$ID" --scope s', False)):
+            with self.subTest(args):
+                d = self.refused(self.cmd('python "%s" %s' % (self.tool, args), 'worker', cwd=self.w.wt))
+                self.assertIn('write them out', d.reason)
+                (self.assertIn if form else self.assertNotIn)('-C <your worktree> set X-1 ...', d.reason)
+                self.assertNotIn(backlogrole.ASK, d.reason)
+        for args in ('-C . set X-1 --priority 2 $args', '-C $W set X-1 --scope s', '-C "$PWD" close X-1'):
+            with self.subTest(args):
+                d = self.refused(self.cmd('python "%s" %s' % (self.tool, args), 'worker', cwd=self.w.wt))
+                self.assertIn(backlogrole.ASK, d.reason)
 
 
 class DryRuns(Base):

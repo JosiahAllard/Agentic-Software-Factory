@@ -215,27 +215,27 @@ def search_paths(cmd, inv):
 
 
 def root_search(event, ctx, cmd, inv, cwd, role):
-    found = search_paths(cmd, inv)
-    if not found:
-        return None
-    paths, default_cwd = found
+    paths, default_cwd = search_paths(cmd, inv) or ([], False)
     where = cmd.cwd
-    for w in paths:
-        parent, leaf = split_wild(w.text)
-        if ROOT_VAR_RE.match(parent.strip()) or (not w.dyn and is_root(parent, where, ctx, cmd.shell)):
-            what = '`%s` searches the whole drive or profile from %s.' % (cmd.text, w.text)
-            if cwd and not is_root(cwd, None, ctx):
-                new = quote(cwd + '/' + leaf) if leaf else quote(cwd)
-                fixed = cmd.source[cmd.start:w.start] + new + cmd.source[w.end:cmd.end]
-                return refuse('root-search', role, '%s Search the project folder instead (the Glob or Grep tool '
-                              'with path %s does the same):' % (what, quote(cwd)), fixed)
+    roots = [(w, leaf) for w in paths for parent, leaf in [split_wild(w.text)]
+             if ROOT_VAR_RE.match(parent.strip()) or (not w.dyn and is_root(parent, where, ctx, cmd.shell))]
+    if roots:
+        what = '`%s` searches the whole drive or profile from %s. %s' % (
+            cmd.text, ', '.join(w.text for w, _ in roots), CACHE_HINT)
+        if not cwd or is_root(cwd, None, ctx):
             return refuse('root-search', role, what + ' ' + GLOB_HINT, GLOB_ANY)
+        (w, leaf), end = roots[0], roots[0][0].end
+        fixed = cmd.source[cmd.start:w.start] + (quote(cwd + '/' + leaf) if leaf else quote(cwd))
+        for r, _ in roots[1:]:      # a later root is dropped, so the alternative passes
+            fixed, end = fixed + cmd.source[end:r.start].rstrip(), r.end
+        return refuse('root-search', role, '%s Search the project folder instead (the Glob or Grep tool with path '
+                      '%s does the same):' % (what, quote(cwd)), fixed + cmd.source[end:cmd.end])
     if not paths and default_cwd and where and is_root(where, None, ctx):
         return refuse('root-search', role, '`%s` runs from the root %s and searches all of it. %s' %
                       (cmd.text, where, GLOB_HINT), GLOB_ANY)
-    return None
 
 
+CACHE_HINT = "A tool's cache under the profile is no root: name it (~/.gradle, ~/.m2, ~/.nuget, AppData/Local/<tool>)."
 GLOB_HINT = 'Search inside a project folder, with the Glob or Grep tool:'
 GLOB_ANY = 'Glob(pattern="**/*", path="<a project folder>")'
 

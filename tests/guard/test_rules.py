@@ -14,7 +14,7 @@ from kitlib.config import pmdata
 from kitlib.config import user as kuser
 from kitlib.git import repo
 from kitlib.host import registry
-from kitlib.guard import commands as cm, context, rules, shell as sh
+from kitlib.guard import commands as cm, context, rules, rules_run, shell as sh
 from kitlib.guard import commands_git as cg
 from kitlib.guard import commands_nested as cn
 from kitlib.lockmcp import server as lockmcp
@@ -60,6 +60,17 @@ ROWS = [
      'dir /s /b "{wt}"'),
     ('find in the worktree', lambda w: bash('find . -name "*.py"', w.wt), None, None, None),
     ('root in quoted text is no search', lambda w: bash('git commit -m "do not find / -name x"', w.wt), None, None, None),
+    # a tool's cache under the profile is no root: the shapes agents searched
+    ('find ~/.gradle', lambda w: bash('find ~/.gradle -name "*.jar"', w.wt), None, None, None),
+    ('find USERPROFILE/.gradle/caches', lambda w: bash('find "$USERPROFILE/.gradle/caches/modules-2" -name x', w.wt),
+     None, None, None),
+    ('find home/.m2', lambda w: bash('find %s/.m2 -name x' % W.fwd(w.home), w.wt), None, None, None),
+    ('ls -R ~/.nuget/packages', lambda w: bash('ls -R ~/.nuget/packages', w.wt), None, None, None),
+    ('gci LOCALAPPDATA tool', lambda w: ps('Get-ChildItem $env:LOCALAPPDATA\\Godot -Recurse', w.wt), None, None, None),
+    ('grep -r ~/AppData/Local tool', lambda w: bash('grep -r x ~/AppData/Local/pm-kit', w.wt), None, None, None),
+    # every root is refused and the alternative drops the later ones, so it passes
+    ('find a drive and the profile', lambda w: bash('find Z:/ %s -maxdepth 7 -name x' % W.fwd(w.home), w.wt),
+     'deny', 'root-search', 'find "{wt}" -maxdepth 7 -name x'),
 
     # ---------------------------------------------------------------- heavy programs
     ('godot with no lock', lambda w: bash('godot --headless --path .', w.wt), 'deny', 'heavy',
@@ -276,6 +287,11 @@ class RuleTable(unittest.TestCase):
                 self.assertNotIn(got.split(' ', 1)[0].lower(), PROSE_WORDS, got)
                 if instead is not None:
                     self.assertEqual(got, self.fill(instead))
+
+    def test_root_search_names_every_root_and_the_cache_folders(self):
+        d = decide(bash('find Z:/ %s -name "runelite-api*.jar"' % W.fwd(self.w.home), self.w.wt), self.w.ctx())
+        self.assertIn('from Z:/, %s.' % W.fwd(self.w.home), d.reason)
+        self.assertIn(rules_run.CACHE_HINT, d.reason)
 
     def test_unread_fallback_says_why(self):
         d = decide(bash("echo 'x ; git checkout main", self.w.main), self.w.ctx())

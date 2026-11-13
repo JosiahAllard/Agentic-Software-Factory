@@ -27,7 +27,11 @@ TOKEN = 'k' * 32
 
 
 def on_windows(test):
-    """Run `test` as on Windows: its records name pipes, which on Linux are no peer address."""
+    """Run `test` as on Windows: its records name pipes, which on Linux are no peer address.
+    kitlib.proc.process binds its backend when first imported, so it is imported here first, on
+    the real platform: HubPush's default ctime would otherwise bind Windows's on Linux for every
+    later test."""
+    from kitlib.proc import process  # noqa: F401
     p = mock.patch('kitlib.platform.NAME', 'windows')
     p.start()
     test.addCleanup(p.stop)

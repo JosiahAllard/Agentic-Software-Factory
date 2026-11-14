@@ -302,12 +302,11 @@ class SetScopeWidening(StoreCase):
                 took_none(self, change)
                 self.verb('set', 'MINE', [('scope', ['kitlib/backlog/plan.py'])])
 
-    def test_the_widen_refusal_names_the_repeatable_scope_form(self):
+    def test_the_widen_refusal_names_the_repeatable_add_scope_form(self):
         self.seed(hold(scope='kitlib/backlog/offer.py'), mine('kitlib/backlog/plan.py'))
         with self.assertRaises(Refusal) as cm:
             self.verb('set', 'MINE', [('scope', ['kitlib/backlog/plan.py', 'kitlib/backlog/**'])])
-        self.assertIn('`set MINE --scope <path> [--scope <path> ...]` (the whole new list)',
-                      str(cm.exception))
+        self.assertIn('`set MINE --add-scope <path> [--add-scope <path> ...]`', str(cm.exception))
 
     def test_a_narrowing_or_an_unchanged_scope_takes_no_row(self):
         self.seed(hold(scope='kitlib/backlog/offer.py'), mine('kitlib/backlog/**'))

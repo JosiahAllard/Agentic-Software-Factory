@@ -192,7 +192,8 @@ def planner(args, ctx):
         # A widening into a live pull is the plan's to find; the role decides whether it may.
         may_collide = policy.may(plan_edit.WIDEN_ROW)
         return lambda s: plan_edit.plan_set(s, ctx, args.id, changes, args.unset, body=body,
-                                            role_checked=True, may_collide=may_collide)
+                                            role_checked=True, may_collide=may_collide,
+                                            add_scope=args.add_scope, drop_scope=args.drop_scope)
     if v == 'block':
         return lambda s: plan_hold.plan_block(s, ctx, args.id, args.on, args.owner_ask,
                                               reason=args.reason, until=args.until,

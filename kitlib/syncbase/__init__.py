@@ -117,23 +117,23 @@ def _fetch(root, remote, branch):
 
 
 def turn_on_base(root, cfg, base, explicit):
-    """After the fetch of the work base `base` failed: `(True, note)` when staging is being turned
-    on, so the main branch is the base to judge against (kitlib.config.work_base_ref, after a
-    fresh fetch of <remote>/<main>; docs/gate-landing.md "Turning staging on"); `(False, why)` when
-    the main branch's name or staging setting cannot be used; None when no fallback applies (an
+    """After the fetch of the work base `base` failed: `(main, note)` when staging is being turned
+    on, so the main branch `main` is the base to judge against (kitlib.config.work_base_ref, after
+    a fresh fetch of <remote>/<main>; docs/gate-landing.md "Turning staging on"); `(None, why)`
+    when the main branch's name or staging setting cannot be used; None when no fallback applies (an
     explicit --base, the base is main, main cannot be fetched either, or main's `.kit.json`
     already names the staging branch: a missing one is refused, never measured round)."""
     main = cfg.main_branch
     if explicit or base == main:
         return None
     if gitrefs.bad_rev(main):
-        return False, gitrefs.bad_rev(main)
+        return None, gitrefs.bad_rev(main)
     if _fetch(root, cfg.remote, main)[0] != 0:
         return None
     rev, branch, note = kconfig.work_base_ref(cfg, root)
     if rev is None:
-        return False, note
-    return (True, note) if branch == main else None
+        return None, note
+    return (main, note) if branch == main else None
 
 
 def merge_msg_path(root):
@@ -375,9 +375,9 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
         fallback = turn_on_base(top, cfg, base, explicit)
         if fallback is None:
             return done(FAILED, refused)
-        if not fallback[0]:
+        if fallback[0] is None:
             return done(FAILED, '%s %s' % (refused, fallback[1]))
-        base = owner_base = cfg.main_branch
+        base = owner_base = fallback[0]
         upstream = '%s/%s' % (remote, base)
         lines.append('note      %s' % fallback[1])
     full, why = gitrefs.resolve(target, top, known=True)

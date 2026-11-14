@@ -231,6 +231,69 @@ class Smoke(unittest.TestCase):
                 ROOT, 'b', 't')
 
 
+class StagingLanding(unittest.TestCase):
+    """A landing onto a staging branch (select/build staging=True): a `staging_landing: false`
+    step is not selected, and a step with `staging_args` runs them, judged by its staging_pass."""
+    G = gate_of(cmd('unit', globs=['*.py'], staging_landing=False),
+                cmd('quick', globs=['*.py'], skip_if_selected=['unit']),
+                cmd('lint', always=True))
+
+    def staged(self, changed, **kw):
+        skipped = []
+        chosen, why = S.select(self.G, S.build(self.G, ROOT, 'b', 't', merged=True), changed,
+                               skipped=skipped, **kw)
+        return [s.name for s in chosen], why, skipped
+
+    def test_a_staging_landing_drops_the_step_before_skip_if_selected_so_its_partner_runs(self):
+        self.assertEqual(self.staged(['a.py'])[0], ['unit', 'lint'])
+        names, why, skipped = self.staged(['a.py'], staging=True)
+        self.assertEqual(names, ['quick', 'lint'])
+        self.assertEqual(skipped, ['unit'])
+        self.assertNotIn('unit', why)
+        names, _, skipped = self.staged(['a.md'], staging=True)    # never selected: never skipped
+        self.assertEqual((names, skipped), (['lint'], []))
+        names, _, skipped = self.staged([], full=True, staging=True)
+        self.assertEqual((names, skipped), (['quick', 'lint'], ['unit']))
+
+    def test_a_docs_only_or_named_run_is_not_changed(self):
+        g = dict(self.G, docs_only={'globs': ['*.md'], 'steps': ['unit']})
+        skipped = []
+        chosen, _ = S.select(g, S.build(g, ROOT, 'b', 't'), ['a.md'], docs=True, staging=True,
+                             skipped=skipped)
+        self.assertEqual(([s.name for s in chosen], skipped), (['unit'], []))
+        chosen, _ = S.select(g, S.build(g, ROOT, 'b', 't'), [], only=['unit'], staging=True)
+        self.assertEqual([s.name for s in chosen], ['unit'])
+
+    def test_staging_args_follow_merged_args_and_staging_pass_replaces_pass(self):
+        g = gate_of(cmd('t', cmd=['{python}', 'g.py'], merged_args=['--merged'],
+                        staging_args=['--compile', '{base}'], staging_pass='^compiled$',
+                        **{'pass': '^tests ok$'}))
+        (m,) = S.build(g, ROOT, 'b', 't', merged=True)
+        self.assertEqual((m.cmd[1:], m.passes, m.staging), (['g.py', '--merged'], ['^tests ok$'],
+                                                            False))
+        (s,) = S.build(g, ROOT, 'b', 't', merged=True, staging=True)
+        self.assertEqual((s.cmd[1:], s.passes, s.staging),
+                         (['g.py', '--merged', '--compile', 'b'], ['^compiled$'], True))
+        (plain,) = S.build(gate_of(cmd('p', **{'pass': 'x'})), ROOT, 'b', 't', staging=True)
+        self.assertEqual((plain.cmd[1:], plain.passes, plain.staging), (['-c', 'pass'], ['x'], False))
+
+    def test_a_staging_run_is_judged_by_staging_pass_without_the_zero_tests_rules(self):
+        g = gate_of(cmd('t', staging_args=['--compile'], staging_pass='^compiled$',
+                        **{'pass': '^tests ok$'}), zero_tests=['^No tests found'])
+        (s,) = S.build(g, ROOT, 'b', 't', merged=True, staging=True)
+        (m,) = S.build(g, ROOT, 'b', 't', merged=True)
+        zero = 'compiled\nRan 0 tests in 0.000s\nNo tests found\n'
+        self.assertEqual(S.judge(s, zero, 0, g), ('PASS', []))
+        self.assertEqual(S.judge(m, 'tests ok\nRan 0 tests in 0.000s\n', 0, g)[0], 'FAIL')
+        status, why = S.judge(s, 'tests ok\n', 0, g)
+        self.assertEqual((status, why), ('FAIL', ["missing pass pattern '^compiled$'"]))
+        self.assertEqual(S.judge(s, 'compiled\n', 1, g), ('FAIL', ['exit 1']))
+        self.assertEqual(S.judge(s, '', 0, g)[0], 'FAIL')
+        failing = dict(g, fail=['^BUILD FAILED'])
+        (sf,) = S.build(failing, ROOT, 'b', 't', merged=True, staging=True)
+        self.assertEqual(S.judge(sf, 'compiled\nBUILD FAILED\n', 0, failing)[0], 'FAIL')
+
+
 class DocsOnly(unittest.TestCase):
     G = gate_of(cmd('scrub', globs=['*']), cmd('suite', always=True),
                 docs_only={'globs': ['docs/*.md', '*.txt'], 'exclude': ['docs/ops/*'],

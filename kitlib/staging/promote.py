@@ -21,9 +21,11 @@ green writes S's promotion record and moves main to S (kitlib.staging.advance). 
      M not an ancestor of S: an attempt that ends diverged.
   6. The gate, its slot booked now or never (BOOK: no_wait). A machine-lock refusal (busy,
      timeout, reserved, hold, no lock): a skip, nothing recorded (the next hub tick asks again).
-     FAILED: ends red, then the culprit hunt and its revert branch (kitlib.staging.culprit
-     after_red, `hunter`), still under the promote lock, its probes' slots waiting within
-     culprit.HUNT_BUDGET_S. Any other refusal: ends error.
+     FAILED: ends red, then kitlib.staging.culprit after_red (`hunter`), still under the promote
+     lock: the attempt's `inspect` (no probe, no slot), handed to the coordinator to fix first;
+     the culprit hunt and its revert branch only when the red repeats one a fix was marked
+     landed for (culprit.repeat), its probes' slots waiting within culprit.HUNT_BUDGET_S. Any
+     other refusal: ends error.
   7. OK: the promotion record of S on M (`write_record`,
      gate_ok.record_tested_pass(kind 'promotion')): the pre-push guard lets main move to S only
      with it. Not written: ends failed. Written: an attempt at tested, then advance.
@@ -31,9 +33,15 @@ green writes S's promotion record and moves main to S (kitlib.staging.advance). 
 The gate's machine-lock slot is booked and released inside merged_gate (slot=None: gated books
 it and releases it before returning), so no slot is held while advance waits for the landing lock.
 
-Outcome codes: OK (done, behind, not due, a skip, a wait), FAILED (red), USAGE (staging off),
-REFUSED (held, diverged, refused, failed, error, or a step before the gate that could not be
-made), BUSY (another run holds the promote lock). Output goes through `say`; nothing here prints.
+hunt(main, cfg) is the coordinator's request for the hunt (`tools/promote.py --hunt`), and
+fixed(main, cfg, sha) its mark that the fix of a red landed (`--fixed <sha>`, the attempt's
+`fix`). Both run under the promote lock, after the same fetch and staging read, on the latest
+attempt that ended red with no later one done; neither runs a gate.
+
+Outcome codes: OK (done, behind, not due, a skip, a wait; a hunt run, a fix marked), FAILED
+(red), USAGE (staging off), REFUSED (held, diverged, refused, failed, error, a step before the
+gate that could not be made; nothing to hunt, a fix not marked), BUSY (another run holds the
+promote lock). Output goes through `say`; nothing here prints.
 """
 import os
 import time
@@ -117,6 +125,13 @@ def run(main, cfg, say=_quiet, force=False, book_kw=None, git=D.git, gate=runner
     book), over BOOK: now or never (the hunt's probes drop no_wait). `gate`, `record`,
     `mover(main, cfg2, staging, git, say)`, `clock` and `hunter(ctx, attempt, out, say)` are
     stand-ins a test passes."""
+    book = dict(BOOK, **(book_kw or {}))
+    return _locked(main, say, lambda: _held(main, cfg, say, force, book, git, gate, record,
+                                            mover or A.Mover, clock, hunter))
+
+
+def _locked(main, say, body):
+    """`body()` under the promote lock: BUSY when another run holds it."""
     lock, why = lock_for(main)
     if lock is None:
         return G.Outcome(G.REFUSED, ['REFUSED: the promote lock: %s' % why])
@@ -131,24 +146,29 @@ def run(main, cfg, say=_quiet, force=False, book_kw=None, git=D.git, gate=runner
         if lock.took_over:
             say('promote: took over the promote lock from a run that is gone (%s)'
                 % describe(lock.took_over))
-        book = dict(BOOK, **(book_kw or {}))
-        return _held(main, cfg, say, force, book, git, gate, record, mover or A.Mover, clock,
-                     hunter)
+        return body()
     finally:
         lock.release()
 
 
-def _held(main, cfg, say, force, book, git, gate, record, mover, clock, hunter):
+def _staging(main, cfg, git, say):
+    """`(None, cfg2, staging, where)` after a fetch: the staging setting `<remote>/<main>` writes,
+    its branch and the attempts' folder; `(the Outcome, None, None, None)` when it cannot be
+    read or is off."""
     why = D.fetch(main, cfg.remote, git)
+    if not why:
+        two, why = P.staging_read(main, cfg, git)
     if why:
-        return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
-    two, why = P.staging_read(main, cfg, git)
-    if why:
-        return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
+        return G.Outcome(G.REFUSED, ['REFUSED: %s' % why]), None, None, None
     if two is None or not kconfig.staging_on(two):
-        return G.Outcome(G.USAGE, [OFF % (cfg.remote, P.main_of(cfg))])
-    staging = kconfig.work_base(two)
-    where = folder(cfg, main, say)
+        return G.Outcome(G.USAGE, [OFF % (cfg.remote, P.main_of(cfg))]), None, None, None
+    return None, two, kconfig.work_base(two), folder(cfg, main, say)
+
+
+def _held(main, cfg, say, force, book, git, gate, record, mover, clock, hunter):
+    stop, two, staging, where = _staging(main, cfg, git, say)
+    if stop is not None:
+        return stop
     found = R.attempts(where)
     move = mover(main, two, staging, git, say)
 
@@ -233,10 +253,11 @@ def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate
                                 'again' % (cause, '; '.join(out.lines))], skipped=cause)
     if out.code == G.FAILED:
         why = out.facts.get('verdict') or 'the gate failed'
+        earlier = R.attempts(where)
         a = R.start(where, tip, base, 'red', why=why, log_dir=log_dir)
         ctx = {'main': main, 'cfg': cfg, 'cfg_base': cfg_base, 'staging': staging, 'wt': wt,
                'tip': tip, 'base': base, 'book': book, 'git': git,
-               'since': rerun.since_of(started), 'log_dir': log_dir}
+               'since': rerun.since_of(started), 'log_dir': log_dir, 'earlier': earlier}
         lines = ['promote: RED - %s' % why] + hunter(ctx, a, out, say)
         return G.Outcome(code_of(a), lines + [R.line(a)], log_dir=log_dir)
     if out.code != G.OK:
@@ -257,6 +278,99 @@ def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate
     return G.Outcome(code_of(a), lines + [R.line(a), 'logs: %s' % log_dir], log_dir=log_dir)
 
 
+def last_red(found):
+    """`(attempt, None)`: the latest attempt of `found` (attempts()) that ended red, with no later
+    one done; `(None, why)` when there is none."""
+    end = next((a for a in reversed(found) if a.phase in ('red', 'done')), None)
+    if end is None or not any(a.phase == 'red' for a in found):
+        return None, 'no promotion attempt ended red'
+    if end.phase == 'done':
+        return None, '%s promoted after the last red, so that red is past' % end.sha[:10]
+    return end, None
+
+
+def hunt(main, cfg, say=_quiet, book_kw=None, git=D.git, hunter=CU.hunt_red):
+    """The culprit hunt the coordinator asks for (`tools/promote.py --hunt`), after one failed fix,
+    of last_red's attempt, under the promote lock: a G.Outcome. REFUSED (nothing to hunt) when no
+    red is left, it has no step a hunt can probe (no `inspect` red), or its hunt is marked
+    running; the promotion's tree is put at its tip and `hunter(ctx, attempt, say)`
+    (culprit.hunt_red) runs. A culprit found posts no promote-revert hub item: the attempt was
+    announced as red already."""
+    book = dict(BOOK, **(book_kw or {}))
+    return _locked(main, say, lambda: _hunt_held(main, cfg, say, book, git, hunter))
+
+
+def _hunt_held(main, cfg, say, book, git, hunter):
+    stop, _two, staging, where = _staging(main, cfg, git, say)
+    if stop is not None:
+        return stop
+    a, why = last_red(R.attempts(where))
+    if a is None:
+        return G.Outcome(G.REFUSED, ['promote: NOTHING TO HUNT - %s' % why])
+    if not (a.rec.get('inspect') or {}).get('red'):
+        return G.Outcome(G.REFUSED, ['promote: NOTHING TO HUNT - the red of %s has no step a hunt '
+                                     'can probe (`gate`, `windows` and `infra` reds are never '
+                                     'hunted)' % a.sha[:10], R.line(a)])
+    if R.hunting(a):
+        return G.Outcome(G.REFUSED, ['promote: NOTHING TO HUNT - the hunt of %s is marked running '
+                                     '(pid %s), by a run that is gone since the promote lock '
+                                     'was free; the hub job\'s next look marks it stopped, and '
+                                     'then --hunt runs it again' % (
+                                         a.sha[:10], a.rec['culprit'].get('pid')),
+                                     R.line(a)])
+    tip, base = a.sha, a.rec.get('base')
+    wt = tree_of(cfg, main)
+    _sha_at, why = D.prepare(main, wt, tip, cfg.remote, git=git, fetched=True)
+    if why:
+        return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
+    try:
+        cfg_base = load_at(main, base)
+    except ConfigError as e:
+        return G.Outcome(G.REFUSED, ['REFUSED: the config at %s: %s' % ((base or '?')[:10], e)])
+    say('promote: hunting the red of %s on main %s' % (tip[:10], base[:10]))
+    ctx = {'main': main, 'cfg': cfg, 'cfg_base': cfg_base, 'staging': staging, 'wt': wt,
+           'tip': tip, 'base': base, 'book': book, 'git': git, 'log_dir': a.rec.get('log_dir')}
+    try:
+        lines = hunter(ctx, a, say)
+    except R.RecordError as e:
+        return G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
+    return G.Outcome(G.OK, lines + [R.line(a)])
+
+
+def fixed(main, cfg, sha, say=_quiet, git=D.git):
+    """The coordinator's mark that the fix of last_red's attempt landed on the staging branch as
+    `sha` (`tools/promote.py --fixed <sha>`), under the promote lock: the attempt's `fix` {sha,
+    at}, which lets a red on the same tests hunt by itself (culprit.repeat). REFUSED when no red
+    is left, `sha` is no commit, is not on `<remote>/<staging>`, or is already in the red tip."""
+    return _locked(main, say, lambda: _fixed_held(main, cfg, sha, say, git))
+
+
+def _fixed_held(main, cfg, sha, say, git):
+    stop, _two, staging, where = _staging(main, cfg, git, say)
+    if stop is not None:
+        return stop
+    a, why = last_red(R.attempts(where))
+    if a is None:
+        return G.Outcome(G.REFUSED, ['promote: NO FIX MARKED - %s' % why])
+    rc, full, err = git(main, 'rev-parse', '--verify', '-q', '%s^{commit}' % sha)
+    if rc != 0 or not full:
+        return G.Outcome(G.REFUSED, ['promote: NO FIX MARKED - %s names no commit' % sha])
+    on = '%s/%s' % (cfg.remote, staging)
+    if git(main, 'merge-base', '--is-ancestor', full, 'refs/remotes/%s' % on)[0] != 0:
+        return G.Outcome(G.REFUSED, ['promote: NO FIX MARKED - %s is not on %s: mark the fix once '
+                                     'it landed there' % (full[:10], on)])
+    if git(main, 'merge-base', '--is-ancestor', full, a.sha)[0] == 0:
+        return G.Outcome(G.REFUSED, ['promote: NO FIX MARKED - %s is already in the red tip %s, so '
+                                     'it cannot be its fix' % (full[:10], a.sha[:10])])
+    a.rec['fix'] = {'sha': full, 'at': R.now_text()}
+    try:
+        a.write()
+    except R.RecordError as e:
+        return G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
+    return G.Outcome(G.OK, ['promote: FIX MARKED - %s fixes the red of %s; the same tests red '
+                            'again hunt by themselves' % (full[:10], a.sha[:10]), R.line(a)])
+
+
 def look(main, cfg, announce, git=D.git, clock=time.time):
     """The hub job's look at one repository (kitlib.hubjobs.staging_promote): `(verdict, note)`.
     No fetch: the local `<remote>/*` refs as they are. Verdicts:
@@ -268,8 +382,9 @@ def look(main, cfg, announce, git=D.git, clock=time.time):
       error    git or the lock could not say (note: why)
     The ends a hub item is owed for (record.unannounced) are given to `announce(attempt)` while
     the promote lock is held, and marked announced once it returns: one each, whatever the
-    verdict but off and busy. A red attempt whose culprit hunt is still marked hunting is from a
-    run that is gone (a live one holds the lock): it is marked stopped first."""
+    verdict but off and busy. Any attempt whose culprit hunt is still marked hunting (an announced
+    red's `--hunt` included) is from a run that is gone (a live one holds the lock): it is marked
+    stopped first."""
     two, why = P.staging_read(main, cfg, git)
     if why:
         return 'error', why
@@ -286,10 +401,11 @@ def look(main, cfg, announce, git=D.git, clock=time.time):
         return 'error', str(e)
     try:
         found = R.attempts(folder(cfg, main))
-        for a in R.unannounced(found):
+        for a in found:
             if R.hunting(a):        # the lock is free, so the run that hunted is gone
                 a.rec['culprit'] = dict(a.rec['culprit'], verdict=CU.STOPPED)
                 a.write()
+        for a in R.unannounced(found):
             announce(a)
             a.rec['announced'] = True
             a.write()
@@ -316,8 +432,15 @@ def look(main, cfg, announce, git=D.git, clock=time.time):
 
 
 def status_lines(main, cfg, last=3):
-    """The latest `last` attempts' lines, newest first, read from disk (no fetch, no lock)."""
+    """The latest `last` attempts' lines, newest first, read from disk (no fetch, no lock); a red
+    one's `inspect` and `fix` on a line of its own (record.more_line)."""
     found = R.attempts(folder(cfg, main))
     if not found:
         return ['promote   no promotion attempt recorded yet']
-    return [R.line(a) for a in reversed(found[-last:])]
+    out = []
+    for a in reversed(found[-last:]):
+        out.append(R.line(a))
+        more = R.more_line(a)
+        if more:
+            out.append(more)
+    return out

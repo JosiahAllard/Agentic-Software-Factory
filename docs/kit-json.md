@@ -82,7 +82,7 @@ Off with no file, each switched on by its key: `repo.push_block` (a push to main
 - `daily_full.kind` (a kind name, default "daily-full"): the kinds-table kind the run books
 - `daily_full.max_wait` (int >= 0, default 7200): seconds it waits for its lock slot before it skips
 - `daily_full.stale_hours` (int >= 1, default 36): hours after which --summary calls the last result stale
-- `daily_full.bisect` ({max_probes, prefix, session}): after a red run, bisect the first-parent commits since the last green run for the commit that turned the red steps red (docs/daily-full.md "Bisect"); unset: no bisect
+- `daily_full.bisect` ({max_probes, prefix, session}): the settings of `daily_full.py --bisect`, run on request after one failed fix: it bisects the first-parent commits since the last green run for the commit that turned a past red run's steps red; a red run never bisects by itself (docs/daily-full.md "Bisect"); unset: the defaults, nothing filed
 - `doc_budget.default` (int >= 0): byte cap for a capped doc with no budget
 - `doc_budget.budgets` (map path -> int >= 0 or null, default {}): doc path or glob -> byte cap; null: uncapped
 - `doc_budget.uncapped_dirs` (list of repo path, default []): folders never capped

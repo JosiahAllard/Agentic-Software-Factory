@@ -1,5 +1,8 @@
 """kitlib.hubjobs.staging_promote: the hub's trigger of a promotion run, with the look and the start
 stood in; and its real look on a repository whose staging setting is absent."""
+import importlib.util
+import os
+import re
 import threading
 import unittest
 from unittest import mock
@@ -7,7 +10,14 @@ from unittest import mock
 from kitlib.hubjobs import staging_promote as sp
 from kitlib.hubsite import jobs
 from kitlib.hubsite import push
+from kitlib.staging import culprit as CU
 from kitlib.staging import record as R
+
+KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_spec = importlib.util.spec_from_file_location('kit_promote_entry_for_hubjob_tests',
+                                               os.path.join(KIT, 'tools', 'promote.py'))
+tool = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(tool)
 
 
 def Attempt(phase, sha, **more):
@@ -87,9 +97,23 @@ class Job(unittest.TestCase):
                                            ('promote-red', 'a:' + 'e' * 10)])
         self.assertIn('revert', sp.EVENTS)
 
-    def test_promote_revert_alone_is_owed_once_per_detail_and_its_text_says_review(self):
+    def test_promote_red_names_the_promote_calls_that_parse_and_the_hunt_ends(self):
+        text = push.JOB_EACH['promote-red']
+        calls = re.findall(r'`tools/promote\.py ([^`]*)`', text)
+        self.assertEqual(sorted(c.split()[0] for c in calls), ['--fixed', '--hunt', '--status'])
+        for call in calls:
+            with self.subTest(call):
+                try:
+                    tool.parse_args(re.sub(r'<\w+>', 'x', call).split())
+                except SystemExit:
+                    self.fail('tools/promote.py refuses %r' % call)
+        for end in (CU.FLAKE, CU.ON_MAIN, CU.CAPPED, CU.INCONCLUSIVE):     # a red that hunted
+            self.assertIn(end, text)
+
+    def test_promote_red_and_revert_alone_are_owed_once_per_detail_and_revert_says_review(self):
         self.assertIn('promote-revert', push.JOB_EACH)
-        for end in ('red', 'refused', 'diverged', 'failed', 'error'):
+        self.assertIn('promote-red', push.JOB_EACH)
+        for end in ('refused', 'diverged', 'failed', 'error'):
             self.assertNotIn('promote-' + end, push.JOB_EACH)
         text = push.JOB_EACH['promote-revert']
         for said in ('revert/<landing sha10>', 'Reverts-landing', 'nothing was pushed',

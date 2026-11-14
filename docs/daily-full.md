@@ -1,6 +1,6 @@
 # daily_full
 
-`tools/daily_full.py [-C DIR] [--plan | --summary] [--force] [--out DIR]` runs every non-manual gate step in full (each step's `daily_cmd` when it has one, else its `full_cmd`, else its `cmd`; docs/gate-run.md "Steps"), on `"daily_full".ref` (default `<remote>/<work base>`: the staging branch while `"staging".branch` is set, else the main branch), in a detached worktree of its own (default `<worktrees_dir>/daily-full`). Logic: `kitlib/dailyfull`.
+`tools/daily_full.py [-C DIR] [--plan | --summary | --bisect [STAMP]] [--force] [--out DIR]` runs every non-manual gate step in full (each step's `daily_cmd` when it has one, else its `full_cmd`, else its `cmd`; docs/gate-run.md "Steps"), on `"daily_full".ref` (default `<remote>/<work base>`: the staging branch while `"staging".branch` is set, else the main branch), in a detached worktree of its own (default `<worktrees_dir>/daily-full`). Logic: `kitlib/dailyfull`.
 
 - Opt-in: it refuses (exit 2) unless `.kit.json` "daily_full".enabled is true. The kit never schedules it. A repository that wants it daily registers the schedule itself.
 - It moves only a clean linked worktree of its own. A worktree of `.` or the main checkout, a folder that is not a registered linked worktree, or a tree with uncommitted files is recorded red `infra` with the reason (for a dirty tree, the file names). Nothing is cleaned, reset or switched.
@@ -12,12 +12,12 @@
 - A step's own machine-lock booking nests in the run's slot and takes nothing more. The module isolation run is such a step: a `daily_cmd` of `module_map.py --isolate` (docs/module-map.md "Isolation runs").
 - A lock refusal is a recorded skip, not a red. The cause is one of busy, timeout, lock-unavailable, reserved or hold.
 - `--summary` prints the status lines from the recorded runs:
-  - the last verdict, with its failing steps;
+  - the last verdict, with its failing steps, and for a red a probe can run that is not bisected yet (its `result.json` has no `bisect`), `bisect it after one failed fix: tools/daily_full.py --bisect <stamp>`;
   - the skips in a row;
   - STALE, when the newest attempt is over `"daily_full".stale_hours` old.
 
   As a preflight report hook it is `daily_full:summary_lines`.
-- Exit codes: 0 green or skipped, 1 a step red, 2 usage or off, 4 the tree or its gate could not be readied (recorded red) or a promotion was not made, 5 another run holds the tree (nothing recorded). A lock usage refusal, such as an unknown kind, is exit 2 and recorded red.
+- Exit codes: 0 green or skipped, 1 a step red, 2 usage or off, 4 the tree or its gate could not be readied (recorded red) or a promotion was not made, 5 another run holds the tree (nothing recorded). A lock usage refusal, such as an unknown kind, is exit 2 and recorded red. `--bisect` ("Bisect"): 0 bisected, whatever its verdict; 2 usage or off; 4 refused; 5 another run holds the tree.
 
 ## Promotion
 
@@ -36,7 +36,7 @@ Tests: `tests/dailyfull/test_promote.py` (the hook and the race on real git), `t
 
 ## Bisect
 
-With `"daily_full".bisect` set (docs/kit-json.md), a red run looks for the commit that turned its red steps red, still holding the tree's lock (`kitlib/dailyfull/bisect.py`). Its keys: `max_probes` (default 5, at most 50; 0 turns the bisect off), `prefix` (the record id prefix; unset, nothing is filed) and `session` (the session the filed record carries). Unset, nothing is bisected.
+A red run is inspected and fixed first, by an agent; it bisects nothing by itself. It prints `daily: inspect and fix the red first; to bisect it after one failed fix: tools/daily_full.py --bisect <stamp> ...`, and `--summary` names the same call. `tools/daily_full.py --bisect [STAMP]` (`kitlib.dailyfull.bisect_red`) bisects a recorded red run, the one in `<out>/<STAMP>` or else the latest run that ran, for the commit that turned its red steps red, under the tree's lock, in the daily worktree once it passes the same checks as a run (`kitlib/dailyfull/bisect.py`). It runs no gate step itself. It refuses (exit 4) a stamp with no run, a run that is not red, a red with no step a probe can run, `max_probes` 0, and a missing or refused worktree. `"daily_full".bisect` (docs/kit-json.md) holds its settings: `max_probes` (default 5, at most 50; 0 refuses every bisect), `prefix` (the record id prefix; unset, nothing is filed) and `session` (the session the filed record carries). Unset, the bisect runs with the defaults and files nothing.
 
 - Only a red of steps is bisected: a red `infra`, or a run with an `error`, is not.
 - The search runs over `git rev-list --first-parent G..S`: S is the red run's commit, G the commit of the latest earlier green run that is an ancestor of S. No such green run: `not run: no earlier green run is an ancestor of <sha>`.
@@ -46,7 +46,7 @@ With `"daily_full".bisect` set (docs/kit-json.md), a red run looks for the commi
   - The whole red steps (and `setup`) otherwise, through `runner.gated` in a slot of `"daily_full".kind`: a log that does not parse, one with an uncovered failure (a test that could not be loaded, a TIMEOUT unit, a step that timed out), or a gradle or dotnet step (its failures carry a `runner`; a probe runs unittest classes only, and a gradle step's reports are not read here).
 - When S's failing tests pass alone, a flake is not said yet: the same probe also runs the whole red steps at S (logs in `bisect-1-<sha10>-step`). Red there, the rest of the search runs whole steps; green there too, the verdict is the flake. That whole-step run is the cost a narrowed probe would have saved: one full run of the red steps, only for a red whose failing tests pass alone, within the first probe (the cap counts probes, not runs).
 - A switch, config or plan failure (a hook module that exits while it loads among them), a lock refusal, a stop, a failed setup, or a red step or failing class that did not run, or ran past its limit, stops the bisect as `inconclusive: <why>`. The worktree is put back at S afterwards.
-- The run's `result.json` gains `bisect`: `{good, bad, culprit, probes, verdict, mode}` (each probe `{sha, verdict, red}`; `mode`, once a probe ran, `tests: <n> class(es)`, or `whole step: <why>`, `whole step: narrowed green at S` after the case above), plus `filed` (the record id) when one was filed. The run prints `daily: bisect: <verdict> (<n> probe(s))`.
+- The red run's `result.json` gains `bisect`: `{good, bad, culprit, probes, verdict, mode}` (each probe `{sha, verdict, red}`; `mode`, once a probe ran, `tests: <n> class(es)`, or `whole step: <why>`, `whole step: narrowed green at S` after the case above), plus `filed` (the record id) when one was filed. `--bisect` prints `daily: bisect: <verdict> (<n> probe(s))`.
 
 When a probe reproduced the red and `prefix` is set, the red is filed through the backlog library, every store check included, as `<prefix>-DAILY-RED-<SHA10>` (`kitlib/dailyfull/file.py`). SHA10 is the culprit's, or S's when only a range was found. The scope is the paths the culprit changed against its first parent, or `none`. A repository on the implicit default store files in the PM data branch's store. Filing is idempotent: an id already held is not added again, and a priced record is never priced again.
 

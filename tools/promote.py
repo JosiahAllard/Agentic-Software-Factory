@@ -5,13 +5,16 @@
                                     on a green, move main to it; an attempt a run left unfinished
                                     is moved on first, and then the run ends
   promote.py [-C DIR] --status      print the latest attempts; run nothing
+  promote.py [-C DIR] --fixed SHA   mark that the fix of the last red landed on the staging
+                                    branch as SHA: the same tests red again hunt by themselves
+  promote.py [-C DIR] --hunt        the culprit hunt of the last red, after one failed fix
 
 A thin entry point: it parses, calls kitlib.staging.promote, prints and exits. The hub job
 staging-promote starts it when a promotion is due; --force runs it when it is not.
-Exit: 0 done, behind, not due, or skipped by the machine lock (nothing recorded); 1 the gate was
-red; 2 usage, or staging off at <remote>/<main>; 4 held, diverged, refused by the pre-push
-guard, failed or the gate refused; 5 another promotion run holds the promote lock (nothing
-recorded).
+Exit: 0 done, behind, not due, or skipped by the machine lock (nothing recorded), a hunt run or a
+fix marked; 1 the gate was red; 2 usage, or staging off at <remote>/<main>; 4 held, diverged,
+refused by the pre-push guard, failed or the gate refused, nothing to hunt or a fix not marked;
+5 another promotion run holds the promote lock (nothing recorded).
 """
 import argparse
 import os
@@ -33,9 +36,14 @@ def say(line):
 def parse_args(argv):
     p = argparse.ArgumentParser(prog='promote.py', description=__doc__.split('\n\n')[0])
     p.add_argument('-C', dest='root', default='.', help='any checkout of the repository')
-    p.add_argument('--force', action='store_true',
-                   help='test the staging tip even when no promotion is due')
-    p.add_argument('--status', action='store_true', help='print the latest attempts; run nothing')
+    one = p.add_mutually_exclusive_group()
+    one.add_argument('--force', action='store_true',
+                     help='test the staging tip even when no promotion is due')
+    one.add_argument('--status', action='store_true', help='print the latest attempts; run nothing')
+    one.add_argument('--fixed', metavar='SHA',
+                     help='mark that the fix of the last red landed on the staging branch as SHA')
+    one.add_argument('--hunt', action='store_true',
+                     help='the culprit hunt of the last red, after one failed fix')
     return p.parse_args(argv)
 
 
@@ -54,7 +62,12 @@ def main(argv=None):
         for line in promote.status_lines(root, cfg):
             say(line)
         return G.OK
-    out = promote.run(root, cfg, say=say, force=args.force)
+    if args.fixed is not None:               # `--fixed ""` is refused, not a promotion run
+        out = promote.fixed(root, cfg, args.fixed, say=say)
+    elif args.hunt:
+        out = promote.hunt(root, cfg, say=say)
+    else:
+        out = promote.run(root, cfg, say=say, force=args.force)
     for line in out.lines:
         say(line)
     return out.code

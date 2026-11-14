@@ -74,8 +74,9 @@ class BlockTime(StoreCase):
     def test_a_resource_text_that_does_not_parse_is_usage(self):
         self.seed(rec('FOO'))
         for text in ('resource:Dev-Clone free', 'resource:dev-clone busy'):
-            with self.assertRaises(Usage, msg=text):
+            with self.assertRaises(Usage, msg=text) as cm:
                 self.verb('block', 'FOO', ['live-client'], until=text)
+            self.assertIn('not the form `resource:<name> free`', str(cm.exception), text)
         self.assertEqual(self.get('FOO').get('state'), 'open')
 
     def test_owner_is_refused(self):

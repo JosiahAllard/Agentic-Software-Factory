@@ -65,7 +65,11 @@ class Findings(unittest.TestCase):
         self.assertEqual(got[0].fix, CMD + ' block AAA --on owner --reason "<what it waits on and'
                          ' until when, citing the Action Hub Q-nnn, T-nnn or A-nnn that ends it'
                          ' (post it with hub.py questions add --record <REPO>:AAA)>"')
-        self.assertIn('--on live-client', got[1].fix)
+        # a form the block plan takes: a live-client block names its end
+        self.assertEqual(got[1].fix, 'hub.py todos add --record <REPO>:BBB --title "<the live step'
+                         ' the owner does>" (the hub holds the record until it is done), or, for a'
+                         ' to-do already posted, ' + CMD + ' block BBB --on live-client --until'
+                         ' "todo:T-n done" --reason "<the live step>"')
 
     def test_a_held_record_is_not_a_finding(self):
         got = holds.findings(snap(rec('AAA', summary='needs the owner go', state='blocked',

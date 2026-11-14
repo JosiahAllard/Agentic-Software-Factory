@@ -175,7 +175,7 @@ class Cli(unittest.TestCase):
         with mock.patch.object(classify, 'time', types.SimpleNamespace(time=lambda: later)), \
                 mock.patch.object(classify, 'run_probes', lambda ctx, machine, procs: run_probes(
                     ctx, lambda: ([], None), lambda: (([], 0, 1), None))):
-            rc, out = self.run_tool('block', 'FOO', '--on', 'live-client',
+            rc, out = self.run_tool('block', 'FOO', '--on', 'upstream:client',
                                     '--reason', 'its tree went quiet')
         self.assertEqual(rc, 0, out)
         self.assertIn('its worktree is dead', out)
@@ -432,7 +432,7 @@ class OpenerProbes(unittest.TestCase):
             seen.append(probes)
             raise Refusal('stopped at the opener')
 
-        verbs = (['block', 'FOO', '--on', 'live-client', '--reason', 'its tree went quiet'],
+        verbs = (['block', 'FOO', '--on', 'upstream:client', '--reason', 'its tree went quiet'],
                  ['set-status', 'FOO', 'parked'],
                  ['release', 'FOO', '--reason', 'its tree went quiet'])
         with mock.patch.object(BACKLOG, 'open_store', opened):

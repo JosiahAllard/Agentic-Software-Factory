@@ -85,7 +85,7 @@ class Unblock(RestoreCase):
         # block, unblock on the holder's own live branch: the pull is back.
         self.advance(BRANCH)
         self.pulled(holder=BRANCH)
-        self.block(on=('live-client',))
+        self.block(on=('upstream:client',))
         self.unblock()
         self.assert_pulled('FOO', BRANCH)
 
@@ -158,36 +158,36 @@ class Unblock(RestoreCase):
 
     def test_a_hand_named_branch_that_never_held_the_tip_is_not_restored(self):
         elsewhere = self.advance('tools/elsewhere')
-        body = ('Stopped on branch %s at %s, branch kept.\nBlocked on live-client (%s): %s'
+        body = ('Stopped on branch %s at %s, branch kept.\nBlocked on upstream:client (%s): %s'
                 % (OTHER, elsewhere[:10], TODAY, WHY))
-        self.seed(priced('FOO', state='blocked', blocked_on='live-client', body=body))
+        self.seed(priced('FOO', state='blocked', blocked_on='upstream:client', body=body))
         self.unblock()
         self.assert_open('FOO', '%s no longer holds its stopped tip %s' % (OTHER, elsewhere[:10]))
 
     def test_a_tip_git_does_not_know_is_not_restored(self):
-        body = ('Stopped on branch %s at abcdef1234, branch kept.\nBlocked on live-client (%s): %s'
+        body = ('Stopped on branch %s at abcdef1234, branch kept.\nBlocked on upstream:client (%s): %s'
                 % (OTHER, TODAY, WHY))
-        self.seed(priced('FOO', state='blocked', blocked_on='live-client', body=body))
+        self.seed(priced('FOO', state='blocked', blocked_on='upstream:client', body=body))
         self.unblock()
         self.assert_open('FOO', 'its stopped tip abcdef1234 is gone')
 
     def test_only_the_last_unblock_restores(self):
         self.pulled()
-        self.block(on=('owner', 'live-client'))
+        self.block(on=('owner', 'upstream:client'))
         change = self.unblock(on='owner', reason='Q-101 answered: keep the cap')
         r = self.get('FOO')
         self.assertEqual((r.get('state'), r.all('blocked_on'), r.get('pulled_by')),
-                         ('blocked', ['live-client'], None))
+                         ('blocked', ['upstream:client'], None))
         self.assertFalse(any('restored' in line for line in change.lines))
-        self.unblock(on='live-client', reason='the client is back up now')
+        self.unblock(on='upstream:client', reason='the client is back up now')
         self.assert_pulled('FOO', OTHER)
 
     def test_a_second_block_of_a_blocked_record_still_restores(self):
         self.pulled()
         self.block()
-        self.verb('block', 'FOO', ['live-client'], reason='the client went down too')
+        self.verb('block', 'FOO', ['upstream:client'], reason='the client went down too')
         self.unblock(on='owner', reason='Q-101 answered: keep the cap')
-        self.unblock(on='live-client', reason='the client is back up now')
+        self.unblock(on='upstream:client', reason='the client is back up now')
         self.assert_pulled('FOO', OTHER)
 
     def test_unblock_by_the_owner_route_restores(self):
@@ -291,20 +291,20 @@ class Unblock(RestoreCase):
         self.unblock()
         self.assert_open('FOO')
         self.repo.git('branch', OTHER, tip)   # the name comes back, at the very tip
-        self.block(on=('live-client',))
+        self.block(on=('upstream:client',))
         self.unblock()
         self.assert_open('FOO')
 
     def test_a_release_ends_the_stopped_pull(self):
         body = ('Stopped on branch %s at %s, branch kept.\n'
-                'Blocked on live-client (%s): %s\n\nReleased (%s): given back'
+                'Blocked on upstream:client (%s): %s\n\nReleased (%s): given back'
                 % (OTHER, self.tip(OTHER)[:10], TODAY, WHY, TODAY))
-        self.seed(priced('FOO', state='blocked', blocked_on='live-client', body=body))
+        self.seed(priced('FOO', state='blocked', blocked_on='upstream:client', body=body))
         self.unblock()
         self.assert_open('FOO')
 
     def test_a_blocked_record_with_no_stopped_pull_opens_with_no_body_line(self):
-        self.seed(priced('FOO', state='blocked', blocked_on='live-client', body='Some text.'))
+        self.seed(priced('FOO', state='blocked', blocked_on='upstream:client', body='Some text.'))
         before = self.get('FOO').body
         self.unblock()
         self.assert_open('FOO')
@@ -358,10 +358,10 @@ class Answer(RestoreCase):
 
     def test_an_answer_that_leaves_a_blocker_restores_nothing(self):
         self.pulled()
-        self.block(on=('owner', 'live-client'))
+        self.block(on=('owner', 'upstream:client'))
         self.answer()
         r = self.get('FOO')
-        self.assertEqual((r.get('state'), r.all('blocked_on')), ('blocked', ['live-client']))
+        self.assertEqual((r.get('state'), r.all('blocked_on')), ('blocked', ['upstream:client']))
         self.unblock(reason='the client is back up now')
         self.assert_pulled('FOO', OTHER)
 

@@ -12,8 +12,8 @@ from . import policy
 from . import record as rmod
 from . import scope as smod
 from .errors import Failure, Refusal, Usage
-from .plan import (_text, branch_name_error, reason_error, refuse_machine_paths, refuse_top,
-                   require, shared_of)
+from .plan import (_text, branch_name_error, live_client_end_error, reason_error,
+                   refuse_machine_paths, refuse_top, require, shared_of)
 from .store import Change
 from .store_read import id_refusal
 
@@ -420,6 +420,12 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
         if bad:
             raise Usage(bad.replace('`block %s --on owner`' % rid,
                                     '`set %s` of an owner hold' % rid))
+    if 'blocked_on' in keys:
+        # The same rule as `block --on live-client` (plan_block); `set` writes no `until`.
+        bad = live_client_end_error(rid, rec, get('blocked_on'), None)
+        if bad:
+            raise Usage('`set %s --blocked-on` writes no `until`, so it cannot add live-client: %s'
+                        % (rid, bad))
 
     new_by = dict(changes).get('priority_by', [None])[0]
     if 'priority' in keys and rmod.is_owner_held(rec) and new_by not in RULED_PRICE_BY:

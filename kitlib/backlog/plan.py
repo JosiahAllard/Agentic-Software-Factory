@@ -21,6 +21,7 @@ import re
 from kitlib.git import cmd, refs
 from kitlib import machinepaths
 
+from . import conditions as condmod
 from . import offer as omod
 from . import policy
 from . import record as rmod
@@ -258,6 +259,34 @@ def _text(pairs, body):
 
 def clears_owner_blocker(rec, after):
     return 'owner' in rec.all('blocked_on') and 'owner' not in after
+
+
+# `live-client` waits on the owner being present (docs/backlog.md "Resources"): a write that adds
+# it, or gives it a new end, names that end in a form the unblock-conditions job reads, so the
+# hold clears by itself. `set` writes no `until`, so a `set` that adds it is always refused.
+LIVE_CLIENT = 'live-client'
+LIVE_CLIENT_NEEDS_END = (
+    '`block %s --on live-client` needs an end the unblock-conditions job reads, given alone on '
+    'its own `--on`: any `--until` form that job reads (kitlib/backlog/conditions.py), such as '
+    '`--until "todo:T-n done"`, `--until "question:Q-n answered"`, `--until "approval:A-n '
+    'decided"` (the owner\'s act) or `--until "resource:<name> free"`. A live run an '
+    'agent may start is no hold: `requires: live-run`, and `uses:` when accounts are scarce '
+    '(docs/backlog.md "Resources")')
+
+
+def live_client_end_error(rid, rec, members, until):
+    """None, or why a write giving `rec` the blockers `members` with the one end `until` (None:
+    no end; `set` gives none) leaves a live-client hold with no end the job reads: live-client is
+    among `members` and either new to the record or given an end, and the end is not one
+    conditions.parse reads for live-client alone."""
+    if LIVE_CLIENT not in members:
+        return None
+    if LIVE_CLIENT in rec.all('blocked_on') and until is None:
+        return None
+    if list(members) == [LIVE_CLIENT] and until is not None and \
+            condmod.parse(' '.join(until.split())) is not None:
+        return None
+    return LIVE_CLIENT_NEEDS_END % rid
 
 
 def refuse_machine_paths(field, *texts):

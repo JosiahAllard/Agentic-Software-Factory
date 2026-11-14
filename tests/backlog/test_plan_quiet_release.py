@@ -135,7 +135,7 @@ class QuietRelease(QuietCase):
     def test_block_takes_no_quiet_rule(self):
         self.seed_pull()
         with self.assertRaises(Refusal):
-            self.verb('block', 'FOO', ['live-client'], reason=WHY)
+            self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.assertEqual(self.asked, [])
         self.assert_held()
 
@@ -175,7 +175,7 @@ class PulledSessionField(QuietCase):
         self.verb('release', 'FOO', WHY)
         self.assert_cleared('FOO')
         self.seed(priced('FOO', pulled_by=BRANCH, pulled_session='kit-a', **PULLED))
-        self.verb('block', 'FOO', ['live-client'], reason=WHY)
+        self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.assert_cleared('FOO')
         self.seed(priced('FOO', pulled_by=BRANCH, pulled_session='kit-a', **PULLED))
         self.verb('set_status', 'FOO', 'parked')

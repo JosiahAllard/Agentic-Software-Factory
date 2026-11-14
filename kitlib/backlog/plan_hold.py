@@ -13,8 +13,8 @@ from . import plan_claim as claim
 from . import policy
 from . import record as rmod
 from .errors import Failure, Refusal, Usage
-from .plan import (_append_line, _text, clears_owner_blocker, reason_error, refuse_machine_paths,
-                   refuse_top, require)
+from .plan import (_append_line, _text, clears_owner_blocker, live_client_end_error,
+                   reason_error, refuse_machine_paths, refuse_top, require)
 from .store import Change
 
 
@@ -100,6 +100,10 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
                           'owner` line): a lead\'s `--until` would schedule that hold to end. '
                           'The owner or the PM sets it (%s)'
                           % (rid, policy.row_text('unblock-owner')))
+    # after the --until checks, so a machine path or a malformed form is refused in its own words
+    bad = live_client_end_error(rid, rec, members, until)
+    if bad:
+        raise Usage(bad)
     if 'owner' in members:
         # Every caller passes here (tools/backlog.py, the hub's park): an owner hold cites the
         # hub ask that ends it, never only itself or another item. A hub id given now is enough

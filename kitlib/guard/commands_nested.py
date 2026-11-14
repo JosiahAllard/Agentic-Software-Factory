@@ -79,8 +79,7 @@ def _ps_command_switch(t):
 
 
 def span_text(cmd, words):
-    """The words as the command's source writes them (quotes kept), or joined when the source
-    positions do not fit."""
+    """The words as the command's source writes them (quotes kept), or joined when the source positions do not fit."""
     src = cmd.source
     if words and all(0 <= x.start <= x.end <= len(src) for x in words) and words[0].start <= words[-1].end:
         return src[words[0].start:words[-1].end]
@@ -428,8 +427,7 @@ FIND_EXEC = ('-exec', '-execdir', '-ok', '-okdir')
 
 
 def find_exec_words(cmd, inv):
-    """(option, word list) for each command find -exec/-execdir/-ok/-okdir runs, each up to its
-    ; or {} +."""
+    """(option, word list) for each command find -exec/-execdir/-ok/-okdir runs, each up to its ; or {} +."""
     out = []
     a = inv.args
     k = 0
@@ -552,7 +550,8 @@ def _nest(parsed, cmd, text, shell, cwd, cwd_home):
 # literal_programs: what may set a variable unseen (VAR_SETTERS), and the names the shell sets itself
 VAR_SETTERS = EXPORTERS | set(PS_ENV_ITEM_CMDLETS) | BASH_NO_PROGRAM | PS_KEYWORDS | sh.BASH_PREFIX_WORDS | {
     'getopts', 'readarray', 'mapfile', 'read', 'printf', 'unset', 'let', 'eval', 'source', '.', 'wait', 'coproc',
-    'iex', 'invoke-expression', 'new-variable', 'nv', 'remove-variable', 'rv', 'clear-variable', 'clv'}
+    'iex', 'invoke-expression', 'new-variable', 'nv', 'remove-variable', 'rv', 'clear-variable', 'clv',
+    'command', 'exec', 'nohup', 'builtin', 'sudo', 'stdbuf', 'caffeinate', 'env', 'nice', 'timeout', 'xargs'}
 SHELL_VARS = {sh.BASH: {'_', 'OPTARG', 'BASH_REMATCH', 'PWD', 'OLDPWD'}, sh.PS: {
     '_', 'psitem', 'matches', 'args', 'input', 'lastexitcode', 'pwd', 'this', 'foreach', 'switch', 'error'}}
 LITERAL_RE = re.compile(r'([\'"]?)([\w./:@%+,-]+(?: [\w./:@%+,-]+)*)\1')     # the value's source: fields, maybe quoted
@@ -569,15 +568,15 @@ def _literal_set(c, ps):
         m = name and c.words[1].text == '=' and quoted(c, w) and LITERAL_RE.fullmatch(src)
         return (name.group(1), m.group(2)) if m else None
     name, _eq, raw = src.partition('=')
-    m = ASSIGN_RE.match(src) and not name.endswith('+') and LITERAL_RE.fullmatch(raw)
+    m = ASSIGN_RE.match(src) and name.isascii() and not name.endswith('+') and LITERAL_RE.fullmatch(raw)
     return (name, m.group(2)) if m and m.group(2).split()[0].lower() not in VAR_SETTERS else None
 
 
 def literal_programs(parsed):
     """parsed.text with each program word that is a variable set once to a plain literal earlier on the
-    line written out as that literal, or None (docs/guard-core.md "Parsing" gives the rule)."""
+    line written out as that literal, '' if none is, or None if the line is unsettled (docs/guard-core.md "Parsing")."""
     text, shell = parsed.text or '', parsed.shell
-    ps, flags, out = shell == sh.PS, re.I if shell == sh.PS else 0, []
+    ps, flags, out = shell == sh.PS, re.I if shell == sh.PS else re.A, []
     if shell not in SHELL_VARS or LINE_CD_RE.search(text) or not ps and re.search(r'(?<!\w)IFS(?!\w)', text) or any(
             {c.words[0].text.lower(), (getattr(invocation(c), 'name', None) or '').lower()} & VAR_SETTERS
             for c in parsed.commands if c.words):
@@ -588,7 +587,7 @@ def literal_programs(parsed):
         if found is None or (found[0].lower() if ps else found[0]) in SHELL_VARS[shell]:
             continue
         (name, value), uses = found, []
-        use = (r'\$%s|\$\{%s\}' if ps else r'"?\$%s"?|"?\$\{%s\}"?') % (name, name)
+        use = (r'\$%s|\$\{%s\}' if ps else r'"\$%s"|\$%s|"\$\{%s\}"|\$\{%s\}') % ((name,) * (2 if ps else 4))
         for u, inv in ((u, invocation(u)) for u in top[k + 1:]):
             w = inv.word if inv is not None and inv.dyn and inv.via is None and u.start >= a.end else None
             raw = w and u.source[w.start:w.end]
@@ -599,7 +598,7 @@ def literal_programs(parsed):
             out += [(w.start, w.end, "'%s'" % value if ps else value) for w in uses]
     for start, end, value in sorted(out, reverse=True):
         text = text[:start] + value + text[end:]
-    return text if out else None
+    return text if out else ''
 
 
 def read(text, shell, cwd, home=None):
@@ -608,7 +607,8 @@ def read(text, shell, cwd, home=None):
     parsed, _cmds = sh.parse(text, shell, cwd, home=home)
     expand(parsed)
     lit = None if parsed.clean else literal_programs(parsed)
-    if lit is not None:
-        return read(lit, shell, cwd, home)
+    again = read(lit, shell, cwd, home) if lit else None
+    if again is not None and literal_programs(again) is not None:   # the rewritten line must settle too
+        return again
     mark_git_env(parsed)
     return parsed

@@ -296,13 +296,16 @@ class LiteralProgram(Base):
                     self.assert_denied(self.decide(text, sub, environ, shell=shell), 'git-push-pmdata')
         self.assertIsNone(self.decide('B=git; $B status', environ=PM))
         self.assertIsNone(self.decide("$B = 'git'; & $B status", environ=PM, shell=ps))
+        self.assertIsNone(self.decide("$B = 'git'; $B" + self.PUSH, environ=PM, shell=ps))     # no &: runs nothing
 
     def test_a_value_or_line_it_cannot_be_sure_of_is_kept(self):
         rows = [(t, bash) for t in ('B=$X; $B', 'B="GIT_DIR=x git"; $B', 'B=if; $B', 'B="gi\rt"; $B',
                                     'B="gi\\\nt"; $B','B=git; cd x; $B', 'B=git; B=x; $B', 'B=git; B+=x; $B',
                                     'A && B=git; $B', 'B=git | $B', 'B="g t"; "$B"', 'B=$(which git); $B',
                                     'B=git; getopts x B; $B', 'B=git; readarray B; $B', 'B=git; IFS=x; $B',
-                                    '_=git; $_', 'OPTARG=git; $OPTARG', 'PWD=git; $PWD')]
+                                    '_=git; $_', 'OPTARG=git; $OPTARG', 'PWD=git; $PWD', 'B=git >x; $B',
+                                    'Bé=echo; $Bé', 'n=$(echo b | tr a-z A-Z); B=python; declare "$n=git"; $B',
+                                    'E="command declare"; n=$(echo b | tr a-z A-Z); B=python; $E "$n=git"; $B')]
         rows += [(t, ps) for t in ("$P='python'; $p='git'; & $P", '$P = git; & $P', "$P = @'\ngit\n'@; & $P",
                                    "$P = \"it's\"; & $P", "$Matches = 'git'; & $Matches", "$args = 'git'; & $args",
                                    "$PSItem = 'git'; & $PSItem", "$P = 'git'; Set-Variable P x; & $P",

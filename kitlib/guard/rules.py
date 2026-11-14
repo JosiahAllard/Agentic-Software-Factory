@@ -12,79 +12,65 @@ subagent transcripts.
 Rules, in the order they are checked:
   lock-mcp         the lock MCP's owner-only tools: a subagent or a launcher-marked session is
                    denied; an unmarked main session (the owner's own) is allowed
-  hub-mcp          the hub MCP server's owner tools (hub_answer, hub_todo_done, hub_story_submit,
-                   hub_to_pm_send, a hub tool named for decide or approve), in any session but the
-                   owner's own
+  hub-mcp          the hub MCP server's owner tools (hub_answer, hub_todo_done, hub_story_submit, hub_to_pm_send, a
+                   hub tool named for decide or approve), in any session but the owner's own
   hub-browser      a browser or computer-use MCP call whose input names the hub's own origin (a
                    loopback host on a hub port), in any session but the owner's own
-  owner-tool       a shell command running one of the owner's tools to act (tool_run reads the file
-                   it runs): reserve_ui; a lock CLI owner-only write (reserve, release, hold
-                   whole|half|slots, division --set, game on|off|set, top, stop/unbook --force);
-                   machine setup with --apply (its PowerShell front ends with -Apply), which
-                   writes the owner's email; in any session but the owner's own
-  hub-secrets      a shell command with a literal path into the hub's token folder (a bare token
-                   file's name, a hub-like name elsewhere, a computed word, the word hub and the
-                   store are not refused; a wildcard path is read as the literal folder before
-                   its first wildcard, glob_folder, so `cat ~/.pm-kit/hub/*` is), or python
-                   or node code that names a token file or the folder (kitlib.guard.hub.INLINE_RE);
-                   an edit of a file in the token folder or the store; a read tool's
-                   read of the token folder or a file in it, or a Grep that can read one (Glob
-                   is not hooked; the store stays readable); in any session but the owner's own
-                   (kitlib.guard.hub)
-  hub-owner-verb   a parsed hub tool run (hub_run_args: python, its options, then tools/hub.py or
-                   -m tools.hub; tools/hub.py run as the program; python -m runpy tools.hub; at
-                   any depth of the line) whose arguments run an owner verb
-                   (answer, open, pair, unpair, stop, restart, todos done, stories add|withdraw,
-                   to-pm add|send, inbox read, approvals approve|deny|apply, todos add --owner; a word
-                   the guard cannot read where the verb could be counts), in any session but the
-                   owner's own. Text that only names the hub tool (prose, a pipe of a run into
-                   another program) is not read
+  owner-tool       a shell command running one of the owner's tools to act (tool_run reads the file it runs):
+                   reserve_ui; a lock CLI owner-only write (reserve, release, hold whole|half|slots, division --set,
+                   game on|off|set, top, stop/unbook --force); machine setup with --apply (its PowerShell front ends
+                   with -Apply), which writes the owner's email; in any session but the owner's own
+  hub-secrets      a shell command with a literal path into the hub's token folder (a bare token file's name, a
+                   hub-like name elsewhere, a computed word, the word hub and the store are not refused; a wildcard
+                   path is read as the literal folder before its first wildcard, glob_folder, so `cat ~/.pm-kit/hub/*`
+                   is), or python or node code that names a token file or the folder (kitlib.guard.hub.INLINE_RE); an
+                   edit of a file in the token folder or the store; a read tool's read of the token folder or a file
+                   in it, or a Grep that can read one (Glob is not hooked; the store stays readable); in any session
+                   but the owner's own (kitlib.guard.hub)
+  hub-owner-verb   a parsed hub tool run (hub_run_args: python, its options, then tools/hub.py or -m tools.hub;
+                   tools/hub.py run as the program; python -m runpy tools.hub; at any depth of the line) whose
+                   arguments run an owner verb (answer, open, pair, unpair, stop, restart, todos done, stories
+                   add|withdraw, to-pm add|send, inbox read, approvals approve|deny|apply, todos add --owner; a word
+                   the guard cannot read where the verb could be counts), in any session but the owner's own. Text
+                   that only names the hub tool (prose, a pipe of a run into another program) is not read
   ledger          an edit of the machine config's ledger_path, of the rulebooks' folder or a
                    `.md` file directly in it, or of the standing digest (kitlib.ledger.files
                    of_config: `rules` and STANDING.md in ledger_dir, else beside ledger_path), by
                    anyone; with a broken machine config, every subagent write
   lock-state       an agent session's edit of a file in the machine lock's state folder
-  machine-config   an edit of a file in the PM repository's machine config folder
-                   (<pointer>/.pm-kit) or in a .pm-kit folder at the top of a checkout, in any
-                   session but the owner's own (its hub folder is hub-secrets', the owner's
-                   delegation list owner-delegations')
+  machine-config   an edit of a file in the PM repository's machine config folder (<pointer>/.pm-kit) or in a .pm-kit
+                   folder at the top of a checkout, in any session but the owner's own (its hub folder is
+                   hub-secrets', the owner's delegation list owner-delegations')
   kit-json         an agent session's edit of a .kit.json in a checkout
   generated-file   an edit of a file tools/render_content.py writes in a kit checkout (a host's
                    agents, skills copies, plugin manifests: kitlib.guard.generated), in any session
   main-checkout    an edit in a main checkout by a role whose edit_main_checkout is false
-  write-jail       an agent session's write outside its own checkout, its repository's other
-                   worktrees, the temp folder and the .kit.json data roots (kitlib.guard.jail);
-                   git that writes a checkout outside them
+  write-jail       an agent session's write outside its own checkout, its repository's other worktrees, the temp
+                   folder and the .kit.json data roots (kitlib.guard.jail); git that writes a checkout outside them
   wrapped-gate     (off by default) gate.py or `machine_lock.py run` piped into another command (P16)
   root-search      a recursive search from a drive or filesystem root
   heavy            (a warning by default) a heavy program run with no lock held (MACHINE_LOCK_RUN
                    verified by nest_check)
-  git-*            damaging git in a main checkout; branch -D anywhere; a push that deletes or
-                   force-pushes main, in every repository (with no .kit.json too); a push to main
-                   with no gate-OK record when the repo sets repo.push_block; push --no-verify, send-pack,
-                   http-push, a remote helper or a git alias for one in a repository with a PM
-                   data record, and any push from a copy of PM data without one; a remote
-                   repointed (git-remote-rewrite) in a repository with one; all in any session
-                   but the owner's own
-  git-shared-ref   git update-ref by an agent session (a subagent or a jailed mark but pm) from any
-                   checkout, of a ref other than refs/tmp/<name>, a per-worktree ref, or in a linked
-                   worktree its HEAD and the branch checked out there (never a guarded main); a
-                   ref or a repository the text does not name is refused too. A coordinator's
-                   main session may also delete a stray ref (refs/ outside refs/heads, refs/tags,
-                   refs/stash and refs/backlog) in its own repository. The same allowance
-                   judges a push into the repository itself, a fetch or pull refspec's
-                   destination (a remote's own tracking ref passes), symbolic-ref with two
-                   names or -d, replace and a notes write
-  git-hooks-path   a change of core.hooksPath (git config, git -c, clone -c, GIT_CONFIG_*), in
-                   any session
+  git-*            damaging git in a main checkout; branch -D anywhere; a push that deletes or force-pushes main, in
+                   every repository (with no .kit.json too); a push to main with no gate-OK record when the repo sets
+                   repo.push_block; push --no-verify, send-pack, http-push, a remote helper or a git alias for one in
+                   a repository with a PM data record, and any push from a copy of PM data without one; a remote
+                   repointed (git-remote-rewrite) in a repository with one; all in any session but the owner's own
+  git-shared-ref   git update-ref by an agent session (a subagent or a jailed mark but pm) from any checkout, of a ref
+                   other than refs/tmp/<name>, a per-worktree ref, or in a linked worktree its HEAD and the branch
+                   checked out there (never a guarded main); a ref or a repository the text does not name is refused
+                   too. A coordinator's main session may also delete a stray ref (refs/ outside refs/heads, refs/tags,
+                   refs/stash and refs/backlog) in its own repository. The same allowance judges a push into the
+                   repository itself, a fetch or pull refspec's destination (a remote's own tracking ref passes),
+                   symbolic-ref with two names or -d, replace and a notes write
+  git-hooks-path   a change of core.hooksPath (git config, git -c, clone -c, GIT_CONFIG_*), in any session
   git-stash-shared git stash in a linked worktree by an agent session that adds an untagged
                    entry or takes one it does not name (bare stash, pop, save, clear)
   owner-identity   the owner's email given to a commit, in any session but the owner's own
   kill-by-name     an agent session ending processes by name (taskkill /IM, Stop-Process -Name)
-  cmd-reparse      a batch file run (.cmd, .bat, the bare kit command) or a Git Bash start run
-                   with an argument cmd.exe would read again (shell.CMD_REPARSE), a computed one, a
-                   splat, an unquoted bash wildcard or xargs' input, in any session (the shell
-                   rules' last)
+  cmd-reparse      a batch file run (.cmd, .bat, the bare kit command) or a Git Bash start run with an argument
+                   cmd.exe would read again (shell.CMD_REPARSE), a computed one, a splat, an unquoted bash wildcard or
+                   xargs' input, in any session (the shell rules' last)
   busy-wait        (off by default) a foreground sleep loop with no counter, clock or timeout bounding it
   git-alias        (a warning by default) a git alias defined on the command line (-c alias.<name>=...)
 A rule's mode (deny, warn or off) is kitlib.guard.modes'; a rule it does not name is deny.
@@ -219,15 +205,13 @@ from .rules_gitref import (BRANCH_FLAGS, BRANCH_VALUES, CHECKOUT_FLAGS, CHECKOUT
 # ---------------------------------------------------------------- entry
 
 def decide(event, ctx=None, environ=None, profile=None):
-    """The Decision on the kitlib.host.Action `event`: 'allow', or the first rule's deny or ask.
-    With no `ctx`, a context.Ctx of `environ` (default os.environ) and the host `profile` (a
-    HostProfile or a callable returning one) is built here, so its reads fail inside decide.
-    The shared rules judge first, so a call they refuse is refused as it always was; a call they
-    allow or ask then meets the role policy (kitlib.guard.rolepolicy; its refusal wins over an ask), which is off for a role whose
-    .kit.json entry names no mode, and, when it adds write-jail roots, the shared rules again.
-    Each refusal meets its rule's mode (kitlib.guard.modes): an allow that a warn-mode rule
-    refused carries the warnings (rule WARNED, reason WARNING plus each refusal's reason), each
-    quoting at most CITE_MAX characters of a shell call's text (refuse, cited)."""
+    """The Decision on the kitlib.host.Action `event`: 'allow', or the first rule's deny or ask. With no `ctx`, a context.Ctx of
+    `environ` (default os.environ) and the host `profile` (a HostProfile or a callable returning one) is built here, so its reads
+    fail inside decide. The shared rules judge first, so a call they refuse is refused as it always was; a call they allow or ask
+    then meets the role policy (kitlib.guard.rolepolicy; its refusal wins over an ask), which is off for a role whose .kit.json
+    entry names no mode, and, when it adds write-jail roots, the shared rules again. Each refusal meets its rule's mode
+    (kitlib.guard.modes): an allow that a warn-mode rule refused carries the warnings (rule WARNED, reason WARNING plus each
+    refusal's reason), each quoting at most CITE_MAX characters of a shell call's text (refuse, cited)."""
     from . import rolepolicy
     ctx = ctx or context.Ctx(environ=environ, profile=profile)
     command = getattr(event, 'command', None) if getattr(event, 'kind', None) == 'shell' else None
@@ -316,10 +300,9 @@ def shell_command(event, ctx, text, shell, cwd, role):
 
 
 def brace_limit(parsed, role):
-    """A line with a bash word whose brace groups give more than shell.BRACE_LIMIT words (rule
-    brace-limit, every session): the guard does not write that word out, so no path rule sees the
-    words bash makes from it, and the line is refused rather than read as a computed word. The
-    alternative is the word's shell text with the word replaced by a placeholder (docs/guard.md
+    """A line with a bash word whose brace groups give more than shell.BRACE_LIMIT words (rule brace-limit, every session): the
+    guard does not write that word out, so no path rule sees the words bash makes from it, and the line is refused rather than
+    read as a computed word. The alternative is the word's shell text with the word replaced by a placeholder (docs/guard.md
     "Rules")."""
     if parsed.brace_over is None:
         return None
@@ -341,15 +324,13 @@ CMD_CHAR_NAMES = {'\r': 'a carriage return', '\n': 'a line break'}
 
 
 def cmd_reparse(event, ctx, cmd, inv, cwd, role):
-    """A batch file run (commands.batch_run: a .cmd or .bat, cmd's call of one, the bare kit
-    command) whose arguments cmd.exe would read again before the program does (rule cmd-reparse,
-    every session; docs/guard.md "Batch files and cmd.exe"): an argument holding one of
-    shell.CMD_REPARSE, a computed one (cmd.exe reads the value it gets), a PowerShell splat, an
-    unquoted bash wildcard (bash fills in file names, which cmd.exe then reads), or arguments xargs
-    gives it. Git Bash's start (commands.bash_start) hands every word to cmd.exe, whatever it
-    starts, so each of its words is read the same way. The kit command's alternative is the same
-    words through python and tools/kit.py, which no cmd.exe reads; another program's is to run it
-    directly."""
+    """A batch file run (commands.batch_run: a .cmd or .bat, cmd's call of one, the bare kit command) whose arguments cmd.exe
+    would read again before the program does (rule cmd-reparse, every session; docs/guard.md "Batch files and cmd.exe"): an
+    argument holding one of shell.CMD_REPARSE, a computed one (cmd.exe reads the value it gets), a PowerShell splat, an unquoted
+    bash wildcard (bash fills in file names, which cmd.exe then reads), or arguments xargs gives it. Git Bash's start
+    (commands.bash_start) hands every word to cmd.exe, whatever it starts, so each of its words is read the same way. The kit
+    command's alternative is the same words through python and tools/kit.py, which no cmd.exe reads; another program's is to run
+    it directly."""
     found = cm.batch_run(cmd, inv)
     started = None
     if found is None:
@@ -446,11 +427,10 @@ def shell_writes(event, ctx, cmd, inv, cwd, role):
         net = dict(((x.word.start, x.word.end), x) for x in net_writes(cmd)[0])
     into = copy_into(cmd, inv)
     searched = False
-    # A Start-Process program with a -WorkingDirectory runs there (commands.run_dir), while
-    # PowerShell places the call's redirections and the -RedirectStandard* files from its own
-    # location, the command's directory. The program's own targets are judged from both folders,
-    # so a workdir never lets a write pass that the command's own directory refuses. git (and a
-    # git-* program) gives none: the git rules judge its writes, from the workdir (commands_git.git_call).
+    # A Start-Process program with a -WorkingDirectory runs there (commands.run_dir), while PowerShell places the call's
+    # redirections and the -RedirectStandard* files from its own location, the command's directory. The program's own targets are
+    # judged from both folders, so a workdir never lets a write pass that the command's own directory refuses. git (and a git-*
+    # program) gives none: the git rules judge its writes, from the workdir (commands_git.git_call).
     moved = len(write_targets(cmd, None)) + len(inv.writes) \
         if inv is not None and inv.via == 'start-process' and inv.workdir is not None else None
     asked = Asked()                             # every target's refusal wins over another's ask
@@ -467,15 +447,6 @@ def shell_writes(event, ctx, cmd, inv, cwd, role):
 
 
 # ---------------------------------------------------------------- git
-
-def _short_flags(args):
-    out = set()
-    for w in args:
-        t = w.text
-        if t.startswith('-') and not t.startswith('--') and len(t) > 1:
-            out.update(t[1:])
-    return out
-
 
 def git_alias(ctx, cmd, gc, cwd, role, event=None):
     name, val = gc.alias
@@ -498,9 +469,8 @@ def git_alias(ctx, cmd, gc, cwd, role, event=None):
 
 
 def alias_heavy_run(ctx, cmd, cwd, text):
-    """The machine_lock run line for a shell alias's command `text` when it is one heavy program
-    (heavy) and the session holds no machine lock, so the alternative git_alias prints is not
-    refused as heavy in turn; else None."""
+    """The machine_lock run line for a shell alias's command `text` when it is one heavy program (heavy) and the session holds no
+    machine lock, so the alternative git_alias prints is not refused as heavy in turn; else None."""
     where = cmd.cwd or cwd
     try:
         parsed = cn.read(text, cmd.shell, where, home=getattr(ctx, 'home', None))
@@ -654,11 +624,10 @@ def remote_rewrite_key(name):
 
 
 def config_rewrite(gc):
-    """(what, files, scope_all) when a `git config` call writes a key or section
-    remote_rewrite_key names, opens a config in an editor, or has a positional word computed at
-    run time (git config $K, PowerShell's git config @a: it may be any write), else None.
-    Options are read as git reads them (config_args: --glo, --fil <path>, -f<path>, --ed).
-    `files`: the Words of its -f/--file paths; `scope_all`: --global or --system."""
+    """(what, files, scope_all) when a `git config` call writes a key or section remote_rewrite_key names, opens a config in an
+    editor, or has a positional word computed at run time (git config $K, PowerShell's git config @a: it may be any write), else
+    None. Options are read as git reads them (config_args: --glo, --fil <path>, -f<path>, --ed). `files`: the Words of its
+    -f/--file paths; `scope_all`: --global or --system."""
     names, sure, pos, files = config_args(gc)
     scope_all = bool({'global', 'system'} & names)
     if 'edit' in names or (pos and not pos[0].dyn and pos[0].text == 'edit'):
@@ -688,10 +657,9 @@ def config_rewrite(gc):
 
 
 def _config_file_recorded(ctx, path, where):
-    """True when a config file git reads belongs to a repository with a PM data record (its
-    folder, or the git common dir two folders up from a worktree's config, holds the record), or
-    is a user or system config (scope_all, judged by machine_pm_data); a path that cannot be
-    resolved counts (fail closed)."""
+    """True when a config file git reads belongs to a repository with a PM data record (its folder, or the git common dir two
+    folders up from a worktree's config, holds the record), or is a user or system config (scope_all, judged by machine_pm_data);
+    a path that cannot be resolved counts (fail closed)."""
     p = sh.resolve_path(path, where, home=getattr(ctx, 'home', None)) if path else None
     if not p:
         return True
@@ -725,16 +693,13 @@ def _remote_verb(gc):
 
 
 def git_remote_rewrite(event, ctx, gc, role):
-    """git-remote-rewrite: `git remote set-url|add|rename|remove`, a `git config` write to
-    remote.*, url.*, include.* or includeIf.* (any spelling: --add, --unset, set, unset, the
-    section verbs) and `git config --edit`, in a repository with a PM data record (or one git
-    cannot place), in every session but the owner's own. A directory the text cannot tell counts
-    when _unknown_dir_counts says so (the machine config names pm_data, or the command's own
-    directory has a record). A --global or --system write, or one to
-    a user or system config file, counts when the machine config names pm_data; a --file git
-    does not read is left alone. The pre-push leak stage tells the private remote by its
-    configured URLs, so a remote pointed elsewhere would make a public one look private
-    (docs/pm-data-branch.md "Pre-push guard")."""
+    """git-remote-rewrite: `git remote set-url|add|rename|remove`, a `git config` write to remote.*, url.*, include.* or
+    includeIf.* (any spelling: --add, --unset, set, unset, the section verbs) and `git config --edit`, in a repository with a PM
+    data record (or one git cannot place), in every session but the owner's own. A directory the text cannot tell counts when
+    _unknown_dir_counts says so (the machine config names pm_data, or the command's own directory has a record). A --global or
+    --system write, or one to a user or system config file, counts when the machine config names pm_data; a --file git does not
+    read is left alone. The pre-push leak stage tells the private remote by its configured URLs, so a remote pointed elsewhere
+    would make a public one look private (docs/pm-data-branch.md "Pre-push guard")."""
     if gc.sub not in ('remote', 'config') or is_owner_session(event, ctx):
         return None
     where = None if gc.unknown else gc.dir

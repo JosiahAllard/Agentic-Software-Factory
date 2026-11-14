@@ -50,13 +50,12 @@ ASK = ('Ask a session whose role may take it (your coordinator; a coordinator as
 STORE_NAME_RE = re.compile(r'refs\W{1,6}(?:heads\W{1,6})?backlog|packed-refs|docs[/\\]+backlog(?![\w.-])', re.I)
 CODE_RE = re.compile(r'kitlib\s*[./\\]\s*backlog\b|from\s+kitlib\s+import\s+[^\n;]*\bbacklog\b|'
                      r'\btools\s*[./\\]\s*backlog\b|\bbacklog\.py\b|\bkit(?:\.py|\.cmd|\.exe)?\W{1,4}backlog\b')
-# python code that names the hub's record writer or the store's answer filing: hubsite then
-# recordwrite across a dot; any attribute .recordwrite (an alias: serve.recordwrite,
-# h.recordwrite; a backslash line break allowed after the dot); `from kitlib.hubsite import`
-# naming it, on one line, across backslash line breaks or inside its parentheses; or plan_answer
-# (kitlib.backlog.plan_hold). Only the hub runs them. Its path (kitlib/hubsite/recordwrite.py,
-# with either slash) is not read: code that reads the file writes nothing, and the file run as a
-# script stops at its relative import (`from .store import`) before it writes.
+# python code that names the hub's record writer or the store's answer filing: hubsite then recordwrite across a dot;
+# any attribute .recordwrite (an alias: serve.recordwrite, h.recordwrite; a backslash line break allowed after the
+# dot); `from kitlib.hubsite import` naming it, on one line, across backslash line breaks or inside its parentheses; or
+# plan_answer (kitlib.backlog.plan_hold). Only the hub runs them. Its path (kitlib/hubsite/recordwrite.py, with either
+# slash) is not read: code that reads the file writes nothing, and the file run as a script stops at its relative
+# import (`from .store import`) before it writes.
 HUB_WRITER_RE = re.compile(r'\bhubsite\s*\.\s*recordwrite\b|\.(?:\s|\\\n)*recordwrite\b|'
                            r'from\s+kitlib\s*\.\s*hubsite\s+import\s+'
                            r'(?:\([^)]*|[^\n;]*(?:\\\n[^\n;]*)*)\brecordwrite\b|\bplan_answer\b')
@@ -77,8 +76,7 @@ def read_record(root, rid):
 
 
 def shell(event, ctx, cmd, inv, cwd, role):
-    """The rules.shell_command rule: role_run, raw_code, store_ref_write, then script_file and
-    piped_script."""
+    """The rules.shell_command rule: role_run, raw_code, store_ref_write, then script_file and piped_script."""
     return runs(event, ctx, cmd, inv, cwd, role) or script_file(event, ctx, cmd, inv, cwd, role) or \
         piped_script(event, ctx, cmd, inv, cwd, role)
 
@@ -124,10 +122,9 @@ def py_module(inv):
 
 
 def run_words(inv):
-    """The Words after tools/backlog.py when `inv` runs it (rules.tool_run: the script, -m
-    tools.backlog; runpy's module read as the script; the kit command's `kit backlog`:
-    rules.script_run; a computed script word ending in /backlog.py: rules.computed_script), else
-    None."""
+    """The Words after tools/backlog.py when `inv` runs it (rules.tool_run: the script, -m tools.backlog; runpy's
+    module read as the script; the kit command's `kit backlog`: rules.script_run; a computed script word ending in
+    /backlog.py: rules.computed_script), else None."""
     run = rules.script_run(inv) or rules.computed_script(inv)
     if run is None or run[0] != SCRIPT:
         return None
@@ -135,12 +132,11 @@ def run_words(inv):
 
 
 def argv_words(cmd, words):
-    """read_argv's (text, readable) pairs: a computed word is unreadable, and so is a PowerShell
-    word holding a double quote (Windows PowerShell 5.1 passes it on unescaped, so it can split).
-    A bash word that is all one double-quoted string (`"$PWD"`, `"$M/x"`; not `"$@"` or
-    `${a[@]}`, which split) is policy.ONE: one word, its text unknown.
-    A Start-Process -ArgumentList string comes already split as Windows splits it
-    (commands._split_list): a double-quoted segment is one word, spaces and all."""
+    """read_argv's (text, readable) pairs: a computed word is unreadable, and so is a PowerShell word holding a double
+    quote (Windows PowerShell 5.1 passes it on unescaped, so it can split). A bash word that is all one double-quoted
+    string (`"$PWD"`, `"$M/x"`; not `"$@"` or `${a[@]}`, which split) is policy.ONE: one word, its text unknown. A
+    Start-Process -ArgumentList string comes already split as Windows splits it (commands._split_list): a double-quoted
+    segment is one word, spaces and all."""
     from kitlib.backlog import policy
     ps = cmd.shell == rules.sh.PS
     out = []
@@ -212,11 +208,10 @@ def role_run(event, ctx, cmd, inv, cwd, role):
 
 
 def _root(cmd, here, argv):
-    """The folder the run names: its -C, read from `here`, the directory the tool runs in
-    (commands.run_dir: the command's, or a Start-Process -WorkingDirectory), else `here` itself.
-    None, fail closed, when -C is a word the guard cannot read (policy.UNREAD) or when the folder
-    rests on a `here` the text cannot tell (run_dir's None: a cd it cannot read, a computed or
-    unplaceable -WorkingDirectory); never the hook's directory in its place."""
+    """The folder the run names: its -C, read from `here`, the directory the tool runs in (commands.run_dir: the
+    command's, or a Start-Process -WorkingDirectory), else `here` itself. None, fail closed, when -C is a word the
+    guard cannot read (policy.UNREAD) or when the folder rests on a `here` the text cannot tell (run_dir's None: a cd
+    it cannot read, a computed or unplaceable -WorkingDirectory); never the hook's directory in its place."""
     from kitlib.backlog import policy
     if argv.root is policy.UNREAD:
         return None
@@ -251,10 +246,9 @@ def _branch_at(ctx, where):
 
 
 def _worktree_on(ctx, where, branch):
-    """True when the directory `where` is in a linked worktree whose checked-out branch is
-    `branch`, as written: the --as branch's own worktree. ctx.place reads the real path (a
-    junction or symlink on the way goes to git) and answers the main checkout, and the PM data
-    worktree, as MAIN, so neither is ever one."""
+    """True when the directory `where` is in a linked worktree whose checked-out branch is `branch`, as written: the
+    --as branch's own worktree. ctx.place reads the real path (a junction or symlink on the way goes to git) and
+    answers the main checkout, and the PM data worktree, as MAIN, so neither is ever one."""
     if not where or not isinstance(branch, str) or not branch:
         return False
     place = ctx.place(where)
@@ -264,13 +258,12 @@ def _worktree_on(ctx, where, branch):
 
 
 def own_pull_refusal(ctx, cmd, argv, who, here=None, pairs=None):
-    """(policy.refusal, the form sentence, the form or None) for a run only a builder's own pull
-    would allow: the record read where the tool runs (_root; none when unknown) through the store
-    that folder opens (read_record), its pull compared with the branch the run acts as: the
-    branch checked out there, or an --as branch when `here` (commands.run_dir; None is never
-    evidence) is that branch's linked worktree (_worktree_on). The main checkout and the PM data
-    worktree are never its own. The form sentence names the accepted way when the own pull alone
-    would allow the run; the form is it written out (own_form), which changes no decision."""
+    """(policy.refusal, the form sentence, the form or None) for a run only a builder's own pull would allow: the
+    record read where the tool runs (_root; none when unknown) through the store that folder opens (read_record), its
+    pull compared with the branch the run acts as: the branch checked out there, or an --as branch when `here`
+    (commands.run_dir; None is never evidence) is that branch's linked worktree (_worktree_on). The main checkout and
+    the PM data worktree are never its own. The form sentence names the accepted way when the own pull alone would
+    allow the run; the form is it written out (own_form), which changes no decision."""
     from kitlib.backlog import policy, roles
     root = _root(cmd, here, argv)                # None: no record read, so never its own pull
     rec, branch = None, None
@@ -377,10 +370,9 @@ def _backlog_module(mod):
 
 
 def raw_code(event, ctx, cmd, inv, role):
-    """A subagent's python that imports kitlib.backlog or runs tools/backlog.py as code: -m or
-    runpy of a kitlib.backlog module, -c or standard-input code (rules.inline_code). Then, in any
-    session's but the owner's, code that names the hub's record writer (hub_writer_code). A script
-    file is not read."""
+    """A subagent's python that imports kitlib.backlog or runs tools/backlog.py as code: -m or runpy of a
+    kitlib.backlog module, -c or standard-input code (rules.inline_code). Then, in any session's but the owner's, code
+    that names the hub's record writer (hub_writer_code). A script file is not read."""
     return backlog_code(event, ctx, cmd, inv, role) or hub_writer_code(event, ctx, cmd, inv, role)
 
 
@@ -442,13 +434,12 @@ C_FLAGS_RE = re.compile(r'^-[bBdEhiIOPqsSuvx]*c$')     # -c, or flags that take 
 
 
 def c_code(inv):
-    """The text of the code python runs from -c when it is the word after -c (C_FLAGS_RE), or
-    None: no -c, the code attached to it (-cCODE), any launch other than plain or xargs
-    (commands.Invocation.via: a PowerShell process-start call, which re-splits its words), or a
-    word up to the code the line computes or the shell may hand python split (rules.native_unsure:
-    a PowerShell word holding a double quote, cmd's quotes), so python may run other code than the
-    guard reads. backlog_code reads the text with py_reach and judges None by CODE_RE alone over
-    the line's code texts; piped_script (_printed_name) judges no -c code at all when it is None."""
+    """The text of the code python runs from -c when it is the word after -c (C_FLAGS_RE), or None: no -c, the code
+    attached to it (-cCODE), any launch other than plain or xargs (commands.Invocation.via: a PowerShell process-start
+    call, which re-splits its words), or a word up to the code the line computes or the shell may hand python split
+    (rules.native_unsure: a PowerShell word holding a double quote, cmd's quotes), so python may run other code than
+    the guard reads. backlog_code reads the text with py_reach and judges None by CODE_RE alone over the line's code
+    texts; piped_script (_printed_name) judges no -c code at all when it is None."""
     if inv is None or rules.PY_RUN_RE.match(inv.name or '') is None or inv.via not in (None, 'xargs'):
         return None
     args, k = inv.args, 0
@@ -496,11 +487,10 @@ SH_EXTS = ('.sh', '.bash')
 
 
 def script_file_word(inv):
-    """(the Word naming the script file `inv` runs, the shell that reads it: shell.BASH, shell.PS
-    or 'py'), or None: a POSIX shell's script operand, a PowerShell shell's .ps1 (-File),
-    source or . of a file, python's script (rules.tool_run reads which word it is; -c, -m and
-    standard input are None: stdin_files), or a .sh, .bash, .ps1 or .py file run by its path. A
-    computed word is None."""
+    """(the Word naming the script file `inv` runs, the shell that reads it: shell.BASH, shell.PS or 'py'), or None: a
+    POSIX shell's script operand, a PowerShell shell's .ps1 (-File), source or . of a file, python's script
+    (rules.tool_run reads which word it is; -c, -m and standard input are None: stdin_files), or a .sh, .bash, .ps1 or
+    .py file run by its path. A computed word is None."""
     run = rules.tool_run(inv)
     if run is None:
         return None
@@ -581,10 +571,9 @@ def reader_files(cmd):
 
 
 def stdin_files(inv):
-    """(the files, the kind they are read in) a shell or python reading its code from standard
-    input (reads_stdin) is given: a literal `<` file (`bash < x.sh`), or the files a command piped
-    straight into it writes out (`cat x.sh | bash`, `Get-Content x.ps1 | powershell -`:
-    reader_files); else None."""
+    """(the files, the kind they are read in) a shell or python reading its code from standard input (reads_stdin) is
+    given: a literal `<` file (`bash < x.sh`), or the files a command piped straight into it writes out (`cat x.sh |
+    bash`, `Get-Content x.ps1 | powershell -`: reader_files); else None."""
     kind = reads_stdin(inv)
     if kind is None:
         return None
@@ -656,19 +645,17 @@ FIXED_MAINS = ('main', 'master')               # the mains a derived main_branch
 
 
 def landed_script(event, ctx, cwd, path):
-    """True when the python script file `path` is its repository's landed code (the owner's
-    ruling, trust landed code; docs/guard-jail-roles.md "Landed scripts"): its whole bytes are the
-    blob at the local refs/heads/<main branch>:<its path>, or that blob (no CR) with each LF as
-    CRLF. The guard refuses an agent's direct write of that ref (git-shared-ref, git-push-main). Checked in this order,
-    each failing to False: a checkout place (MAIN or LINKED, not the PM data worktree) that
-    holds `path`; a git common dir the session may not write (jail_roots), so a repository it
-    made or can rewrite is never trusted, before any git runs; a PM data record
-    (rules.pmdata_recorded); the main checkout's .kit.json, whose main_branch, when it writes
-    none, is read from <remote>/HEAD and is then trusted only as main or master; never the
-    linked worktree's own branch; no branch that equals refs/heads/<main> only when case is
-    ignored (on NTFS a loose refs/heads/Main shadows a packed main); then `git
-    --no-replace-objects cat-file blob`, so a replace ref does not stand in for the blob. Any
-    error is False: the script is judged as before."""
+    """True when the python script file `path` is its repository's landed code (the owner's ruling, trust landed code;
+    docs/guard-jail-roles.md "Landed scripts"): its whole bytes are the blob at the local refs/heads/<main branch>:<its
+    path>, or that blob (no CR) with each LF as CRLF. The guard refuses an agent's direct write of that ref
+    (git-shared-ref, git-push-main). Checked in this order, each failing to False: a checkout place (MAIN or LINKED,
+    not the PM data worktree) that holds `path`; a git common dir the session may not write (jail_roots), so a
+    repository it made or can rewrite is never trusted, before any git runs; a PM data record (rules.pmdata_recorded);
+    the main checkout's .kit.json, whose main_branch, when it writes none, is read from <remote>/HEAD and is then
+    trusted only as main or master; never the linked worktree's own branch; no branch that equals refs/heads/<main>
+    only when case is ignored (on NTFS a loose refs/heads/Main shadows a packed main); then `git --no-replace-objects
+    cat-file blob`, so a replace ref does not stand in for the blob. Any error is False: the script is judged as
+    before."""
     try:
         return _landed(event, ctx, cwd, path)
     except Exception:                           # noqa: BLE001 - no trust read: judged as before
@@ -725,10 +712,9 @@ def literal_form(ctx):
 
 
 def script_file(event, ctx, cmd, inv, cwd, role):
-    """A subagent's run of a script file (script_file_word), or of the files its standard input
-    is given (stdin_files), read one level deep, each one's first SCRIPT_CAP bytes, and judged by
-    judge_text; a path that is there but is not a regular file (a FIFO, /dev/stdin) is refused, as
-    the guard cannot read it. A missing file is not judged."""
+    """A subagent's run of a script file (script_file_word), or of the files its standard input is given (stdin_files),
+    read one level deep, each one's first SCRIPT_CAP bytes, and judged by judge_text; a path that is there but is not a
+    regular file (a FIFO, /dev/stdin) is refused, as the guard cannot read it. A missing file is not judged."""
     if not _judged_subagent(event):
         return None
     found = script_file_word(inv)
@@ -770,10 +756,9 @@ PIPE_RUNNERS = cm.BASH_SHELLS | cm.PS_SHELLS | {'cmd', 'eval', 'iex', 'invoke-ex
 
 
 def _runs_piped_text(inv):
-    """True when the program `inv` names takes the text piped into it as code or a command line:
-    a shell, eval, source, iex or cmd (fallback.RUNNERS, whatever its arguments), python reading
-    its code from standard input (reads_stdin), any program xargs runs (the text becomes its
-    words), or a program the line does not name (fail closed)."""
+    """True when the program `inv` names takes the text piped into it as code or a command line: a shell, eval, source,
+    iex or cmd (fallback.RUNNERS, whatever its arguments), python reading its code from standard input (reads_stdin),
+    any program xargs runs (the text becomes its words), or a program the line does not name (fail closed)."""
     if inv is None:
         return False
     if inv.dyn or inv.via == 'xargs':
@@ -782,13 +767,12 @@ def _runs_piped_text(inv):
 
 
 def piped_script(event, ctx, cmd, inv, cwd, role):
-    """A subagent's python script, -c or heredoc code (c_code, stdin_code) whose output may run
-    as code, judged by CODE_RE alone, not by py_reach's reading of its own code: piped, straight
-    or through other commands, into a runner (_runs_piped_text: `python gen.py | bash`,
-    `... | tee log | python`), or held in another command's word (`eval "$(python gen.py)"`, `bash <(python gen.py)`, a
-    nested shell's text: shell.Command.nested_in), whose program then reads what it prints, or run
-    in a ( ) or { } group, whose output the guard does not follow (a pipe from a group has no
-    pipe_from). The kit's own (_kit_code) is not judged."""
+    """A subagent's python script, -c or heredoc code (c_code, stdin_code) whose output may run as code, judged by
+    CODE_RE alone, not by py_reach's reading of its own code: piped, straight or through other commands, into a runner
+    (_runs_piped_text: `python gen.py | bash`, `... | tee log | python`), or held in another command's word (`eval
+    "$(python gen.py)"`, `bash <(python gen.py)`, a nested shell's text: shell.Command.nested_in), whose program then
+    reads what it prints, or run in a ( ) or { } group, whose output the guard does not follow (a pipe from a group has
+    no pipe_from). The kit's own (_kit_code) is not judged."""
     if not _judged_subagent(event):
         return None
     if cmd.nested_in is not None or cmd.groups:
@@ -810,9 +794,8 @@ def piped_script(event, ctx, cmd, inv, cwd, role):
 
 
 def _printed_name(ctx, role, cmd, chain, how):
-    """piped_script's refusal when `cmd` runs a python script file, or -c or heredoc code (c_code,
-    stdin_code, which backlog_code reads with py_reach), whose text CODE_RE matches (not the kit's
-    own); else None."""
+    """piped_script's refusal when `cmd` runs a python script file, or -c or heredoc code (c_code, stdin_code, which
+    backlog_code reads with py_reach), whose text CODE_RE matches (not the kit's own); else None."""
     ci = cm.invocation(cmd)
     found = script_file_word(ci) if ci is not None and not ci.dyn else None
     if found and found[1] == 'py':
@@ -832,12 +815,11 @@ def _printed_name(ctx, role, cmd, chain, how):
                         '%s' % (line, what, m.group(0), how, LITERAL_WHY), literal_form(ctx))
 
 
-# python a script file runs (py_reach): what can run code or a process, as python names it. An
-# import naming one of PY_RUN_MODULES (any part of its dotted path, or a name it takes); a name or
-# attribute in PY_RUN_ATTRS (os.system, from os import system, obj.__subclasses__); a bare name in
-# PY_RUN_BUILTINS (exec(...), breakpoint(), not re.compile); a string that is one of these, whole
-# or a dotted part of it (getattr(os, 'system'), sys.modules['subprocess'], resolve('os.system')).
-# Wide on purpose: a script that names the tool and holds any of them is refused as before.
+# python a script file runs (py_reach): what can run code or a process, as python names it. An import naming one of
+# PY_RUN_MODULES (any part of its dotted path, or a name it takes); a name or attribute in PY_RUN_ATTRS (os.system,
+# from os import system, obj.__subclasses__); a bare name in PY_RUN_BUILTINS (exec(...), breakpoint(), not re.compile);
+# a string that is one of these, whole or a dotted part of it (getattr(os, 'system'), sys.modules['subprocess'],
+# resolve('os.system')). Wide on purpose: a script that names the tool and holds any of them is refused as before.
 PY_RUN_MODULES = frozenset((
     'subprocess', 'runpy', 'importlib', 'imp', 'pkgutil', 'zipimport', 'pty', 'ctypes', 'cffi', '_winapi',
     '_posixsubprocess', 'multiprocessing', 'code', 'codeop', 'timeit', 'pdb', 'bdb', 'cProfile', 'profile',
@@ -865,40 +847,51 @@ PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgu
 
 
 def py_reach(text, writes=None):
-    """How the python `text` a script file, -c code or heredoc runs reaches the backlog, as the
-    refusal's words, or None: CODE_RE's name, then python's syntax tree (_tree_reach), read whole
-    and from its second line (python -x). With `writes` (heredoc code: store_hit) a write of the
-    store counts (_file_write). Fails closed to the name when the text does not parse, may be cut
-    at SCRIPT_CAP, or declares a coding other than UTF-8."""
+    """How the python `text` a script file, -c code or heredoc runs reaches the backlog, as the refusal's words, or
+    None: CODE_RE's name, then python's syntax tree (_tree_reach), read whole and from its second line (python -x).
+    With `writes` (heredoc code: store_hit) a write of the store counts (_file_write). Fails closed to the name when
+    the text does not parse, may be cut at SCRIPT_CAP, or declares a coding other than UTF-8."""
     m = CODE_RE.search(text)
     if not m:
         return None
     named = 'names %s' % m.group(0)
     writes = (writes(text), writes) if writes else None
-    if len(text.encode('utf-8', 'surrogatepass')) >= SCRIPT_CAP - 3:
+    trees = py_trees(text)
+    if trees is None:
         return named
-    cut = text.find('\n')                       # python -x skips up to the first \n only
-    for head in (text, text[cut + 1:]) if cut >= 0 else (text,):
-        for line in re.split(r'\r\n?|\n', head, maxsplit=3)[:3]:   # a lone \r ends a line too
-            c = PY_CODING_RE.match(line)
-            if c and c.group(1).lower().replace('_', '-') not in ('utf-8', 'utf8'):
-                return named
     import ast
-    import warnings
-    for k, view in enumerate((text, text[cut + 1:] if cut >= 0 else '')):
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore')     # a SyntaxWarning ("\q") is the script's, not the hook's output
-                tree = ast.parse(view)
-        except Exception:                       # noqa: BLE001 - SyntaxError, ValueError (a NUL), RecursionError
-            if k == 0:
-                return named
-            continue                            # python -x cannot run it either
+    for tree in trees:
         why = _tree_reach(ast, tree, writes)
         if why:
             return why if why.startswith('imports ') else '%s and %s' % (named, why) \
                 if why.startswith('opens ') else '%s and can run it (%s)' % (named, why)
     return None
+
+
+def py_trees(text):
+    """python's syntax trees of `text`, read whole and from its second line (python -x; dropped when
+    it does not parse), or None when the guard cannot read it: it does not parse whole, may be cut at
+    SCRIPT_CAP, or declares a coding other than UTF-8."""
+    if len(text.encode('utf-8', 'surrogatepass')) >= SCRIPT_CAP - 3:
+        return None
+    cut = text.find('\n')                       # python -x skips up to the first \n only
+    for head in (text, text[cut + 1:]) if cut >= 0 else (text,):
+        for line in re.split(r'\r\n?|\n', head, maxsplit=3)[:3]:   # a lone \r ends a line too
+            c = PY_CODING_RE.match(line)
+            if c and c.group(1).lower().replace('_', '-') not in ('utf-8', 'utf8'):
+                return None
+    import ast
+    import warnings
+    trees = []
+    for k, view in enumerate((text, text[cut + 1:] if cut >= 0 else '')):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')     # a SyntaxWarning ("\q") is the script's, not the hook's output
+                trees.append(ast.parse(view))
+        except Exception:                       # noqa: BLE001 - SyntaxError, ValueError (a NUL), RecursionError
+            if k == 0:
+                return None
+    return trees
 
 
 def _tree_reach(ast, tree, writes=None):
@@ -1009,15 +1002,13 @@ def _names_backlog(s):
 
 
 def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1, landed=False):
-    """The code `cmd` runs from a script file or its standard input (`text`, read in `kind`:
-    shell.BASH, shell.PS or 'py'): a shell's text is read as a command line in the shell that runs
-    it and its commands judged by runs and gate-allow (gaterole.shell), an unreadable one by
-    fallback.named_runs at `level` (past level 0 it reads no file the text names); a judged
-    subagent's python by py_reach (CODE_RE, then its syntax tree: a name only printed or in a
-    comment passes), except the kit's own (_kit_code of `path`) and, with `landed` (the script
-    file a command names), its repository's landed code (landed_script). -c code is
-    backlog_code's (py_reach for the code word, c_code). A refusal is reworded to begin with
-    `head`."""
+    """The code `cmd` runs from a script file or its standard input (`text`, read in `kind`: shell.BASH, shell.PS or
+    'py'): a shell's text is read as a command line in the shell that runs it and its commands judged by runs and
+    gate-allow (gaterole.shell), an unreadable one by fallback.named_runs at `level` (past level 0 it reads no file the
+    text names); a judged subagent's python by py_reach (CODE_RE, then its syntax tree: a name only printed or in a
+    comment passes), except the kit's own (_kit_code of `path`) and, with `landed` (the script file a command names),
+    its repository's landed code (landed_script). -c code is backlog_code's (py_reach for the code word, c_code). A
+    refusal is reworded to begin with `head`."""
     if kind == 'py':
         why = py_reach(text) if _judged_subagent(event) else None
         if not why or (path and (_kit_code(ctx, path) or (landed and landed_script(event, ctx, cwd, path)))):
@@ -1076,13 +1067,12 @@ def is_store_ref(name, store, short=False):
 
 
 def _store_unsure(ctx, gc, where, fault=None):
-    """Why store_kind's None for `where` is no proof that no store reads there (a text), or None:
-    git re-pointed (gc.blind), a directory the text does not name (gc.unknown), a .kit.json that
-    does not load (ctx.config_error) or read (`fault`, _store_read), a place git cannot tell
-    about, and any other place in a checkout: one whose main checkout the guard does not find
-    (ctx.main_top: a linked worktree whose git common dir is not named .git, as a bare clone's
-    or a --separate-git-dir repository's), so no .kit.json was read there. A folder in no
-    checkout (repo.NONE) is the one sure None."""
+    """Why store_kind's None for `where` is no proof that no store reads there (a text), or None: git re-pointed
+    (gc.blind), a directory the text does not name (gc.unknown), a .kit.json that does not load (ctx.config_error) or
+    read (`fault`, _store_read), a place git cannot tell about, and any other place in a checkout: one whose main
+    checkout the guard does not find (ctx.main_top: a linked worktree whose git common dir is not named .git, as a bare
+    clone's or a --separate-git-dir repository's), so no .kit.json was read there. A folder in no checkout (repo.NONE)
+    is the one sure None."""
     if gc.blind:
         return 'git is re-pointed: %s' % gc.blind
     if gc.unknown:
@@ -1102,11 +1092,10 @@ def _store_unsure(ctx, gc, where, fault=None):
 
 
 def _written_refs(gc, store, unsure=None):
-    """The store refs the git call `gc` writes (texts), and why it may write the store's ref (a
-    text) when its words do not name it: a mirror push, or, where a store reads (`store` not None)
-    or may (`unsure`, _store_unsure), an update-ref whose ref the guard cannot read
-    (rules._update_ref_unread: --stdin, an option it does not know, xargs, a computed word, no
-    ref). Where none reads, such an update-ref still writes every store ref its words name
+    """The store refs the git call `gc` writes (texts), and why it may write the store's ref (a text) when its words do
+    not name it: a mirror push, or, where a store reads (`store` not None) or may (`unsure`, _store_unsure), an
+    update-ref whose ref the guard cannot read (rules._update_ref_unread: --stdin, an option it does not know, xargs, a
+    computed word, no ref). Where none reads, such an update-ref still writes every store ref its words name
     literally."""
     sub = gc.sub
     short, longs, pos = rules._opts(sub, gc.rest)
@@ -1153,13 +1142,11 @@ def _written_refs(gc, store, unsure=None):
 
 
 def store_ref_write(event, ctx, cmd, inv, cwd, role):
-    """Any session's but the owner's git write of the backlog store's ref: update-ref, a push
-    or a fetch whose destination is it, a mirror push, an update-ref whose ref the guard cannot
-    read where a store reads or the guard cannot tell (store_kind, _store_unsure; it fails closed:
-    --stdin, xargs, a computed ref; not in a
-    scratch repository, rules._scratch_repo, as git-shared-ref), and with a `branch` store a branch
-    write of the backlog branch. The store tool writes it (its compare-and-swap) as a process,
-    which no rule reads."""
+    """Any session's but the owner's git write of the backlog store's ref: update-ref, a push or a fetch whose
+    destination is it, a mirror push, an update-ref whose ref the guard cannot read where a store reads or the guard
+    cannot tell (store_kind, _store_unsure; it fails closed: --stdin, xargs, a computed ref; not in a scratch
+    repository, rules._scratch_repo, as git-shared-ref), and with a `branch` store a branch write of the backlog
+    branch. The store tool writes it (its compare-and-swap) as a process, which no rule reads."""
     if rules.is_owner_session(event, ctx):
         return None
     gc = rules.git_call_judged(inv)

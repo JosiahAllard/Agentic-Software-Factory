@@ -7,11 +7,12 @@ from kitlib.git import repo
 from .rules_base import agent_session, bare, kept_word, kit_tool, own_worktree, quote, refuse
 from .rules_owner import hub_line, inline_code
 from .rules_gitcore import _opts, git_call_judged
+from .rules_gitread import (END_OF_OPTIONS, GIT_DYN_ANY_READS, GIT_DYN_PINNED_READS, GIT_DYN_VALUE_OPTS, NO_VALUE_NUM_RE,
+                            NO_VALUE_OPTS, writes_output_file)
 
 
-# git verbs that make a commit, each refused for an agent session in a linked worktree
-# (git_plain_commit): plain git writes no Co-Authored-By trailer (the gate's trailer check warns on
-# it); commit.py writes it. Known limits, none read here:
+# git verbs that make a commit, each refused for an agent session in a linked worktree (git_plain_commit): plain git writes no
+# Co-Authored-By trailer (the gate's trailer check warns on it); commit.py writes it. Known limits, none read here:
 # - a git alias from git's config files (an inline -c alias.<name> is expanded);
 # - a verb the shell computes or a script runs;
 # - commit-tree and rebase;
@@ -19,9 +20,8 @@ from .rules_gitcore import _opts, git_call_judged
 #   git-main-history judge the line, not this rule;
 # - a --continue of a revert or cherry-pick sequence started with --no-commit makes no commit, but
 #   it is refused like any other: git keeps that mode in the sequence's state, which is not read;
-# - a word the shell computes after a hold (`git cherry-pick -n $X`) is read as a commit, though
-#   it may be an option that undoes the hold (`--commit`): a computed commit is the common case,
-#   so failing closed there would refuse honest lines;
+# - a word the shell computes after a hold (`git cherry-pick -n $X`) is read as a commit, though it may be an option that
+#   undoes the hold (`--commit`): a computed commit is the common case, so failing closed there would refuse honest lines;
 # - commit.py commits only the change in progress of a revert, cherry-pick or am sequence: it does
 #   not go on with the commits or patches left, so the refusal says to end the sequence (--quit).
 COMMIT_VERBS = ('commit', 'merge', 'revert', 'cherry-pick', 'am', 'pull')
@@ -76,20 +76,16 @@ COMMIT_LONG_FLAGS = {
 
 
 def commit_scan(sub, args):
-    """(makes, revs, mainline, keep): whether git `sub` (COMMIT_VERBS) with the Words `args` after
-    it makes a commit, the words that are neither options nor their values (a revert's or
-    cherry-pick's commits; None after an option the scan cannot place that may take a value, so a
-    word after it may be that value),
-    the -m/--mainline value given, or None, and the strategy options of a revert or cherry-pick
-    (-X, COMMIT_KEPT_LONG) its --no-commit form keeps, as kept_word's (lead, sep, value, dyn). Read left to right as git
-    reads them: a stop word (COMMIT_STOPS) makes none; a hold (COMMIT_HOLDS, or -n in a short
-    cluster of revert or cherry-pick; merge's and pull's -n is --no-stat) holds until a long option
-    that undoes it (COMMIT_UNDOES), or a prefix of one, comes after it; a sequence's next step
-    (COMMIT_STEPS) commits. Option values are skipped, so `-m --no-commit` is a message; `--` ends
-    the options. It fails closed: after a word it cannot place (a computed word, a long option
-    without `=` that COMMIT_LONG_FLAGS and COMMIT_LONG_VALUES do not name, or a short letter
-    COMMIT_SHORT_FLAGS does not), no later hold or stop word counts, since that word may have taken
-    it as its value."""
+    """(makes, revs, mainline, keep): whether git `sub` (COMMIT_VERBS) with the Words `args` after it makes a commit, the
+    words that are neither options nor their values (a revert's or cherry-pick's commits; None after an option the scan cannot
+    place that may take a value, so a word after it may be that value), the -m/--mainline value given, or None, and the
+    strategy options of a revert or cherry-pick (-X, COMMIT_KEPT_LONG) its --no-commit form keeps, as kept_word's (lead, sep,
+    value, dyn). Read left to right as git reads them: a stop word (COMMIT_STOPS) makes none; a hold (COMMIT_HOLDS, or -n in a
+    short cluster of revert or cherry-pick; merge's and pull's -n is --no-stat) holds until a long option that undoes it
+    (COMMIT_UNDOES), or a prefix of one, comes after it; a sequence's next step (COMMIT_STEPS) commits. Option values are
+    skipped, so `-m --no-commit` is a message; `--` ends the options. It fails closed: after a word it cannot place (a
+    computed word, a long option without `=` that COMMIT_LONG_FLAGS and COMMIT_LONG_VALUES do not name, or a short letter
+    COMMIT_SHORT_FLAGS does not), no later hold or stop word counts, since that word may have taken it as its value."""
     stops, holds = COMMIT_STOPS.get(sub, ()), COMMIT_HOLDS.get(sub, ())
     values, attached = COMMIT_SHORT_VALUES.get(sub, ''), COMMIT_SHORT_ATTACHED.get(sub, '')
     flags = COMMIT_SHORT_FLAGS.get(sub, '')
@@ -159,15 +155,13 @@ def commit_scan(sub, args):
 
 
 def git_plain_commit(event, ctx, cmd, inv, cwd, role):
-    """A git verb that makes a commit (COMMIT_VERBS, commit_scan), run by an agent session
-    (agent_session) in a linked worktree: plain git writes no Co-Authored-By trailer (the gate's
-    trailer check warns on it); commit.py writes it. It runs after every other shell rule, so a refusal another
-    rule owns (owner-identity, write-jail and the rest) stands. The alternative is the kit tool
-    that does the job with the trailer: commit.py for a commit or a sequence's next step,
-    sync_base.py for a merge or pull, the verb's --no-commit form (its -m, -X and --strategy kept) and then commit.py
-    for a revert or cherry-pick, git apply --index and then commit.py for am. A --skip drops the
-    change in progress and goes on with plain commits: the alternative ends the sequence, drops the
-    change and takes what is left one at a time."""
+    """A git verb that makes a commit (COMMIT_VERBS, commit_scan), run by an agent session (agent_session) in a linked
+    worktree: plain git writes no Co-Authored-By trailer (the gate's trailer check warns on it); commit.py writes it. It runs
+    after every other shell rule, so a refusal another rule owns (owner-identity, write-jail and the rest) stands. The
+    alternative is the kit tool that does the job with the trailer: commit.py for a commit or a sequence's next step,
+    sync_base.py for a merge or pull, the verb's --no-commit form (its -m, -X and --strategy kept) and then commit.py for a
+    revert or cherry-pick, git apply --index and then commit.py for am. A --skip drops the change in progress and goes on with
+    plain commits: the alternative ends the sequence, drops the change and takes what is left one at a time."""
     gc = git_call_judged(inv)
     if gc is None or gc.sub not in COMMIT_VERBS or not gc.dir or gc.unknown or gc.blind:
         return None
@@ -197,9 +191,8 @@ def typed_hash(revs):
 
 
 def commit_alternative(ctx, gc, where):
-    """(advice, command) for git `gc` when it makes a commit (COMMIT_VERBS, commit_scan), run in
-    the linked worktree `where`: the kit tool that does the job with the trailer (git_plain_commit
-    names the forms); None when it makes no commit."""
+    """(advice, command) for git `gc` when it makes a commit (COMMIT_VERBS, commit_scan), run in the linked worktree `where`:
+    the kit tool that does the job with the trailer (git_plain_commit names the forms); None when it makes no commit."""
     if gc.sub not in COMMIT_VERBS:
         return None
     sub = gc.sub
@@ -248,26 +241,23 @@ def commit_alternative(ctx, gc, where):
 
 # git that python or node code given on the line runs (interpreter_git): the guard reads git only
 # as a typed shell command, so every git rule (commit.py's trailer, the shared refs, the main
-# checkout) is blind to it. Known limits, none read here:
-# - a script file (one in a temp or scratch folder too) and python -m: only code on the line
-#   (-c, -e) or on standard input (a heredoc, a here-string, text piped in) is read;
+# checkout) is blind to it; a python git read it reads passes (python_git_reads). Known limits, none read here:
+# - a script file (one in a temp or scratch folder too) and python -m: only code on the line (-c, -e) or
+#   on standard input (a heredoc, a here-string, text piped in) is read;
 # - a program or a git name the code builds at run time ('g' + 'it', importlib, getattr);
-# - other interpreters (ruby, perl, deno) and compiled programs; PowerShell's Start-Process and
-#   .NET's Process;
+# - other interpreters (ruby, perl, deno) and compiled programs; PowerShell's Start-Process and .NET's Process;
 # - a library that writes the repository itself (dulwich, pygit2, open('.git/refs/...'));
 # - a line the parser cannot read: the fallback does not run this rule;
 # - a git command that is not at the start of its string ('cd x && git commit', shell=True);
-# - a git name the code is given from outside its text: an argument (python -c
-#   "...subprocess.run(sys.argv[1:])" git commit) or an environment variable (G=git python -c
-#   "...os.environ['G']...");
-# - python or node run by a launcher (uv run python -c ..., npx node -e ...): the line's program
-#   is the launcher, and its arguments are not read as code;
-# - an option that takes the next word as its value and is not named (python's
-#   --check-hash-based-pycs always, a node option outside NODE_VALUE_OPTS): its value is read as
-#   the script, so the code after it is not read.
-# It refuses honest code in two ways, both kept: a git read (rev-parse, log) is refused like a
-# write, since a read allowance would pass a verb the code computes; and a 'git ...' string in code
-# whose launch runs another program is read as git.
+# - a git name the code is given from outside its text: an argument (python -c "...subprocess.run(sys.argv[1:])"
+#   git commit) or an environment variable (G=git python -c "...os.environ['G']...");
+# - python or node run by a launcher (uv run python -c ..., npx node -e ...): the line's program is the
+#   launcher, and its arguments are not read as code;
+# - an option that takes the next word as its value and is not named (python's --check-hash-based-pycs
+#   always, a node option outside NODE_VALUE_OPTS): its value is read as the script, so the code after it is not;
+# - a python read's env= (GIT_DIR, GIT_EXTERNAL_DIFF) and cwd=.
+# It refuses honest code: a git read in node code or in a form python_git_reads does not read, and a
+# 'git ...' string in code whose launch runs another program, which is read as git.
 # a call that starts a program: subprocess, os.system and its kin, asyncio's, node's child_process
 INTERPRETER_LAUNCH_RE = re.compile(r'\b(subprocess|os\.(system|popen|exec\w*|spawn\w*|posix_spawn\w*)|from os import'
                                    r'|pty\.spawn|create_subprocess_\w+|child_process)\b')
@@ -279,21 +269,77 @@ INTERPRETER_GIT_RE = re.compile(r'''(['"`])(?:[^'"`\s]*[\\/]|[A-Za-z]:[\\/][^'"`
 INTERPRETER_VERB_RE = re.compile(r'''(?:['"`]|\bgit(?:\.exe)?\s+(?:-C\s+\S+\s+)?)'''
                                  r'''(commit-tree|commit|revert|cherry-pick|am|merge|pull)(?=['"`\s])''')
 INTERPRETER_COMMITS = ('commit-tree', 'commit', 'revert', 'cherry-pick', 'am')
+INTERPRETER_RUNS = ('run', 'check_output', 'check_call', 'call', 'Popen')    # the subprocess calls a read may use
+INTERPRETER_DUNDERS = ('__name__', '__main__', '__file__')                  # the dunder names a read may hold
+
+
+def python_git_reads(text):
+    """True when python reads `text` (backlogrole.py_trees, each tree) and each string INTERPRETER_GIT_RE finds git in is
+    the head of a read: subprocess.<INTERPRETER_RUNS>(<a list or tuple>), no **, executable= or shell= but False, of
+    'git', an optional '-C' and its value, a literal GIT_DYN_ANY_READS, GIT_DYN_PINNED_READS or status verb, then words,
+    none starred or a literal --output (writes_output_file); after a pinned verb a computed word passes only as
+    strict_dyn_read passes a typed one: behind a literal END_OF_OPTIONS that is no option's value, or as an f-string
+    that opens with literal text that is no option (or GIT_DYN_VALUE_OPTS). Code that can change what subprocess runs
+    fails: a binding of subprocess, an attribute stored or deleted, a match, an import of another PY_RUN_MODULES,
+    setattr, delattr, PY_RUN_BUILTINS, .modules, or a dunder name but INTERPRETER_DUNDERS."""
+    import ast
+    from . import backlogrole
+    trees = backlogrole.py_trees(text)
+    nodes = [n for t in trees or () for n in ast.walk(t)]
+    for n in nodes:
+        ids = [getattr(n, k, None) for k in ('id', 'name', 'asname', 'arg', 'attr')]
+        mods = [a.name for a in n.names] + [getattr(n, 'module', None) or ''] if isinstance(
+            n, (ast.Import, ast.ImportFrom)) else []
+        if isinstance(n, ast.Match) or isinstance(n, ast.Attribute) and not isinstance(n.ctx, ast.Load) or \
+                {p for m in mods for p in m.split('.')} & backlogrole.PY_RUN_MODULES - {'subprocess'} or \
+                isinstance(n, ast.ImportFrom) and 'subprocess' in [a.asname or a.name for a in n.names] or \
+                ids[0] in backlogrole.PY_RUN_BUILTINS or {'setattr', 'delattr'} & set(ids) or ids[4] == 'modules' or \
+                any(isinstance(i, str) and i.startswith('__') and i not in INTERPRETER_DUNDERS for i in ids) or \
+                'subprocess' in ids[:4] and not (isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) or
+                                                 isinstance(n, ast.alias) and n.name == 'subprocess'):
+            return False
+    ok = set()
+    for n in nodes:
+        f = getattr(n, 'func', None)
+        given = n.args + [k.value for k in n.keywords if k.arg == 'args'] if isinstance(n, ast.Call) else []
+        words = given[0].elts if len(given) == 1 and isinstance(given[0], (ast.List, ast.Tuple)) else [None]
+        lit = [w.value if isinstance(w, ast.Constant) and isinstance(w.value, str) else None for w in words]
+        at = 3 if lit[1:2] == ['-C'] else 1
+        verb = lit[at] if len(lit) > at else None
+        if not (isinstance(f, ast.Attribute) and f.attr in INTERPRETER_RUNS and isinstance(f.value, ast.Name) and
+                f.value.id == 'subprocess' and lit[:1] == ['git'] and verb in GIT_DYN_ANY_READS | GIT_DYN_PINNED_READS
+                | {'status'} and not any(isinstance(w, ast.Starred) for w in words) and not any(k.arg in (
+                None, 'executable') or k.arg == 'shell' and getattr(k.value, 'value', 1) is not False for k in n.keywords)):
+            continue
+        done, prev = verb not in GIT_DYN_PINNED_READS, verb
+        for w, v in zip(words[at + 1:], lit[at + 1:]):
+            head = w.values[0] if isinstance(w, ast.JoinedStr) and w.values else None
+            head = head.value if isinstance(head, ast.Constant) and isinstance(head.value, str) else ''
+            if v is not None and writes_output_file(v) or v is None and not done and not (
+                    head and (not head.startswith('-') or head.startswith(GIT_DYN_VALUE_OPTS))):
+                break
+            done = done or v == END_OF_OPTIONS and prev is not None and (
+                not prev.startswith('-') or prev in NO_VALUE_OPTS or bool(NO_VALUE_NUM_RE.fullmatch(prev)))
+            prev = v
+        else:
+            ok.add(id(words[0]))
+    return trees is not None and all(id(n) in ok for n in nodes if isinstance(n, ast.Constant) and isinstance(
+        n.value, (str, bytes)) and INTERPRETER_GIT_RE.search('"%s"' % (
+            n.value if isinstance(n.value, str) else n.value.decode('latin-1'))))
 
 
 def interpreter_git(event, ctx, cmd, inv, cwd, role):
-    """git run by python or node code given on the line (rules.inline_code: -c, -e, a heredoc, a
-    here-string, text piped in), in an agent session (agent_session), from any directory: one
-    text of that code that both starts a program (INTERPRETER_LAUNCH_RE) and names git as one
-    (INTERPRETER_GIT_RE). The guard reads git only as a typed shell command, so no git rule judges
-    git that code runs. It runs after every other shell rule, so a refusal another rule owns (the
-    main checkout's unplaced code, owner-identity and the rest) stands. The alternative is the git
-    command typed: commit.py for a commit the code makes, sync_base.py for a merge or pull, else
-    `git -C <worktree> <the git command your code ran>`; a git verb in the code only chooses it."""
+    """git run by python or node code given on the line (rules.inline_code: -c, -e, a heredoc, a here-string, text piped in),
+    in an agent session (agent_session), from any directory: one text of that code that both starts a program
+    (INTERPRETER_LAUNCH_RE) and names git as one (INTERPRETER_GIT_RE), but for python git reads (python_git_reads). The guard
+    reads git only as a typed shell command, so no git rule judges git that code runs. It runs after every other shell rule,
+    so a refusal another rule owns (the main checkout's unplaced code, owner-identity and the rest) stands. The alternative is
+    the git command typed: commit.py for a commit the code makes, sync_base.py for a merge or pull, else `git -C <worktree>
+    <the git command your code ran>`; a git verb in the code only chooses it."""
     if not agent_session(event, ctx):
         return None
-    texts = [t for t in inline_code(cmd, inv, skip_pipe=lambda c: True)
-             if INTERPRETER_LAUNCH_RE.search(t) and INTERPRETER_GIT_RE.search(t)]
+    texts = [t for t in inline_code(cmd, inv, skip_pipe=lambda c: True) if INTERPRETER_LAUNCH_RE.search(t)
+             and INTERPRETER_GIT_RE.search(t) and not (inv.name != 'node' and python_git_reads(t))]
     if not texts:
         return None
     verbs = {m.group(1) for t in texts for m in INTERPRETER_VERB_RE.finditer(t)}
@@ -307,7 +353,9 @@ def interpreter_git(event, ctx, cmd, inv, cwd, role):
            'rules (the shared refs, the main checkout, the commit trailer) judge git that code runs. Type the git '
            'command itself, one per call; a commit goes through the kit\'s commit.py and a sync through its '
            'sync_base.py. If the guard refuses the typed git command, that refusal stands: do not route it through '
-           'a program or a script file.' % (hub_line(bare(cmd)), which))
+           'a program or a script file. A git read passes from python as subprocess.run([\'git\', \'-C\', <dir>, '
+           '\'<read verb>\', ...]), with any computed word after log, show, diff or rev-list behind a literal '
+           '\'--end-of-options\'.' % (hub_line(bare(cmd)), which))
     if verbs & set(INTERPRETER_COMMITS):
         return refuse('interpreter-git', role, why + ' The commit:', commit)
     if verbs & {'merge', 'pull'}:
@@ -321,16 +369,14 @@ STASH_NAMED = ('apply', 'drop')                 # pass with the entry named: `ap
 
 
 def git_stash_shared(event, ctx, cmd, gc, role, place):
-    """git stash in a linked worktree by an agent session (agent_session), when it adds an entry
-    with no tag or takes one it does not name: every worktree of the repository shares the stash
-    stack, so a bare `pop` can take another session's entry, and while the stack holds any entry
-    the gate's stash guard refuses every gate and landing (docs/gate.md "The stash guard").
-    Passes: list, show, create, a tagged push (-m/--message), apply or drop naming the entry,
-    branch <name> <stash>. git reads a verb only as the first word after `stash`: a line that
-    starts with an option or `--` is a push (`git stash -- show` stashes the path `show`) or one
-    git refuses (`git stash -q list`), so only the first word is taken as the verb. An entry or branch name the shell computes
-    (`drop $E`) fails closed: empty, it leaves a bare drop of the top entry. A main checkout's
-    stash is git-stash's (git_main_rules)."""
+    """git stash in a linked worktree by an agent session (agent_session), when it adds an entry with no tag or takes one it
+    does not name: every worktree of the repository shares the stash stack, so a bare `pop` can take another session's entry,
+    and while the stack holds any entry the gate's stash guard refuses every gate and landing (docs/gate.md "The stash
+    guard"). Passes: list, show, create, a tagged push (-m/--message), apply or drop naming the entry, branch <name> <stash>.
+    git reads a verb only as the first word after `stash`: a line that starts with an option or `--` is a push (`git stash --
+    show` stashes the path `show`) or one git refuses (`git stash -q list`), so only the first word is taken as the verb. An
+    entry or branch name the shell computes (`drop $E`) fails closed: empty, it leaves a bare drop of the top entry. A main
+    checkout's stash is git-stash's (git_main_rules)."""
     if not agent_session(event, ctx) or not stash_shared(gc):
         return None
     how, instead = stash_alternative(ctx, place.top)
@@ -340,8 +386,7 @@ def git_stash_shared(event, ctx, cmd, gc, role, place):
 
 
 def stash_shared(gc):
-    """True when git stash `gc` adds an entry with no tag or takes one it does not name
-    (git_stash_shared)."""
+    """True when git stash `gc` adds an entry with no tag or takes one it does not name (git_stash_shared)."""
     first = gc.rest[0] if gc.rest else None
     if first is not None and (first.dyn or not first.text.startswith('-')):
         verb, args = first, gc.rest[1:]

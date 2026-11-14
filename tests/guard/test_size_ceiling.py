@@ -21,7 +21,7 @@ SLACK_PERCENT = 5
 TOTAL_CEILING = 18600
 CEILINGS = {
     '__init__.py': 21,
-    'backlogrole.py': 1260,
+    'backlogrole.py': 1224,
     'commands.py': 760,
     'commands_env.py': 302,
     'commands_git.py': 159,
@@ -39,10 +39,10 @@ CEILINGS = {
     'prepush.py': 582,
     'refusal_log.py': 169,
     'rolepolicy.py': 626,
-    'rules.py': 766,
+    'rules.py': 731,
     'rules_base.py': 491,
     'rules_edit.py': 1183,
-    'rules_gitcommit.py': 368,
+    'rules_gitcommit.py': 413,
     'rules_gitcore.py': 641,
     'rules_gitjail.py': 287,
     'rules_gitread.py': 504,

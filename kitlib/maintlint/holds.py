@@ -67,11 +67,17 @@ def findings(snap, backlog_cmd, resources=None):
         member, hit = keyword_hit(rec)
         if member is None or (member == 'live-client' and rec.has('uses')):
             continue
-        fix = ('%s block %s --on %s --reason "<what it waits on and until when%s>"'
-               % (backlog_cmd, rec.stem, member,
-                  ', citing the Action Hub Q-nnn, T-nnn or A-nnn that ends it (post it with '
-                  'hub.py questions add --record <REPO>:%s)' % rec.stem
-                  if member == 'owner' else ''))
+        if member == 'owner':
+            fix = ('%s block %s --on owner --reason "<what it waits on and until when, citing the '
+                   'Action Hub Q-nnn, T-nnn or A-nnn that ends it (post it with hub.py questions '
+                   'add --record <REPO>:%s)>"' % (backlog_cmd, rec.stem, rec.stem))
+        else:
+            # a live-client block names its end (plan.live_client_end_error): the owner's to-do,
+            # whose post bound to the record holds it until done (the hub's park)
+            fix = ('hub.py todos add --record <REPO>:%s --title "<the live step the owner does>" '
+                   '(the hub holds the record until it is done), or, for a to-do already posted, '
+                   '%s block %s --on live-client --until "todo:T-n done" --reason "<the live step>"'
+                   % (rec.stem, backlog_cmd, rec.stem))
         if member == 'live-client' and resources:
             fix += ('; or, when a shared resource and not the owner\'s presence is what it needs, '
                     '%s set %s --uses <%s>' % (backlog_cmd, rec.stem, '|'.join(sorted(resources))))

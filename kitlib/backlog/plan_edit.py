@@ -290,8 +290,43 @@ def _fold_overlap(snap, ctx, rid, branch, scopes):
 WIDEN_ROW = policy.COLLISION_ROWS['set']
 
 
+def _scope_edit(rec, changes, add, drop):
+    """`changes` with the `--add-scope` / `--drop-scope` paths applied to `rec`'s scope as one
+    `scope` change, which every `--scope` check then sees. Usage: mixed with `--scope`, a path in
+    both, a drop the list does not hold (exact match), a bad or `none` add, an empty result. An add
+    the list already covers (casefolded, or under a `/**` member) is a no-op."""
+    if not add and not drop:
+        return changes
+    if 'scope' in dict(changes):
+        raise Usage('`--add-scope` and `--drop-scope` edit the list; `--scope` replaces it: '
+                    'give one or the other')
+    both = [m for m in add if m in drop]
+    if both:
+        raise Usage('`%s` is both added and dropped' % both[0])
+    have = rec.all('scope')
+    for m in drop:
+        if m not in have:
+            near = [h for h in have if h.casefold() == m.casefold()]
+            raise Usage('`--drop-scope %s` is not in the scope of %s (%s)%s'
+                        % (m, rec.stem, ', '.join(have),
+                           '; did you mean `%s`?' % near[0] if near else ''))
+    new = [m for m in have if m not in drop]
+    for m in add:
+        bad = smod.scope_member_error(m)
+        if bad:
+            raise Usage('bad `--add-scope %s`: %s' % (m, bad))
+        if m == smod.NONE or smod.NONE in new:
+            raise Usage('`none` means no tracked files and cannot join other members: '
+                        '`--scope none` replaces the list, `--drop-scope none` clears it first')
+        if narrow.widened_members(new, [m]):
+            new.append(m)
+    if not new:
+        raise Usage('this would leave %s no scope; use `--scope none`' % rec.stem)
+    return [c for c in changes if c[0] != 'scope'] + [('scope', new)]
+
+
 def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False,
-             may_collide=False):
+             may_collide=False, add_scope=(), drop_scope=()):
     """Edit fields and/or the body. `changes` is `[(key, [values])]`.
 
     - Who may move an owner's or the PM's price, or clear the owner from `blocked_on`, is the
@@ -318,15 +353,20 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
       collision and the Change names the row (_collision_change). Narrowing, and widening into
       free scope, are free. Each `--scope` value is checked first: a malformed member is USAGE,
       not a collision.
-    - `scope` replaces the whole list; the output names each member it removed.
+    - `scope` replaces the whole list; the output names each member it removed. `add_scope` and
+      `drop_scope` (`--add-scope`, `--drop-scope`) edit it instead (_scope_edit) and then take
+      every check `--scope` takes.
     - `uses` replaces the whole list too, `-` alone clearing it, which frees a pulled record's
       slot as narrowing frees scope. Every name must be declared. On a pulled record, a name it
       did not hold whose resource live pulls fill is the same `set-widen-collision` row.
     """
     for key, vals in changes:
         refuse_machine_paths('--' + key, *vals)
+    refuse_machine_paths('--add-scope', *add_scope)
+    refuse_machine_paths('--drop-scope', *drop_scope)
     refuse_machine_paths('--body-file', body)
     rec = require(snap, rid)
+    changes = _scope_edit(rec, changes, add_scope, drop_scope)
     for key in unset:
         if key not in rmod.FIELDS:
             raise Usage('`--unset %s` names no field' % key)
@@ -404,7 +444,7 @@ def plan_set(snap, ctx, rid, changes, unset=(), *, body=None, role_checked=False
         full = narrow.resource_hits(new_uses, holding, ctx.resources, skip=rid,
                                     branch=rec.get('pulled_by'))
     if (widen_hits or full or folds) and not may_collide:
-        override = '%s: `set %s --scope <path> [--scope <path> ...]` (the whole new list)' \
+        override = '%s: `set %s --add-scope <path> [--add-scope <path> ...]`' \
             % (policy.row_text(WIDEN_ROW), rid)
         if widen_hits:
             raise Refusal('`%s` is pulled, and this widens its scope into a live pull: %s. '

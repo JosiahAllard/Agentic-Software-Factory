@@ -68,7 +68,8 @@ session stays and wakes at its reset); KEY_CAP starts for the key or MACHINE_CAP
 CAP_WINDOW_S, counted before the child runs; ASK_CAP new crossings asked for the key in
 CAP_WINDOW_S (`cross-failed`); BACKOFF_S after a failed start; a stall read with
 activity under QUIET_S old. No second start goes to an account until its reading is newer than the
-job's last start there.
+job's last start there; in ready, no room only for that rule holds quietly, with no push, until
+that reading comes or WAIT_READY_S after the newest such start (_landed_only), then `no-room`.
 
 The target (pick_target; never `auto`, never accounts.pick): tier 1, a signed-in account under
 TARGET_LIMIT% of its week whose week resets first; tier 2, the lowest week under TIER2_WEEK%. Not
@@ -346,6 +347,15 @@ def _no_room(key, accounts, current, running, landed, now):
     return _hold(note, 'no-room', detail, mark)
 
 
+def _ready_no_room(key, accounts, current, running, landed, now):
+    """A ready session's hold on no target: quiet while only the landed rule leaves no room, up to
+    WAIT_READY_S after the newest such start (_landed_only); else _no_room."""
+    waiting = _landed_only(current, accounts, running, landed, now, tier2=True)
+    if waiting is not None and now - waiting[1] < WAIT_READY_S:
+        return _hold('waiting for a reading of account %s since the last start there' % waiting[0])
+    return _no_room(key, accounts, current, running, landed, now)
+
+
 def decide(key, entry, crossing, live, stall, quiet_s, accounts, newest, starts, running, landed,
            mode, now, note_at=None, cleared=None, asks=None, weeks=None):
     """One session's next step. `entry` its sessions.json entry (None: gone); `crossing` its open
@@ -573,7 +583,7 @@ def _ready(args, stalled, accounts, starts, running, landed, now, quiet_s=None, 
     skip = _skip(c.get('account'), entry)
     pick = pick_target(accounts, skip, running, landed, now)
     if pick is None:
-        return _no_room(key, accounts, skip, running, landed, now)
+        return _ready_no_room(key, accounts, skip, running, landed, now)
     return Decision(START, 'to account %s (%s)' % pick, pick[0])
 
 
@@ -753,7 +763,7 @@ def _u_ready(key, c, live, old, up, others, stopped, stalled, accounts, starts, 
     skip = {str(c.get('account'))}
     pick = pick_target(accounts, skip, running, landed, now)
     if pick is None:
-        return _no_room(key, accounts, skip, running, landed, now)
+        return _ready_no_room(key, accounts, skip, running, landed, now)
     if c.get('kind') == UL.CONSULTANT and not stopped:
         return _advance(STOP_FIRST, 'stop first, then account %s (%s)' % pick)
     return Decision(START, 'to account %s (%s)' % pick, pick[0])
@@ -843,16 +853,17 @@ def _pm_pick(acct, accounts, running, landed, now):
     return pick_target(accounts, {str(acct)}, running, landed, now, tier2=False)
 
 
-def _landed_only(acct, accounts, running, landed, now):
-    """(account, epoch) when the PM has no target only for the landed rule: the account the
-    probe (_pm_pick with no landed stamps) would pick, and the newest landed stamp among the
-    accounts it could pick. None when the probe finds none either. Only a yes or no and a name
-    for the note: never a target."""
-    probe = _pm_pick(acct, accounts, running, {}, now)
+def _landed_only(current, accounts, running, landed, now, tier2=False):
+    """(account, epoch) when there is no target only for the landed rule: the account the probe
+    (pick_target with no landed stamps; `tier2` False: tier 1 only, the PM's) would pick, and the
+    newest landed stamp among the accounts it could pick. None when the probe finds none either.
+    Only a yes or no and a name for the note: never a target."""
+    probe = pick_target(accounts, current, running, {}, now, tier2)
     if probe is None:
         return None
-    rows, _ = _candidates(accounts, {str(acct)}, running, {}, now)
-    stamps = [landed[r[0]] for r in rows if r[1] < TARGET_LIMIT and _number((landed or {}).get(r[0]))]
+    rows, _ = _candidates(accounts, current, running, {}, now)
+    limit = TIER2_WEEK if tier2 else TARGET_LIMIT
+    stamps = [landed[r[0]] for r in rows if r[1] < limit and _number((landed or {}).get(r[0]))]
     return (probe[0], max(stamps)) if stamps else None
 
 
@@ -998,7 +1009,7 @@ def _pm_ready(c, old, pms, stall_now, accounts, starts, running, landed, mode, n
         return _hold('backoff after a failed start')
     pick = _pm_pick(c.get('account'), accounts, running, landed, now)
     if pick is None:
-        waiting = _landed_only(c.get('account'), accounts, running, landed, now)
+        waiting = _landed_only({str(c.get('account'))}, accounts, running, landed, now)
         if waiting is not None and now - waiting[1] < WAIT_READY_S:
             return _hold('waiting for a reading of account %s since the last start there' % waiting[0])
         # the PM resumes; the trigger asks again once an account has room

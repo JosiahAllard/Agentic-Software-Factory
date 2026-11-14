@@ -70,7 +70,8 @@ PREV = '.prev'                 # an earlier crossing's hand-off file, set aside 
 
 
 class StepFailed(Exception):
-    """A launch.py child that exited non-zero or did not end in time."""
+    """A launch.py child that exited non-zero or did not end in time; from _Run.act, every failed
+    step of the run."""
 
 
 def claims(settings, now):
@@ -640,7 +641,7 @@ class _Run(object):
             self.acted = True
             try:
                 self._act_one(key, entry, live, d, newest, sessions, coordinators)
-            except StepFailed as e:
+            except (StepFailed, LaunchError) as e:   # LaunchError: a launcher file _finish reads or writes
                 failed.append(str(e))
         if failed:
             if self.dirty:

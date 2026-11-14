@@ -710,6 +710,22 @@ class Ready(unittest.TestCase):
         d = self.step(accounts={'1': HOT, '2': on(99)})
         self.assertEqual((d.action, d.word), (D.HOLD, 'no-room'))
 
+    def test_no_room_only_for_the_last_start_there_holds_quietly_until_the_bound(self):
+        old = D.WAIT_READY_S + 120          # read before the starts below: they block it
+        two = {'1': HOT, '2': on(20, age=old)}
+        d = self.step(accounts=two, landed={'2': NOW - D.WAIT_READY_S + 1})
+        self.assertEqual((d.action, d.word, d.target), (D.HOLD, None, None))
+        self.assertEqual(d.note, 'waiting for a reading of account 2 since the last start there')
+        d = self.step(accounts=two, landed={'2': NOW - D.WAIT_READY_S})
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'no-room', 'kit:unknown:a2'))
+        # a session's tier 2 counts: account 3 at 97%, started on last, bounds it; 2 names the note
+        three = dict(two, **{'3': on(97, age=old)})
+        d = self.step(accounts=three, landed={'2': NOW - D.WAIT_READY_S - 60, '3': NOW - 60})
+        self.assertEqual((d.action, d.word, d.note),
+                         (D.HOLD, None, 'waiting for a reading of account 2 since the last start there'))
+        d = self.step(accounts={'1': HOT, '2': on(97, age=old)}, landed={'2': NOW - 60})
+        self.assertEqual((d.action, d.word), (D.HOLD, None))
+
     def test_a_stalled_session_already_stopped_starts_with_nothing_live(self):
         self.assertEqual(self.step(live=(), fields={'stalled': True}).action, D.START)
 
@@ -1173,13 +1189,46 @@ class Job(JobBase):
         self.job.procs = procs
         self.run_job()
         self.assertEqual(self.read('sessions.json').get('yak'), {'name': 'yak-a1'})
-        self.assertEqual(self.read('coordinators.json').get('yak'), 1)
-        self.write('coordinators.json', {'kit': 2, 'pm_account': 3})
         self.assertEqual(self.calls, [])
         self.assertEqual(self.read('sessions.json')['kit']['name'], NEW.name)
         self.assertEqual(self.read('sessions.json')['kit']['account'], 2)
-        self.assertEqual(self.read('coordinators.json'), {'kit': 2, 'pm_account': 3})
+        self.assertEqual(self.read('coordinators.json'), {'kit': 2, 'pm_account': 3, 'yak': 1})
         self.assertEqual(self.crossing()['phase'], D.STARTED)
+
+    def test_a_finish_whose_entry_has_gone_is_left_for_the_next_run(self):
+        self.put(crossing(D.STARTING))
+        self.write('coordinators.json', {'kit': 1})
+        self.live = [OLD, NEW]
+        listed = self.procs
+
+        def procs():            # after the run read sessions.json: the entry removed
+            self.write('sessions.json', {'_note': 'x'})
+            return listed()
+        self.job.procs = procs
+        with mock.patch.object(U.handoff, 'record_move') as move:
+            self.assertIn('kit: finish left for the next run: no sessions.json entry now', self.run_job())
+        move.assert_not_called()
+        self.assertEqual((self.read('sessions.json'), self.read('coordinators.json')), ({'_note': 'x'}, {'kit': 1}))
+        self.assertEqual(self.crossing()['phase'], D.STARTING)
+
+    def test_a_launcher_file_error_in_a_finish_leaves_the_rest_to_run_and_fails_the_run_saved(self):
+        self.stop_and_ask()
+        self.put(crossing(D.STOPPING))
+        self.write('sessions.json', {'kit': MOVED, 'zed': self.read('sessions.json')['zed'],
+                                     'yak': dict(ENTRY, stem='yak-coord', name='yak-coord-a1')})
+        yak_new = D.Live('yak-coord-a2', 44, CREATED)
+        self.live += [D.Live('yak-coord-a1', 43, CREATED), yak_new]
+        doc = self.doc()
+        doc['crossings']['yak'] = crossing(D.STARTING, old_name='yak-coord-a1', old_pid=43,
+                                           entry_name='yak-coord-a1', new_name=yak_new.name)
+        self.write(U.STATE_FILE, doc)
+        with mock.patch.object(U.handoff, 'record_move', side_effect=LaunchError('sessions.json: bad')):
+            with self.assertRaisesRegex(U.StepFailed, 'sessions.json: bad'):
+                self.run_job()
+        self.assertEqual([c[0] for c in self.calls], ['stop'])          # the stop before it ran
+        self.assertEqual([name for name, _ in self.sent], ['zed-coord-a2'])     # the ask after it ran
+        self.assertEqual((self.crossing('zed')['phase'], self.crossing('zed')['delivered']), (D.ASKED, True))
+        self.assertEqual(self.crossing('yak')['phase'], D.STARTING)
 
     def test_a_failed_start_counts_and_fails_the_run_with_the_state_kept(self):
         self.ready()
@@ -1292,6 +1341,20 @@ class Job(JobBase):
         self.assertEqual((self.crossing('zed')['phase'], self.crossing('zed')['delivered']), (D.ASKED, True))
         self.assertEqual(self.crossing()['phase'], D.STOPPING)
 
+    def test_a_hub_closing_mid_run_leaves_the_later_steps_for_the_next_run(self):
+        self.stop_and_ask()
+        ctx = Ctx()
+        real = self.child
+
+        def child(argv, cwd):           # the hub begins to close while the stop runs
+            ctx.stop.set()
+            return real(argv, cwd)
+        self.job.child = child
+        text = self.run_job(ctx)
+        self.assertEqual(([c[0] for c in self.calls], self.sent), (['stop'], []))
+        self.assertIn('zed: left for the next run (the hub is closing)', text)
+        self.assertNotIn('zed', self.doc()['crossings'])
+
     def four_over(self, target_room):
         """Three coordinators and the PM on account 1 at 99%; `target_room`: the accounts at 20%."""
         self.write('sessions.json', {k: dict(ENTRY, repo=k, stem='%s-coord' % k, name='%s-coord-a1' % k)
@@ -1324,6 +1387,12 @@ class Job(JobBase):
             moved = dict(phase=D.READY, phase_at=NOW + 300, state_path=self.newest[key]['state_path'])
             self.assertEqual(crossings[key], dict(before[key], **moved), key)     # the target stays 2
         self.assertEqual(self.doc()['starts'], {D.PM_DOC: [NOW + 300]})
+        # the next run, account 2 not read again: the three hold quietly, no `no-room` pushed
+        self.now += 60
+        self.run_job()
+        self.assertEqual((self.ctx.events, len(self.calls), len(self.sent)), ([], 1, 4))
+        notes = [l for l in self.log_text().splitlines() if 'waiting for a reading of account 2' in l]
+        self.assertEqual(len(notes), 3)
 
     def test_each_start_is_stamped_at_its_own_step_and_the_second_takes_the_account_left(self):
         self.four_over({'2', '3'})
@@ -1782,9 +1851,9 @@ def ucrossing(phase, kind=UL.DEEP, old=DEEP_OLD, **fields):
 
 
 def udecide(cross=None, live=(DEEP_OLD,), sess=None, files=None, starts=None, mode='normal', accounts=ACCOUNTS,
-            stall=None, quiet=None, key=DEEP):
-    return D.decide_unlisted(key, sess, cross, list(live), stall, quiet, accounts, starts or {}, {'1': 1}, {},
-                             mode, NOW, files=files)
+            stall=None, quiet=None, key=DEEP, landed=None):
+    return D.decide_unlisted(key, sess, cross, list(live), stall, quiet, accounts, starts or {}, {'1': 1},
+                             landed or {}, mode, NOW, files=files)
 
 
 class DecideUnlisted(unittest.TestCase):
@@ -1819,6 +1888,15 @@ class DecideUnlisted(unittest.TestCase):
         d = udecide(ucrossing(D.READY, UL.CONSULTANT, CONS), live=(CONS,), files={'note': NOW - 30}, quiet=600,
                     key=CONS.name)
         self.assertEqual((d.action, d.phase), (D.ADVANCE, D.STOP_FIRST))
+
+    def test_ready_with_no_room_only_for_the_last_start_there_holds_quietly_until_the_bound(self):
+        ready = dict(cross=ucrossing(D.READY), files={'note': NOW - 30}, quiet=600,
+                     accounts={'1': HOT, '2': on(20, age=D.WAIT_READY_S + 120)})
+        d = udecide(landed={'2': NOW - D.WAIT_READY_S + 1}, **ready)
+        self.assertEqual((d.action, d.word, d.note),
+                         (D.HOLD, None, 'waiting for a reading of account 2 since the last start there'))
+        d = udecide(landed={'2': NOW - D.WAIT_READY_S}, **ready)
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'no-room', DEEP + ':unknown:a2'))
 
     def test_stop_first_stops_the_old_consultant_then_starts_it_with_nothing_live(self):
         c = ucrossing(D.STOP_FIRST, UL.CONSULTANT, CONS)

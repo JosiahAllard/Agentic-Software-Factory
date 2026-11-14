@@ -13,23 +13,12 @@ from . import plan_claim as claim
 from . import policy
 from . import record as rmod
 from .errors import Failure, Refusal, Usage
-from .plan import (_append_line, _text, clears_owner_blocker, reason_error, refuse_machine_paths,
-                   refuse_top, require)
+from .plan import (_append_line, _text, clears_owner_blocker, live_client_end_error,
+                   reason_error, refuse_machine_paths, refuse_top, require)
 from .store import Change
 
 
 # --- block / unblock ------------------------------------------------------------------------------
-
-# `live-client` waits on the owner being present (docs/backlog.md "Resources"): a block that adds
-# it, or gives it a new end, names that end in a form the unblock-conditions job reads, so the
-# hold clears by itself.
-LIVE_CLIENT = 'live-client'
-LIVE_CLIENT_NEEDS_END = (
-    '`block %s --on live-client` needs an end the unblock-conditions job reads, given alone on '
-    'its own `--on`: `--until "todo:T-n done"`, `--until "question:Q-n answered"`, `--until '
-    '"approval:A-n decided"` (the owner\'s act) or `--until "resource:<name> free"`. A live run an '
-    'agent may start is no hold: `requires: live-run`, and `uses:` when accounts are scarce '
-    '(docs/backlog.md "Resources")')
 
 def _hand_owner_hold(rec):
     """True when `rec` is held on the owner with no `until: owner` line: a hold set by hand,
@@ -82,9 +71,9 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
     if 'owner' in members and not owner_ask and not rec.has('owner_ask'):
         raise Usage('blocking on the owner needs `--owner-ask` citing the Action Hub ask it '
                     'waits on: %s' % rmod.owner_ask_fix(rid, kitroot.command('hub')))
-    if LIVE_CLIENT in members and (LIVE_CLIENT not in rec.all('blocked_on') or until is not None) \
-            and (members != [LIVE_CLIENT] or condmod.parse(' '.join((until or '').split())) is None):
-        raise Usage(LIVE_CLIENT_NEEDS_END % rid)
+    bad = live_client_end_error(rid, rec, members, until)
+    if bad:
+        raise Usage(bad)
     if until is not None:
         until = ' '.join(until.split())
         refuse_machine_paths('--until', until)

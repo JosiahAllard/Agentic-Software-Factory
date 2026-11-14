@@ -235,6 +235,18 @@ class BlockUntil(StoreCase):
         self.verb('block', 'FOO', ['live-client'])      # already held there: its line stays
         self.assertEqual(self.get('FOO').all('until'), ['live-client question:Q-5 answered'])
 
+    def test_a_set_never_adds_a_live_client_hold(self):
+        # `set` writes no `until`, so a live-client hold it added would have no end
+        self.seed(rec('FOO'), rec('BAR', state='blocked', blocked_on='live-client',
+                                  until='live-client todo:T-1 done'))
+        tip = self.remote_tip()
+        with self.assertRaises(Usage) as ctx:
+            self.verb('set', 'FOO', [('state', ['blocked']), ('blocked_on', ['live-client'])])
+        self.assertIn('--until "todo:T-n done"', str(ctx.exception))
+        self.assertEqual(self.remote_tip(), tip)
+        self.verb('set', 'BAR', [('blocked_on', ['live-client', 'upstream:x'])])  # already held
+        self.assertEqual(self.get('BAR').all('until'), ['live-client todo:T-1 done'])
+
     def test_a_reblock_replaces_that_members_line_only(self):
         self.seed(rec('FOO'), rec('BAR'))
         self.verb('block', 'FOO', ['live-client'], until='todo:T-1 done')

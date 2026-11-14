@@ -357,13 +357,34 @@ class StagingTurnOn(SyncCase):
         self.add_commit('docs/branch-only.md', 'branch\n', 'branch edit')
         self.turn_on()
         self.git('switch', '-q', self.BASE)
+        before = self.head()
         self.turn_on()
         target = self.head()
         self.push_base()
+        # As last fetched, origin/master is still from before the turn-on: only a fresh fetch of
+        # master sees that it names staging.
+        self.git('update-ref', 'refs/remotes/origin/master', before)
         self.git('switch', '-q', 'work')
         done = self.sync(target)
         self.assertEqual(done.code, syncbase.FAILED, self.out(done))
         self.assertIn('could not fetch origin staging', self.out(done))
+        self.assertFalse(self.merged(target))
+
+    def test_a_malformed_staging_setting_on_master_is_refused_saying_why(self):
+        self.git('switch', '-q', '-c', 'work')
+        self.turn_on()
+        self.git('switch', '-q', self.BASE)
+        self.write('.kit.json', json.dumps(dict(self.CONFIG, staging='on')))
+        self.git('add', '.kit.json')
+        self.git('commit', '-q', '-m', 'a staging section that is not an object')
+        target = self.head()
+        self.push_base()
+        self.git('switch', '-q', 'work')
+        done = self.sync(target)
+        text = self.out(done)
+        self.assertEqual(done.code, syncbase.FAILED, text)
+        self.assertIn('could not fetch origin staging', text)
+        self.assertIn('section "staging" must be an object', text)
         self.assertFalse(self.merged(target))
 
 

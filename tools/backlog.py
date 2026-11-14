@@ -8,7 +8,7 @@
   writes  add ID --summary S --scope P... --found-on BRANCH|none --why-not-folded T
               [--uses NAME]... [--effort s|m|l] [--ref R] [--reopen] [--body-file F]
               (S: at most 120 characters)
-          set ID [--<field> V]... [--unset K]... [--body-file F]
+          set ID [--<field> V]... [--add-scope P]... [--drop-scope P]... [--unset K]... [--body-file F]
           block ID --on M... [--reason T] [--owner-ask Q]   (adds; unblock removes)
               [--until C]   (one --on: the condition that ends it; docs/backlog.md "block --until")
           retarget OLD NEW [--apply]                (a moved path; a dry run without --apply)
@@ -181,6 +181,10 @@ def build_parser():
         flags = sorted(set(['--' + key, '--' + key.replace('_', '-')]))
         v.add_argument(*flags, dest='f_' + key, action='append')
     v.add_argument('--unset', action='append', default=[])
+    v.add_argument('--add-scope', action='append', default=[],
+                   help='add this path to the scope, keeping the rest')
+    v.add_argument('--drop-scope', action='append', default=[],
+                   help='remove this path from the scope, keeping the rest')
     v.add_argument('--body-file', default=None)
     v = sub.add_parser('block')
     v.add_argument('id')

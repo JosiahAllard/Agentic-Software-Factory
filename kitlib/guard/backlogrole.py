@@ -47,7 +47,7 @@ ASK = ('Ask a session whose role may take it (your coordinator; a coordinator as
 # python code naming the backlog's library, tools/backlog.py or `kit backlog`: refused on it alone
 # unless the guard reads the code as python (py_reach: a script file, c_code, stdin_code).
 # STORE_NAME_RE: the store's ref or a folder store's records, named in code that writes (_file_write)
-STORE_NAME_RE = re.compile(r'refs\W{1,6}(?:heads\W{1,6})?backlog|packed-refs|docs[/\\]+backlog[/\\]', re.I)
+STORE_NAME_RE = re.compile(r'refs\W{1,6}(?:heads\W{1,6})?backlog|packed-refs|docs[/\\]+backlog(?![\w.-])', re.I)
 CODE_RE = re.compile(r'kitlib\s*[./\\]\s*backlog\b|from\s+kitlib\s+import\s+[^\n;]*\bbacklog\b|'
                      r'\btools\s*[./\\]\s*backlog\b|\bbacklog\.py\b|\bkit(?:\.py|\.cmd|\.exe)?\W{1,4}backlog\b')
 # python code that names the hub's record writer or the store's answer filing: hubsite then
@@ -265,20 +265,12 @@ def _worktree_on(ctx, where, branch):
 
 def own_pull_refusal(ctx, cmd, argv, who, here=None, pairs=None):
     """(policy.refusal, the form sentence, the form or None) for a run only a builder's own pull
-    would allow: the record read where the tool runs (_root: its -C folder, else `here`; none
-    when unknown), through the store that folder opens (read_record, the tool's own opener: a
-    linked worktree whose .kit.json names no store reads its PM data worktree's live store,
-    kitlib.backlog.store_live.worktree_live_store), its pull compared with the branch the run acts
-    as. That is the branch checked out at that folder, so `-C <worktree>` alone, from any directory,
-    is a builder's own form; or an --as branch when `here`, the directory the tool runs in
-    (commands.run_dir: as the line leaves it, or a Start-Process -WorkingDirectory; None, never
-    evidence, when the text cannot tell), is that branch's linked worktree (_worktree_on). Any
-    other --as is not this session's. The main checkout and the PM data worktree are never a
-    linked worktree on the pulling branch, so a run from either is never its own. When the own
-    pull alone would allow the run, the form sentence names the accepted way, else it is ''; the
-    form is that way written out (own_form) when the guard sees the branch's worktree and the
-    store it opens holds the record pulled by that branch, else None. Nothing own_form reads
-    changes the decision."""
+    would allow: the record read where the tool runs (_root; none when unknown) through the store
+    that folder opens (read_record), its pull compared with the branch the run acts as: the
+    branch checked out there, or an --as branch when `here` (commands.run_dir; None is never
+    evidence) is that branch's linked worktree (_worktree_on). The main checkout and the PM data
+    worktree are never its own. The form sentence names the accepted way when the own pull alone
+    would allow the run; the form is it written out (own_form), which changes no decision."""
     from kitlib.backlog import policy, roles
     root = _root(cmd, here, argv)                # None: no record read, so never its own pull
     rec, branch = None, None
@@ -307,16 +299,11 @@ def own_pull_refusal(ctx, cmd, argv, who, here=None, pairs=None):
 
 
 def own_form(ctx, argv, who, root, here, pairs):
-    """(branch, worktree, form) for a run its own pull would allow but that was refused: the
-    branch the run acts as (its --as, else the branch checked out at its folder), that branch's
-    linked worktree as the guard sees it (the folder the tool runs in when it is one on that
-    branch, else the run's -C folder when that is one), and the run written again as
-    `python <tool> -C <worktree> <verb> <words>`, with no --as and no cd: one bare call, which
-    reads the store the worktree opens (read_record; kitlib.backlog.store_live.worktree_live_store)
-    and acts as its branch. None when no such worktree shows, its store does not hold the record
-    pulled by that branch (someone else's pull, or none), or the words do not read. It never
-    names a branch the run does not act as, nor a worktree whose store it did not read the record
-    in; the guard does not look a branch's worktree up elsewhere."""
+    """(branch, worktree, form) for a refused run its own pull would allow: the branch it acts as
+    (--as, else the one checked out at its folder), that branch's linked worktree as the guard sees
+    it (the tool's directory, else the -C folder), and the run as one bare `python <tool> -C
+    <worktree> <verb> <words>`, no --as, no cd. None when no such worktree shows, its store
+    (read_record) does not hold the record pulled by that branch, or the words do not read."""
     from kitlib.backlog import policy, roles
     b = argv.branch if argv.branch is not None else (_branch_at(ctx, root) if root else None)
     if not root or not isinstance(b, str) or not b:
@@ -436,7 +423,7 @@ def backlog_code(event, ctx, cmd, inv, role):
             m = CODE_RE.search(text)
             if m and text in read:              # -c or heredoc code, read as python: a path held as data passes
                 read.remove(text)               # once: the same text again is another argument
-                why = py_reach(text, writes=text == here)   # heredoc code: a file write stays refused
+                why = py_reach(text, store_hit(ctx, cmd) if text == here else None)   # heredoc: store writes
                 if why:
                     how = 'runs code that %s' % why
                     break
@@ -670,11 +657,9 @@ FIXED_MAINS = ('main', 'master')               # the mains a derived main_branch
 
 def landed_script(event, ctx, cwd, path):
     """True when the python script file `path` is its repository's landed code (the owner's
-    ruling, trust landed code; docs/guard-jail-roles.md "Landed scripts"): its whole bytes are the blob at the local
-    refs/heads/<main branch>:<its path>, or, for a blob with no CR, that blob with every LF
-    written as CRLF. The guard
-    refuses an agent's direct write of that ref (git-shared-ref, git-push-main); the ways it
-    does not see are in docs/guard-fallback.md "Backlog roles and code". Checked in this order,
+    ruling, trust landed code; docs/guard-jail-roles.md "Landed scripts"): its whole bytes are the
+    blob at the local refs/heads/<main branch>:<its path>, or that blob (no CR) with each LF as
+    CRLF. The guard refuses an agent's direct write of that ref (git-shared-ref, git-push-main). Checked in this order,
     each failing to False: a checkout place (MAIN or LINKED, not the PM data worktree) that
     holds `path`; a git common dir the session may not write (jail_roots), so a repository it
     made or can rewrite is never trusted, before any git runs; a PM data record
@@ -879,17 +864,17 @@ PY_CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgutil.resolve's 'mod:attr'
 
 
-def py_reach(text, writes=False):
+def py_reach(text, writes=None):
     """How the python `text` a script file, -c code or heredoc runs reaches the backlog, as the
     refusal's words, or None: CODE_RE's name, then python's syntax tree (_tree_reach), read whole
-    and from its second line (python -x). With `writes` (heredoc code) a write of the store counts
-    (_file_write). Fails closed to the name when the text does not parse, may be cut at
-    SCRIPT_CAP, or declares a coding other than UTF-8."""
+    and from its second line (python -x). With `writes` (heredoc code: store_hit) a write of the
+    store counts (_file_write). Fails closed to the name when the text does not parse, may be cut
+    at SCRIPT_CAP, or declares a coding other than UTF-8."""
     m = CODE_RE.search(text)
     if not m:
         return None
     named = 'names %s' % m.group(0)
-    writes = bool(STORE_NAME_RE.search(text)) if writes else None
+    writes = (writes(text), writes) if writes else None
     if len(text.encode('utf-8', 'surrogatepass')) >= SCRIPT_CAP - 3:
         return named
     cut = text.find('\n')                       # python -x skips up to the first \n only
@@ -951,7 +936,7 @@ def _tree_reach(ast, tree, writes=None):
             found = ({s} | set(PY_PART_RE.split(s))) & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
             backlog_used = backlog_used or _names_backlog(s)
         elif writes is not None and isinstance(node, ast.Call) and writer is None:
-            writer = _file_write(ast, node, writes)
+            writer = _file_write(ast, node, *writes)
         if found and runner is None:
             runner = sorted(found)[0]
     if reach and (backlog_used or bound & names):
@@ -981,10 +966,10 @@ def _read_flags(ast, v):
     return name in PY_READ_FLAGS
 
 
-def _file_write(ast, node, named):
+def _file_write(ast, node, named, hit):
     """'opens a file for writing (<call>)' when the call `node` may write the store: its target a
-    literal STORE_NAME_RE matches, or one the guard cannot read while the code names the store
-    (`named`); else None. A write: write_text, write_bytes; os.open not plainly read-only
+    literal `hit` (store_hit) finds the store in, or one the guard cannot read while the code names
+    the store (`named`); else None. A write: write_text, write_bytes; os.open not plainly read-only
     (_read_flags); an open whose mode (mode=, **, the builtin's second argument, an attribute .open's
     first or second) writes (_write_mode) or is not a literal. The target: open's, os.open's,
     io.open's or codecs.open's first argument, else the *Path(<literals>) the method is called on."""
@@ -1011,7 +996,7 @@ def _file_write(ast, node, named):
         r.args if r and getattr(r.func, 'attr', getattr(r.func, 'id', '')).endswith('Path') else []
     target = '/'.join(v.value for v in on) if on and all(literal(v) for v in on) else None
     return 'opens a file for writing (%s)' % what if what and (
-        named if target is None else STORE_NAME_RE.search(target)) else None
+        named if target is None else hit(target, True)) else None
 
 
 def _names_backlog(s):
@@ -1197,21 +1182,36 @@ def store_ref_write(event, ctx, cmd, inv, cwd, role):
 
 # ---------------------------------------------------------------- a folder store's records
 
+def store_folder(ctx, path):
+    """(store, checkout top, records folder) of the folder store that reads for `path` (`main`:
+    docs/backlog; another path: that folder), or None: none, `ref` or `branch`, or no checkout."""
+    store = store_kind(ctx, path)
+    top = ctx.place(path).top if store and store not in ('ref', 'branch') else None
+    return (store, top, os.path.join(top, *('docs/backlog' if store == 'main' else store).replace(
+        '\\', '/').split('/'))) if top else None
+
+
+def store_hit(ctx, cmd):
+    """hit(text, target=False): True when code text, or a literal write `target` (as it resolves
+    from the command's directory), names the store: STORE_NAME_RE, or the folder store_folder
+    finds there (by its checkout path, or as the folder the target lands in)."""
+    found = store_folder(ctx, cmd.cwd) if cmd.cwd else None
+    rel = re.escape(os.path.relpath(found[2], found[1]).replace('\\', '/')) + r'(?![\w.-])' if found else None
+
+    def hit(s, target=False):
+        p = rules.sh.resolve_path(s, cmd.cwd, cmd.shell) if target and found else None
+        return bool(STORE_NAME_RE.search(s) or (rel and re.search(rel, s.replace('\\', '/'), re.I)) or
+                    (p and jail.inside(jail.real(p), jail.real(found[2]))))
+    return hit
+
+
 def raw_edit(event, ctx, target, role, what):
-    """Any session's but the owner's edit of a file in a folder store (`main`: docs/backlog;
-    another path: that folder) in the checkout it is in. An edit of the folder's records skips
-    the tool and its role check."""
-    if not target or rules.is_owner_session(event, ctx):
+    """Any session's but the owner's edit of a file in a folder store (store_folder) in the
+    checkout it is in. An edit of the folder's records skips the tool and its role check."""
+    found = store_folder(ctx, target) if target and not rules.is_owner_session(event, ctx) else None
+    if not found or not jail.inside(jail.real(target), jail.real(found[2])):
         return None
-    store = store_kind(ctx, target)
-    if not store or store in ('ref', 'branch'):
-        return None
-    top = ctx.place(target).top
-    if not top:
-        return None
-    folder = os.path.join(top, *('docs/backlog' if store == 'main' else store).replace('\\', '/').split('/'))
-    if not jail.inside(jail.real(target), jail.real(folder)):
-        return None
+    store, top, folder = found
     return rules.refuse(RAW_RULE, role, '%s: %s is the backlog\'s record folder (store %s); records are written '
                         'only through tools/backlog.py and its role check, so an edit there is a raw write, which no '
                         'agent session makes (kitlib/backlog/roles.py). Run the tool\'s verb:'

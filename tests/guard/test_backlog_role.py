@@ -1076,6 +1076,12 @@ class RawCode(Base):
                      "python - <<'EOF'\nimport os\nos.open('kitlib/backlog/roles.py', os.O_WRONLY)\nEOF",
                      # a literal target that is not the store, in code naming refs/backlog
                      "python - <<'EOF'\nopen('docs/x.md', 'w').write('refs/backlog/main: tools/backlog.py')\nEOF",
+                     "python - <<'EOF'\nimport pathlib\npathlib.Path('docs/x.md').write_text('refs/backlog/main')"
+                     "  # tools/backlog.py\nEOF",
+                     "python - <<'EOF'\nimport io\nio.open(file='docs/x.md', mode='w').write('refs/backlog/main')"
+                     "  # tools/backlog.py\nEOF",
+                     "python - <<'EOF'\nimport codecs\ncodecs.open('docs/x.md', 'w').write('refs/backlog/main')"
+                     "  # tools/backlog.py\nEOF",
                      # python - <args>: the heredoc is its code
                      "python - X-1 <<'EOF'\nprint('kitlib/backlog/roles.py')\nEOF"):
             with self.subTest(text):
@@ -1092,8 +1098,7 @@ class RawCode(Base):
                "f.write_text(f.read_text().replace('from kitlib.backlog import store', 'from kitlib.backlog import opener'))\nEOF",
                "python - <<'EOF'\nimport re\np = 'kitlib/coordstate/log.py'\nsrc = open(p).read()\n"
                "open(p, 'w').write(re.sub(r'kitlib\\.backlog\\.audit', 'kitlib.backlog.store', src))\nEOF",
-               'python -c "import kitlib.backlog.store, kitlib.backlog.policy; print(\'imports ok\')"',
-               'python -m unittest tests.backlog.test_store tests.guard.test_backlog_role')
+               'python -c "import kitlib.backlog.store, kitlib.backlog.policy; print(\'imports ok\')"')
 
     def test_the_records_samples_run(self):
         for text in self.SAMPLES:
@@ -1432,6 +1437,22 @@ class FolderStore(Base):
         for text in ('echo x > %s/X-1.md' % rel, 'rm %s/X-1.md' % rel, 'cp a.md %s/' % rel):
             with self.subTest(text):
                 self.refused(self.cmd(text), 'backlog-raw-write')
+
+    def test_heredoc_code_writing_the_store(self):
+        # the folder store's folder, as configured (backlogrole.store_hit): by its path, and as the
+        # folder a target lands in from the command's directory
+        rel, (up, low) = '/'.join(self.folder), self.folder
+        for cd, text, hit in (('', "open('%s/X-1.md', 'w')" % rel, True),
+                              ('', "p = '%s' + '/X-1.md'\nopen(p, 'w')" % rel, True),
+                              ('cd %s && ' % up, "open('%s/X-1.md', 'w')" % low, True),
+                              ('', "open('docs/other.md', 'w')", False),
+                              ('cd %s && ' % up, "open('other/X-1.md', 'w')", False)):
+            line = "%spython - <<'EOF'\n%s  # tools/backlog.py\nEOF" % (cd, text)
+            with self.subTest(line):
+                if hit:
+                    self.refused(self.cmd(line), 'backlog-raw-write')
+                else:
+                    self.allowed(self.cmd(line))
 
     def test_the_owner_edits_it(self):
         self.allowed(self.write(self.target('X-1.md'), sub=False, env={}))

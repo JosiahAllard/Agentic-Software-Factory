@@ -13,6 +13,7 @@ from unittest import mock
 from kitlib import machinesetup as M
 from kitlib.machinesetup import extras, procwatch as P
 from tests.machinesetup import test_machinesetup as T
+from tests.platforms import windows_only
 
 
 def load_procwatch_script():
@@ -25,6 +26,7 @@ def load_procwatch_script():
     return mod
 
 
+@windows_only("the PowerShell line is built from Windows paths")
 class TaskLine(unittest.TestCase):
     PYW = 'C:\\Py\\pythonw.exe'
 

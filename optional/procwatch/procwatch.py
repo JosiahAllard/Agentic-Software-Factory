@@ -195,7 +195,7 @@ def _agent_temp_claude():
         return "\x00"           # an impossible path: no match
     if not temp:
         return "\x00"
-    return os.path.join(temp.replace("/", "\\"), "claude", "").lower()
+    return (temp.replace("/", "\\").rstrip("\\") + "\\claude\\").lower()
 
 
 def _r_conhost(p, ctx):
@@ -279,7 +279,8 @@ RULES = [
      lambda p: _python(_name(p)) and
      ("\\.claude" in _cmd(p) or "/.claude" in _cmd(p) or "\\temp\\claude\\" in _cmd(p)
       or "\\agenttemp\\claude\\" in _cmd(p)                # agents' TEMP moved off the system drive
-      or _agent_temp_claude() in _cmd(p)),                # ... or the agent temp folder, as resolved
+      or _agent_temp_claude() in _cmd(p)             # ... or the agent temp folder, as resolved
+      or (not WINDOWS and _agent_path(p.get("cmd")))),   # (Linux: a posix path, see _agent_path)
      _r_agent_script, False),
     ("conhost", "console host", lambda p: _name(p) == "conhost", _r_conhost, False),
 ]

@@ -488,6 +488,12 @@ class LinuxRules(unittest.TestCase):
         self.assertEqual((ps[900]["rule"], ps[900]["kill_ok"]), ("root-search", True))
         self.assertEqual((ps[901]["rule"], ps[901]["verdict"]), ("agent-script", "SUSPECT"))
 
+    def test_a_script_under_a_posix_agent_temp_folder_is_an_agent_script(self):
+        with mock.patch.object(PW, "_agent_temp_claude", lambda: r"\home\a\t\claude" + "\\"):
+            ps = by_pid(PW.classify([lproc_(900, 1, "python3", "python3 /work/t/claude/x/job.py",
+                                            "/usr/bin/python3", 2 * HOUR, parent=0)], 3.0))
+        self.assertEqual(ps[900]["rule"], "agent-script")
+
     def test_main_runs_without_the_windows_refusal_or_a_pool_line(self):
         class W:
             perf_info = staticmethod(lambda: None)

@@ -194,7 +194,7 @@ The landing tool (`tools/land.py`), after the gate is switched. Landings into a 
 
 Turning staging on ("Staging branch"), in this order:
 1. The landing queue is empty and the landing lock is free (`land.py --queue` prints `landing lock: free` and `landing queue: empty`).
-2. The `.kit.json` `"staging"` setting lands on main, as any change does (staging is still off, so that landing pushes main).
+2. The `.kit.json` `"staging"` setting lands on main, as any change does (staging is still off, so that landing pushes main). The setting's own gate runs with `--base <remote>/<main>` (for example `gate.py --full --base origin/main`), because the staging branch it names does not exist until step 4.
 3. Fetch, so `<remote>/<main>` holds the setting's landing.
 4. The owner runs `git push origin <new origin/main sha>:refs/heads/staging` (with `<remote>` and the configured staging branch when they are not `origin` and `staging`): the staging branch starts at exactly the main that carries the setting.
 5. Landings resume; they now merge onto the staging branch.

@@ -123,6 +123,12 @@ class SyncCase(unittest.TestCase):
         self.git('switch', '-q', 'work')
         return target
 
+    def turn_on(self):
+        """Commit `.kit.json` naming the staging branch `staging` on the branch checked out."""
+        self.write('.kit.json', json.dumps(dict(self.CONFIG, staging={'branch': 'staging'})))
+        self.git('add', '.kit.json')
+        self.git('commit', '-q', '-m', 'turn staging on')
+
     # -- running ----------------------------------------------------------------------------
     def sync(self, target, path=None, base=None, model=None):
         return syncbase.sync(path or self.repo, target, model or self.MODEL, '--model', base)
@@ -322,6 +328,63 @@ class OnlyAPushedBaseCommit(SyncCase):
         done = self.sync(target, base='nowhere')
         self.assertEqual(done.code, syncbase.FAILED, self.out(done))
         self.assertIn('could not fetch origin nowhere', self.out(done))
+        self.assertFalse(self.merged(target))
+
+
+class StagingTurnOn(SyncCase):
+    """The branch that turns staging on (docs/gate-landing.md "Turning staging on"): its
+    `.kit.json` names `staging`, which origin does not have yet. Pushedness is judged against
+    origin/master while master's `.kit.json` turns no staging on, never once it does."""
+
+    def test_a_pushed_master_hash_is_merged_and_an_unpushed_one_refused(self):
+        pushed = self.stage_clean()
+        self.turn_on()
+        done = self.sync(pushed)
+        text = self.out(done)
+        self.assertEqual(done.code, syncbase.OK, text)
+        self.assertIn('the staging branch staging does not exist yet', text)
+        self.assertTrue(self.merged(pushed))
+        self.git('switch', '-q', self.BASE)
+        local = self.add_commit('docs/local.md', 'local\n', 'not pushed')
+        self.git('switch', '-q', 'work')
+        done = self.sync(local)
+        self.assertEqual(done.code, syncbase.FAILED, self.out(done))
+        self.assertIn('is not on origin/master', self.out(done))
+        self.assertFalse(self.merged(local))
+
+    def test_once_master_names_staging_a_missing_staging_is_refused(self):
+        self.git('switch', '-q', '-c', 'work')
+        self.add_commit('docs/branch-only.md', 'branch\n', 'branch edit')
+        self.turn_on()
+        self.git('switch', '-q', self.BASE)
+        before = self.head()
+        self.turn_on()
+        target = self.head()
+        self.push_base()
+        # As last fetched, origin/master is still from before the turn-on: only a fresh fetch of
+        # master sees that it names staging.
+        self.git('update-ref', 'refs/remotes/origin/master', before)
+        self.git('switch', '-q', 'work')
+        done = self.sync(target)
+        self.assertEqual(done.code, syncbase.FAILED, self.out(done))
+        self.assertIn('could not fetch origin staging', self.out(done))
+        self.assertFalse(self.merged(target))
+
+    def test_a_malformed_staging_setting_on_master_is_refused_saying_why(self):
+        self.git('switch', '-q', '-c', 'work')
+        self.turn_on()
+        self.git('switch', '-q', self.BASE)
+        self.write('.kit.json', json.dumps(dict(self.CONFIG, staging='on')))
+        self.git('add', '.kit.json')
+        self.git('commit', '-q', '-m', 'a staging section that is not an object')
+        target = self.head()
+        self.push_base()
+        self.git('switch', '-q', 'work')
+        done = self.sync(target)
+        text = self.out(done)
+        self.assertEqual(done.code, syncbase.FAILED, text)
+        self.assertIn('could not fetch origin staging', text)
+        self.assertIn('section "staging" must be an object', text)
         self.assertFalse(self.merged(target))
 
 
@@ -1060,6 +1123,23 @@ class OwnerOnlyFilesWithMergeFoldOff(OwnerCase):
         self.assertEqual(done.code, syncbase.OK, self.out(done))
         self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, target])
         self.assertEqual(self.git('show', 'HEAD:%s' % self.F) + '\n', self.top())
+        self.assertEqual(seam.asked, [])
+
+
+@real_fixture('the same fixture as OwnerOnlyFiles')
+@real_git('merge-tree, check-attr and merge-base --all over a three-way merge')
+class OwnerOnlyFilesWhileStagingTurnsOn(OwnerCase):
+    """On the staging turn-on branch the owner check judges against origin/master, the base
+    pushedness was judged against: master's own landed change is not asked about."""
+
+    def test_a_change_main_alone_made_is_committed_unjudged(self):
+        seam = self.approve()
+        target = self.stage('branch\n', self.top(), branch_file='docs/branch-only.md')
+        self.turn_on()
+        tip = self.head()
+        done = self.sync(target)
+        self.assertEqual(done.code, syncbase.OK, self.out(done))
+        self.assertEqual(self.git('log', '-1', '--format=%P').split(), [tip, target])
         self.assertEqual(seam.asked, [])
 
 

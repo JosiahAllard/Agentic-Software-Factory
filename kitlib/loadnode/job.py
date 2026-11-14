@@ -184,8 +184,8 @@ class NodeJob(object):
     refs take on the node); importer(top, rec, commit, ran_on, repo) -> (path, [warnings]),
     raising RecordRefused, takes a gate job's record in (node.py passes
     kitlib.loadnode.gaterecord.import_gate_record); with none, no record is taken. land: for a
-    land job, gate's three keys and {full, docs, kit_files} (the merged gate's arguments and
-    main's kit files hash); checker(record) -> the record, raising RecordRefused, checks what the
+    land job, gate's three keys and {full, docs, staging, kit_files} (the merged gate's arguments
+    and main's kit files hash); checker(record) -> the record, raising RecordRefused, checks what the
     node sent (kitlib.loadnode.landgate.check_record); with none, no record is taken."""
 
     def __init__(self, node, link, top, sha, repo, slug, kind, cmd, artifacts=(), wait_s=None,
@@ -207,7 +207,8 @@ class NodeJob(object):
         self.noticed = False
         self.staging = None
         self.started = False             # the node took the job: it is never run again on main
-        self.land = ({k: land.get(k) for k in ('full', 'docs', 'kit_files')} if land else None)
+        self.land = ({k: land.get(k) for k in ('full', 'docs', 'staging', 'kit_files')}
+                     if land else None)
         if land:
             gate = {k: land.get(k) for k in ('base', 'remote', 'main')}
         self.gate = dict(gate) if gate else None

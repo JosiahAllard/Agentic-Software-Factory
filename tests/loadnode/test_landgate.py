@@ -148,6 +148,23 @@ class CheckRecord(Repo):
     def test_another_repository(self):
         self.refused("is of repository 'kit-test', not 'other'", repo_name='other')
 
+    def test_a_staging_landing_takes_only_a_record_naming_the_same_skipped_steps(self):
+        self.expected['staging_skipped'] = ['unit']
+        rec = self.rec(staging_skipped=['unit'])
+        self.assertIs(self.check(rec), rec)
+        self.refused('left out nothing (no staging landing); main would leave out unit')
+        missing = self.rec()
+        del missing['staging_skipped']
+        self.refused('main would leave out unit', rec=missing)
+        self.refused('left out lint; main would leave out unit',
+                     rec=self.rec(staging_skipped=['lint']))
+        self.expected['staging_skipped'] = []
+        self.refused('main would leave out no step', rec=self.rec(staging_skipped=['unit']))
+
+    def test_any_other_landing_refuses_a_record_naming_skipped_steps(self):
+        self.refused('left out unit; main would leave out nothing (no staging landing)',
+                     rec=self.rec(staging_skipped=['unit']))
+
     def test_another_kit(self):
         self.refused("kit files are not main's", kit_hash='f' * 64)
         self.refused("kit files are not main's", rec=self.rec(kit={'commit': 'c' * 40}))
@@ -156,15 +173,23 @@ class CheckRecord(Repo):
 
 class Expect(Repo):
 
-    def expect(self, info, full, docs):
+    def expect(self, info, full, docs, staging=False):
         with mock.patch.object(runner, 'merged_steps', return_value=(info, None)) as ms:
-            got, why = landgate.expect(self.repo.root, self.cfg, self.base, full, docs)
+            got, why = landgate.expect(self.repo.root, self.cfg, self.base, full, docs,
+                                       staging=staging)
         self.assertIsNone(why)
-        self.assertEqual(ms.call_args[1], {'full': full, 'tree': None, 'docs': docs})
+        self.assertEqual(ms.call_args[1], {'full': full, 'tree': None, 'docs': docs,
+                                           'staging': staging})
         return got
 
-    def info(self, docs):
-        return {'head': self.merge, 'steps': ['unit'], 'docs': docs, 'source': 'auto'}
+    def info(self, docs, skipped=None):
+        return {'head': self.merge, 'steps': ['unit'], 'docs': docs, 'source': 'auto',
+                'staging_skipped': skipped}
+
+    def test_a_staging_landing_expects_the_steps_main_would_leave_out(self):
+        self.assertIsNone(self.expect(self.info(False), False, False)['staging_skipped'])
+        got = self.expect(self.info(False, ['slow']), False, False, staging=True)
+        self.assertEqual(got['staging_skipped'], ['slow'])
 
     def test_the_mode_is_the_one_the_landing_would_record(self):
         self.assertEqual(self.expect(self.info(False), True, False)['mode'], 'full')
@@ -203,7 +228,7 @@ class LandGate(Repo):
             {'name': 'unit', 'status': 'PASS', 'seconds': 1.5},
             {'name': 'lint', 'status': 'WARN', 'seconds': 0.5}], source='gate.json', docs=False)
         self.spec = {'sha': self.merge, 'base': self.base, 'full': True, 'docs': False,
-                     'kit_files': KITH, 'slug': 'my-slug'}
+                     'staging': False, 'kit_files': KITH, 'slug': 'my-slug'}
 
     def merged_gate(self, root, cfg, base, **kw):
         self.calls.append((root, base, kw))
@@ -243,6 +268,14 @@ class LandGate(Repo):
         self.assertEqual(self.land(), 0, self.said)
         rec, _ = landgate.read_record(self.repo.root, self.merge)
         self.assertEqual((gate_ok.mode_of(rec), rec['full']), ('docs', False))
+
+    def test_a_staging_land_job_runs_a_staging_gate_and_records_what_it_left_out(self):
+        self.spec.update(full=False, staging=True)
+        self.outcome.facts['staging_skipped'] = ['slow']
+        self.assertEqual(self.land(), 0, self.said)
+        self.assertIs(self.calls[0][2]['staging'], True)
+        rec, _ = landgate.read_record(self.repo.root, self.merge)
+        self.assertEqual((gate_ok.mode_of(rec), rec['staging_skipped']), ('select', ['slow']))
 
     def test_another_kit_is_refused_and_nothing_runs(self):
         self.assertEqual(self.land(kit='f' * 64), landgate.EXIT_REFUSED)

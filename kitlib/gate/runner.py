@@ -73,6 +73,14 @@ NO_STEP_FULL = ('REFUSED: no gate step selected: every step in the "gate".steps 
                 'manual, or is dropped by another selected step\'s skip_if_selected, so nothing '
                 'would run; no gate-OK record is written. Give the gate a step that is not manual '
                 'and that no other step\'s skip_if_selected names')
+# A landing onto a staging branch whose selected steps all set "staging_landing" false: added to
+# NO_STEP / NO_STEP_FULL (_merged_choice).
+NO_STEP_STAGING = ('; at this landing onto a staging branch the steps it selected set '
+                   '"staging_landing" false: %s')
+STAGING_SKIPPED = ('STAGING: not run at a landing onto the staging branch ("staging_landing" '
+                   'false): %s; its promotion runs them')
+STAGING_ARGS = ('STAGING: run with their staging_args (compile only, judged by staging_pass): %s; '
+                'its promotion runs them in full')
 NO_CHECKS = ('GATE OK (auto-detected: no stack found, so NO checks ran; give the gate steps with a '
              '"gate" section in .kit.json or tools/gate.json)')
 PROBE_TIMEOUT = 60      # seconds a `requires` probe argv or a reuse.py toolchain probe may take
@@ -1131,14 +1139,15 @@ def _red_record(top, cfg, head, mb, started, results, chosen, logs, no, say, ful
 # ---------------------------------------------------------------- the merged-tree gate
 
 def merged_gate(root, cfg, base, full=False, slug='land', log_dir=None, say=None, book_kw=None,
-                reuse=None, slot=None, tree=None, docs=False, promote=False):
+                reuse=None, slot=None, tree=None, docs=False, promote=False, staging=False):
     """_merged_gate() with its source (kitlib.gate.detect) in facts['source'] and as the last
     line. With no "gate" section in `cfg` the gate is detected from the merged tree, plus the
     steps `base` owes (detect.effective). `slot`: the Slot the landing already holds; the steps
     run in it and no second slot is booked (gated). `tree`: the checkout holding the merge (a
     landing's landing tree, landing.merge); default `root`. `docs`: a docs-only merge may run
     only its docs steps (_merged_gate). `promote`: a staging promotion's gate, each step's
-    promote_args appended after its merged_args (steps.build)."""
+    promote_args appended after its merged_args (steps.build). `staging`: a landing onto a staging
+    branch (_merged_gate)."""
     try:
         eff = detect.effective(cfg, tree or root, base=base)
     except detect.DetectError as e:
@@ -1147,15 +1156,16 @@ def merged_gate(root, cfg, base, full=False, slug='land', log_dir=None, say=None
         (say or _quiet)(detect.label(eff))
     out = _merged_gate(root, cfg, eff, base, full=full, slug=slug, log_dir=log_dir, say=say,
                        book_kw=book_kw, reuse=reuse, slot=slot, tree=tree, docs=docs,
-                       promote=promote)
+                       promote=promote, staging=staging)
     out.facts['source'] = eff.source
     out.lines.append(detect.label(eff))
     return out
 
 
-def _merged_choice(cfg, eff, tree, base, full, docs, promote=False):
+def _merged_choice(cfg, eff, tree, base, full, docs, promote=False, staging=False):
     """What _merged_gate selects at HEAD of `tree` against `base`, running nothing: (head,
-    changed, chosen, docs, empty), or the REFUSED Outcome it would end with."""
+    changed, chosen, docs, empty, skipped), or the REFUSED Outcome it would end with. `skipped`:
+    with `staging`, the selected steps a staging landing leaves out (steps.select), else None."""
     empty = detect.nothing_detected(eff)
     head, why = refs.head(tree)
     if not head:
@@ -1167,36 +1177,42 @@ def _merged_choice(cfg, eff, tree, base, full, docs, promote=False):
     docs = bool(docs) and not (full or empty) and R.docs_only_change(cfg, eff.gate, changed)
     try:
         all_steps = S.build(eff.gate, tree, base, cfg.tools_dir, merged=True, full=full,
-                            promote=promote)
+                            promote=promote, staging=staging)
+        skipped = [] if staging else None
         chosen, _ = S.select(eff.gate, all_steps, changed, full=full, docs=docs,
-                             read=S.working_tree_reader(tree))
+                             read=S.working_tree_reader(tree), staging=staging, skipped=skipped)
     except S.GateConfigError as e:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
     if not chosen and not empty:
-        return G.Outcome(G.REFUSED, [NO_STEP_FULL if full else NO_STEP % len(changed)], head=head)
-    return head, changed, chosen, docs, empty
+        line = NO_STEP_FULL if full else NO_STEP % len(changed)
+        if skipped:
+            line += NO_STEP_STAGING % ', '.join(skipped)
+        return G.Outcome(G.REFUSED, [line], head=head)
+    return head, changed, chosen, docs, empty, skipped
 
 
-def merged_steps(root, cfg, base, full=False, tree=None, docs=False):
+def merged_steps(root, cfg, base, full=False, tree=None, docs=False, staging=False):
     """What merged_gate() with these arguments would run, without running anything:
-    `({'head', 'steps': [names, in order], 'docs': bool, 'source'}, None)`, or `(None, why)` when
-    it would refuse. A landing whose merged gate runs on a load node checks the node's record
-    against this (loadnode.landgate)."""
+    `({'head', 'steps': [names, in order], 'docs': bool, 'source', 'staging_skipped'}, None)`, or
+    `(None, why)` when it would refuse. 'staging_skipped': with `staging` the names a staging
+    landing leaves out, else None. A landing whose merged gate runs on a load node checks the
+    node's record against this (loadnode.landgate)."""
     tree = tree or root
     try:
         eff = detect.effective(cfg, tree, base=base)
     except detect.DetectError as e:
         return None, 'the auto-detected gate: %s' % e
-    picked = _merged_choice(cfg, eff, tree, base, full, docs)
+    picked = _merged_choice(cfg, eff, tree, base, full, docs, staging=staging)
     if isinstance(picked, G.Outcome):
         return None, '; '.join(picked.lines)
-    head, _changed, chosen, docs, _empty = picked
+    head, _changed, chosen, docs, _empty, skipped = picked
     return {'head': head, 'steps': [s.name for s in chosen], 'docs': docs,
-            'source': eff.source}, None
+            'source': eff.source, 'staging_skipped': skipped}, None
 
 
 def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, say=None,
-                 book_kw=None, reuse=None, slot=None, tree=None, docs=False, promote=False):
+                 book_kw=None, reuse=None, slot=None, tree=None, docs=False, promote=False,
+                 staging=False):
     """Gate the merged tree at HEAD of `tree` (a landing's merge, in its landing tree; default
     `root`) against `base` (the main it was merged into). The steps run in `tree`, and their hook
     checks get it as ctx['root']; the repository's name and its log folder are `root`'s (the main
@@ -1207,16 +1223,24 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     is selected, as gate.py --full selects them, and each runs its full_cmd where it has one. A
     step whose result needs an ignored cache the fresh landing tree lacks must be `always` or
     rebuild it in `setup`. Each step's merged_args are appended, and with `promote` its
-    promote_args after them. Outcome codes:
+    promote_args after them, or with `staging` its staging_args. Outcome codes:
     OK, FAILED, REFUSED (also when no step is selected: no step covers the change, every step is
-    manual, or each is dropped by another's skip_if_selected) or a machine lock code; facts verdict,
-    results, log_dir, head, windows (as the branch gate's), docs. Check steps run the hook module
+    manual, each is dropped by another's skip_if_selected, or a staging landing leaves each out) or
+    a machine lock code; facts verdict, results, log_dir, head, windows (as the branch gate's),
+    docs, staging_skipped. Check steps run the hook module
     of commit `base`, as the config is read from it (kitlib.gate.hookrev), never the merged tree's.
 
     `docs` True and not `full`: when base..HEAD is a docs-only change under `cfg` (the base's;
     kitlib.gate.reuse.docs_only_change: its "gate".docs_only, never a config, hook or strict path)
     only the docs_only steps (and setup) run, and facts['docs'] is True (the landing records the
     merge with mode "docs"; docs/gate-run.md "Docs-only changes").
+
+    `staging` (a landing onto a staging branch that is neither --full nor strict,
+    landing.mergedgate): a step that sets "staging_landing" false is not selected, and one with
+    staging_args runs them, judged by its staging_pass (steps.select, steps.build; never reused,
+    kitlib.gate.reuse.undeclared). Both are said as STAGING lines, and facts['staging_skipped'] is
+    the list of names left out (None without `staging`), which the merge's gate-OK record keeps
+    (docs/gate-landing.md "What a landing re-runs and what it reuses").
 
     `reuse(chosen) -> (reuse.Plan)` (kitlib.gate.reuse.planner): the steps it names are not run
     and count as REUSED; its lines, then the lines of its keep (the results it stores in the gate
@@ -1226,16 +1250,21 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     say = say or _quiet
     tree = tree or root
     gate = eff.gate
-    picked = _merged_choice(cfg, eff, tree, base, full, docs, promote)
+    picked = _merged_choice(cfg, eff, tree, base, full, docs, promote, staging)
     if isinstance(picked, G.Outcome):
         return picked
-    head, changed, chosen, docs, empty = picked
+    head, changed, chosen, docs, empty, skipped = picked
     name = place.repo_name(cfg, root)
     logs = new_log_dir(cfg, root, name, 'land-' + slug, log_dir)
     if docs:
         say('a docs-only merge: only the "docs_only" steps run (docs/gate-run.md "Docs-only changes")')
     say('merged-tree gate at %s against %s: %s' % (
         head[:10], base[:10], ', '.join(s.name for s in chosen) or 'no step'))
+    if skipped:
+        say(STAGING_SKIPPED % ', '.join(skipped))
+    compile_only = [s.name for s in chosen if s.staging]
+    if compile_only:
+        say(STAGING_ARGS % ', '.join(compile_only))
     plan = reuse(chosen) if reuse is not None and not empty else None
     reused = _say_plan(plan, chosen, logs, say)
     run = _to_run(chosen, reused)
@@ -1255,7 +1284,8 @@ def _merged_gate(root, cfg, eff, base, full=False, slug='land', log_dir=None, sa
     refused = nothing_ran(results) if ok and not empty else None
     if refused:
         return G.Outcome(G.REFUSED, [refused, 'logs: %s' % logs], verdict=line, results=results,
-                         log_dir=logs, head=head, windows=watched.get('windows'), docs=docs)
+                         log_dir=logs, head=head, windows=watched.get('windows'), docs=docs,
+                         staging_skipped=skipped)
     return G.Outcome(G.OK if ok else G.FAILED, [line, 'logs: %s' % logs], verdict=line,
                      results=results, log_dir=logs, head=head, windows=watched.get('windows'),
-                     docs=docs)
+                     docs=docs, staging_skipped=skipped)

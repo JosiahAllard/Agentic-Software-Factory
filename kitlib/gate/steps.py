@@ -29,10 +29,19 @@ pattern), and the gate's `errors` policy finds no unexplained error line. Patter
 multi-line regexes (re.M). `zero_count_passes` lists the `pass` patterns that would also match a
 zero-test run (a warning: judge's zero rules are then the only backstop).
 
+A landing onto a staging branch (build and select with `staging`, kitlib.gate.runner.merged_gate;
+docs/gate-landing.md "What a landing re-runs and what it reuses"). select leaves out every step
+that sets `"staging_landing": false`, before the skip_if_selected drop (so a step that skips for
+it runs) and in the diff and full modes only (a docs-only or named run is unchanged); the caller's
+`skipped` list gets their names. build appends a step's `staging_args` after its merged_args and
+judges that run by its `staging_pass` patterns instead of `pass` (Step.staging): a compile-only
+run, so neither zero-tests rule applies to it; ok_exits, fail patterns, the empty log and the
+errors policy all still do.
+
 The old gate keys this gate does not implement (`python_tests`, `python_tests_floor`, `trailers`,
 a step's `kill_retry`) are no keys at all: kitlib.config refuses each as an unknown key, so a
 config that sets one never loads. docs/gate-rerun-checkout.md "Not ported" says why. A `--pid-hold` argument in
-`setup`, a step's `cmd`, `full_cmd`, `daily_cmd`, `merged_args` or `promote_args` refuses (GateConfigError,
+`setup`, a step's `cmd`, `full_cmd`, `daily_cmd`, `merged_args`, `promote_args` or `staging_args` refuses (GateConfigError,
 `unsupported`): the pid hold of tools/pytests.py and tools/kit_tests.py is opt-in for agent runs,
 never in the gate.
 """
@@ -64,9 +73,10 @@ def kit_live():
     from kitlib.pluginsource import layout as plugin_layout
     return plugin_layout.live_root(KIT_ROOT)
 
-# toolchain: the probe argvs of the step's "toolchain" (kitlib.gate.reuse), placeholders filled
+# toolchain: the probe argvs of the step's "toolchain" (kitlib.gate.reuse), placeholders filled;
+# staging: the step runs its staging_args, judged by staging_pass (build, staging=True)
 Step = collections.namedtuple('Step', 'name cmd check cwd passes fails ok_exits cont warn requires '
-                                      'requires_strict toolchain', defaults=((),))
+                                      'requires_strict toolchain staging', defaults=((), False))
 
 
 class GateConfigError(Exception):
@@ -90,7 +100,7 @@ def unsupported(gate):
     if PID_HOLD_FLAG in (gate.get('setup') or []):
         out.append('"setup" %s (%s)' % (PID_HOLD_FLAG, PID_HOLD_WHY))
     for s in gate.get('steps') or []:
-        for key in ('cmd', 'full_cmd', 'daily_cmd', 'merged_args', 'promote_args'):
+        for key in ('cmd', 'full_cmd', 'daily_cmd', 'merged_args', 'promote_args', 'staging_args'):
             if PID_HOLD_FLAG in (s.get(key) or []):
                 out.append('step %s "%s" %s (%s)' % (s.get('name'), key, PID_HOLD_FLAG,
                                                      PID_HOLD_WHY))
@@ -308,13 +318,16 @@ def argv_of(s, full=False, daily=False):
     return s['cmd']
 
 
-def build(gate, root, base, tools_dir, merged=False, full=False, daily=False, promote=False):
+def build(gate, root, base, tools_dir, merged=False, full=False, daily=False, promote=False,
+          staging=False):
     """[Step] for every configured step, in config order, plus `setup` first when configured.
     `full`: a step's `full_cmd`, when it has one, is its argv instead of `cmd` (a full run: a
     step whose cmd selects by the change runs everything). `daily` (the daily full run): its
     `daily_cmd` first, then `full_cmd`, then `cmd` (argv_of). `merged`: a step's merged_args are
     appended (the landing's merged-tree gate), substituted alike. `promote` (a staging promotion's
-    merged gate, kitlib.staging.promote): its promote_args after them."""
+    merged gate, kitlib.staging.promote): its promote_args after them. `staging` (a landing's merged
+    gate onto a staging branch): a step's staging_args after them, its passes its staging_pass
+    (Step.staging; module docstring)."""
     bad = unsupported(gate)
     unknown = unknown_names(gate)
     if unknown:
@@ -332,17 +345,21 @@ def build(gate, root, base, tools_dir, merged=False, full=False, daily=False, pr
         if s['name'] in RESERVED:
             raise GateConfigError('step name %r is reserved (%s)' % (s['name'], ', '.join(RESERVED)))
         cmd = None
+        staged = bool(staging and s.get('cmd') and s.get('staging_args'))
         if s.get('cmd'):
             argv = argv_of(s, full, daily)
             cmd = substitute(list(argv) + (list(s.get('merged_args') or []) if merged else []) +
-                             (list(s.get('promote_args') or []) if promote else []), values)
+                             (list(s.get('promote_args') or []) if promote else []) +
+                             (list(s['staging_args']) if staged else []), values)
         cwd = os.path.normpath(os.path.join(root, s['cwd'])) if s.get('cwd') else root
         requires = [r if isinstance(r, str) else substitute(r, values) for r in s.get('requires') or []]
-        steps.append(Step(s['name'], cmd, s.get('check'), cwd, _list(s.get('pass')),
+        steps.append(Step(s['name'], cmd, s.get('check'), cwd,
+                          _list(s.get('staging_pass') if staged else s.get('pass')),
                           _list(s.get('fail')) + top_fails, tuple(s.get('ok_exits') or (0,)),
                           bool(s.get('continue')), bool(s.get('warn')), requires,
                           bool(s.get('requires_strict')),
-                          tuple(tuple(substitute(t, values)) for t in s.get('toolchain') or ())))
+                          tuple(tuple(substitute(t, values)) for t in s.get('toolchain') or ()),
+                          staged))
     return steps
 
 
@@ -387,9 +404,18 @@ def selects(spec, changed, read):
     return None
 
 
-def select(gate, steps, changed, full=False, only=None, read=None, docs=False):
+def staging_off(gate):
+    """The names of the steps a landing onto a staging branch leaves out (`"staging_landing":
+    false`), in config order."""
+    return [s['name'] for s in gate.get('steps') or [] if s.get('staging_landing') is False]
+
+
+def select(gate, steps, changed, full=False, only=None, read=None, docs=False, staging=False,
+           skipped=None):
     """`(the steps to run in order, {name: why})`. GateConfigError for an --only name no step has.
-    `docs`: a docs-only change (docs_only()): exactly the docs_only.steps, plus `setup`."""
+    `docs`: a docs-only change (docs_only()): exactly the docs_only.steps, plus `setup`. `staging`
+    (a landing onto a staging branch, diff and full modes): a selected staging_off step is left
+    out before the skip_if_selected drop, its name appended to `skipped` when given."""
     specs = {s['name']: s for s in gate.get('steps') or []}
     by_name = {s.name: s for s in steps}
     why = {}
@@ -415,6 +441,12 @@ def select(gate, steps, changed, full=False, only=None, read=None, docs=False):
                 reason = selects(spec, changed, read or (lambda rel: None))
                 if reason:
                     why[name] = reason
+        if staging:
+            off = [n for n in staging_off(gate) if n in why]
+            for n in off:
+                del why[n]
+            if skipped is not None:
+                skipped.extend(off)
         dropped = [n for n in why if any(o in why for o in specs[n].get('skip_if_selected') or ())]
         for n in dropped:
             del why[n]
@@ -462,7 +494,8 @@ def _errors_problems(text, policy, fails):
 
 
 def judge(step, text, rc, gate):
-    """`(status, reasons)`: status 'PASS', 'WARN' or 'FAIL'."""
+    """`(status, reasons)`: status 'PASS', 'WARN' or 'FAIL'. A Step.staging run (compile only)
+    skips the two zero-tests rules."""
     why = []
     if rc not in step.ok_exits:
         why.append('exit %s' % rc)
@@ -475,9 +508,9 @@ def judge(step, text, rc, gate):
         if re.search(p, text, re.M):
             why.append('matched fail pattern %r' % p)
     ran = [int(n) for n in RAN.findall(text)]
-    if ran and ran[-1] == 0:
+    if ran and ran[-1] == 0 and not step.staging:
         why.append('ran zero tests (`Ran 0 tests`): a filter that matched nothing is not a pass')
-    for p in _list(gate.get('zero_tests')):
+    for p in [] if step.staging else _list(gate.get('zero_tests')):
         m = re.search(p, text, re.M)
         if m:
             why.append('reported zero tests run (%r)' % m.group(0).strip())

@@ -201,6 +201,8 @@ class OnANode(NodeCase):
         _, name, merge, base, repo, slug, kw = run
         self.assertEqual((name, merge, base, slug), ('n1', out.merge, self.main, 'kit-feature'))
         self.assertIs(kw['docs'], True)
+        self.assertIs(kw['staging'], False)         # a landing onto main
+        self.assertIsNone(rec['staging_skipped'])
         self.assertEqual(kw['tree'], lander.tree)
         self.assertFalse(kw['full'])
         self.assertEqual(kw['kind'], lander.cfg.section('gate')['kind'])
@@ -236,6 +238,44 @@ class OnANode(NodeCase):
         self.assert_untouched(out, G.FAILED)
         self.assertEqual(len(self.landing_books()), 1)
         self.assertFalse([s for s in self.said if s.startswith('gating here')], self.said)
+
+
+class OnANodeOntoStaging(NodeCase):
+    """A landing onto a staging branch routed to a node: the land job runs a staging landing's
+    merged gate (staging True) and the record main writes names what the node's left out."""
+    KIT = {'staging': {'branch': 'staging'}}
+
+    def setUp(self):
+        NodeCase.setUp(self)
+        self.repo.git('push', '-q', 'origin', 'main:refs/heads/staging')
+        self.repo.git('fetch', '-q', 'origin')
+
+    def test_the_land_job_is_a_staging_one_and_main_records_its_skipped_steps(self):
+        _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+
+        def skipping(node, merge, kw):
+            job = Job(node)
+            job.land_record = dict(job.land_record, staging_skipped=['slow'])
+            return landroute.outcome_of(job, merge)
+        routes = Routes(run=skipping)
+        self.no_main_gate()
+        out = self.node_lander(routes, tip).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertTrue(out.lines[-1].startswith('LANDED kit/feature on staging at %s' % out.merge))
+        [run] = [c for c in routes.calls if c[0] == 'run']
+        self.assertIs(run[-1]['staging'], True)
+        rec, why = gate_ok.verify(self.repo.root, out.merge)
+        self.assertIsNone(why)
+        self.assertEqual((rec['ran_on'], rec['staging_skipped']), (RAN_ON, ['slow']))
+
+    def test_a_fresh_landing_onto_staging_is_no_staging_land_job(self):
+        _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
+        routes = Routes()
+        self.no_main_gate()
+        out = self.node_lander(routes, tip, fresh=True).run()
+        self.assertEqual(out.code, G.OK, out.lines)
+        [run] = [c for c in routes.calls if c[0] == 'run']
+        self.assertIs(run[-1]['staging'], False)
 
 
 class RefreshesTheMirrors(NodeCase):

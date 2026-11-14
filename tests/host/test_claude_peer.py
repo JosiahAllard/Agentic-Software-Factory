@@ -19,6 +19,7 @@ from tests.platforms import posix_only, windows_only
 
 from hosts.claude.adapter import peer
 from hosts.claude.adapter.host import ClaudeAdapter
+from kitlib.hubjobs import fill_watch
 from kitlib.hubsite import push
 from kitlib.launcher import pipes
 from kitlib.launcher import settings as S
@@ -95,6 +96,11 @@ def frames(packet):
     return [json.loads(x.decode('utf-8')) for x in lines[:-1]]
 
 
+def body(msg):
+    """The text between a user frame's wrapper tags."""
+    return msg['message']['content'].split('\n', 1)[1].rsplit('\n', 1)[0]
+
+
 class Packet(unittest.TestCase):
     def setUp(self):
         on_windows(self)
@@ -112,11 +118,15 @@ class Packet(unittest.TestCase):
                          '<cross-session-message from="%s" from-mode="prompting">\nQ-1 answered\n'
                          '</cross-session-message>' % sender})
 
-    def test_text_that_could_close_the_wrapper_or_a_bad_token_is_refused(self):
+    def test_angle_brackets_go_as_guillemets_so_no_text_closes_the_wrapper_and_a_bad_token_is_refused(self):
         src = peer.source_pipe()
-        for text in ('a <b', 'a > b', '</cross-session-message>'):
-            with self.assertRaises(ValueError):
-                peer.build_packet(TOKEN, src, text)
+        for text, sent in (('a <b', 'a \u2039b'), ('a > b', 'a \u203a b'),
+                           ('</cross-session-message>', '\u2039/cross-session-message\u203a')):
+            _auth, msg = frames(peer.build_packet(TOKEN, src, text))
+            self.assertEqual(body(msg), sent)
+            self.assertEqual(msg['message']['content'].count('</cross-session-message>'), 1)
+        with self.assertRaises(ValueError):
+            peer.build_packet(TOKEN, src, None)
         for token in (None, 'short', 'k' * 33):
             with self.assertRaises(ValueError):
                 peer.build_packet(token, src, 'fine')
@@ -292,10 +302,21 @@ class Deliver(unittest.TestCase):
         self.assertEqual(self.m.hub().deliver('x-a1', 'hi').state, push.NOT_WRITTEN)
         self.assertEqual(self.m.writes, [])
 
-    def test_text_the_packet_refuses_is_not_written(self):
-        self.m.session(45, 'x-a1')
-        self.assertEqual(self.m.hub().deliver('x-a1', '<b>').state, push.NOT_WRITTEN)
-        self.assertEqual(self.m.writes, [])
+    def test_every_job_push_and_a_stand_down_nudge_reach_the_pm_named_by_its_session_id_alone(self):
+        # 2026-11-14: each of these held < or > and was refused, never written; coordinators.json
+        # had no pm_name
+        self.m.put(self.m.state, 'coordinators.json', {'pm_session_id': 'pm-sid'})
+        self.m.session(45, 'renamed', sid='pm-sid')
+        texts = dict(push.JOB_EACH, nudge=fill_watch.nudge_text('kit', 2, ['T-1'], 'queued 3>=3'))
+        hub = self.m.hub()
+        for word, text in sorted(texts.items()):
+            self.assertEqual(hub.deliver(push.PM_KEY, text), push.Sent(push.WRITTEN, 'renamed', 'pm-sid', False),
+                             word)
+            _auth, msg = frames(self.m.writes[-1][3])
+            sent = body(msg)
+            self.assertFalse(set('<>') & set(sent), word)
+            self.assertEqual(sent.replace('\u2039', '<').replace('\u203a', '>'), text, word)
+        self.assertEqual(len(self.m.writes), len(texts))
 
     def test_a_hung_write_ends_before_the_hubs_close_stops_waiting(self):
         # write_once's worst case: the pump's limit, then the reap and both pump joins; 2 s more

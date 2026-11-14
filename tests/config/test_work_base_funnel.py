@@ -94,6 +94,9 @@ ALLOWED = {
     'kitlib/records/landing.py:describe':
         (1, "the lock record's main_branch field: the base the landing holds, already chosen"),
     'kitlib/staging/advance.py:Mover._based': (1, PROMOTED),
+    'kitlib/syncbase/__init__.py:turn_on_base':
+        (1, 'the staging turn-on fallback: pushedness is judged against <remote>/<main> while '
+            'main turns no staging on (kitlib.config.work_base_ref)'),
     'kitlib/staging/advance.py:Mover._main_now': (1, PROMOTED),
     'kitlib/staging/advance.py:Mover._take': (1, PROMOTED + ' (the landing lock label)'),
     'kitlib/staging/advance.py:Mover.advance': (1, PROMOTED + ' (the DONE line)'),

@@ -942,7 +942,7 @@ KITH = 'e' * 64
 
 
 def land_spec(**over):
-    d = dict(gate_spec(), full=True, docs=False, kit_files=KITH)
+    d = dict(gate_spec(), full=True, docs=False, staging=False, kit_files=KITH)
     d.update(over)
     return d
 
@@ -954,11 +954,12 @@ class LandParams(unittest.TestCase):
         self.assertNotIn(box.LAND_VERB, box.RUN_VERBS)
 
     def test_a_good_land_spec_reads_and_every_bad_key_is_named_without_quoting(self):
-        got = box.check_land_spec(dict(land_spec(docs=True), cmd=['rm', '-rf', '/']))
-        self.assertEqual((got['land'], got['gate'], got['full'], got['docs'], got['kit_files']),
-                         (True, True, True, True, KITH))
+        got = box.check_land_spec(dict(land_spec(docs=True, staging=True), cmd=['rm', '-rf', '/']))
+        self.assertEqual((got['land'], got['gate'], got['full'], got['docs'], got['staging'],
+                          got['kit_files']), (True, True, True, True, True, KITH))
         self.assertNotIn('cmd', got)
-        for k, v in (('full', None), ('full', 1), ('docs', 'yes'), ('kit_files', 'SECRET'),
+        for k, v in (('full', None), ('full', 1), ('docs', 'yes'), ('staging', None),
+                     ('staging', 0), ('kit_files', 'SECRET'),
                      ('kit_files', 'E' * 64), ('kit_files', 'e' * 63), ('kit_files', None),
                      ('base', 'SECRET'), ('main', 'a..b')):
             with self.subTest(key=k, value=str(v)[:20]):

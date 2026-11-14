@@ -68,7 +68,8 @@ session stays and wakes at its reset); KEY_CAP starts for the key or MACHINE_CAP
 CAP_WINDOW_S, counted before the child runs; ASK_CAP new crossings asked for the key in
 CAP_WINDOW_S (`cross-failed`); BACKOFF_S after a failed start; a stall read with
 activity under QUIET_S old. No second start goes to an account until its reading is newer than the
-job's last start there.
+job's last start there; in ready, no room only for that rule holds quietly, with no push, until
+that reading comes or WAIT_READY_S after the newest such start (_landed_only), then `no-room`.
 
 The target (pick_target; never `auto`, never accounts.pick): tier 1, a signed-in account under
 TARGET_LIMIT% of its week whose week resets first; tier 2, the lowest week under TIER2_WEEK%. Not
@@ -94,8 +95,11 @@ is a session's (the early one included). The target is tier 1 only (no account u
   ready       as a session's (the hand-off file written after the ask, the transcript quiet);
               then `launch.py pm-crossover --account N --name NEW [--state FILE]` (no --state when
               stalled: the new PM reads the hand-off file as it is). No room on tier 1: cleared
-              with `no-room pm`, so the PM resumes and a later trigger asks again. The week reset
-              (and no stall): cleared, as in asked.
+              with `no-room pm`, so the PM resumes and a later trigger asks again; but no room
+              only for the rule on a second start (an account under TARGET_LIMIT% read no newer
+              than the job's last start there) holds, quietly and with no ask, until that
+              reading comes or WAIT_READY_S after the newest such start (_landed_only). The
+              week reset (and no stall): cleared, as in asked.
   starting    coordinators.json naming NEW on account N: done (`crossed`), and the old PM's
               process is kept as pm_old, never counted unmanaged, until it ends; the owner closes
               its window. NEW running and not named: `cross-failed`, remembered. Nothing after
@@ -174,7 +178,7 @@ BURN_MIN_S = 10 * 60           # fewer minutes of readings than this: no burn ra
 ASKED, READY, STARTING, STARTED, STOPPING, STALL_STOP = (
     'asked', 'ready', 'starting', 'started', 'stopping', 'stall-stop')
 STOP_FIRST = 'stop-first'      # an unlisted consultant: one session per name, so the old one stops before the start
-# What a Decision does. The first six act, one per run, in this order
+# What a Decision does. The first six act, all in one run, in this order (usage_crossover _Run.act)
 STOP_STALLED, STOP_OLD, FINISH, START, ASK, WOULD = (
     'stop-stalled', 'stop-old', 'finish', 'start', 'ask', 'would')
 ADVANCE, CLEAR, HOLD = 'advance', 'clear', 'hold'
@@ -341,6 +345,15 @@ def no_room(key, accounts, current, running, landed, now):
 def _no_room(key, accounts, current, running, landed, now):
     note, detail, mark = no_room(key, accounts, current, running, landed, now)
     return _hold(note, 'no-room', detail, mark)
+
+
+def _ready_no_room(key, accounts, current, running, landed, now):
+    """A ready session's hold on no target: quiet while only the landed rule leaves no room, up to
+    WAIT_READY_S after the newest such start (_landed_only); else _no_room."""
+    waiting = _landed_only(current, accounts, running, landed, now, tier2=True)
+    if waiting is not None and now - waiting[1] < WAIT_READY_S:
+        return _hold('waiting for a reading of account %s since the last start there' % waiting[0])
+    return _no_room(key, accounts, current, running, landed, now)
 
 
 def decide(key, entry, crossing, live, stall, quiet_s, accounts, newest, starts, running, landed,
@@ -570,7 +583,7 @@ def _ready(args, stalled, accounts, starts, running, landed, now, quiet_s=None, 
     skip = _skip(c.get('account'), entry)
     pick = pick_target(accounts, skip, running, landed, now)
     if pick is None:
-        return _no_room(key, accounts, skip, running, landed, now)
+        return _ready_no_room(key, accounts, skip, running, landed, now)
     return Decision(START, 'to account %s (%s)' % pick, pick[0])
 
 
@@ -750,7 +763,7 @@ def _u_ready(key, c, live, old, up, others, stopped, stalled, accounts, starts, 
     skip = {str(c.get('account'))}
     pick = pick_target(accounts, skip, running, landed, now)
     if pick is None:
-        return _no_room(key, accounts, skip, running, landed, now)
+        return _ready_no_room(key, accounts, skip, running, landed, now)
     if c.get('kind') == UL.CONSULTANT and not stopped:
         return _advance(STOP_FIRST, 'stop first, then account %s (%s)' % pick)
     return Decision(START, 'to account %s (%s)' % pick, pick[0])
@@ -838,6 +851,20 @@ def decide_pm(pms, crossing, stall, quiet_s, accounts, newest, starts, running, 
 
 def _pm_pick(acct, accounts, running, landed, now):
     return pick_target(accounts, {str(acct)}, running, landed, now, tier2=False)
+
+
+def _landed_only(current, accounts, running, landed, now, tier2=False):
+    """(account, epoch) when there is no target only for the landed rule: the account the probe
+    (pick_target with no landed stamps; `tier2` False: tier 1 only, the PM's) would pick, and the
+    newest landed stamp among the accounts it could pick. None when the probe finds none either.
+    Only a yes or no and a name for the note: never a target."""
+    probe = pick_target(accounts, current, running, {}, now, tier2)
+    if probe is None:
+        return None
+    rows, _ = _candidates(accounts, current, running, {}, now)
+    limit = TIER2_WEEK if tier2 else TARGET_LIMIT
+    stamps = [landed[r[0]] for r in rows if r[1] < limit and _number((landed or {}).get(r[0]))]
+    return (probe[0], max(stamps)) if stamps else None
 
 
 def _recorded_sid(recorded):
@@ -981,7 +1008,11 @@ def _pm_ready(c, old, pms, stall_now, accounts, starts, running, landed, mode, n
     if _number(retry) and now < retry:
         return _hold('backoff after a failed start')
     pick = _pm_pick(c.get('account'), accounts, running, landed, now)
-    if pick is None:            # the PM resumes; the trigger asks again once an account has room
+    if pick is None:
+        waiting = _landed_only({str(c.get('account'))}, accounts, running, landed, now)
+        if waiting is not None and now - waiting[1] < WAIT_READY_S:
+            return _hold('waiting for a reading of account %s since the last start there' % waiting[0])
+        # the PM resumes; the trigger asks again once an account has room
         note, detail, mark = no_room(PM_DETAIL, accounts, {str(c.get('account'))}, running, landed, now)
         return _gone(note + ': the PM resumes', 'no-room', detail, mark=mark)   # the trigger's mark
     return Decision(START, 'to account %s (%s)' % pick, pick[0])

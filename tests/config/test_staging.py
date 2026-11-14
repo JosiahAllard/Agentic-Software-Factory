@@ -86,6 +86,49 @@ class Rules(unittest.TestCase):
         self.refused({'staging': 'tools/staging.json'})
 
 
+class StagingStepKeys(unittest.TestCase):
+    """A step's staging_landing, staging_args and staging_pass (docs/gate-landing.md "What a
+    landing re-runs and what it reuses"): their own rules."""
+    UNIT = {'name': 'unit', 'globs': ['*.py'], 'cmd': ['x'], 'merged_args': ['--merged']}
+    refused = Rules.refused
+
+    def gate(self, *steps, **top):
+        return dict({'gate': dict({'steps': list(steps)}, **top)})
+
+    def test_the_keys_load_as_written(self):
+        steps = [dict(self.UNIT, staging_landing=False),
+                 {'name': 'build', 'globs': ['*.py'], 'cmd': ['x'], 'staging_args': ['--compile',
+                                                                                    '{base}'],
+                  'staging_pass': '^compiled'}]
+        cfg = load(self.gate(*steps))
+        self.assertEqual(cfg.section('gate')['steps'], steps)
+
+    def test_staging_args_and_staging_pass_go_together(self):
+        for extra in ({'staging_args': ['--compile']}, {'staging_pass': '^compiled'}):
+            with self.subTest(extra=extra):
+                self.assertIn('"staging_args" and "staging_pass" go together',
+                              self.refused(self.gate(dict(self.UNIT, **extra))))
+
+    def test_skipping_and_staging_args_contradict(self):
+        self.assertIn('"staging_landing" false and "staging_args" contradict', self.refused(
+            self.gate(dict(self.UNIT, staging_landing=False, staging_args=['--compile'],
+                           staging_pass='^compiled'))))
+        load(self.gate(dict(self.UNIT, staging_landing=True, staging_args=['--compile'],
+                            staging_pass='^compiled')))
+
+    def test_a_smoke_step_is_never_skipped_at_a_staging_landing(self):
+        self.assertIn('"gate".smoke_steps: unit sets "staging_landing" false', self.refused(
+            self.gate(dict(self.UNIT, staging_landing=False), smoke_steps=['unit'])))
+
+    def test_staging_args_are_a_cmd_step_argv_with_known_placeholders(self):
+        self.assertIn('"staging_args": unknown placeholder(s) {repo}', self.refused(
+            self.gate(dict(self.UNIT, staging_args=['{repo}'], staging_pass='x'))))
+        why = self.refused({'hook': {'module': 'gate_hook'}, 'gate': {'steps': [
+            {'name': 'a', 'always': True, 'check': 'pins', 'staging_args': ['--c'],
+             'staging_pass': 'x'}]}})
+        self.assertIn('staging_args, staging_pass only apply to a "cmd" step', why)
+
+
 class ScratchRepo(unittest.TestCase):
     """A scratch repository: commit `plain` writes no staging section, `staged` writes one (stg),
     `bad` one naming the main branch itself."""

@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
+from kitlib.gate import runner
 from kitlib.loadnode import box, job, landgate, landroute, registry, remote, route
 from tests.loadnode.test_box import RefGit
 from tests.loadnode.test_cli import Cli, run_reply
@@ -303,9 +304,9 @@ class LandRun(Base):
         self.assertEqual(out.code, G.OK, self.said)
         self.assertEqual(self.verbs(), ['land', 'follow', 'clean'])
         sent = self.link.calls[0][1]
-        self.assertEqual((sent['full'], sent['docs'], sent['kit_files'], sent['base'],
-                          sent['remote'], sent['main']),
-                         (True, False, KITH, BASE_SHA, 'origin', 'main'))
+        self.assertEqual((sent['full'], sent['docs'], sent['staging'], sent['kit_files'],
+                          sent['base'], sent['remote'], sent['main']),
+                         (True, False, False, KITH, BASE_SHA, 'origin', 'main'))
         self.assertEqual(self.checked, [REC])
         self.assertEqual(out.verdict, 'GATE OK (warned: lint)')
         self.assertEqual(out.lines[0], out.verdict)
@@ -335,6 +336,29 @@ class LandRun(Base):
                                side_effect=AssertionError('a test store read the notice config')):
             out = self.run_on(store=types.SimpleNamespace(testing=True))
         self.assertEqual(out.code, G.OK, self.said)
+
+    def test_a_staging_landing_sends_staging_to_the_node_and_to_mains_checker(self):
+        asked = []
+
+        def checker(*a, **kw):
+            asked.append(kw['staging'])
+            return self.checker
+        with mock.patch.object(landgate, 'checker', checker):
+            out = self.run_on(checker=None, staging=True)
+        self.assertEqual(out.code, G.OK, self.said)
+        self.assertEqual((asked, self.link.calls[0][1]['staging']), ([True], True))
+
+    def test_the_outcome_carries_the_records_staging_skipped(self):
+        for skipped in (None, ['slow']):
+            with self.subTest(skipped=skipped):
+                rec = dict(REC, staging_skipped=skipped)
+                nj = types.SimpleNamespace(land_record=rec, ran_on={'node': 'box1'}, job=JOB,
+                                           node=NODE)
+                out = landroute.outcome_of(nj, SHA)
+                self.assertEqual(out.facts['staging_skipped'], skipped)
+                # the land log's line, as main's own merged gate says it
+                self.assertEqual([l for l in out.lines if l.startswith('STAGING')],
+                                 [runner.STAGING_SKIPPED % 'slow'] if skipped else [])
 
     def test_a_docs_gate_on_the_node_is_a_docs_outcome(self):
         rec = dict(REC, mode='docs', full=False, source='auto')

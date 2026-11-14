@@ -9,7 +9,8 @@ Submit each LAND at once.
 
 ## 1. Queue the verdict
 
-- `python <kit>/tools/verdict.py add -C <main checkout> --branch <branch> --tip <full sha> --verdict LAND --risk <Low|Medium|High> --reviewer <type> --reviewer-model <model> --reviewer-id <id> --author "<commit author> / <author agent type>" --range <base>..<tip> --session <session> [--follow-up <ID>] [--design-reviewer-id <id>]` (`<kit>/docs/gate-landing-policy.md` "Strict paths"). Refuses: own review at Medium/High; sub-strong reviewer at High; LAND over `Verdict: SEND BACK`; no full `Checks:` line; plain LAND over UNMET Done-when; `--follow-up` with no open record; new non-test source file/class, no `--design-reviewer-id`.
+- `python <kit>/tools/verdict.py add -C <main checkout> --branch <branch> --tip <full sha> --verdict LAND --risk <Low|Medium|High> --reviewer <type> --reviewer-model <model> --reviewer-id <id> --author "<commit author> / <author agent type>" --range <base>..<tip> --session <session> [--follow-up <ID>] [--design-reviewer-id <id>]` (`<kit>/docs/gate-landing-policy.md` "Strict paths"). Refuses: own review at Medium/High; sub-strong reviewer at High; LAND over `Verdict: SEND BACK`; reviewer's report not naming `--tip`; no full `Checks:` line; plain LAND over UNMET Done-when; `--follow-up` with no open record; new non-test source file/class, no `--design-reviewer-id`.
+- `--author`: never an approval or ruling; hub commit: `PM kit hub / hub`; the landing reads the Owner-Approval trailer.
 - Main merged into reviewed branch: `python <kit>/tools/verdict.py carry -C <main checkout> --branch <branch>`. `CARRIED`: clean merge, verdict moves. `NOT CARRIED`: re-review, re-queue.
 - Needs its gate green on that tip (author's `gate.py -C <worktree>`); `land.py` says what it lacks (`<kit>/docs/gate-run.md` "The final gate"). Accepted scoped gate: never bounce.
 

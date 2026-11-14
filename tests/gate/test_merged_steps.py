@@ -89,5 +89,62 @@ class PromoteArgs(fixtures.GateRepoCase):
         self.assertEqual(out.code, G.OK, out.lines)
 
 
+COMPILES = ('import sys; print("args", sys.argv[1:]); '
+            'print("compiled\\nRan 0 tests in 0.000s" if "--compile" in sys.argv else "tests ok")')
+
+
+class StagingLanding(fixtures.GateRepoCase):
+    """merged_gate(staging=True), a landing onto a staging branch that is neither --full nor
+    strict (landing.mergedgate staging_gate): a "staging_landing": false step is left out before
+    skip_if_selected, a staging_args step runs compile-only, and merged_steps (the load node's
+    check) names the same steps and the same skipped ones."""
+    GATE = {'steps': [{'name': 'unit', 'globs': ['*.py', 'u/*'], 'cmd': mode_step('unit'),
+                       'pass': '^mode ', 'staging_landing': False},
+                      {'name': 'quick', 'globs': ['*.py'], 'skip_if_selected': ['unit'],
+                       'cmd': mode_step('quick'), 'pass': '^mode '},
+                      {'name': 'build', 'globs': ['*.py'], 'cmd': ['{python}', '-c', COMPILES],
+                       'merged_args': ['--merged'], 'pass': '^tests ok$',
+                       'staging_args': ['--compile'], 'staging_pass': '^compiled$'}]}
+
+    def run_both(self, wt, **kw):
+        cfg = kconfig.load_at(wt, self.main)
+        info, why = runner.merged_steps(wt, cfg, self.main, tree=wt, **kw)
+        said = []
+        out = runner.merged_gate(wt, cfg, self.main, log_dir=self.logs, book_kw=self.book_kw,
+                                 tree=wt, say=said.append, **kw)
+        return info, why, out, said
+
+    def test_a_staging_landing_skips_the_unit_step_and_compiles_the_build(self):
+        wt, _ = self.branch('code', {'a.py': 'x = 1\n'})
+        info, why, out, said = self.run_both(wt, staging=True)
+        self.assertIsNone(why)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual([(r['name'], r['status']) for r in out.results],
+                         [('quick', 'PASS'), ('build', 'PASS')])
+        self.assertEqual((info['steps'], info['staging_skipped']), (['quick', 'build'], ['unit']))
+        self.assertEqual(out.facts['staging_skipped'], ['unit'])
+        self.assertIn(runner.STAGING_SKIPPED % 'unit', said)
+        self.assertIn(runner.STAGING_ARGS % 'build', said)
+        with open(out.results[1]['log'], encoding='utf-8') as f:
+            self.assertIn("args ['--merged', '--compile']", f.read())
+
+    def test_any_other_landing_runs_every_selected_step_as_before(self):
+        wt, _ = self.branch('code', {'a.py': 'x = 1\n'})
+        info, why, out, said = self.run_both(wt)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual([r['name'] for r in out.results], ['unit', 'build'])
+        self.assertEqual((info['steps'], info['staging_skipped']), (['unit', 'build'], None))
+        self.assertIsNone(out.facts['staging_skipped'])
+        self.assertFalse([l for l in said if l.startswith('STAGING')])
+
+    def test_a_staging_landing_with_nothing_left_still_refuses(self):
+        wt, _ = self.branch('code', {'u/x.txt': 'x\n'})
+        info, why, out, _ = self.run_both(wt, staging=True)
+        line = runner.NO_STEP % 1 + runner.NO_STEP_STAGING % 'unit'
+        self.assertEqual((out.code, out.lines), (G.REFUSED, [line, out.lines[-1]]))
+        self.assertIsNone(info)
+        self.assertEqual(why, line)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -712,7 +712,7 @@ class GateJob(Base):
 # -- land jobs (S3b) -------------------------------------------------------------------------------
 
 KITH = 'a' * 64
-LAND = dict(GATE, full=True, docs=False, kit_files=KITH)
+LAND = dict(GATE, full=True, docs=False, staging=False, kit_files=KITH)
 
 
 class LandJob(Base):
@@ -750,8 +750,8 @@ class LandJob(Base):
         self.assertEqual(self.pushes[1][0][-2:], ['%s:refs/node/%s' % (SHA, JOB),
                                                   '%s:refs/node/%s-base' % (BASE_SHA, JOB)])
         sent = self.link.calls[0][1]
-        self.assertEqual((sent['full'], sent['docs'], sent['kit_files'], sent['base']),
-                         (True, False, KITH, BASE_SHA))
+        self.assertEqual((sent['full'], sent['docs'], sent['staging'], sent['kit_files'],
+                          sent['base']), (True, False, False, KITH, BASE_SHA))
         self.assertEqual(self.checked, [REC])
         self.assertEqual(nj.land_record, REC)
         self.assertEqual(nj.ran_on, {'node': 'box1', 'host_key': registry.fingerprint(KEY),

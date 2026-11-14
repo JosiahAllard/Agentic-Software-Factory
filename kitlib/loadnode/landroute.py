@@ -177,8 +177,8 @@ def verdict_of(nj, code=None, error=None, expired=False):
 
 def outcome_of(nj, merge):
     """The OK gate Outcome of the land job `nj`, which passed and whose record main took: land.py
-    reads it as runner.merged_gate's (verdict, results, docs, source, head), with ran_on, node
-    and job for the record the landing writes."""
+    reads it as runner.merged_gate's (verdict, results, docs, source, head, staging_skipped),
+    with ran_on, node and job for the record the landing writes."""
     from kitlib import gate as G
     from kitlib.gate import runner
     from kitlib.records import gate_ok
@@ -189,7 +189,8 @@ def outcome_of(nj, merge):
     return G.Outcome(G.OK, [line, 'ran on load node %s as job %s' % (nj.node.name, nj.job)],
                      verdict=line, results=results, docs=gate_ok.mode_of(rec) == 'docs',
                      source=gate_ok.source_of(rec), head=merge, log_dir=None, ran_on=nj.ran_on,
-                     node=nj.node.name, job=nj.job, record=rec)
+                     node=nj.node.name, job=nj.job, record=rec,
+                     staging_skipped=rec.get('staging_skipped'))
 
 
 def _not_landed(nj, node, code, error, expired, ceiling_s):
@@ -245,12 +246,12 @@ def _watch(holder, done, state, ceiling_s, poll_s, say):
 def run_on_node(node, root, merge, base, cfg, repo, slug, full=False, docs=False, tree=None,
                 kind=None, say=None, out=None, open_link=None, make_job=None, checker=None,
                 kit_hash=None, ceiling_s=CEILING_S, poll_s=POLL_S, notice_dir=None,
-                tool=dispatch.NODE_TOOL, job_kw=None, store=None):
+                tool=dispatch.NODE_TOOL, job_kw=None, store=None, staging=False):
     """The merged gate of the landing's merge `merge` (a full hash, in `tree`, the landing tree,
     default `root`) on `base`, run on `node` as a land job: an OK gate Outcome (outcome_of) when
     it passed and main took its record, a FAILED one when it started and did not (the module
     docstring), Fallback when nothing ran there. cfg: the config read at the base; repo:
-    records.place.repo_name; full, docs: the merged gate's own arguments. open_link(node) is a context
+    records.place.repo_name; full, docs, staging: the merged gate's own arguments. open_link(node) is a context
     giving a remote.Link (default remote.Link), make_job(link) the job.NodeJob, checker and
     kit_hash landgate's (default: read here), job_kw more NodeJob arguments: the tests'
     stand-ins. notice_dir: the lock-window notice folder; None with `store` (the landing's
@@ -268,11 +269,11 @@ def run_on_node(node, root, merge, base, cfg, repo, slug, full=False, docs=False
     if checker is None:
         try:
             checker = landgate.checker(root, merge, base, cfg, repo, full, docs, tree=tree,
-                                       kit_hash=kit_hash)
+                                       kit_hash=kit_hash, staging=staging)
         except (job.RecordRefused, OSError, ValueError) as e:
             raise Fallback(str(e))
     land = {'base': base, 'remote': cfg.remote, 'main': kconfig.work_base(cfg), 'full': bool(full),
-            'docs': bool(docs), 'kit_files': kit_hash}
+            'docs': bool(docs), 'staging': bool(staging), 'kit_files': kit_hash}
     if make_job is None:
         def make_job(link):
             return job.NodeJob(node, link, tree or root, merge, repo, slug, kind, [], land=land,

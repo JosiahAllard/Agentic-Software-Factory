@@ -246,16 +246,17 @@ def check_gate_spec(d):
 
 def check_land_spec(d):
     """The checked land spec in `d` (a dict): check_gate_spec's keys (the sha is the merge, the
-    base the main it was merged into), `full` and `docs` (true or false: the merged gate's own
-    arguments) and `kit_files` (main's kitlib.gate.reuse.kit_files_hash, 64 hex), with `land`
-    True. SpecError naming the first wrong key."""
+    base the main it was merged into), `full`, `docs` and `staging` (true or false: the merged
+    gate's own arguments) and `kit_files` (main's kitlib.gate.reuse.kit_files_hash, 64 hex), with
+    `land` True. SpecError naming the first wrong key."""
     out = check_gate_spec(d)
-    for k in ('full', 'docs'):
+    for k in ('full', 'docs', 'staging'):
         if not isinstance(d.get(k), bool):
             raise SpecError('%s is not true or false' % k)
     if not isinstance(d.get('kit_files'), str) or not HEX64_RE.fullmatch(d['kit_files']):
         raise SpecError('kit_files is not a sha256')
-    out.update(full=d['full'], docs=d['docs'], kit_files=d['kit_files'], land=True)
+    out.update(full=d['full'], docs=d['docs'], staging=d['staging'], kit_files=d['kit_files'],
+               land=True)
     return out
 
 

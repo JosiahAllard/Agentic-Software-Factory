@@ -41,7 +41,7 @@ PLACEHOLDERS = ('python', 'root', 'base', 'here', 'tools')    # gate.py's substi
 SUSPECTS_PLACEHOLDERS = PLACEHOLDERS + ('tests_file', 'landings_file')
 # Step keys about running a subprocess; a hook check is called, not run.
 CMD_ONLY = ('cwd', 'daily_cmd', 'full_cmd', 'merged_args', 'ok_exits', 'promote_args', 'reuse',
-            'toolchain')
+            'staging_args', 'staging_pass', 'toolchain')
 
 
 def _parse(text, where):
@@ -108,11 +108,18 @@ def _gate_rules(gate, errs):
         requires = requires if isinstance(requires, list) else []
         argvs = [('cmd', step.get('cmd')), ('full_cmd', step.get('full_cmd')),
                  ('daily_cmd', step.get('daily_cmd')), ('merged_args', step.get('merged_args')),
-                 ('promote_args', step.get('promote_args'))]
+                 ('promote_args', step.get('promote_args')),
+                 ('staging_args', step.get('staging_args'))]
         argvs += [('requires', r) for r in requires if isinstance(r, list)]
         toolchain = step.get('toolchain')
         toolchain = toolchain if isinstance(toolchain, list) else []
         argvs += [('toolchain', t) for t in toolchain if isinstance(t, list)]
+        if ('staging_args' in step) != ('staging_pass' in step):
+            errs.append('%s: "staging_args" and "staging_pass" go together: a staging landing '
+                        'judges a staging_args run by staging_pass alone' % where)
+        if step.get('staging_landing') is False and 'staging_args' in step:
+            errs.append('%s: "staging_landing" false and "staging_args" contradict each other: a '
+                        'staging landing either skips the step or runs its staging_args' % where)
         if 'toolchain' in step:
             content = step.get('content')
             if not step.get('reuse'):
@@ -130,6 +137,13 @@ def _gate_rules(gate, errs):
             if isinstance(r, str) and re.search(r'[\s/\\{]', r):
                 errs.append('%s: "requires" %r must be a bare command name; a command with '
                             'arguments is a probe argv' % (where, r))
+    smoke = gate.get('smoke_steps')
+    off = {s.get('name') for s in (steps if isinstance(steps, list) else ())
+           if isinstance(s, dict) and s.get('staging_landing') is False}
+    for n in (smoke if isinstance(smoke, list) else ()):
+        if isinstance(n, str) and n in off:
+            errs.append('"gate".smoke_steps: %s sets "staging_landing" false: a smoke step runs at '
+                        'every landing' % n)
 
 
 def _placeholders(where, argv, known, errs):

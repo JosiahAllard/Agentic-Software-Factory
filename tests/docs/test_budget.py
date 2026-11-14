@@ -963,6 +963,46 @@ class Refusals(KitRepo):
         self.assertIn('could not read base ref master (could not run git: git missing)', out)
 
 
+class TurningStagingOn(KitRepo):
+    """A branch that writes the staging setting before the staging branch exists: the base is the
+    main branch as fetched (origin/master here) while origin/master turns no staging on, and the
+    check refuses once origin/master names a staging branch that is still absent."""
+
+    def setUp(self):
+        super().setUp()
+        self.size(GOTCHAS, 10)
+        self.git('update-ref', 'refs/remotes/origin/master', 'HEAD')
+        self.git('checkout', '-q', '-b', 'branch-a')
+        kit = kit_json(self.CONFIG, owner_paths=None)
+        kit['staging'] = {'branch': 'staging'}
+        self.write('.kit.json', json.dumps(kit))
+        self.size(GOTCHAS, 20)
+
+    def test_no_base_measures_against_the_fetched_main_and_says_so(self):
+        code, out = self.run_budget()
+        self.assertEqual(code, 0, out)
+        self.assertIn('the staging branch staging does not exist yet', out)
+        self.assertIn('measuring against refs/remotes/origin/master', out)
+
+    def test_the_fetched_main_as_base_passes(self):
+        code, out = self.run_budget('--base', 'origin/master')
+        self.assertEqual(code, 0, out)
+        self.assertNotIn('does not exist yet', out)
+
+    def test_main_naming_the_absent_branch_refuses(self):
+        self.git('update-ref', 'refs/remotes/origin/master', 'HEAD')
+        code, out = self.run_budget()
+        self.assertEqual(code, 2, out)
+        self.assertIn('base ref staging does not exist here', out)
+        self.assertNotIn('DOC BUDGET OK', out)
+
+    def test_once_the_branch_exists_it_is_the_base(self):
+        self.git('update-ref', 'refs/remotes/origin/staging', 'master')
+        code, out = self.run_budget()
+        self.assertEqual(code, 0, out)
+        self.assertNotIn('does not exist yet', out)
+
+
 class UncappedDirs(KitRepo):
     CONFIG = dict(default=40960, budgets={}, uncapped_dirs=['docs/backlog'], shard_indexes={}, state_docs=[])
     GLOB_LINE = '`docs/INDEX.md` | index | always. `docs/backlog/*.md` | one file per work item | never | kw: index, backlog'

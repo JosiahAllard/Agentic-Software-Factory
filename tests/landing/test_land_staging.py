@@ -2,7 +2,8 @@
 branch"): it merges onto <remote>/<staging> and pushes there; the main branch, on the remote and in
 the main checkout, is never moved (fix 1: no local fast-forward of main); the staging setting is
 read from <remote>/<main> (fix 2: Merge.follow through kitlib.config.load_at(staging_from=)).
-Then readers of the work base: the landing lock and the gate's default base. A STUCK landing
+Then readers of the work base: the landing lock and the gate's default base, and the steps that
+turn staging on, walked. A STUCK landing
 onto staging prints steps that never move main and the break step's real refusal (MERGE_HEAD)."""
 import json
 import os
@@ -19,7 +20,9 @@ from kitlib.backlog import store_ref
 from kitlib.config import pmdata
 from kitlib.gate import runner
 from kitlib.git import refs
-from kitlib.records import landing
+from kitlib import trailerscheck
+from kitlib.records import gate_ok, landing
+from tests import gitfixture
 from tests.backlog.helpers import priced
 from tests.landing import test_land_store as tls
 from tests.landing.test_land import BRANCH, LandCase
@@ -145,6 +148,65 @@ class WorkBaseReaders(StagingCase):
     def test_the_gate_defaults_to_the_staging_branch(self):
         ref, _note = runner.default_base(self.cfg(), self.repo.root)
         self.assertEqual(ref, 'refs/remotes/origin/%s' % STAGING)
+
+
+class TurningStagingOn(LandCase):
+    """docs/gate-landing.md "Turning staging on", walked: the branch writing the setting gates with
+    no --base and lands on main; the next gate refuses until the staging branch is pushed and
+    fetched; then a branch gates against origin/staging and lands there. Every gate is the real
+    branch gate, and each landing takes the record it wrote."""
+    KIT = {'owner': {'email': gitfixture.EMAIL}}       # .kit.json is owner-only: the owner commits
+    GATE_TIPS = False
+
+    def gate(self, wt):
+        said = []
+        out = runner.branch_gate(wt, book_kw=self.book_kw, log_dir=self.logs, full=True,
+                                 say=said.append)
+        return out, said
+
+    def test_the_turn_on_steps_gate_and_land_with_no_base(self):
+        kit = dict(self.KIT, gate=self.GATE, staging={'branch': STAGING})
+        wt, tip = self.branch('feature', {'.kit.json': json.dumps(kit, indent=1) + '\n'})
+        out, said = self.gate(wt)                                     # step 2
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertIsNone(out.no_record, out.lines)
+        self.assertTrue([l for l in said if 'the staging branch %s does not exist yet' % STAGING
+                         in l and 'measuring against refs/remotes/origin/main' in l], said)
+        trail = trailerscheck.check(wt)                       # a check that reads its own base
+        self.assertEqual(trail.code, trailerscheck.OK, trail.lines)
+        self.assertIn('does not exist yet', '\n'.join(trail.lines))
+        landed = self.lander(BRANCH, self.main, tip).run()          # step 3: onto main
+        self.assertEqual(landed.code, G.OK, landed.lines)
+        self.assertTrue(landed.lines[-1].startswith('LANDED %s on main at %s'
+                                                    % (BRANCH, landed.merge)), landed.lines)
+        self.assertEqual(self.remote_main(), landed.merge)
+        self.repo.git('fetch', '-q', 'origin')
+
+        wt2 = self.repo.worktree('next')
+        self.repo.git('reset', '-q', '--hard', 'origin/main', cwd=wt2)
+        self.repo.write('b.py', 'y = 2\n', root=wt2)
+        tip2 = self.repo.commit('work on next', 'b.py', cwd=wt2)
+        out, _ = self.gate(wt2)                                       # staging on, branch absent
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('REFUSED: neither origin/%s nor %s resolves: pass --base' % (STAGING, STAGING),
+                      out.lines)
+        self.assertNotEqual(trailerscheck.check(wt2).code, trailerscheck.OK)
+
+        self.repo.git('push', '-q', 'origin', 'origin/main:refs/heads/%s' % STAGING)   # step 4
+        self.repo.git('fetch', '-q', 'origin')
+        out, said = self.gate(wt2)                                    # step 5
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertIsNone(out.no_record, out.lines)
+        self.assertFalse([l for l in said if 'does not exist yet' in l], said)
+        self.assertEqual(trailerscheck.check(wt2).code, trailerscheck.OK)
+        rec, why = gate_ok.read(self.repo.root, tip2)
+        self.assertIsNone(why)
+        self.assertEqual(rec['base'], landed.merge)
+        onto = self.lander('kit/next', landed.merge, tip2).run()
+        self.assertEqual(onto.code, G.OK, onto.lines)
+        self.assertTrue(onto.lines[-1].startswith('LANDED kit/next on %s at %s'
+                                                  % (STAGING, onto.merge)), onto.lines)
+        self.assertEqual(self.remote_main(), landed.merge)           # main is not moved
 
 
 def staging_only(fake):

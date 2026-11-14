@@ -1,5 +1,6 @@
 """kitlib.gate.runner.branch_gate: the branch gate under book() on the scratch lock store, and the
 rule that the gate-OK record is written only for the commit whose clean tree passed."""
+import json
 import os
 import sys
 import tempfile
@@ -453,6 +454,47 @@ class DefaultBaseNote(fixtures.GateRepoCase):
     def test_an_explicit_base_prints_no_note(self):
         _stale, _fresh, out, lines = self.gated(base='main')
         self.assertFalse([l for l in lines if 'measuring against' in l], lines)
+
+
+class TurningStagingOn(fixtures.GateRepoCase):
+    """A branch that writes the staging setting before the staging branch exists gates against
+    origin/main, a whole gate with its record, while origin/main turns no staging on; once
+    origin/main names the branch and it is still absent, the gate refuses."""
+
+    def staged(self):
+        return json.dumps({'gate': self.GATE, 'staging': {'branch': 'staging'}}, indent=1) + '\n'
+
+    def gated(self, **kw):
+        wt, tip = self.branch('turn-on', {'.kit.json': self.staged(), 'a.py': 'x = 1\n'})
+        lines = []
+        out = runner.branch_gate(wt, book_kw=self.book_kw, log_dir=self.logs, say=lines.append, **kw)
+        return wt, tip, out, lines
+
+    def test_no_base_gates_against_origin_main_says_so_and_writes_the_record(self):
+        wt, tip, out, lines = self.gated()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertTrue([l for l in lines if 'the staging branch staging does not exist yet' in l
+                         and 'measuring against refs/remotes/origin/main' in l], lines)
+        self.assertIsNone(out.no_record, out.lines)
+        self.assertEqual(out.record, gate_ok.record_path(wt, tip))
+        rec, why = gate_ok.verify(wt, tip, gate_ok.gate_config(kconfig.load(wt)))
+        self.assertIsNone(why)
+        self.assertEqual(rec['base'], self.main)
+
+    def test_base_origin_main_is_the_default_and_not_partial(self):
+        wt, tip, out, _lines = self.gated(base='origin/main')
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertNotIn('partial', out.no_record or '', out.lines)
+        self.assertEqual(out.record, gate_ok.record_path(wt, tip))
+
+    def test_main_naming_the_absent_branch_refuses(self):
+        self.repo.write('.kit.json', self.staged())
+        self.repo.commit('staging on', '.kit.json')
+        self.repo.git('push', '-q', 'origin', 'main')
+        wt, tip, out, _lines = self.gated()
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('REFUSED: neither origin/staging nor staging resolves: pass --base', out.lines)
+        self.assertFalse(os.path.exists(gate_ok.record_path(wt, tip)))
 
 
 if __name__ == '__main__':

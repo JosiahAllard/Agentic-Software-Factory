@@ -32,12 +32,14 @@ GONE = 99                # an MSYS parent pid that no longer exists
 
 _SAVED_HOME = {}
 _HOME_DIR = None
+_WINDOWS = mock.patch.object(PW, "WINDOWS", True)    # the Windows-data tests; LinuxRules patches it back off
 
 
 def setUpModule():
     # procwatch reads the machine config through kitlib (the kit temp folder); under the kit's home
     # fence that needs a temp home, here and in the procwatch processes the tests start.
     global _HOME_DIR
+    _WINDOWS.start()
     _HOME_DIR = tempfile.TemporaryDirectory()
     for k in ('USERPROFILE', 'HOME'):
         _SAVED_HOME[k] = os.environ.get(k)
@@ -45,6 +47,7 @@ def setUpModule():
 
 
 def tearDownModule():
+    _WINDOWS.stop()
     for k, v in _SAVED_HOME.items():
         if v is None:
             os.environ.pop(k, None)
@@ -355,6 +358,7 @@ class Classify(unittest.TestCase):
                         .endswith(" killed=1"))
 
 
+@windows_only("imports winproc (ctypes WinDLL)")
 class ParsePs(unittest.TestCase):
     """winproc.parse_ps_l: Git's `ps -l` text -> {windows pid: (msys pid, msys parent pid, tty)}."""
     TEXT = ("      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND\n"

@@ -307,8 +307,8 @@ def _scope_edit(rec, changes, add, drop):
     for m in drop:
         if m not in have:
             near = [h for h in have if h.casefold() == m.casefold()]
-            raise Usage('`--drop-scope %s` is not in the scope of %s (%s)%s'
-                        % (m, rec.stem, ', '.join(have),
+            raise Usage('`--drop-scope %s` is not in the scope of %s (%d members)%s'
+                        % (m, rec.stem, len(have),
                            '; did you mean `%s`?' % near[0] if near else ''))
     new = [m for m in have if m not in drop]
     for m in add:

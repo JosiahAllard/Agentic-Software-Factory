@@ -267,8 +267,9 @@ def clears_owner_blocker(rec, after):
 LIVE_CLIENT = 'live-client'
 LIVE_CLIENT_NEEDS_END = (
     '`block %s --on live-client` needs an end the unblock-conditions job reads, given alone on '
-    'its own `--on`: `--until "todo:T-n done"`, `--until "question:Q-n answered"`, `--until '
-    '"approval:A-n decided"` (the owner\'s act) or `--until "resource:<name> free"`. A live run an '
+    'its own `--on`: any `--until` form that job reads (kitlib/backlog/conditions.py), such as '
+    '`--until "todo:T-n done"`, `--until "question:Q-n answered"`, `--until "approval:A-n '
+    'decided"` (the owner\'s act) or `--until "resource:<name> free"`. A live run an '
     'agent may start is no hold: `requires: live-run`, and `uses:` when accounts are scarce '
     '(docs/backlog.md "Resources")')
 

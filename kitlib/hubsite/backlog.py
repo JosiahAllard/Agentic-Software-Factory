@@ -606,6 +606,7 @@ def record_template(name, root):
     (1, 0-1, 1+ or 0+), "required", "written_by"}] in kitlib.backlog.record.FIELDS order),
     "states", "blocked_on" ({"plain", "prefixes"}), "efforts", "priorities", "priority_by"}.
     ReadError when the repository's .kit.json cannot be read."""
+    from kitlib.backlog import plan as bplan
     from kitlib.backlog import plan_edit
     from kitlib.backlog import record as brecord
     if not os.path.isdir(root):
@@ -622,7 +623,10 @@ def record_template(name, root):
                         "written_by": written.get(k)}
                        for k, (count, _check) in brecord.FIELDS.items()],
             "states": list(brecord.STATES),
-            "blocked_on": {"plain": list(brecord.BLOCKED_ON_PLAIN),
+            # live-client is no choice: a hold written without an end is refused
+            # (kitlib/backlog/plan.py live_client_end_error)
+            "blocked_on": {"plain": [m for m in brecord.BLOCKED_ON_PLAIN
+                                     if m != bplan.LIVE_CLIENT],
                            "prefixes": list(brecord.BLOCKED_ON_PREFIXES)},
             "efforts": ["s", "m", "l", "-"],
             "priorities": ["1", "2", "3", "4", "5", "-"],

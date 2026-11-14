@@ -71,9 +71,6 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
     if 'owner' in members and not owner_ask and not rec.has('owner_ask'):
         raise Usage('blocking on the owner needs `--owner-ask` citing the Action Hub ask it '
                     'waits on: %s' % rmod.owner_ask_fix(rid, kitroot.command('hub')))
-    bad = live_client_end_error(rid, rec, members, until)
-    if bad:
-        raise Usage(bad)
     if until is not None:
         until = ' '.join(until.split())
         refuse_machine_paths('--until', until)
@@ -103,6 +100,10 @@ def plan_block(snap, ctx, rid, members, owner_ask=None, reason=None, until=None,
                           'owner` line): a lead\'s `--until` would schedule that hold to end. '
                           'The owner or the PM sets it (%s)'
                           % (rid, policy.row_text('unblock-owner')))
+    # after the --until checks, so a machine path or a malformed form is refused in its own words
+    bad = live_client_end_error(rid, rec, members, until)
+    if bad:
+        raise Usage(bad)
     if 'owner' in members:
         # Every caller passes here (tools/backlog.py, the hub's park): an owner hold cites the
         # hub ask that ends it, never only itself or another item. A hub id given now is enough

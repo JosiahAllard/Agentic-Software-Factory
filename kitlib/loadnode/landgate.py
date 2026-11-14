@@ -13,7 +13,8 @@ kitlib.lock.release.LOCK_PATHS). Only optional/loadnode/loadnode.py (the node's 
 
 A node's record is never trusted: main takes it only when its commit, tree and author are what
 main's git says, its gate config hash is the one main reads at the base, its base and config_rev
-are the base, its mode, source and step names are what main's merged gate would have run, every
+are the base, its mode, source, step names and staging_skipped are what main's merged gate would
+have run (a staging landing's skipped steps compared exactly: a record without the key fails), every
 step passed or warned (a step skipped for a missing tool, or served from a gate cache, does not
 count as run), its repo is main's and its kit's files hash is main's kit's.
 """
@@ -59,7 +60,7 @@ def node_main(job, base_dir=None, say=None):
 
 def land_gate(wt, spec, say, merged_gate=None, kit_hash=None):
     """Run the merged gate of the merge spec['sha'] checked out in `wt` against spec['base'],
-    with spec's full and docs, as main's landing runs it (runner.merged_gate, the config read
+    with spec's full, docs and staging, as main's landing runs it (runner.merged_gate, the config read
     at the base); on a pass, write its gate-OK record in `wt` with this kit's files hash in its
     `kit`. The exit code: 0 passed and recorded, 1 failed (or the record could not be written,
     or the gate left the tree changed), 4 refused (another kit, the tree is not at the merge,
@@ -70,7 +71,7 @@ def land_gate(wt, spec, say, merged_gate=None, kit_hash=None):
     from kitlib.git import cmd, refs
     from kitlib.records import gate_ok, place
     sha, base = spec['sha'], spec['base']
-    full, docs = spec['full'] is True, spec['docs'] is True
+    full, docs, staging = spec['full'] is True, spec['docs'] is True, spec['staging'] is True
     mine = (kit_hash or kit_files)()
     if mine != spec['kit_files']:
         say("REFUSED: this node's kit files are not main's; a landing's merged gate runs only on "
@@ -88,7 +89,7 @@ def land_gate(wt, spec, say, merged_gate=None, kit_hash=None):
         return EXIT_REFUSED
     started = gate_ok.utc()
     out = (merged_gate or runner.merged_gate)(wt, cfg, base, full=full, slug=spec['slug'],
-                                              say=say, tree=wt, docs=docs)
+                                              say=say, tree=wt, docs=docs, staging=staging)
     for line in out.lines:
         say(line)
     if out.code != EXIT_OK:
@@ -106,7 +107,8 @@ def land_gate(wt, spec, say, merged_gate=None, kit_hash=None):
                             dict(runner.kit_identity(), files=mine), place.repo_name(cfg, wt),
                             started, runner.record_steps(out.facts.get('results') or []),
                             base=base, config_rev=base, source=out.facts.get('source'),
-                            full=full and not docs, mode='docs' if docs else None)
+                            full=full and not docs, mode='docs' if docs else None,
+                            staging_skipped=out.facts.get('staging_skipped'))
     except gate_ok.NoRecordFolder:
         # Kept for load nodes set up without a dev_drive: the .git copy, which read_record reads.
         pass
@@ -118,20 +120,22 @@ def land_gate(wt, spec, say, merged_gate=None, kit_hash=None):
 
 # -- main ----------------------------------------------------------------------------------------
 
-def expect(root, cfg, base, full, docs, tree=None):
+def expect(root, cfg, base, full, docs, tree=None, staging=False):
     """What main's own merged gate of HEAD of `tree` (default `root`) on `base` would record, with
     `cfg` the config read at the base: ({'head', 'steps': [names], 'mode', 'source', 'full',
-    'gate_config': its hash}, None), or (None, why) when main's gate would refuse it."""
+    'staging_skipped', 'gate_config': its hash}, None), or (None, why) when main's gate would
+    refuse it."""
     from kitlib.gate import runner
     from kitlib.records import gate_ok
-    info, why = runner.merged_steps(root, cfg, base, full=full, tree=tree, docs=docs)
+    info, why = runner.merged_steps(root, cfg, base, full=full, tree=tree, docs=docs,
+                                    staging=staging)
     if info is None:
         return None, why
     docs = bool(info['docs'])
     full = bool(full) and not docs
     return {'head': info['head'], 'steps': list(info['steps']),
             'mode': 'docs' if docs else 'full' if full else 'select', 'full': full,
-            'source': info['source'],
+            'source': info['source'], 'staging_skipped': info['staging_skipped'],
             'gate_config': gate_ok.config_hash(gate_ok.gate_config(cfg))}, None
 
 
@@ -169,6 +173,10 @@ def check_record(root, rec, merge, base, expected, repo_name, kit_hash, gate_con
     if mode != expected['mode'] or gate_ok.full_of(rec) != expected['full']:
         raise RecordRefused('the record is a %s gate (full %r); main would run a %s gate'
                             % (mode, rec.get('full'), expected['mode']))
+    if rec.get('staging_skipped') != expected.get('staging_skipped'):
+        raise RecordRefused('the record says a staging landing left out %s; main would leave out %s'
+                            % (_skipped(rec.get('staging_skipped')),
+                               _skipped(expected.get('staging_skipped'))))
     if gate_ok.source_of(rec) != expected['source']:
         raise RecordRefused('the record says the gate came from %r; main reads %r'
                             % (gate_ok.source_of(rec), expected['source']))
@@ -191,12 +199,22 @@ def check_record(root, rec, merge, base, expected, repo_name, kit_hash, gate_con
     return rec
 
 
-def checker(root, merge, base, cfg, repo_name, full, docs, tree=None, kit_hash=None):
+def _skipped(names):
+    """A staging_skipped value as check_record says it."""
+    if names is None:
+        return 'nothing (no staging landing)'
+    if isinstance(names, list):
+        return ', '.join(map(str, names)) or 'no step'
+    return repr(names)
+
+
+def checker(root, merge, base, cfg, repo_name, full, docs, tree=None, kit_hash=None,
+            staging=False):
     """NodeJob's checker for a landing's land job: record -> the record, RecordRefused. What
     main's merged gate would select is read once, here (RecordRefused when main's gate would
     refuse the merge)."""
     from kitlib.records import gate_ok
-    expected, why = expect(root, cfg, base, full, docs, tree=tree)
+    expected, why = expect(root, cfg, base, full, docs, tree=tree, staging=staging)
     if expected is None:
         raise RecordRefused("main's own merged gate would refuse the merge: %s" % why)
     if expected['head'] != merge:

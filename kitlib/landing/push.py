@@ -38,16 +38,19 @@ class Push(object):
     def write_record(self, started, results):
         """The gate-OK record for the merge commit (pre-push reads it), its config_rev the
         base, its mode "docs" when the merged gate ran only the docs-only steps, its ran_on the
-        land job's when the merged gate ran on a load node; its path. Raises
+        land job's when the merged gate ran on a load node, its staging_skipped the merged gate's
+        (the steps a staging landing left out, None off one); its path. Raises
         gate_ok.RecordError."""
-        docs = self.gate_out is not None and self.gate_out.facts.get('docs') is True
-        ran_on = self.gate_out.facts.get('ran_on') if self.gate_out is not None else None
+        facts = self.gate_out.facts if self.gate_out is not None else {}
+        docs = facts.get('docs') is True
+        ran_on = facts.get('ran_on')
         path, _ = gate_ok.record_pass(self.root, self.merge, gate_ok.gate_config(self.cfg),
                                       runner.kit_identity(), place.repo_name(self.cfg, self.root),
                                       started, runner.record_steps(results or []),
                                       base=self.expect_main, config_rev=self.expect_main,
                                       source=self.source(), full=bool(self.full) and not docs,
-                                      mode='docs' if docs else None, ran_on=ran_on)
+                                      mode='docs' if docs else None, ran_on=ran_on,
+                                      staging_skipped=facts.get('staging_skipped'))
         return path
 
     def push(self, started, results):

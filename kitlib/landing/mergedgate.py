@@ -88,6 +88,15 @@ class MergedGate(object):
             'the merge changes the gate\'s config (%s)' % ', '.join(hit[:5]) if hit else
             'git cannot list what the merge changes (%s)' % (why or 'no reason given')))
 
+    def staging_gate(self):
+        """True when the merged gate is a staging landing's (runner.merged_gate staging): the base
+        is a staging branch (Lander.staging) and the landing is neither --full (config_escalate
+        included) nor fresh (a strict branch's, strict_escalate), so those run every selected step.
+        Read when the merged gate starts, after both escalations; main's gate and a load node's
+        land job get the same answer (docs/gate-landing.md "What a landing re-runs and what it
+        reuses")."""
+        return bool(self.staging and not self.full and not self.fresh)
+
     def gate(self):
         self.lock.set_phase(self.token, 'gate')
         self.phase = 'gate'
@@ -181,7 +190,8 @@ class MergedGate(object):
                 return lr.run_on_node(node, self.root, self.merge, self.expect_main, self.cfg,
                                       repo_name, place.slug_of('+'.join(self.branches)),
                                       full=self.full, docs=True, tree=self.tree, kind=kind,
-                                      say=self.say, store=self.queue_store())
+                                      say=self.say, store=self.queue_store(),
+                                      staging=self.staging_gate())
             except lr.Fallback as e:
                 why = '%s (nothing ran on load node %s)' % (e.why, node.name)
         try:
@@ -201,7 +211,8 @@ class MergedGate(object):
         out = runner.merged_gate(self.root, self.cfg, self.expect_main, full=self.full,
                                  slug='+'.join(self.branches), log_dir=self.log_dir, say=self.say,
                                  book_kw=self.book_kw, reuse=plan,
-                                 slot=self.slot, tree=self.tree, docs=True)
+                                 slot=self.slot, tree=self.tree, docs=True,
+                                 staging=self.staging_gate())
         self.gate_logs = out.facts.get('log_dir')
         return out
 

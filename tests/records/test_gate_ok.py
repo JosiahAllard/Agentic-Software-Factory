@@ -438,6 +438,32 @@ class ModeTest(GateOkCase):
         self.assertIsNone(gate_ok.mode_of({'mode': 'full', 'full': 'true'}))  # only JSON true is full
 
 
+class StagingSkippedTest(GateOkCase):
+    """The `staging_skipped` key: what a staging landing left out, null for every other gate."""
+
+    def test_it_is_null_unless_a_staging_landing_names_its_skipped_steps(self):
+        _, rec = self.passed()
+        self.assertIsNone(rec['staging_skipped'])
+        names = ['unit', 'slow']
+        _, rec = self.passed(staging_skipped=names)
+        self.assertEqual(rec['staging_skipped'], ['unit', 'slow'])
+        self.assertIsNot(rec['staging_skipped'], names)
+        self.assertEqual(gate_ok.verify(self.repo.root, self.head)[0]['staging_skipped'],
+                         ['unit', 'slow'])
+        _, rec = self.passed(staging_skipped=[])
+        self.assertEqual(rec['staging_skipped'], [])
+
+    def test_another_value_or_one_with_full_is_never_written(self):
+        for bad in ('unit', ['unit', 'unit'], [''], [None], ('unit',), {}):
+            with self.assertRaises(gate_ok.RecordError, msg=repr(bad)):
+                self.passed(staging_skipped=bad)
+        with self.assertRaises(gate_ok.RecordError) as cm:
+            self.passed(full=True, staging_skipped=['unit'])
+        self.assertIn('a --full gate leaves no step out', str(cm.exception))
+        _, rec = self.passed(full=True, staging_skipped=None)
+        self.assertIsNone(rec['staging_skipped'])
+
+
 class HashTest(unittest.TestCase):
 
     def test_the_config_hash_is_sha256_of_sorted_compact_utf8_json(self):

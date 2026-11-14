@@ -124,6 +124,20 @@ class SameTree(ReuseCase):
         self.assertEqual(reuse.same_tree(self.repo.root, cfg, BRANCH, tip, moved, out.merge),
                          (None, None))
 
+    def test_a_staging_args_run_is_never_reused_or_cached(self):
+        # a staging landing's compile-only run proves less than the step's own run: no cache,
+        # no same-tree record and no input key serves it, and none is stored from it
+        spec = {'name': 'build', 'globs': ['*.py'], 'cmd': ['x'], 'staging_args': ['--compile'],
+                'staging_pass': '^ok$'}
+        step = S.Step('build', [sys.executable, '-c', 'print("ok")', '--compile'], None,
+                      self.repo.root, ['^ok$'], [], (0,), False, False, [], False, staging=True)
+        why = 'it runs its staging_args (the compile-only run of a staging landing)'
+        for kw in ({}, {'same_tree': True}, {'input_tree': True}):
+            with self.subTest(**kw):
+                self.assertEqual(reuse.undeclared(spec, step, 'b' * 40, **kw), why)
+        self.assertIsNone(reuse.undeclared(spec, step._replace(staging=False), 'b' * 40,
+                                           same_tree=True))
+
     def test_the_relaxation_is_for_the_same_tree_only(self):
         cfg = runner.kconfig.load(self.repo.root)
         step = S.Step('basey', [sys.executable, '-c', 'print("ok")', 'b' * 40], None,

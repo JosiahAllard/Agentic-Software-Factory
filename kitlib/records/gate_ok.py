@@ -63,6 +63,12 @@ unless the caller asks for what they carry):
                 main moved (gate.reuse, "The input tree"; INPUT_PARTS), or null (no step
                 has one, or the gate wrote none: --only, a partial or docs-only gate, a work tree
                 not clean at its start)
+  staging_skipped
+                the steps a landing onto a staging branch left out ("staging_landing" false;
+                gate.steps.select, gate.runner.merged_gate), in config order, [] when it left out
+                none; null for every other gate, a landing onto main and a --full or strict
+                staging landing included. Never with `full` (docs/gate-landing.md "What a
+                landing re-runs and what it reuses")
 
 One more key, only on a record of a gate that ran on a load node (import_record, a branch's
 gate: docs/load-nodes.md "Gating a branch on a node"; build with `ran_on`, a landing's merged gate
@@ -105,7 +111,7 @@ SCHEMA = 1
 VERDICT = 'OK'
 KEYS = ('schema', 'verdict', 'commit', 'tree', 'base', 'gate_config', 'kit', 'author', 'repo',
         'started_utc', 'ended_utc', 'steps')
-ADDED_KEYS = ('config_rev', 'source', 'full', 'mode', 'input_keys')
+ADDED_KEYS = ('config_rev', 'source', 'full', 'mode', 'input_keys', 'staging_skipped')
 MODES = ('full', 'select', 'docs')
 RAN_ON_KEYS = ('node', 'host_key', 'job')
 RETRIES = 5         # tries of a record's os.replace while it fails with PermissionError
@@ -393,15 +399,32 @@ def _ran_on(ran_on):
     return dict(ran_on)
 
 
+def _staging_skipped(names, full):
+    """`names` as a new list when it is None or a list of distinct non-empty strings, never
+    with `full`; else RecordError."""
+    if names is None:
+        return None
+    if (not isinstance(names, list) or not all(isinstance(n, str) and n for n in names)
+            or len(set(names)) != len(names)):
+        raise RecordError('staging_skipped is null or a list of distinct step names')
+    if full:
+        raise RecordError('a --full gate leaves no step out: staging_skipped goes only with a '
+                          'staging landing that is not --full')
+    return list(names)
+
+
 def build(root, rev, gate_config, kit, repo_name, started_utc, steps, base=None, ended_utc=None,
-          config_rev=None, source=None, full=False, mode=None, input_keys=None, ran_on=None):
+          config_rev=None, source=None, full=False, mode=None, input_keys=None, ran_on=None,
+          staging_skipped=None):
     """The record for `rev` (resolved here: commit, tree and author come from git, never the
     caller). `config_rev`: the commit the gate config was read from (resolved to a full hash).
     `source`: "gate.json" or "auto" (gate.detect), or None. `full`: the gate ran --full.
     `mode`: one of MODES; None: "full" with `full`, else "select". "full" goes with `full` and
     only with it (RecordError). `input_keys`: gate.reuse.record_keys, or None. `ran_on`:
     the steps ran on a load node ({"node", "host_key", "job"}, from main's registry), so the
-    record gets that key and no input_keys (RecordError when both are given)."""
+    record gets that key and no input_keys (RecordError when both are given).
+    `staging_skipped`: the steps a staging landing left out (a list, [] for none), or None for
+    any other gate; RecordError for another value or with `full`."""
     if ran_on is not None:
         ran_on = _ran_on(ran_on)
         if input_keys is not None:
@@ -412,6 +435,7 @@ def build(root, rev, gate_config, kit, repo_name, started_utc, steps, base=None,
     if mode not in MODES or (mode == 'full') != full:
         raise RecordError('mode %r with full %r: the mode is one of %s, and "full" exactly when '
                           'the gate ran --full' % (mode, full, ', '.join(MODES)))
+    staging_skipped = _staging_skipped(staging_skipped, full)
     commit, tree, author = _facts(root, rev)
     if base is not None and not refs.is_sha(base):
         resolved, why = refs.resolve(base, root)
@@ -432,7 +456,7 @@ def build(root, rev, gate_config, kit, repo_name, started_utc, steps, base=None,
         'repo': repo_name or '', 'started_utc': started_utc, 'ended_utc': ended_utc or utc(),
         'steps': [_step(s, i) for i, s in enumerate(steps or [])],
         'config_rev': config_rev, 'source': source, 'full': full, 'mode': mode,
-        'input_keys': input_keys,
+        'input_keys': input_keys, 'staging_skipped': staging_skipped,
     }
     if ran_on is not None:
         rec['ran_on'] = ran_on
@@ -476,11 +500,11 @@ def _write_file(path, record):
 
 def record_pass(root, rev, gate_config, kit, repo_name, started_utc, steps, base=None,
                 config_rev=None, source=None, full=False, mode=None, input_keys=None,
-                ran_on=None):
+                ran_on=None, staging_skipped=None):
     """build() then write(): `(path, record)`. Only a passing gate calls this."""
     rec = build(root, rev, gate_config, kit, repo_name, started_utc, steps, base,
                 config_rev=config_rev, source=source, full=full, mode=mode,
-                input_keys=input_keys, ran_on=ran_on)
+                input_keys=input_keys, ran_on=ran_on, staging_skipped=staging_skipped)
     return write(root, rec), rec
 
 

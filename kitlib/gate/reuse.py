@@ -32,8 +32,11 @@ no input key for the step.
 Fail closed. Anything that raises means every step runs. Nothing is read or stored:
   - for a step that runs no command, a check step, a step without `globs` or `content`.globs, a
     step whose globs match no file git shows (a mistyped glob, or one naming only ignored
-    files, would key it on its command alone), a step whose cmd, full_cmd, daily_cmd or
-    merged_args names {base}, or whose argv holds the base commit;
+    files, would key it on its command alone), a step whose cmd, full_cmd, daily_cmd,
+    merged_args or staging_args names {base}, or whose argv holds the base commit;
+  - for a step a landing onto a staging branch runs with its staging_args (steps.Step.staging): a
+    compile-only run, never served from a record or the cache and never stored (same tree and
+    input tree included);
   - for an input that is not a plain file (a link, a folder: a nested repository or submodule),
     and for a step whose toolchain probe fails;
   - in a --full run, a branch gate's --only, or when "landing".reuse_max_age_h is 0;
@@ -405,10 +408,12 @@ def undeclared(spec, step, base, same_tree=False, input_tree=False):
         return 'a check step'
     if not step.cmd:
         return 'it runs no command'
+    if step.staging:
+        return 'it runs its staging_args (the compile-only run of a staging landing)'
     if same_tree:
         return None
     if not input_tree:
-        for k in ('cmd', 'full_cmd', 'daily_cmd', 'merged_args'):
+        for k in ('cmd', 'full_cmd', 'daily_cmd', 'merged_args', 'staging_args'):
             if any('{base}' in str(a) for a in spec.get(k) or []):
                 return 'its command names {base}: it reads git history'
         if base and any(base.lower() in str(a).lower() for a in step.cmd):

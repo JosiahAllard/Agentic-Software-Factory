@@ -63,6 +63,8 @@ kitlib/gate/reuse.py: a per-step cache of gate results, read and written by a br
 
 A promotion of the staging branch to main (`promote.py`, docs/modules/staging-design.md "Promotion") runs its merged-tree gate with no planner (`reuse=None`): every selected step runs fresh, and nothing is reused.
 
+A landing whose merged gate runs on a load node reuses nothing either: the node runs every selected step, and main refuses a node record with a `reused` step (docs/load-nodes.md "A landing's merged gate on a node"). A one-branch landing whose tip's --full record has the merge's tree stays on main so that it can reuse (`landroute.same_tree_why`). A step that runs its `staging_args` at a staging landing is never reused and never stored (docs/gate-landing.md "What a landing re-runs and what it reuses").
+
 **The key** (`reuse.step_key`) is the sha256 of the canonical JSON of:
 
 - the step's name, argv and cwd, with the checkout's root written `<root>` and the kit's `<kit>` (so a worktree and the main checkout make one key, and the landing's `merged_args` another);

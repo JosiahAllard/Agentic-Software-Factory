@@ -1172,8 +1172,8 @@ class Job(JobBase):
             return listed()
         self.job.procs = procs
         self.run_job()
-        self.assertEqual(self.read('sessions.json')['yak'], {'name': 'yak-a1'})
-        self.assertEqual(self.read('coordinators.json')['yak'], 1)
+        self.assertEqual(self.read('sessions.json').get('yak'), {'name': 'yak-a1'})
+        self.assertEqual(self.read('coordinators.json').get('yak'), 1)
         self.write('coordinators.json', {'kit': 2, 'pm_account': 3})
         self.assertEqual(self.calls, [])
         self.assertEqual(self.read('sessions.json')['kit']['name'], NEW.name)

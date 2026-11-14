@@ -11,8 +11,8 @@ from . import commands_nested as cn
 from . import jail
 from . import paths
 from . import shell as sh
-from .rules_base import (Asked, PS_ALIASES, PS_CMDLETS, UNPLACED, agent_session, bare, fwd, here, literal_word, ps_args,
-                         refuse)
+from .rules_base import (Asked, PS_ALIASES, PS_CMDLETS, UNPLACED, agent_session, bare, fwd, here, literal_word,
+                         own_index_lock, ps_args, refuse)
 from .rules_run import find_paths, kit_tool_dir
 from .rules_edit import OUTPUT_WRITERS, edit_target, jail_roots, ledger_unread, outer_shell, unplaced, whole_line
 from .rules_net import (NET_PROCESS_DIR, NET_UNPLACED, PIPE_UNPLACED, net_mentioned, net_placed, net_process_dir,
@@ -103,14 +103,13 @@ def _ps_value_end(cmd, p):
 
 
 def ps_unread(cmd, args, spec=None):
-    """[Word]: for a PowerShell writer (a write cmdlet, an Export-*, robocopy or xcopy, curl, wget
-    or tar), a target that is not literal and has no span when any argument is one the guard does
-    not read as the scanner did, else []. Coarse by design, it does not depend on how the scanner
-    read a ( or a { : the arguments of a cmdlet (`spec`) other than one value of a parameter in
-    PS_VALUE_PARAMS must each be a plain word, string or variable (PS_CMDLET_ARG_RE), a native
-    program's a plain word or string (PS_PLAIN_ARG_RE: PowerShell spreads a splat or an array into
-    its arguments); none may follow a comma (an array binds to the parameter before it); and the
-    command may be neither split nor followed by a ( ) or { } that no value accounts for."""
+    """[Word]: for a PowerShell writer (a write cmdlet, an Export-*, robocopy or xcopy, curl, wget or tar), a target
+    that is not literal and has no span when any argument is one the guard does not read as the scanner did, else [].
+    Coarse by design, it does not depend on how the scanner read a ( or a { : the arguments of a cmdlet (`spec`) other
+    than one value of a parameter in PS_VALUE_PARAMS must each be a plain word, string or variable (PS_CMDLET_ARG_RE), a
+    native program's a plain word or string (PS_PLAIN_ARG_RE: PowerShell spreads a splat or an array into its
+    arguments); none may follow a comma (an array binds to the parameter before it); and the command may be neither
+    split nor followed by a ( ) or { } that no value accounts for."""
     stand_in = [sh.Word('(an argument the guard does not read)', True, cmd.end, cmd.end)]
     if cmd.split:
         return stand_in
@@ -500,14 +499,13 @@ PS_ENV_READ_WORD_RE = re.compile(r'(?i)^\$(?:env:[A-Za-z_]\w*|\{env:[A-Za-z_]\w*
 
 
 def ps_line_plain(cmd):
-    """True when every command on the PowerShell line `cmd` comes from is a plain call: the parser
-    reads the line cleanly; each command's first word is a literal name of a cmdlet in
-    PS_PROVIDER_CMDLETS or PS_READ_CMDLETS, or git (PS_PLAIN_GIT) (no call or dot-source operator,
-    no assignment or other expression statement, no computed name, no Start-Process); every word is
-    literal or only reads an environment variable (PS_ENV_READ_WORD_RE; no other variable, member
-    call or subexpression); and neither the raw line nor any decoded word matches
-    PS_DRIVE_REMAP_RE, commands_nested.PS_SCRIPT_TEXT_RE or PS_DOTNET_RE. Anything else may remap a drive.
-    The line is read again with `~` as the home its own parse read (Command.home)."""
+    """True when every command on the PowerShell line `cmd` comes from is a plain call: the parser reads the line
+    cleanly; each command's first word is a literal name of a cmdlet in PS_PROVIDER_CMDLETS or PS_READ_CMDLETS, or git
+    (PS_PLAIN_GIT) (no call or dot-source operator, no assignment or other expression statement, no computed name, no
+    Start-Process); every word is literal or only reads an environment variable (PS_ENV_READ_WORD_RE; no other variable,
+    member call or subexpression); and neither the raw line nor any decoded word matches PS_DRIVE_REMAP_RE,
+    commands_nested.PS_SCRIPT_TEXT_RE or PS_DOTNET_RE. Anything else may remap a drive. The line is read again with `~`
+    as the home its own parse read (Command.home)."""
     src = cmd.source
     if any(r.search(src) for r in (PS_DRIVE_REMAP_RE, cn.PS_SCRIPT_TEXT_RE, PS_DOTNET_RE)):
         return False
@@ -657,16 +655,19 @@ def _write_from(event, ctx, cmd, inv, cwd, role, w, base, net, into, searched):
     output = any(r.writes and r.target is not None and r.target.start is not None and
                  (r.target.start, r.target.end) == (w.start, w.end) for r in cmd.redirects) or (getattr(inv, 'name', None) or '').lower() in OUTPUT_WRITERS
     item = target is None and ps_provider_word(cmd, inv, w)
+    gone = not output and inv is not None and PS_ALIASES.get(inv.name, inv.name) in ('remove-item', 'unlink')   # a delete
     for t in into_folder(target, w, into, runs_in, getattr(ctx, 'home', None)) if target else [target]:
         aim = rewrite
         if attached is not None and checked is None and t != target and rewrite is not None:
             # -tDIR names the folder: the same copy into the folder that holds the file it would write
             aim = lambda path, r=rewrite: r(fwd(path).rsplit('/', 1)[0] if '/' in fwd(path) else path)
-        # a provider item's refusal runs the whole line from the worktree: a statement before the
-        # call may set what it reads (PROVIDER_ITEM_WHY)
+        if placed and gone and own_index_lock(ctx, t, runs_in, cwd):   # a linked worktree's own index.lock, deleted from it
+            continue
+        # a provider item's refusal runs the whole line from the worktree: a statement before the call may set what it
+        # reads (PROVIDER_ITEM_WHY)
         d = edit_target(event, ctx, t, cwd, role, what, why, rewrite=aim,
                         run=whole_line(ctx, cmd) if item else bare(cmd), redirect=output,
-                        shell=outer_shell(cmd), item=item,
+                        shell=outer_shell(cmd), item=item, gone=gone,
                         stand_in=piped or w.start == w.end or unread_write(cmd, inv, w))
         if not placed:
             d = unplaced(d, role) or ledger_unread(ctx, role, what)   # a warned refusal leaves the ask
@@ -793,16 +794,14 @@ def execdir_swaps(f, cmd):
 
 
 def ps_drive_jail(event, ctx, cwd, role, what, why, rewrite, net=False, here=None):
-    """An agent session's PowerShell write to a computed target ($p, a ( ) expression: _write_from),
-    or any shell's write of a path read from a directory the guard cannot tell (after `cd $x`),
-    by a role main_checkout lets through (it may edit a main checkout): the jail cannot judge a
-    place it cannot tell, so it refuses, as git_jail_unknown does for git. With `net`, the path a
-    .NET call writes: refused under write-jail, not unplaced (whose default mode only warns), as
-    net_process_dir refuses a literal relative one, since .NET may read it against the process's
-    directory (a docs-writer's `cd <worktree>; $p='docs\\guard.md'; ...;
-    [IO.File]::WriteAllText($p,$t)` wrote the main checkout under a warning). Its alternative
-    aims at `here`, the PowerShell location, when that is a linked worktree the session may write
-    (the session's own folder may be the main checkout it cd'd out of)."""
+    """An agent session's PowerShell write to a computed target ($p, a ( ) expression: _write_from), or any shell's
+    write of a path read from a directory the guard cannot tell (after `cd $x`), by a role main_checkout lets through
+    (it may edit a main checkout): the jail cannot judge a place it cannot tell, so it refuses, as git_jail_unknown does
+    for git. With `net`, the path a .NET call writes: refused under write-jail, not unplaced (whose default mode only
+    warns), as net_process_dir refuses a literal relative one, since .NET may read it against the process's directory (a
+    docs-writer's `cd <worktree>; $p='docs\\guard.md'; ...; [IO.File]::WriteAllText($p,$t)` wrote the main checkout
+    under a warning). Its alternative aims at `here`, the PowerShell location, when that is a linked worktree the
+    session may write (the session's own folder may be the main checkout it cd'd out of)."""
     if not agent_session(event, ctx):
         return None
     rule = 'write-jail' if net else UNPLACED

@@ -714,17 +714,16 @@ def pm_data_unknown(ctx, target, cwd, role, what):
 
 
 def edit_target(event, ctx, target, cwd, role, what, unknown_why=None, rewrite=None, run=None, redirect=False,
-                shell=None, item=False, stand_in=False):
-    """Deny an edit of `target` in a main checkout (or a place git cannot tell) by a role that
-    may not edit one, and an agent session's write outside its roots (write_jail). `rewrite(path)`
-    gives the same edit aimed at `path` (the alternative); `run` the command to rerun from the
-    worktree when it writes into the directory it runs in; `redirect`, a shell redirect's target:
-    output, so the alternative with no worktree of the session's own is the temp folder; `shell`,
-    the dialect of the line `run` is on (the cd line of worktree_alternative); `item`, a target the
-    guard cannot place that is a provider item on a line of more than plain calls (ps_provider_word);
-    `stand_in`, a target that stands for what the guard cannot read (the folder python runs in, the
-    pipeline's paths), which counts as the owner's delegation list only when it is that file
-    (delegfile.edit)."""
+                shell=None, item=False, stand_in=False, gone=False):
+    """Deny an edit of `target` in a main checkout (or a place git cannot tell) by a role that may not edit one, and an
+    agent session's write outside its roots (write_jail). `rewrite(path)` gives the same edit aimed at `path` (the
+    alternative); `run` the command to rerun from the worktree when it writes into the directory it runs in; `redirect`,
+    a shell redirect's target: output, so the alternative with no worktree of the session's own is the temp folder;
+    `shell`, the dialect of the line `run` is on (the cd line of worktree_alternative); `item`, a target the guard
+    cannot place that is a provider item on a line of more than plain calls (ps_provider_word); `stand_in`, a target
+    that stands for what the guard cannot read (the folder python runs in, the pipeline's paths), which counts as the
+    owner's delegation list only when it is that file (delegfile.edit); `gone`, a shell delete (rm, unlink, Remove-Item),
+    the one call a linked worktree's index.lock is aimed from that worktree for (main_checkout)."""
     d = ledger_rule(event, ctx, target, role, what, stand_in, unread=False) or pm_data_unknown(ctx, target, cwd, role, what) or \
         lock_state(event, ctx, target, role, what) or hub_secret_edit(event, ctx, target, role, what) or \
         delegations_edit(event, ctx, target, role, what, stand_in) or \
@@ -733,7 +732,7 @@ def edit_target(event, ctx, target, cwd, role, what, unknown_why=None, rewrite=N
         generated_file(ctx, target, role, what) or backlog_edit(event, ctx, target, role, what)
     if d:
         return d
-    return main_checkout(event, ctx, target, cwd, role, what, unknown_why, rewrite, run, redirect, shell, item) or \
+    return main_checkout(event, ctx, target, cwd, role, what, unknown_why, rewrite, run, redirect, shell, item, gone) or \
         write_jail(event, ctx, target, cwd, role, what, rewrite, run) or \
         ledger_unread(ctx, role, what)          # last: any refusal above wins over the unread ask
 
@@ -764,10 +763,9 @@ GATE_RESULT = 'kit-gate-result'                 # gate.result.DIR_NAME
 
 
 def gate_result(event, ctx, target, role, what):
-    """An agent session's literal write into a repository's gate result folder
-    (`<git common dir>/kit-gate-result/`, gate.result): the records there tell a waiting
-    session how a gate or a landing ended, and only the gate writes them. The folder is matched by
-    name under a git directory (a folder named .git, or one holding HEAD and objects)."""
+    """An agent session's literal write into a repository's gate result folder (`<git common dir>/kit-gate-result/`,
+    gate.result): the records there tell a waiting session how a gate or a landing ended, and only the gate writes them.
+    The folder is matched by name under a git directory (a folder named .git, or one holding HEAD and objects)."""
     if not target or not agent_session(event, ctx):
         return None
     for p in (target, jail.real(target)):
@@ -795,7 +793,7 @@ PROVIDER_ITEM_WHY = ('%s, an item on a drive that holds no files, which the guar
 
 
 def main_checkout(event, ctx, target, cwd, role, what, unknown_why=None, rewrite=None, run=None, redirect=False,
-                  shell=None, item=False):
+                  shell=None, item=False, gone=False):
     # a target it cannot place may be in any checkout, so both the kit defaults and the roles of
     # the repository the call runs in must let the role edit one: the defaults alone would let a
     # role that repository keeps out of its main checkout write anywhere, and the repository's
@@ -833,7 +831,9 @@ def main_checkout(event, ctx, target, cwd, role, what, unknown_why=None, rewrite
     if place.kind == repo.UNKNOWN:
         mine = own_worktree(ctx, cwd)
         name, only, see = os.path.basename(target), '', ''
-        if mine and rewrite is not None:
+        if gone and rewrite is not None and re.search(r'[\\/]\.git[\\/]worktrees[\\/][^\\/]+[\\/]index\.lock$', target, re.I):
+            instead, only = cd_line('<worktree>', rewrite(fwd(target)), shell), ' (its own index.lock: from that worktree)'
+        elif mine and rewrite is not None:
             instead = rewrite(fwd(os.path.join(mine, name)))
         elif no_wt or not main_top:
             instead = new_wt

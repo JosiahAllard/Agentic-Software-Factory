@@ -367,6 +367,11 @@ def _clk_tck():
     return os.sysconf('SC_CLK_TCK')
 
 
+def clk_tck():
+    """Clock ticks per second (the unit of a stat starttime and of CPU times)."""
+    return _clk_tck()
+
+
 def _created(btime, starttime, tck):
     """The local ISO time a process started (btime plus starttime ticks), or None."""
     if btime is None or not tck:

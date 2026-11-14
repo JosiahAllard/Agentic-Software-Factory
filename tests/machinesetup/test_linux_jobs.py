@@ -1,6 +1,6 @@
 """Machine setup's scheduled jobs on Linux (docs/machine-setup.md "Linux"): the agent temp sweep,
 the worktree sweep and the automatic tasks' tick planned as pm-kit
-jobs, procwatch's note and linger's note. kitlib.platform.NAME is patched to 'linux'; the host is
+jobs, procwatch's job and linger's note. kitlib.platform.NAME is patched to 'linux'; the host is
 a fake whose jobs go to a temporary home through the real schedule module with a fake systemctl,
 so nothing real is written, and linger is only ever read."""
 import os
@@ -227,14 +227,43 @@ class Notes(Base):
             linuxjobs.linger_note(plan, self.ctx())
             self.assertNotIn('linger', self.text(plan), (systemd, linger))
 
-    def test_procwatch_is_a_note_on_linux(self):
+class Procwatch(Base):
+    def setUp(self):
+        super().setUp()
+        self.temp = os.path.join(self.root, 'temp')
+        self.log = os.path.join(self.temp, procwatch.LOG_NAME)
+
+    def step(self, folder='default', **kw):
         plan = Plan()
-        procwatch.task_step(plan, self.ctx(procwatch=True), os.path.join(self.root, 'temp'))
+        procwatch.task_step(plan, self.ctx(procwatch=True, **kw), self.temp if folder == 'default' else folder)
+        return plan
+
+    def test_the_job_is_every_15_minutes_ended_after_10_and_written_once(self):
+        plan = self.step()
+        self.assertEqual(len(plan.changes), 1, self.text(plan))
+        self.assertIn('write the pm-kit job procwatch (every 15 min', plan.changes[0].text)
+        self.apply(plan)
+        task = schedule.find(procwatch.LINUX_JOB, self.host.task_list())
+        self.assertEqual(task['argv'], [self.py, os.path.join(self.kit, procwatch.SCRIPT), '--log', self.log])
+        self.assertEqual((task['when'], task['limit_min']), (('every', 15), 10))
+        self.assertEqual(self.step().changes, [])
+
+    def test_the_job_name_passes_the_real_check_and_the_kill_flag_updates_the_job(self):
+        schedule.check(procwatch.linux_job(self.kit, self.log))
+        self.apply(self.step())
+        plan = self.step(procwatch_kill=True)
+        self.assertIn('update the pm-kit job procwatch', plan.changes[0].text)
+        self.apply(plan)
+        task = schedule.find(procwatch.LINUX_JOB, self.host.task_list())
+        self.assertEqual(task['argv'][-3:], ['--kill', '--only', ','.join(procwatch.SAFE)])
+
+    def test_no_agent_temp_folder_is_a_note_and_no_flag_plans_nothing(self):
+        plan = self.step(folder=None)
         self.assertEqual(plan.changes, [])
-        self.assertIn('procwatch task: not on Linux yet', self.text(plan))
+        self.assertIn('procwatch task skipped: no agent temp folder', self.text(plan))
         plan = Plan()
-        procwatch.task_step(plan, self.ctx(procwatch=False), None)
-        self.assertNotIn('procwatch', self.text(plan))
+        procwatch.task_step(plan, self.ctx(procwatch=False), self.temp)
+        self.assertEqual((plan.changes, 'procwatch' in self.text(plan)), ([], False))
 
 
 class Host(Base):

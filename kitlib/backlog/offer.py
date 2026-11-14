@@ -124,7 +124,8 @@ class Banner(object):
 
     def session_note(self, session, offered):
         """`next --session`'s NOTE when the offer may be short because of the key: the pullable
-        records of other sessions or of none, which this key never offers; None without
+        records of other sessions or of none, which this key never offers (with untagged ones, it
+        names plain `next`, which offers them); None without
         `session` or when there are none."""
         if session is None:
             return None
@@ -137,8 +138,11 @@ class Banner(object):
             return None
         none = counts.pop(None, 0)
         named = ', '.join('%s: %d' % (s, counts[s]) for s in sorted(counts))
-        return ('NOTE: %d pullable carry other sessions (%s) or none (%d); this key offers %d'
+        note = ('NOTE: %d pullable carry other sessions (%s) or none (%d); this key offers %d'
                 % (sum(counts.values()) + none, named or '-', none, offered))
+        if none:
+            note += '; the %d untagged are in plain `next` (no --session)' % none
+        return note
 
     def queue_warning(self):
         """A line under 10 pullable, or under 3 pullable at priority 1-2; never an exit code."""

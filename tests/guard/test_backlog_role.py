@@ -1444,6 +1444,9 @@ class FolderStore(Base):
         rel, (up, low) = '/'.join(self.folder), self.folder
         for cd, text, hit in (('', "open('%s/X-1.md', 'w')" % rel, True),
                               ('', "p = '%s' + '/X-1.md'\nopen(p, 'w')" % rel, True),
+                              ('', "n = 'X-1.md'\nopen('./%s/' + n, 'w')" % rel, True),
+                              ('', "open(r'%s' + '\\\\X-1.md', 'w')" % self.target(), True),
+                              ('', "open('%s/' + 'X-1.md', 'w')" % W.fwd(self.target()), True),
                               ('cd %s && ' % up, "open('%s/X-1.md', 'w')" % low, True),
                               ('', "open('docs/other.md', 'w')", False),
                               ('', "open('%s.md', 'w')" % rel, False),

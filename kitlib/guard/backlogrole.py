@@ -1192,15 +1192,15 @@ def store_folder(ctx, path):
 
 
 def store_hit(ctx, cmd):
-    """hit(text, target=False): True when code text, or a literal write `target` (as it resolves
-    from the command's directory), names the store: STORE_NAME_RE, or the folder store_folder
-    finds there (by its checkout path, or as the folder the target lands in)."""
+    """hit(text, target=False): code text or a literal write `target` (resolved from the command's directory)
+    names the store: STORE_NAME_RE, or store_folder's folder (its checkout path, ./ it, its absolute path)."""
     found = store_folder(ctx, cmd.cwd) if cmd.cwd else None
-    rel = r'(?<![\w./-])%s(?![\w.-])' % re.escape(os.path.relpath(*found[2:0:-1]).replace('\\', '/')) if found else None
+    rel = r'(?:(?<![\w./-])(?:\./)?%s|%s)(?![\w.-])' % tuple(re.escape(re.sub(r'[\\/]+', '/', x)) for x in (
+        os.path.relpath(found[2], found[1]), found[2])) if found else None
 
     def hit(s, target=False):
         p = rules.sh.resolve_path(s, cmd.cwd, cmd.shell) if target and found else None
-        return bool(STORE_NAME_RE.search(s) or (rel and re.search(rel, s.replace('\\', '/'), re.I)) or
+        return bool(STORE_NAME_RE.search(s) or (rel and re.search(rel, re.sub(r'[\\/]+', '/', s), re.I)) or
                     (p and jail.inside(jail.real(p), jail.real(found[2]))))
     return hit
 

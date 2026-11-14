@@ -6,7 +6,8 @@ session publishes a registry record, <config folder>/sessions/<pid>.json (kitlib
 and listens for cross-session messages: on Windows on a named pipe, on Linux on a Unix socket
 under a cc-socks folder (its messagingSocketPath either way). A message is two JSON lines written to
 it: an auth frame carrying the session's peer token, then a user frame whose content is
-wrapped in <cross-session-message from-mode="prompting">. The session takes it as its next
+wrapped in <cross-session-message from-mode="prompting">, each < and > of its text sent as ‹ and ›
+so no text closes the wrapper. The session takes it as its next
 prompt. A live probe proved this with no sender endpoint, so the hub publishes no
 registry entry of its own and gets no receipt back: `written` means the bytes reached the pipe.
 
@@ -23,7 +24,7 @@ registry entry of its own and gets no receipt back: `written` means the bytes re
   canonical_address(value)  canonical_socket on Linux, else canonical_pipe
   sender_address(pipe)  the `from` address of a sender's pipe
   message_frames(token, sender, text, msg_id, mode)   the two frames, as objects (unchecked)
-  build_packet(token, source_pipe, text)   the two frames, checked, as bytes
+  build_packet(token, source_pipe, text)   the two frames, checked, as bytes; < and > become ‹ and ›
   write_once(pipe, pid, creation, packet, timeout)   one write, the state: on Windows by the
                         hidden helper (peer_worker.py) in a kill-on-close job; on Linux in this
                         process, through kitlib.platform.linux.unixsock.connect (the server's
@@ -79,6 +80,7 @@ SOCK_NAME = re.compile(r'(?:[0-9]+(?:-[0-9a-f]{8})?|[0-9a-f]{1,16})\.sock\Z')
 SOURCE_SOCK_PREFIX = '/pm-kit/kit-hub-'
 PM_NAMES = ('Project Manager', 'pm-session')    # kitlib.launcher.start.PM_DESKTOP_NAME, stop.PM_RC_NAME
 TOKEN_LEN = 32
+ANGLES = str.maketrans({'<': '‹', '>': '›'})     # build_packet: no text closes the wrapper
 MAX_PACKET_BYTES = 256 * 1024
 MAX_RESULT_BYTES = 2048
 WRITE_TIMEOUT_S = 5
@@ -164,14 +166,16 @@ def message_frames(token, sender, text, msg_id, mode='prompting'):
 
 def build_packet(token, source, text):
     """The auth frame, then the user frame carrying text as a cross-session message from
-    `source` (a pipe name) in prompting mode. Text holding < or > is a ValueError, so it cannot
-    close the wrapper."""
+    `source` (a pipe name) in prompting mode. Each < and > in text goes as ‹ and › (ANGLES), so
+    it cannot close the wrapper and a push text may still hold a <placeholder> or a prompt's >.
+    A bad token or a text that is no str is a ValueError."""
     if type(token) is not str or len(token) != TOKEN_LEN:
         raise ValueError('no usable peer token')
-    if type(text) is not str or '<' in text or '>' in text:
-        raise ValueError('push text must not hold < or >')
+    if type(text) is not str:
+        raise ValueError('push text must be a str')
     return b''.join(encode_frame(f) for f in
-                    message_frames(token, sender_address(source), text, str(uuid.uuid4())))
+                    message_frames(token, sender_address(source), text.translate(ANGLES),
+                                   str(uuid.uuid4())))
 
 
 def key_path(folder, rec):

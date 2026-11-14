@@ -242,8 +242,6 @@ ROWS = [
     ('subagent python -c merging through an f-string', lambda w: bash(
         'python -c "import subprocess; subprocess.run(f\'git -C {w} merge x\', shell=True)"', w.wt, sub=True),
      'deny', 'interpreter-git', 'python "{kit}/tools/sync_base.py" -C "{wt}" <hash> --model "<your model>"'),
-    ('subagent python -c running git log', lambda w: bash(
-        'python -c "import subprocess; subprocess.run([\'git\', \'log\', \'-1\'])"', w.wt, sub=True), None, None, None),
     ('owner python -c running git', lambda w: bash(
         'python -c "import subprocess; subprocess.run([\'git\', \'push\'])"', w.wt), None, None, None),
 ] + SHELL_ROWS + REVIEW_ROWS + EXTRA_ROWS
@@ -1659,6 +1657,17 @@ class InterpreterGit(unittest.TestCase):
                 "exec(s)\nsubprocess.run(['git', 'log'])",
                 "from unittest import mock\nwith mock.patch('subprocess.run', f):\n    subprocess.run(['git', 'log'])",
                 "match x:\n    case subprocess:\n        pass\nsubprocess.run(['git', 'log'])",
+                "subprocess.run('bash -c \"git push\"', shell=True)",
+                "subprocess.run(['python', '-c', \"import subprocess; subprocess.run(['git', 'update-ref', "
+                "'refs/heads/main', c])\"])",
+                "import sys\nsys.modules['x'] = m\nsubprocess.run(['git', 'log'])",
+                "from asyncio import subprocess\nsubprocess.run(['git', 'log'])",
+                "def subprocess(): pass\nsubprocess.run(['git', 'log'])",
+                "def f(subprocess):\n    subprocess.run(['git', 'log'])",
+                "try:\n    pass\nexcept E as subprocess:\n    subprocess.run(['git', 'log'])",
+                "class subprocess: pass\nsubprocess.run(['git', 'log'])",
+                "import ctypes\nsubprocess.run(['git', 'log'])", "import importlib\nsubprocess.run(['git', 'log'])",
+                "import pickle\nsubprocess.run(['git', 'log'])",
                 "subprocess.run(['git', 'log']",):
             with self.subTest(code):
                 self.assert_refused(self.decide(self.heredoc(code)), code)

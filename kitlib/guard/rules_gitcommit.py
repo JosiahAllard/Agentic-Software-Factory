@@ -274,7 +274,7 @@ INTERPRETER_DUNDERS = ('__name__', '__main__', '__file__')                  # th
 
 
 def python_git_reads(text):
-    """True when python reads `text` (backlogrole.py_trees, each tree) and each string INTERPRETER_GIT_RE reads as git is
+    """True when python reads `text` (backlogrole.py_trees, each tree) and each string INTERPRETER_GIT_RE finds git in is
     the head of a read: subprocess.<INTERPRETER_RUNS>(<a list or tuple>), no **, executable= or shell= but False, of
     'git', an optional '-C' and its value, a literal GIT_DYN_ANY_READS, GIT_DYN_PINNED_READS or status verb, then words,
     none starred or a literal --output (writes_output_file); after a pinned verb a computed word passes only as
@@ -324,7 +324,7 @@ def python_git_reads(text):
         else:
             ok.add(id(words[0]))
     return trees is not None and all(id(n) in ok for n in nodes if isinstance(n, ast.Constant) and isinstance(
-        n.value, (str, bytes)) and INTERPRETER_GIT_RE.match('"%s"' % (
+        n.value, (str, bytes)) and INTERPRETER_GIT_RE.search('"%s"' % (
             n.value if isinstance(n.value, str) else n.value.decode('latin-1'))))
 
 

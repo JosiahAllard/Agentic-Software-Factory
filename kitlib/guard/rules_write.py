@@ -655,19 +655,19 @@ def _write_from(event, ctx, cmd, inv, cwd, role, w, base, net, into, searched):
     output = any(r.writes and r.target is not None and r.target.start is not None and
                  (r.target.start, r.target.end) == (w.start, w.end) for r in cmd.redirects) or (getattr(inv, 'name', None) or '').lower() in OUTPUT_WRITERS
     item = target is None and ps_provider_word(cmd, inv, w)
+    gone = not output and inv is not None and PS_ALIASES.get(inv.name, inv.name) in ('remove-item', 'unlink')   # a delete
     for t in into_folder(target, w, into, runs_in, getattr(ctx, 'home', None)) if target else [target]:
         aim = rewrite
         if attached is not None and checked is None and t != target and rewrite is not None:
             # -tDIR names the folder: the same copy into the folder that holds the file it would write
             aim = lambda path, r=rewrite: r(fwd(path).rsplit('/', 1)[0] if '/' in fwd(path) else path)
-        if placed and not output and inv is not None and PS_ALIASES.get(inv.name, inv.name) in ('remove-item', 'unlink') \
-                and own_index_lock(ctx, t, runs_in, cwd):   # a linked worktree's own index.lock, deleted from it
+        if placed and gone and own_index_lock(ctx, t, runs_in, cwd):   # a linked worktree's own index.lock, deleted from it
             continue
         # a provider item's refusal runs the whole line from the worktree: a statement before the call may set what it
         # reads (PROVIDER_ITEM_WHY)
         d = edit_target(event, ctx, t, cwd, role, what, why, rewrite=aim,
                         run=whole_line(ctx, cmd) if item else bare(cmd), redirect=output,
-                        shell=outer_shell(cmd), item=item,
+                        shell=outer_shell(cmd), item=item, gone=gone,
                         stand_in=piped or w.start == w.end or unread_write(cmd, inv, w))
         if not placed:
             d = unplaced(d, role) or ledger_unread(ctx, role, what)   # a warned refusal leaves the ask

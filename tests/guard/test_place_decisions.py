@@ -19,6 +19,8 @@ from .claudehost import decide
 from .test_fsplace import MINE
 from .test_rules import ROWS
 
+NO_CD = 'no Instead that runs from the worktree'
+
 
 class RealWorld(W.World):
     """world.World with base/repo a real main checkout and .claude/worktrees/wt its real linked
@@ -149,15 +151,47 @@ class LinkedWorktreeIndexLock(unittest.TestCase):
         subprocess.run(('git',) + args, cwd=cwd or self.w.main, env=gitfixture.fixture_env(), check=True,
                        capture_output=True)
 
-    def judge(self, payload):
-        return decide(payload, self.w.ctx(classify=place.classify))
+    def judge(self, payload, untold=None):
+        ctx = self.w.ctx(classify=place.classify)
+        if untold:   # pm_data_error answers for this folder alone
+            told = ctx.pm_data_error
+            ctx.pm_data_error = lambda path=None: 'no record' if path and repo.real(path) == repo.real(untold) else \
+                told(path)
+        return decide(payload, ctx)
+
+    def refused(self, rows, untold=None, rule='main-checkout'):
+        """Each row (name, payload, Instead): denied by `rule`, with that Instead when it is a string, with
+        none that runs from the worktree when it is NO_CD, and any when None."""
+        for name, payload, instead in rows:
+            with self.subTest(name):
+                d = self.judge(payload, untold)
+                self.assertIsNotNone(d)
+                self.assertEqual((d.verdict, d.rule), ('deny', rule))
+                if instead is NO_CD:
+                    self.assertFalse((d.instead or '').startswith('cd '), d.instead)
+                elif instead is not None:
+                    self.assertEqual(d.instead, instead)
+
+    def test_pm_data_untold_or_the_pm_data_worktree(self):
+        w, lock = self.w, self.lock
+        pmd = os.path.join(w.base, 'pmd')
+        self.git('worktree', 'add', '-q', pmd, '-b', 'pm-data')
+        pmd_lock = W.fwd(os.path.join(w.main, '.git', 'worktrees', 'pmd', 'index.lock'))
+        open(pmd_lock, 'w').close()
+        # the PM data worktree untold in the folder the command runs in, then in the call's folder
+        self.refused([('runs in an untold folder', W.bash('rm -f %s' % lock, w.wt, sub=True), None)], w.wt, 'pm-data')
+        self.refused([('called from an untold folder', W.bash('cd "%s" && rm -f %s' % (W.fwd(w.wt), lock), w.main,
+                                                               sub=True), None)], w.main, 'pm-data')
+        w.user_config({'pm_data': {'path': pmd}})     # place answers the PM data worktree MAIN
+        self.refused([('the PM data worktree\'s own lock', W.bash('rm -f %s' % pmd_lock, pmd, sub=True), None)])
+        self.assertIsNone(self.judge(W.bash('rm -f %s' % lock, w.wt, sub=True)))
 
     def test_own_lock_deleted_from_its_worktree(self):
         w, lock = self.w, self.lock
         typed = '/' + lock[0].lower() + lock[2:] if lock[1:2] == ':' else lock     # Git Bash's /z/... as observed
         bash_instead = 'cd "<worktree>" && rm "%s"' % lock
         ps_instead = 'cd "<worktree>"; if ($?) { Remove-Item "%s" }' % lock
-        refused = [  # (name, payload, Instead or None)
+        refused = [  # (name, payload, Instead: see refused)
             ('the observed replay, from the main checkout', W.bash('rm %s' % typed, w.main, sub=True), bash_instead),
             ('relative, from the main checkout', W.bash('rm .git/worktrees/wt/index.lock', w.main, sub=True),
              bash_instead),
@@ -172,23 +206,20 @@ class LinkedWorktreeIndexLock(unittest.TestCase):
             ('a lock outside a worktree git dir', W.bash('rm %s/.git/worktrees/x/index.lock' % W.fwd(w.main), w.wt,
                                                          sub=True), None),
             ('its whole git dir', W.bash('rm -r %s' % W.fwd(self.gd), w.wt, sub=True), None),
-            ('a redirect onto it', W.bash('echo x > %s' % lock, w.wt, sub=True), None),
-            ('rm with a redirect onto it', W.bash('rm -f nothing 2> %s' % lock, w.wt, sub=True), None),
-            ('cp onto it', W.bash('cp %s/src/x %s' % (W.fwd(w.wt), lock), w.wt, sub=True), None),
-            ('a hard link onto it', W.bash('ln %s/.git/config %s' % (W.fwd(w.main), lock), w.wt, sub=True), None),
+            ('a redirect onto it', W.bash('echo x > %s' % lock, w.wt, sub=True), NO_CD),
+            ('rm with a redirect onto it', W.bash('rm -f nothing 2> %s' % lock, w.wt, sub=True), NO_CD),
+            ('cp onto it', W.bash('cp %s/src/x %s' % (W.fwd(w.wt), lock), w.wt, sub=True), NO_CD),
+            ('cp onto it, from the main checkout', W.bash('cp x %s' % lock, w.main, sub=True), NO_CD),
+            ('a hard link onto it', W.bash('ln %s/.git/config %s' % (W.fwd(w.main), lock), w.wt, sub=True), NO_CD),
+            ('a hard link onto it, from the main checkout', W.bash('ln .git/config %s' % lock, w.main, sub=True),
+             NO_CD),
             ('a PowerShell hard link onto it', W.ps('New-Item -ItemType HardLink -Path "%s" -Target "%s/.git/config"'
-                                                    % (lock, W.fwd(w.main)), w.wt, sub=True), None),
+                                                    % (lock, W.fwd(w.main)), w.main, sub=True), NO_CD),
             ('Remove-Item -Include under its git dir', W.ps('Remove-Item -Path "%s" -Include index.lock -Recurse'
                                                             % W.fwd(self.gd), w.wt, sub=True), None),
-            ('the Write tool', W.event('Write', {'file_path': lock, 'content': ''}, w.wt, sub=True), None),
+            ('the Write tool', W.event('Write', {'file_path': lock, 'content': ''}, w.wt, sub=True), NO_CD),
         ]
-        for name, payload, instead in refused:
-            with self.subTest(name):
-                d = self.judge(payload)
-                self.assertIsNotNone(d)
-                self.assertEqual((d.verdict, d.rule), ('deny', 'main-checkout'))
-                if instead is not None:
-                    self.assertEqual(d.instead, instead)
+        self.refused(refused)
         allowed = [
             ('rm -f from wt', W.bash('rm -f %s' % lock, w.wt, sub=True)),
             ('/bin/rm from wt', W.bash('/bin/rm %s' % lock, w.wt, sub=True)),

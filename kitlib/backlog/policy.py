@@ -325,6 +325,9 @@ def given_of(args):
     from .opener import FIELD_FLAGS
     changes = [(key, getattr(args, 'f_' + key)) for key in FIELD_FLAGS
                if getattr(args, 'f_' + key, None) is not None]
+    edited = [p for flag in ('add_scope', 'drop_scope') for p in getattr(args, flag, None) or ()]
+    if edited:                  # `--add-scope` / `--drop-scope` are a `scope` write
+        changes.append(('scope', edited))
     given = given_of_set(changes, list(getattr(args, 'unset', None) or ()),
                          '' if getattr(args, 'body_file', None) else None)
     on = getattr(args, 'on', None)
@@ -422,7 +425,7 @@ class _Absent(object):
 # take, a misspelling) reads as unknown.
 def _set_options():
     from .opener import FIELD_FLAGS
-    opts = {'--unset': True, '--body-file': True}
+    opts = {'--unset': True, '--body-file': True, '--add-scope': True, '--drop-scope': True}
     for key in FIELD_FLAGS:
         opts['--' + key] = True
         opts['--' + key.replace('_', '-')] = True
@@ -551,6 +554,6 @@ def _given_add(given, verb, name, value):
     elif verb == 'set' and key == 'body_file':
         given['fields'].append('body')
     elif verb == 'set':
-        given['fields'].append(key)
+        given['fields'].append('scope' if key in ('add_scope', 'drop_scope') else key)
         if key in ('priority', 'priority_by', 'blocked_on'):
             given[key].append(value)

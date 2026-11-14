@@ -225,7 +225,7 @@ class BlockUntil(StoreCase):
         # live-client waits on the owner being present: a hold with no readable end never clears
         self.seed(rec('FOO'))
         tip = self.remote_tip()
-        for members, until in ((['live-client'], None), (['live-client'], 'when he is in'),
+        for members, until in ((['live-client'], None), (['live-client'], 'once present'),
                                (['live-client', 'upstream:x'], None)):
             with self.assertRaises(Usage) as ctx:
                 self.verb('block', 'FOO', members, until=until)

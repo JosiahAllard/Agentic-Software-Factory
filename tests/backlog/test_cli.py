@@ -245,6 +245,16 @@ class Cli(unittest.TestCase):
         self.ok('set', 'FOO', '--priority-by', 'agent', '--priority', '4')
         self.assertIn('priority: 4', self.ok('show', 'FOO'))
 
+    def test_set_add_and_drop_scope_edit_the_list_through_the_tool(self):
+        self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py',
+                '--scope', 'tools/y.py', *ADD_FLAGS)
+        self.ok('set', 'FOO', '--drop-scope', 'tools/x.py')
+        self.ok('set', 'FOO', '--add-scope', 'tools/z.py')
+        shown = self.ok('show', 'FOO')
+        self.assertIn('tools/y.py', shown)
+        self.assertIn('tools/z.py', shown)
+        self.assertNotIn('tools/x.py', shown)
+
     def test_check_and_the_list_filters(self):
         self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py', *ADD_FLAGS)
         self.ok('add', 'BAR', '--summary', 'another thing', '--scope', 'docs/y.md', *ADD_FLAGS)

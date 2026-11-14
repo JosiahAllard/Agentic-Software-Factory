@@ -17,8 +17,12 @@ and unset): decide, log, run `launch.py handoff --what-if` and `stop --dry-run` 
 push `would-cross`; nothing is stopped or started. `normal`: crossings that ask first. `full`:
 those and the stop-first path for a stalled session.
 
-One acting step per run across all keys, stop-stalled first, then stop-old, finish, start, ask,
-would-cross; the rest wait for the next run. Every key is decided on each run.
+Every key is decided on each run, and every acting step it gives runs in that run, in ACTS order:
+stop-stalled, stop-old, finish, start, ask, would-cross, the PM's first among steps of one kind
+(_Run.act). Each start is decided again just before it runs, on the state the run's earlier steps
+left, so the caps count this run's starts and no second start goes to an account until its reading
+is newer than the last start there: a start no longer due waits for a later run. A failed step
+leaves the others to run, and the run then fails.
 
 Pushes (ctx.event, push.JOB_EACH: owed once per detail, each with its own text): crossing,
 would-cross, crossed, cross-cleared, cross-failed, stalled, no-ready, no-checkin, no-room, pm-limit,
@@ -272,7 +276,7 @@ class CrossoverJob(object):
                 run.advance(key, d)
                 d = step(key, entry, live)
             run.settle(key, d)
-            steps.append((key, entry, live, d))
+            steps.append((key, entry, live, d, lambda key=key, entry=entry, live=live: step(key, entry, live)))
         never = self._unlisted(run, procs, settings, lives, known, pm, entries, stalls, quiet, accounts, running,
                                steps)
         run.names = {l.name for l in lives} | {e.get('name') for e in entries.values() if isinstance(e, dict)}
@@ -319,7 +323,7 @@ class CrossoverJob(object):
             sess = group[0] if len(group) == 1 else None
             live = [l for l in lives if C.of_stem(l.name, key)]
 
-            def step():
+            def step(key=key, sess=sess, live=live):     # bound now: act may call it again
                 cur = doc['crossings'].get(key)
                 name = (cur or {}).get('old_name') or (sess.name if sess else None)
                 return D.decide_unlisted(key, sess, cur, live, stalls.get(name), quiet.get(name), accounts,
@@ -333,7 +337,7 @@ class CrossoverJob(object):
                 run.advance(key, d)
                 d = step()
             run.unlisted_settle(key, d, live)
-            steps.append((key, sess, live, d))
+            steps.append((key, sess, live, d, step))
         if never:
             run.notes.append('never crossed: %s' % ', '.join('%s (%s)' % (n, never[n][0]) for n in sorted(never)))
         return never
@@ -612,20 +616,38 @@ class _Run(object):
                                   'created': c.get('old_created')}
             pm.add(c.get('old_name'))
         self.settle(D.PM_DOC, d)
-        return D.PM_DOC, None, pms, d
+        return D.PM_DOC, None, pms, d, decide_now
 
     def act(self, steps, newest, sessions, coordinators):
-        """The first step in ACTS order: this run's one acting step. A would-cross already told
-        is no step: it would keep the others out."""
-        chosen = [s for s in steps if s[3].action in D.ACTS
-                  and not (s[3].action == D.WOULD and self.doc['told'].get(s[0]) == s[3].mark)]
-        if not chosen:
-            return
-        key, entry, live, d = min(chosen, key=lambda s: D.ACTS.index(s[3].action))
-        if self.ctx.stop.is_set():
-            self.notes.append('%s: left for the next run (the hub is closing)' % key)
-            return
-        self.acted = True
+        """Every acting step of `steps` ((key, entry, live, decision, decide again)), in ACTS
+        order, the PM's first among steps of one kind. A would-cross already told is no step.
+        A start is decided again just before it runs, by its key's own callback: one no longer a
+        start keeps its note only (no settle, no push) and waits for a later run. A failed step
+        leaves the rest to run; the run then fails with every failure, its state saved."""
+        chosen = sorted((s for s in steps if s[3].action in D.ACTS
+                         and not (s[3].action == D.WOULD and self.doc['told'].get(s[0]) == s[3].mark)),
+                        key=lambda s: (D.ACTS.index(s[3].action), s[0] != D.PM_DOC))
+        failed = []
+        for key, entry, live, d, again in chosen:
+            if self.ctx.stop.is_set():
+                self.notes.append('%s: left for the next run (the hub is closing)' % key)
+                continue
+            if d.action == D.START:
+                d = again()
+                if d.action != D.START:
+                    self.notes.append('%s: start left for the next run: %s' % (key, d.note))
+                    continue
+            self.acted = True
+            try:
+                self._act_one(key, entry, live, d, newest, sessions, coordinators)
+            except StepFailed as e:
+                failed.append(str(e))
+        if failed:
+            if self.dirty:
+                self.save()
+            raise StepFailed('; '.join(failed))
+
+    def _act_one(self, key, entry, live, d, newest, sessions, coordinators):
         if key == D.PM_DOC:
             getattr(self, '_pm_' + d.action)(live, d, newest.get(PM_FROM), coordinators)
             return
@@ -660,20 +682,29 @@ class _Run(object):
 
     def _start(self, key, entry, live, d, newest, sessions, coordinators):
         c = self.doc['crossings'][key]
-        c.update(phase=D.STARTING, phase_at=self.now, target=d.target, high_c=D.c_number(newest),
+        at = self.job.clock()           # the step's own time: earlier steps of the run took some
+        c.update(phase=D.STARTING, phase_at=at, target=d.target, high_c=D.c_number(newest),
                  new_name=handoff.successor_name(entry, d.target, False))
-        kept = {k: D.recent(v, self.now) for k, v in self.doc['starts'].items()}
+        kept = {k: D.recent(v, at) for k, v in self.doc['starts'].items()}
         self.doc['starts'] = {k: v for k, v in kept.items() if v}
-        self.doc['starts'].setdefault(key, []).append(self.now)
-        self.doc['landed'][d.target] = self.now
+        self.doc['starts'].setdefault(key, []).append(at)
+        self.doc['landed'][d.target] = at
         self.save()                     # before the child: a crash mid-start still counts
         path = None if c.get('stalled') else c.get('state_path')
         self.notes.insert(0, '%s: handing off to account %s' % (key, d.target))
         self._child(handoff_argv(self.job.kit, key, d.target, path))
 
     def _finish(self, key, entry, live, d, newest, sessions, coordinators):
+        """The write a hand-off left undone, on sessions.json and coordinators.json read again
+        here: record_move writes each whole, and a child of an earlier step (a stop) or anyone may
+        have written them since the run read them."""
         c = self.doc['crossings'][key]
-        handoff.record_move(self.settings, sessions, coordinators or None, key, entry,
+        sessions = state.read_sessions(self.settings)
+        entry = dict(state.entries(sessions)).get(key)
+        if entry is None:
+            self.notes.insert(0, '%s: finish left for the next run: no sessions.json entry now' % key)
+            return
+        handoff.record_move(self.settings, sessions, state.read_coordinators(self.settings) or None, key, entry,
                             c['target'], c['new_name'])
         c.update(phase=D.STARTED, phase_at=self.now)
         self.dirty = True
@@ -784,11 +815,12 @@ class _Run(object):
     def _u_start(self, key, sess, live, d):
         c = self.doc['crossings'][key]
         new = key if c.get('kind') == UL.CONSULTANT else '%s-a%s' % (key, d.target)
-        c.update(phase=D.STARTING, phase_at=self.now, start_at=self.now, target=d.target, new_name=new)
-        kept = {k: D.recent(v, self.now) for k, v in self.doc['starts'].items()}
+        at = self.job.clock()           # the step's own time (_start)
+        c.update(phase=D.STARTING, phase_at=at, start_at=at, target=d.target, new_name=new)
+        kept = {k: D.recent(v, at) for k, v in self.doc['starts'].items()}
         self.doc['starts'] = {k: v for k, v in kept.items() if v}
-        self.doc['starts'].setdefault(key, []).append(self.now)
-        self.doc['landed'][d.target] = self.now
+        self.doc['starts'].setdefault(key, []).append(at)
+        self.doc['landed'][d.target] = at
         self.save()                     # before the child: a crash mid-start still counts
         self.notes.insert(0, '%s: starting %s on account %s' % (key, new, d.target))
         self._child(unlisted_argv(self.job.kit, c, d.target))
@@ -861,11 +893,12 @@ class _Run(object):
                 self.tell(D.PM_DOC, d)
         if not c.get('new_name') or c.get('target') != d.target:
             c['new_name'] = relaunch.crossover_name(d.target, self.names)
-        c.update(phase=D.STARTING, phase_at=self.now, target=d.target, high_c=D.c_number(newest))
-        kept = {k: D.recent(v, self.now) for k, v in self.doc['starts'].items()}
+        at = self.job.clock()           # the step's own time (_start)
+        c.update(phase=D.STARTING, phase_at=at, target=d.target, high_c=D.c_number(newest))
+        kept = {k: D.recent(v, at) for k, v in self.doc['starts'].items()}
         self.doc['starts'] = {k: v for k, v in kept.items() if v}
-        self.doc['starts'].setdefault(D.PM_DOC, []).append(self.now)
-        self.doc['landed'][d.target] = self.now
+        self.doc['starts'].setdefault(D.PM_DOC, []).append(at)
+        self.doc['landed'][d.target] = at
         self.save()                     # before the child: a crash mid-start still counts
         path = None if c.get('stalled') else c.get('state_path')
         self.notes.insert(0, '%s: starting the PM %s on account %s' % (D.PM_DOC, c['new_name'], d.target))

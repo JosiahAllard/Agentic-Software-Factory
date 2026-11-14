@@ -1087,7 +1087,7 @@ class RawCode(Base):
             with self.subTest(text):
                 self.allowed(self.cmd(text))
 
-    # the record's samples (KIT-GUARD-BACKLOG-RAW-NAME-FP), in their shapes: an edit of docs and source
+    # the record's samples, in their shapes: an edit of docs and source
     # naming the backlog, an import-time check
     SAMPLES = ("python - <<'EOF'\nimport pathlib\np = pathlib.Path('docs/backlog.md')\nt = p.read_text(encoding='utf-8')\n"
                "p.write_text(t.replace('python tools/backlog.py next', 'python <kit>/tools/backlog.py next'), "

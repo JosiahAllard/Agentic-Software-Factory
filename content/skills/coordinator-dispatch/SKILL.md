@@ -8,6 +8,7 @@ description: Use as a coordinator before any dispatch - pulling the record, the 
 ## Before the agent starts
 
 - **Pull at dispatch**, never after: `python <kit>/tools/backlog.py -C <worktree> pull <ID>` (`--session <key>`: session-owned). Finished work on an unpulled record gone from the offer: pre-emption. Unpriced: refused; price first (skill backlog-pricing); builder never prices.
+- **Fill free slots from plain `next`**, not `--session` alone: a session `next` offers only that key's records; its NOTE `the N untagged are in plain next` means records it does not offer. Empty session offer is not "nothing startable".
 - **Bundle** same-area open records, still reviewable; never high-risk with unrelated work.
 - **One workstream = one branch = one worktree**: `python <kit>/tools/new_worktree.py -C <repo> <branch>` unless profile differs; dispatch into it, never a host-isolated one.
 - Another session's worktree: written only by its agent or one dispatched in; never you via `-C`, never round a refusal.

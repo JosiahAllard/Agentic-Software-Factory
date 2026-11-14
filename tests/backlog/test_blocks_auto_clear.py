@@ -149,10 +149,14 @@ class NextLines(unittest.TestCase):
         out = self.ok('--session', 'kit', 'next')
         self.assertIn('NEXT (1 offered, session kit)', out)
         self.assertIn('NOTE: 3 pullable carry other sessions (retri: 1) or none (2); this key '
-                      'offers 1', out)
+                      'offers 1; the 2 untagged are in plain `next` (no --session)', out)
         self.assertNotIn('NOTE: 3 pullable', self.ok('next'))      # no key, no note
         out = self.ok('--session', 'kit', 'next', '--cap', '1')
         self.assertNotIn('pullable carry other sessions', out)   # a full offer is not short
+        self.publish({'AAA': None, 'BBB': None})
+        out = self.ok('--session', 'kit', 'next')
+        self.assertIn('NOTE: 1 pullable carry other sessions (retri: 1) or none (0)', out)
+        self.assertNotIn('untagged', out)                        # none untagged, no clause
 
 
 # The owner's Go (Q-1821): a lead may end an `owner` hold on the owner's own act, and nothing else.

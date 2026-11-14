@@ -228,7 +228,7 @@ SECTIONS = {
         'kind': Field(Str(pattern=NAME_RE, what='a kind name'), 'daily-full', 'the kinds-table kind the run books'),
         'max_wait': Field(Int(0), 7200, 'seconds it waits for its lock slot before it skips'),
         'stale_hours': Field(Int(1), 36, 'hours after which --summary calls the last result stale'),
-        'bisect': Field(BISECT, None, 'after a red run, bisect the first-parent commits since the last green run for the commit that turned the red steps red (docs/daily-full.md "Bisect"); unset: no bisect'),
+        'bisect': Field(BISECT, None, 'the settings of `daily_full.py --bisect`, run on request after one failed fix: it bisects the first-parent commits since the last green run for the commit that turned a past red run\'s steps red; a red run never bisects by itself (docs/daily-full.md "Bisect"); unset: the defaults, nothing filed'),
     },
     'doc_budget': {
         'default': Field(Int(0), None, 'byte cap for a capped doc with no budget'),

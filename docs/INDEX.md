@@ -86,7 +86,7 @@ bold bullet label). Add a new doc's line in the same commit that adds the doc.
 - `docs/landed.md` | landed: has a branch landed | checking a branch | kw: landed
 - `docs/launcher.md` | launcher | starting sessions | kw: launcher, launch
 - `docs/ledger.md` | the rulings ledger | recording a ruling | kw: ledger, rulings
-- `docs/linux-support-plan.md` | Linux support: what is still open (peer messaging and the bridge, the docs, CI legs, the live proofs) and the reference-VM test procedure | finishing Linux support or running tests on the Linux VM | kw: linux, platform, posix, cgroup, wsl, port
+- `docs/linux-support-plan.md` | Linux support: what is still open (peer messaging, the docs, CI legs, the live proofs) and the reference-VM test procedure | finishing Linux support or running tests on the Linux VM | kw: linux, platform, posix, cgroup, wsl, port
 - `docs/load-nodes.md` | load nodes: the registry and its repos opt-in, setting up a node, node.py list, status, run, follow and stop, choosing a machine, lock runs on a node, exit codes | sending heavy runs to another box | kw: load-node, node.py, loadnode, registry, offload
 - `docs/lock-api.md` | machine lock API, runs on a load node | heavy runs | kw: lock, machine-lock
 - `docs/lock-mcp.md` | lock MCP server | lock from an agent | kw: lock-mcp, mcp

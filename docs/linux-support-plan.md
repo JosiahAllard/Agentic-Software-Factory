@@ -8,18 +8,18 @@ carry what was built. This file keeps only the open slices and the live proofs t
 machine. Status read from the code at the base of the work that cut it down.
 
 Goal (the owner's): the whole kit runs on Linux out of the box, on any distribution, at parity with
-Windows; macOS is out. Peer messaging and the bridge come after parity. CI for Linux and Windows is a
-later phase. Windows behaviour does not change: each slice keeps the Windows path as it was and is
-proved with the existing Windows suite.
+Windows; macOS is out. Peer messaging comes after parity. The bridge stays Windows only. CI for Linux
+and Windows is a later phase. Windows behaviour does not change: each slice keeps the Windows path as
+it was and is proved with the existing Windows suite.
 
 ## Open slices
 
-15. **Peer messaging and the bridge.** Peer messaging is built: `hosts/claude/adapter/peer.py`
-    writes to Claude Code's Linux Unix socket through `kitlib/platform/linux/unixsock.py`, and
-    `pm-relaunch` and `pm-crossover` run on Linux (docs/launcher.md "PM relaunch"). Still open: its
-    live proof with Claude Code on a Linux machine, the bridge's leader lock and transport on Unix
-    sockets (`optional/bridge/win/` has no Linux form) and `kitlib/machinesetup/procwatch.py`. Risk
-    High (networking).
+15. **Peer messaging.** Peer messaging is built: `hosts/claude/adapter/peer.py` writes to Claude
+    Code's Linux Unix socket through `kitlib/platform/linux/unixsock.py`, and `pm-relaunch` and
+    `pm-crossover` run on Linux (docs/launcher.md "PM relaunch"). The bridge (`optional/bridge/`)
+    stays Windows only, by the owner's decision: the hub reaches Linux agents through peer
+    messaging. Still open: the live proof with Claude Code on a Linux machine, and
+    `kitlib/machinesetup/procwatch.py`. Risk High (networking).
 16. **Docs, the rest.** The owner setup docs' Linux blocks, and sorting the docs that mention
     PowerShell: most are Windows-internal and should say so.
 17. **CI legs.** There is no `.github`. `.github/workflows/` legs on the owner's self-hosted Linux

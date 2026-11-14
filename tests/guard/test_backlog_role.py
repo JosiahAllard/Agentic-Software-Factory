@@ -1446,6 +1446,7 @@ class FolderStore(Base):
                               ('', "p = '%s' + '/X-1.md'\nopen(p, 'w')" % rel, True),
                               ('cd %s && ' % up, "open('%s/X-1.md', 'w')" % low, True),
                               ('', "open('docs/other.md', 'w')", False),
+                              ('', "open('%s.md', 'w')" % rel, False),
                               ('cd %s && ' % up, "open('other/X-1.md', 'w')", False)):
             line = "%spython - <<'EOF'\n%s  # tools/backlog.py\nEOF" % (cd, text)
             with self.subTest(line):
@@ -1745,6 +1746,20 @@ class Unread(Base):
 class PathStore(FolderStore):
     kit = {'repo': {'name': 'demo', 'push_block': True}, 'backlog': {'store': 'kit/backlog'}}
     folder = ('kit', 'backlog')
+
+
+class RootPathStore(Base):
+    kit = {'repo': {'name': 'demo', 'push_block': True}, 'backlog': {'store': 'backlog'}}
+
+    def test_heredoc_code_writing_a_root_folder_store(self):
+        # store_hit's folder name starts at a path boundary: kitlib/backlog/ is not the store backlog/
+        for path, hit in (('backlog/X-1.md', True), ('kitlib/backlog/x.py', False)):
+            line = "python - <<'EOF'\nopen('%s', 'w')  # tools/backlog.py\nEOF" % path
+            with self.subTest(path):
+                if hit:
+                    self.refused(self.cmd(line), 'backlog-raw-write')
+                else:
+                    self.allowed(self.cmd(line))
 
 
 class RefStoreFolder(Base):

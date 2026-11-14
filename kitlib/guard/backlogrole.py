@@ -1196,7 +1196,7 @@ def store_hit(ctx, cmd):
     from the command's directory), names the store: STORE_NAME_RE, or the folder store_folder
     finds there (by its checkout path, or as the folder the target lands in)."""
     found = store_folder(ctx, cmd.cwd) if cmd.cwd else None
-    rel = re.escape(os.path.relpath(found[2], found[1]).replace('\\', '/')) + r'(?![\w.-])' if found else None
+    rel = r'(?<![\w./-])%s(?![\w.-])' % re.escape(os.path.relpath(*found[2:0:-1]).replace('\\', '/')) if found else None
 
     def hit(s, target=False):
         p = rules.sh.resolve_path(s, cmd.cwd, cmd.shell) if target and found else None

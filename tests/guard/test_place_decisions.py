@@ -127,7 +127,7 @@ class LinkedWorktreeIndexLock(unittest.TestCase):
     """A subagent deletes the index.lock a git that died left in its linked worktree's git dir,
     <common>/worktrees/<name>/index.lock (rules.own_index_lock, docs/guard-rules.md main-checkout row):
     rm, unlink or Remove-Item, from that worktree; from the main checkout the Instead is that run, the
-    cd in the same call. Every other write into a git dir stays refused (KIT-GUARD-LINKED-WT-LOCK)."""
+    cd in the same call. Every other write into a git dir stays refused."""
 
     def setUp(self):
         self.w = w = RealWorld()

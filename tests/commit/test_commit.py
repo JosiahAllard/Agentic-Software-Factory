@@ -247,6 +247,13 @@ class LinkedCase(TempHomeCase):
     def git(self, *args):
         return self.t.git(*args, cwd=self.wt)
 
+    def step(self, *args):
+        """A setup step's `git <args>` in the worktree, run as the fixture's own git (in process on
+        the fake, even in a @real_git class; tests/gitfixture.py), so a step the test does not
+        check costs no process. The commit under test, and the git the test asserts with, run on
+        the class's git."""
+        return self.t._own(*args, cwd=self.wt)
+
     def head(self):
         return self.git('rev-parse', 'HEAD')
 
@@ -1666,13 +1673,13 @@ class MergeCase(LinkedCase):
         stops on work.txt with the rest staged. (tip, main tip)."""
         self.t.write('work.txt', 'base\n')
         self.t.commit('base work', 'work.txt')
-        self.git('merge', '-q', '--ff-only', 'main')
+        self.step('merge', '-q', '--ff-only', 'main')
         self.t.write('work.txt', 'main\n')
         for name in ('other.txt',) + tuple(extra):
             self.t.write(name, 'from main\n')
         self.main_commit('main moves', ['work.txt', 'other.txt'] + list(extra), author)
         self.put('work.txt', 'branch\n')
-        self.git('commit', '-q', '-m', 'branch work', '--', 'work.txt')
+        self.step('commit', '-q', '-m', 'branch work', '--', 'work.txt')
         tip, base = self.head(), self.push_main()
         p = cmd.subprocess_run(('git', 'merge', '--no-edit', 'main'), cwd=self.wt,
                                capture_output=True, text=True, env=gitfixture.fixture_env())
@@ -1684,15 +1691,15 @@ class MergeCase(LinkedCase):
     def push_main(self):
         """origin/main as last fetched at main's tip, so merging main is a sync merge, the only
         merge commit.py commits; that tip."""
-        main = self.git('rev-parse', 'main')
-        self.t.git('update-ref', 'refs/remotes/origin/main', main)
+        main = self.step('rev-parse', 'main')
+        self.t._own('update-ref', 'refs/remotes/origin/main', main)
         return main
 
     def main_commit(self, message, paths, author=None):
         """Commit `paths` on main (in the main checkout), authored by `author` when given."""
-        self.t.git('add', '--', *paths)
+        self.t._own('add', '--', *paths)
         extra = ['--author', 'Someone <%s>' % author] if author else []
-        self.t.git('commit', '-q', '-m', message, *extra)
+        self.t._own('commit', '-q', '-m', message, *extra)
 
     def assert_refused_naming(self, name, head):
         code, out = self.commit('merge main', 'work.txt')
@@ -1887,21 +1894,21 @@ class MergeCarriesAnOwnerChange(MergeCase):
         self.t.write('work.txt', 'base\n')
         self.t.write(f, 'owner base\n')
         self.t.commit('base', 'work.txt', f)
-        self.git('merge', '-q', '--ff-only', 'main')
+        self.step('merge', '-q', '--ff-only', 'main')
         self.t.write('work.txt', 'main\n')
         if main_side is None:
-            self.t.git('rm', '-q', '--', f)
+            self.t._own('rm', '-q', '--', f)
         elif main_side is not KEEP:
             self.t.write(f, main_side)
-            self.t.git('add', '--', f)
+            self.t._own('add', '--', f)
         self.main_commit(main_message, ['work.txt'], main_author)
         self.put('work.txt', 'branch\n')
-        self.git('commit', '-q', '-m', 'branch work', '--', 'work.txt')
+        self.step('commit', '-q', '-m', 'branch work', '--', 'work.txt')
         if branch_side is not None:
             self.put(f, branch_side)
-            self.git('commit', '-q', '-m', 'owner edit', '--author', 'Owner <%s>' % OWNER,
-                     '--', f)
-        tip, main = self.head(), self.git('rev-parse', 'main')
+            self.step('commit', '-q', '-m', 'owner edit', '--author', 'Owner <%s>' % OWNER,
+                      '--', f)
+        tip, main = self.head(), self.step('rev-parse', 'main')
         if pushed:
             self.push_main()
         p = cmd.subprocess_run(('git', 'merge', '--no-edit', 'main'), cwd=self.wt,
@@ -2132,25 +2139,25 @@ class JoinCase(MergeCase):
             self.t.write('.gitattributes', attributes)
             names.append('.gitattributes')
         self.t.commit('base', *names)
-        self.git('merge', '-q', '--ff-only', 'main')
+        self.step('merge', '-q', '--ff-only', 'main')
         self.t.write('work.txt', 'main\n')
         if main_rename:
-            self.t.git('mv', '--', f, main_rename)
+            self.t.git('mv', '--', f, main_rename)          # the fake has no mv of a path
         else:
             self.t.write(f, main_text)
-            self.t.git('add', '--', f)
-            if main_mode:
-                blob = self.t.git('rev-parse', ':%s' % f)
+            self.t._own('add', '--', f)
+            if main_mode:                                   # the fake has no --cacheinfo
+                blob = self.t._own('rev-parse', ':%s' % f)
                 self.t.git('update-index', '--cacheinfo', '%s,%s,%s' % (main_mode, blob, f))
         trailer = '\n\nOwner-Approval: hub:%s' % main_id if main_id else ''
         self.main_commit('main edit' + trailer, ['work.txt'], main_author)
         self.put('work.txt', 'branch\n')
-        self.git('commit', '-q', '-m', 'branch work', '--', 'work.txt')
+        self.step('commit', '-q', '-m', 'branch work', '--', 'work.txt')
         self.put(f, branch_text)
         trailer = '\n\nOwner-Approval: hub:%s' % branch_id if branch_id else ''
-        self.git('commit', '-q', '-m', 'branch edit' + trailer, '--author', 'Agent <%s>' % AGENT,
-                 '--', f)
-        tip, main = self.head(), self.git('rev-parse', 'main')
+        self.step('commit', '-q', '-m', 'branch edit' + trailer, '--author', 'Agent <%s>' % AGENT,
+                  '--', f)
+        tip, main = self.head(), self.step('rev-parse', 'main')
         if pushed:
             self.push_main()
         p = cmd.subprocess_run(('git', 'merge', '--no-edit', 'main'), cwd=self.wt,

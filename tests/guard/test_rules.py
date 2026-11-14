@@ -242,6 +242,8 @@ ROWS = [
     ('subagent python -c merging through an f-string', lambda w: bash(
         'python -c "import subprocess; subprocess.run(f\'git -C {w} merge x\', shell=True)"', w.wt, sub=True),
      'deny', 'interpreter-git', 'python "{kit}/tools/sync_base.py" -C "{wt}" <hash> --model "<your model>"'),
+    ('subagent python -c running git log', lambda w: bash(
+        'python -c "import subprocess; subprocess.run([\'git\', \'log\', \'-1\'])"', w.wt, sub=True), None, None, None),
     ('owner python -c running git', lambda w: bash(
         'python -c "import subprocess; subprocess.run([\'git\', \'push\'])"', w.wt), None, None, None),
 ] + SHELL_ROWS + REVIEW_ROWS + EXTRA_ROWS
@@ -1581,7 +1583,7 @@ class InterpreterGit(unittest.TestCase):
                 (bash, "python - <<'EOF'\nimport subprocess\nsubprocess.run(['git','-C',w,'update-ref',r,c])\nEOF",
                  'git -C "%s" <the git command your code ran>' % wt),
                 (bash, 'py -3 -c "import os; os.system(\'git push\')"', None),
-                (bash, 'python3 <<< "import subprocess; subprocess.run([\'git\', \'status\'])"', None),
+                (bash, 'python3 <<< "import subprocess; subprocess.run([\'git\', \'push\'])"', None),
                 (bash, 'echo "import subprocess; subprocess.run([\'git\',\'push\'])" | python -', None),
                 (ps, "@'\nimport subprocess\nsubprocess.run(['git','push'])\n'@ | python -", None),
                 (bash, 'node -e "require(\'child_process\').execSync(\'git branch -D x\')"', None),
@@ -1598,22 +1600,83 @@ class InterpreterGit(unittest.TestCase):
                 (bash, 'python -c "import subprocess as s; s.run(f\'git -C {w} cherry-pick {c}\', shell=True)"',
                  rules.kit_tool(self.w.ctx(), 'commit')),
                 (bash, 'python -c "import shutil, subprocess; subprocess.run([shutil.which(\'git\'), \'log\'])"', None),
-                (bash, 'python -c "import subprocess; subprocess.run([\'git\', \'rev-parse\', \'HEAD\'])"', None)):
+                (bash, 'python -c "import subprocess; subprocess.run([\'git\', \'update-ref\', r, c])"', None)):
             with self.subTest(text):
                 d = self.decide(text, shell=shell)
                 self.assert_refused(d, text)
                 if instead is not None:
                     self.assertIn(instead, d.instead)
 
+    @staticmethod
+    def heredoc(code):
+        return "python - <<'EOF'\nimport subprocess\n%s\nEOF" % code
+
+    def test_python_git_reads_pass(self):
+        verbs = ('rev-parse', 'ls-files', 'cat-file', 'merge-base', 'for-each-ref', 'ls-tree', 'log', 'show', 'diff',
+                 'rev-list', 'status')
+        codes = ["subprocess.run(['git', '%s'])" % v for v in verbs] + [
+            "subprocess.check_output(('git', '-C', w, 'log', '-1'))",
+            "subprocess.run(['git', 'cat-file', '-p', obj], shell=False)",
+            "subprocess.run(['git', 'ls-tree', name])",
+            "subprocess.run(['git', 'log', f'--format={fmt}', f'HEAD~{n}'])",
+            "if __name__ == '__main__':\n    subprocess.run(['git', 'status'])",
+            # the six sampled refusals, paths placeheld
+            "print(subprocess.check_output(['git', 'show', 'HEAD:<path>'], text=True))",
+            "for p in paths:\n    subprocess.run(['git', '-C', wt, 'show', '--end-of-options', f'{rev}:{p}'])",
+            "subprocess.run(['git', 'log', '--oneline', '-5'])",
+            "subprocess.run(['git', '-C', '<worktree>', 'log', '--format=%H', '<base>..HEAD'])",
+            "subprocess.run(['git', 'diff', '--name-only', '<base>...HEAD'], capture_output=True)",
+            "out = subprocess.check_output(['git', '-C', root, 'diff', '--name-only'])"]
+        for code in codes:
+            with self.subTest(code):
+                self.assertIsNone(self.decide(self.heredoc(code)))
+        self.assertIsNone(self.decide('python -c "import subprocess; subprocess.run([\'git\', \'log\'])"'))
+
+    def test_python_git_writes_and_unread_forms_are_refused(self):
+        for code in (
+                "subprocess.run(['git', 'update-ref', ref, c])", "subprocess.run(['git', 'push'])",
+                "subprocess.run(['git', 'read-tree', t])", "subprocess.run(['git', 'commit', '-m', 'x'])",
+                "subprocess.run(['git', 'commit-tree', t])",
+                "subprocess.run(['git', 'log', '--output=f'])", "subprocess.run(['git', 'diff', '--output', 'f'])",
+                "subprocess.run(['git', 'show', '--outp=f'])", "subprocess.run(['git', 'diff', b'--output=f'])",
+                "subprocess.run(['git', 'show', f'{rev}:{p}'])", "subprocess.run(['git', 'log', rev])",
+                "subprocess.run(['git', 'log', '--grep', '--end-of-options', rev])",
+                "subprocess.run(['git', verb])", "G = 'git'\nsubprocess.run([G, 'log'])",
+                "import shutil\nsubprocess.run([shutil.which('git'), 'log'])", "subprocess.run(['git'] + ['log'])",
+                "subprocess.run('git log', shell=True)", "subprocess.run(['git', 'log'], shell=True)",
+                "import os\nos.system('git status')", "subprocess.run(f'git -C {w} log', shell=True)",
+                "subprocess.run(['git', '-c', 'a=b', 'log'])", "subprocess.run(['git', '--git-dir', d, 'log'])",
+                "subprocess.run(['git', '-C', a, '-C', b, 'log'])", "subprocess.run(['git', *a, 'log'])",
+                "subprocess.run(['git', 'log'], executable='sh')", "subprocess.run(['git', 'log'], **k)",
+                "from subprocess import run\nrun(['git', 'log'])", "subprocess.run([b'git', 'log'])",
+                "subprocess.run(['git', 'log'])\nsubprocess.run(['git', 'push'])",
+                "real = subprocess.run\nsubprocess.run = lambda a, **k: real(a)\nsubprocess.run(['git', 'log'])",
+                "del subprocess.run\nsubprocess.run(['git', 'log'])",
+                "import os as subprocess\nsubprocess.run(['git', 'log'])",
+                "subprocess = s\nsubprocess.run(['git', 'log'])",
+                "subprocess.__setattr__('run', f)\nsubprocess.run(['git', 'log'])",
+                "setattr(subprocess, 'run', f)\nsubprocess.run(['git', 'log'])",
+                "exec(s)\nsubprocess.run(['git', 'log'])",
+                "from unittest import mock\nwith mock.patch('subprocess.run', f):\n    subprocess.run(['git', 'log'])",
+                "match x:\n    case subprocess:\n        pass\nsubprocess.run(['git', 'log'])",
+                "subprocess.run(['git', 'log']",):
+            with self.subTest(code):
+                self.assert_refused(self.decide(self.heredoc(code)), code)
+        d = self.decide(self.heredoc("subprocess.run(['git', 'show', f'{rev}:{p}'])"))
+        self.assertIn("behind a literal '--end-of-options'", d.reason)
+        self.assertIn('commit.py', self.decide(self.heredoc("subprocess.run(['git', 'commit-tree', t])")).instead)
+        self.assert_refused(self.decide('node -e "require(\'child_process\').execFileSync(\'git\', [\'log\'])"'),
+                            'node')
+
     def test_every_marked_session_is_held_and_the_owner_is_not(self):
-        text = 'python -c "import subprocess; subprocess.run([\'git\', \'status\'])"'
+        text = 'python -c "import subprocess; subprocess.run([\'git\', \'push\'])"'
         for mark in ('coordinator', 'deep-worker', 'consultant', 'pm'):
             with self.subTest(mark):
                 self.assert_refused(self.decide(text, environ={context.ROLE_ENV: mark}, sub=False), text)
         self.assertIsNone(self.decide(text, sub=False))
 
     def test_any_directory_is_held(self):
-        d = self.decide('python -c "import subprocess; subprocess.run([\'git\', \'status\'])"', cwd=self.w.temp)
+        d = self.decide('python -c "import subprocess; subprocess.run([\'git\', \'push\'])"', cwd=self.w.temp)
         self.assert_refused(d, 'temp')
         self.assertEqual(d.instead, 'git -C "<worktree>" <the git command your code ran>')
 

@@ -10,6 +10,7 @@ from unittest import mock
 import kitlib.config as kconfig
 from kitlib.config import policy
 from kitlib.git import cmd as gitcmd
+from kitlib.git import refs as gitrefs
 from tests import gitfixture
 from tests.config.helpers import TempTree
 
@@ -85,9 +86,9 @@ class Rules(unittest.TestCase):
         self.refused({'staging': 'tools/staging.json'})
 
 
-class Overlay(unittest.TestCase):
-    """overlay_staging and load_at(staging_from=) on a scratch repository: commit `plain` writes
-    no staging section, `staged` (on another branch) writes one."""
+class ScratchRepo(unittest.TestCase):
+    """A scratch repository: commit `plain` writes no staging section, `staged` writes one (stg),
+    `bad` one naming the main branch itself."""
 
     def setUp(self):
         env = mock.patch.dict(os.environ, gitfixture.fixture_env(), clear=True)
@@ -110,6 +111,14 @@ class Overlay(unittest.TestCase):
         self.git('add', '.kit.json')
         self.git('commit', '-q', '-m', 'config')
         return self.git('rev-parse', 'HEAD')
+
+    def fetched(self, rev):
+        """Point refs/remotes/origin/main at `rev`, as a fetch would."""
+        self.git('update-ref', 'refs/remotes/origin/main', rev)
+
+
+class Overlay(ScratchRepo):
+    """overlay_staging and load_at(staging_from=)."""
 
     def test_the_staging_section_comes_from_the_other_revision(self):
         cfg = kconfig.load_at(self.fx.root, self.plain, staging_from=self.staged)
@@ -146,10 +155,6 @@ class Overlay(unittest.TestCase):
         with self.assertRaises(kconfig.ConfigError):
             kconfig.load_at(self.fx.root, self.plain, staging_from='refs/remotes/origin/nothing')
 
-    def fetched(self, rev):
-        """Point refs/remotes/origin/main at `rev`, as a fetch would."""
-        self.git('update-ref', 'refs/remotes/origin/main', rev)
-
     def test_the_pre_push_read_takes_the_fetched_main_s_setting(self):
         self.fetched(self.staged)
         cfg = kconfig.load_at_fetched_staging(self.fx.root, self.plain, 'origin')
@@ -170,6 +175,56 @@ class Overlay(unittest.TestCase):
         cfg = kconfig.load_at_fetched_staging(self.fx.root, self.staged, 'origin')
         self.assertEqual(kconfig.work_base(cfg), 'main')
         self.assertIn('stg', cfg.guarded_mains())
+
+
+class WorkBaseRef(ScratchRepo):
+    """kitlib.config.work_base_ref, the default base: the checkout's config names the staging
+    branch stg (docs/gate-landing.md "Turning staging on")."""
+
+    def ref(self, rev=None):
+        cfg = kconfig.load_at(self.fx.root, rev or self.staged)
+        return kconfig.work_base_ref(cfg, self.fx.root)
+
+    def test_staging_off_is_the_main_branch(self):
+        self.fetched(self.plain)
+        self.assertEqual(self.ref(self.plain)[:2], ('refs/remotes/origin/main', 'main'))
+
+    def test_an_absent_staging_branch_main_turns_on_nowhere_is_main_said_in_the_note(self):
+        self.fetched(self.plain)
+        rev, branch, note = self.ref()
+        self.assertEqual((rev, branch), ('refs/remotes/origin/main', 'main'))
+        self.assertIn('the staging branch stg does not exist yet', note)
+        self.assertIn('measuring against refs/remotes/origin/main', note)
+
+    def test_an_absent_staging_branch_main_names_is_never_measured_round(self):
+        self.fetched(self.staged)               # staging is on: the branch was deleted
+        self.assertEqual(self.ref(), ('stg', 'stg', None))
+
+    def test_a_staging_branch_that_exists_is_the_base(self):
+        self.fetched(self.plain)
+        self.git('update-ref', 'refs/heads/stg', self.plain)
+        self.assertEqual(self.ref(), ('stg', 'stg', None))
+        self.git('update-ref', 'refs/remotes/origin/stg', self.plain)
+        self.assertEqual(self.ref(), ('refs/remotes/origin/stg', 'stg', None))
+
+    def test_no_fetched_main_keeps_the_staging_branch(self):
+        self.assertEqual(self.ref(), ('stg', 'stg', None))
+
+    def test_a_git_that_cannot_answer_keeps_the_staging_branch(self):
+        self.fetched(self.plain)
+        resolve = gitrefs.resolve
+
+        def no_answer(rev, cwd, **kw):
+            return (None, 'killed') if rev == 'refs/heads/stg' else resolve(rev, cwd, **kw)
+        with mock.patch('kitlib.config.load.gitrefs.resolve', side_effect=no_answer):
+            self.assertEqual(self.ref(), ('stg', 'stg', None))
+
+    def test_a_bad_setting_on_main_is_no_base_and_says_why(self):
+        self.fetched(self.bad)
+        rev, branch, why = self.ref()
+        self.assertEqual((rev, branch), (None, 'stg'))
+        self.assertIn('staging read from', why)
+        self.assertIn('the main branch itself', why)
 
 
 if __name__ == '__main__':

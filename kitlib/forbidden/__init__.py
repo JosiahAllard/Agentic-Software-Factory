@@ -214,22 +214,24 @@ def _git_lines(root, args, what):
 
 
 def default_base(root, cfg=None):
-    """`(rev, note)`: the work base's name (`.kit.json` "staging".branch when written, else
-    "repo".main_branch when written, else main if that branch exists, else master) measured by the shared rule kitlib.git.refs.
-    default_base (docs/gate-run.md "Default base"): its `<remote>/` tracking ref when that resolves.
-    `note` says when the local branch differs from the one measured against."""
+    """`(rev, note)`: the default base (docs/gate-run.md "Default base"). With `.kit.json`
+    "staging".branch or "repo".main_branch written: the shared one, kitlib.config.work_base_ref
+    (ForbiddenError when main's staging setting cannot be read). Else main if that branch exists,
+    else master, measured by kitlib.git.refs.default_base: its `<remote>/` tracking ref when that
+    resolves. `note` says when the local branch differs from the one measured against."""
     cfg = cfg if cfg is not None else load_config(root)
     if cfg.raw('staging').get('branch') or 'main_branch' in cfg.raw('repo'):
-        name = kconfig.work_base(cfg)
-    else:
-        # known=True: a git ended from outside is no answer, never "no
-        # main", which measured against master.
-        sha, why = gitrefs.resolve('refs/heads/main', root, known=True)
-        if sha is None:
-            raise ForbiddenError('cannot tell whether the branch main exists, so the base is '
-                                 'unknown: %s' % why)
-        name = 'main' if sha else 'master'
-    return gitrefs.default_base(root, cfg.remote, name)
+        rev, _branch, note = kconfig.work_base_ref(cfg, root)
+        if rev is None:
+            raise ForbiddenError(note)
+        return rev, note
+    # known=True: a git ended from outside is no answer, never "no
+    # main", which measured against master.
+    sha, why = gitrefs.resolve('refs/heads/main', root, known=True)
+    if sha is None:
+        raise ForbiddenError('cannot tell whether the branch main exists, so the base is '
+                             'unknown: %s' % why)
+    return gitrefs.default_base(root, cfg.remote, 'main' if sha else 'master')
 
 
 def tracked_paths(root):

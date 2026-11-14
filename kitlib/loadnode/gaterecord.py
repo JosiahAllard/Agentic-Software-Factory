@@ -23,8 +23,8 @@ def read_record(root, commit):
 def gate_facts(top):
     """What a gate job of the checkout `top` sends: {repo, kind, remote, main, base, slug}, read
     as its own gate reads them (its `.kit.json`, place.repo_name, the gate's lock kind, the
-    default base: kitlib.git.refs.default_base, as a full hash). JobError(EXIT_USAGE) naming
-    what cannot be read or does not resolve."""
+    default base: kitlib.config.work_base_ref, as a full hash, and `main` the branch it names).
+    JobError(EXIT_USAGE) naming what cannot be read or does not resolve."""
     import kitlib.config as kconfig
     from kitlib.config.types import ConfigError
     from kitlib.git import refs
@@ -32,10 +32,12 @@ def gate_facts(top):
     try:
         cfg = kconfig.load(top)
         kind = cfg.section('gate').get('kind')
+        # the base work lands on: main, or the staging branch (main while staging is turned on)
+        ref, main, why = kconfig.work_base_ref(cfg, top)
+        if ref is None:
+            raise ConfigError(why)
     except ConfigError as e:
         raise JobError(EXIT_USAGE, 'the config of %s cannot be read: %s' % (top, e))
-    main = kconfig.work_base(cfg)       # the base work lands on: main, or the staging branch
-    ref, _note = refs.default_base(top, cfg.remote, main)
     base, why = refs.resolve(ref, top)
     if not base:
         raise JobError(EXIT_USAGE, 'the default base of %s does not resolve (%s): neither %s/%s '

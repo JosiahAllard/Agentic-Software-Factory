@@ -425,6 +425,56 @@ def overlay_fetched_staging(cfg, root=None):
                                                                        cfg.main_branch))
 
 
+def work_base(cfg):
+    """The branch work merges onto and starts from (Config.work_base): the staging branch when
+    `"staging".branch` is set, else the main branch. Read as kitlib.config.work_base, the one
+    read of it outside kitlib.config; a test's stand-in config without the property gives its
+    main_branch (docs/gate-landing.md "Staging branch")."""
+    base = getattr(cfg, 'work_base', None)
+    return base if isinstance(base, str) and base else cfg.main_branch
+
+
+def staging_on(cfg):
+    """True when work_base(cfg) is a staging branch, not the main branch."""
+    return work_base(cfg) != cfg.main_branch
+
+
+def work_base_ref(cfg, root):
+    """`(rev, branch, note)`: the default base a kit tool measures the checkout `root` against
+    when it is given none (docs/gate-run.md "Default base"), resolved here alone:
+    kitlib.git.refs.default_base of `branch`, the work base (work_base), its note as `note`.
+
+    While staging is being turned on (docs/gate-landing.md "Turning staging on") `branch` is the
+    main branch instead, and `note` says so: when git answers that the staging branch is neither
+    refs/remotes/<remote>/<staging> nor refs/heads/<staging>, and refs/remotes/<remote>/<main>
+    as last fetched resolves and its `.kit.json` turns no staging on (overlay_staging, on a copy).
+    Once main names the staging branch a missing one is never measured round: the work base's
+    rev is returned, and its caller's resolve refuses. So is it when git cannot answer.
+    `(None, branch, why)` when main's setting there cannot be read or is not well formed."""
+    branch = work_base(cfg)
+    rev, note = gitrefs.default_base(root, cfg.remote, branch)
+    main = cfg.main_branch
+    if branch == main or any(gitrefs.resolve(ref, root, known=True)[0] != '' for ref in (
+            'refs/remotes/%s/%s' % (cfg.remote, branch), 'refs/heads/%s' % branch)):
+        return rev, branch, note
+    fetched = 'refs/remotes/%s/%s' % (cfg.remote, main)
+    sha, _why = gitrefs.resolve(fetched, root, known=True)
+    if not sha:
+        return rev, branch, note
+    try:
+        on_main = overlay_staging(copy.copy(cfg), sha)
+    except ConfigError as e:
+        return None, branch, '%s. The staging setting is read from %s (%s as last fetched)' % (
+            e, fetched, sha[:10])
+    if staging_on(on_main):
+        return rev, branch, note
+    rev, note = gitrefs.default_base(root, cfg.remote, main)
+    said = ('the staging branch %s does not exist yet (neither %s/%s nor %s) and %s/%s as last '
+            'fetched turns no staging on: measuring against %s' % (
+                branch, cfg.remote, branch, branch, cfg.remote, main, rev))
+    return rev, main, '%s; %s' % (said, note) if note else said
+
+
 def load_at_fetched_staging(root, rev, remote):
     """load_at(root, rev) with overlay_staging from <remote>/<main> as last fetched, when that
     resolves to another commit than `rev`. For the pre-push guard, never looser than `rev`'s own

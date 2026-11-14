@@ -7,7 +7,11 @@ through the funnel or is named, a new read in a function already named included.
 A read is `x.main_branch`, `x['main_branch']`, `x.get('main_branch', ...)` or
 `getattr(x, 'main_branch', ...)`. Not reads, so not counted: `main_branch=` as a keyword argument
 (a value passed, already read where it came from), a function or parameter named main_branch (a
-definition), and the string anywhere else (a doc line, a message)."""
+definition), and the string anywhere else (a doc line, a message).
+
+The default base has one resolver too: kitlib.config.work_base_ref (docs/gate-run.md "Default
+base"). A function in the same folders that reads the work base and hands a branch to
+kitlib.git.refs.default_base itself is a copy of it, which misses the staging turn-on's base."""
 import ast
 import glob
 import os
@@ -166,6 +170,36 @@ def is_read(node):
     return False
 
 
+def _calls(node, name, owners=None):
+    """True when `node` holds a call of `name` (as `x.name(...)` with x in `owners`, or with
+    owners None also as a bare `name(...)` or any `x.name(...)`)."""
+    for n in ast.walk(node):
+        if not isinstance(n, ast.Call):
+            continue
+        f = n.func
+        if isinstance(f, ast.Attribute) and f.attr == name and (
+                owners is None or isinstance(f.value, ast.Name) and f.value.id in owners):
+            return True
+        if owners is None and isinstance(f, ast.Name) and f.id == name:
+            return True
+    return False
+
+
+def resolver_copies(root):
+    """'path:qualname' of every function in files(root) that calls work_base and
+    kitlib.git.refs.default_base (as refs.default_base or gitrefs.default_base) both."""
+    out = []
+    for rel in files(root):
+        with open(os.path.join(root, rel), encoding='utf-8') as f:
+            tree = ast.parse(f.read(), rel)
+        for node in ast.walk(tree):
+            if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and _calls(node, 'work_base')
+                    and _calls(node, 'default_base', ('refs', 'gitrefs'))):
+                out.append('%s:%s' % (rel, node.name))
+    return sorted(out)
+
+
 def unnamed(found, allowed):
     """'path:qualname (lines)' for every function whose reads ALLOWED does not name, or names
     fewer of than it makes."""
@@ -205,6 +239,20 @@ class WorkBaseFunnelTest(unittest.TestCase):
         self.assertEqual(unnamed(found, {'kitlib/x.py:f': (1, 'why')}),
                          ['kitlib/x.py:f: 2 read(s), 1 named (line 3, 9)'])
         self.assertEqual(unnamed(found, {'kitlib/x.py:f': (2, 'why')}), [])
+
+    def test_the_default_base_has_one_resolver(self):
+        self.assertEqual(resolver_copies(ROOT), [],
+                         'measure against kitlib.config.work_base_ref(cfg, root), never '
+                         'refs.default_base of kitlib.config.work_base(cfg)')
+
+    def test_the_resolver_scan_sees_a_copy(self):
+        tree = ast.parse("def f(cfg, root):\n"
+                         "    return gitrefs.default_base(root, cfg.remote, kconfig.work_base(cfg))\n"
+                         "def g(cfg, root):\n    main = work_base(cfg)\n"
+                         "    return refs.default_base(root, cfg.remote, main)\n"
+                         "def h(ctx):\n    return refs.default_base(ctx.root, 'origin', 'main')\n")
+        self.assertEqual([n.name for n in tree.body if _calls(n, 'work_base')
+                          and _calls(n, 'default_base', ('refs', 'gitrefs'))], ['f', 'g'])
 
     def test_the_scan_covers_the_entry_points(self):
         seen = files(ROOT)

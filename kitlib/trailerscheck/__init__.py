@@ -91,20 +91,24 @@ def check(root, base=None, cfg=None, merged=False):
     """Outcome(code, lines) for the checkout `root`. `base` None is the default base."""
     cfg = cfg if cfg is not None else load_config(root)
     lines = []
+    # the branch the default base names: the work base, or main while staging is turned on
+    default, main, note = kconfig.work_base_ref(cfg, root)
     if base is None:
-        base, note = gitrefs.default_base(root, cfg.remote, kconfig.work_base(cfg))
+        if default is None:
+            return Outcome(REFUSED, ['trailers: NOT CHECKED: %s' % note])
+        base = default
         if note:
             lines.append(note)
     why = gitrefs.bad_rev(base)
     if why:
         return Outcome(REFUSED, lines + ['trailers: NOT CHECKED: %s' % why])
     if merged:
-        why = _merged_refusal(root, base, kconfig.work_base(cfg))
+        why = _merged_refusal(root, base, main)
         if why:
             return Outcome(REFUSED, lines + [
                 "trailers: REFUSED - --merged exempts the lander's merges and holds only on %s "
                 "itself or at a landing's detached merge onto the base; %s. On a branch, run "
-                "without --merged." % (kconfig.work_base(cfg), why)])
+                "without --merged." % (main, why)])
     try:
         rules = ownermod.merge(load_at(root, 'HEAD').owner_rules(),
                                load_at(root, base).owner_rules())

@@ -207,24 +207,28 @@ repository in; main still merges, writes the gate-OK record and pushes. The node
 runs the gate; main checks the record it sends back against main's own reading of the same merge,
 step by step.
 
-1. Main starts a `NodeJob` in land mode (`kitlib.loadnode.job`, `land={full, docs, kit_files}`):
+1. Main starts a `NodeJob` in land mode (`kitlib.loadnode.job`, `land={full, docs, staging, kit_files}`):
    the merge commit, the base (main's tip the merge was made on), the repository name and main's
    kit files hash (`kitlib.gate.reuse.kit_files_hash`). Before the job's refs it pushes the base to
    the node mirror's `refs/pmkit/main/<main>` (never forced; a refusal or failure is a WARNING and
    the job goes on), so later job pushes send only what is new. The pre-push hook takes no part:
    it is not a branch.
-2. The node's `land` verb (`box.check_land_spec`: the gate spec's keys, plus `full` and `docs` as
-   booleans and `kit_files` as 64 lowercase hex) refuses unless `kit_files` is its own kit's files
+2. The node's `land` verb (`box.check_land_spec`: the gate spec's keys, plus `full`, `docs` and
+   `staging` as booleans and `kit_files` as 64 lowercase hex) refuses unless `kit_files` is its own kit's files
    hash: `{"ok": false, "kit": true}`, and both job refs are dropped. A landing's gate runs only on
    a node with exactly main's kit files; any other kit, or one whose hash cannot be read, is for the
    landing to gate on main instead, saying why in one line. A node kit with no `land` verb is
-   "its kit serves no land verb", as a kit with no `gate` verb is for `node.py gate`.
+   "its kit serves no land verb", as a kit with no `gate` verb is for `node.py gate`. `staging`
+   is true for a staging landing's merged gate (`MergedGate.staging_gate`: a landing onto a staging
+   branch that is neither --full nor strict; docs/gate-landing.md "What a landing re-runs and what
+   it reuses"). An older node kit that does not know the key is never asked: its kit files are not
+   main's, so the kit-files check above refuses it first.
 3. The job runner runs the node kit's `loadnode.py landgate <job>` (`kitlib.loadnode.landgate`,
    never served over ssh) in the job's worktree. It refuses again on another kit, a tree not at
    the merge, or a config at the base it cannot read (exit 4), runs `runner.merged_gate` as the
-   landing would (`full`, `docs`), and fails (exit 1) if the gate left the tree changed. On a pass
+   landing would (`full`, `docs`, `staging`), and fails (exit 1) if the gate left the tree changed. On a pass
    it writes a gate-OK record with the node kit's identity and files hash, `base` and `config_rev`
-   at the base, the gate's `source`, and `mode` "docs" for a docs-only gate. The record is read
+   at the base, the gate's `source`, `mode` "docs" for a docs-only gate, and `staging_skipped`. The record is read
    back (`gate_ok.verify`) into the job's result with `land: true`.
 4. Main takes a land record only in the `NodeJob` that started it (`take_land`), through the
    landing's checker (`landgate.checker`), which reads main's own selection once with
@@ -232,7 +236,8 @@ step by step.
    own gate would refuse the merge. The record is refused, at its first failing check, unless:
    it names the merge; it has no `input_keys` and no `ran_on` (only main writes that);
    `gate_ok`'s checks pass (keys, schema, verdict, tree, author); its `gate_config` is the hash of main's config at the base; its `base` and `config_rev` are the
-   base; its `mode` and `full` match main's; its `source` is main's; its steps are exactly main's
+   base; its `mode` and `full` match main's; its `staging_skipped` is exactly main's (null off a
+   staging landing, the same list on one: a record without the key fails there); its `source` is main's; its steps are exactly main's
    by name, once each; every step's result is `pass` or `warn` (a `skip` or `reused` step is
    refused); its `repo` is main's name; and its kit files are main's.
 5. A refused record is exit 15, the job kept and the follow and stop lines said, as for `gate`;

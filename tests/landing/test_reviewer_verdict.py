@@ -43,9 +43,10 @@ CHECKS = 'Checks: ' + ', '.join('%s PASS' % c for c in V.CODE_CHECKS)
 DESIGN = 'Checks: ' + ', '.join('%s PASS' % c for c in V.DESIGN_CHECKS) + '\nDesign: APPROVE'
 
 
-def report(verdict, extra=''):
-    return ('Findings, most severe first:\n1. none blocking\n%s\n%s\nVerdict: %s'
-            % (extra, CHECKS, verdict))
+def report(verdict, extra='', tip=''):
+    """A final report; `tip` is the tip it names (verdicts.tip_why), none when ''."""
+    return ('Reviewed %s.\nFindings, most severe first:\n1. none blocking\n%s\n%s\nVerdict: %s'
+            % (tip, extra, CHECKS, verdict))
 
 
 class ReviewerVerdict(GateRepoCase):
@@ -93,15 +94,29 @@ class ReviewerVerdict(GateRepoCase):
         self.assertEqual(V.scan(self.repo.common_dir()), ([], []))
 
     def test_land_is_queued_and_the_reviewer_verdict_printed(self):
-        self.plant(RID, handback_turn(report('LAND')))
+        self.plant(RID, handback_turn(report('LAND', tip=self.tip)))
         code, out, err = self.add()
         self.assertEqual(code, 0, (out, err))
         self.assertEqual(out.strip().splitlines(),
                          ['reviewer %s said LAND at %s' % (RID, self.tip),
                           'QUEUED kit/a %s' % self.tip])
 
+    def test_a_report_that_does_not_name_the_tip_is_refused(self):
+        """The observed gap: LAND queued under a reviewer's id at a tip it never reviewed."""
+        tip10 = self.tip[:10]
+        for named in ('', self.main, self.tip[:7], 'ab' + tip10):  # none, older, short, mid-run
+            self.plant(RID, handback_turn(report('LAND', tip=named)))
+            out = self.assert_refused()
+            self.assertIn("the reviewer %s's final report does not name the tip %s; nothing was "
+                          'queued\nInstead: resume reviewer %s to review %s; its report must name '
+                          'the tip' % (RID, tip10, RID, self.tip), out, named)
+        for named in (tip10, self.tip.upper(), '%s..%s' % (self.main[:10], tip10)):
+            self.plant(RID, handback_turn(report('LAND', tip=named)))
+            self.assertEqual(self.add()[0], 0, named)
+
     def test_a_markdown_line_in_a_text_report_is_read(self):
-        self.plant(RID, text_turn('Review.\n\n%s\n**Verdict:** land with follow-up\n' % CHECKS))
+        self.plant(RID, text_turn('Review of %s.\n\n%s\n**Verdict:** land with follow-up\n'
+                                  % (self.tip, CHECKS)))
         with self.backlog({'EX-9': 'open'}):
             code, out, err = self.add(**{'--verdict': 'LAND WITH FOLLOW-UP', '--follow-up': 'EX-9'})
         self.assertEqual(code, 0, (out, err))
@@ -117,7 +132,7 @@ class ReviewerVerdict(GateRepoCase):
     def test_only_the_final_turn_counts(self):
         # an earlier turn's line is not the final verdict ...
         self.plant(RID, handback_turn(report('SEND BACK')),
-                   text_turn('Re-read: fixed.\n%s\nVerdict: LAND' % CHECKS))
+                   text_turn('Re-read %s: fixed.\n%s\nVerdict: LAND' % (self.tip, CHECKS)))
         self.assertEqual(self.add()[0], 0)
         # ... and a resumed reviewer appends its new final turn to the same transcript (inference)
         self.plant(RID, handback_turn(report('LAND')), tool_turn(), handback_turn('Still open.'))
@@ -204,19 +219,19 @@ class ReviewerVerdict(GateRepoCase):
                                      for i in ids})
 
     def test_a_report_with_no_full_checks_line_is_refused(self):
-        self.plant(RID, handback_turn('Findings: none.\nVerdict: LAND'))
+        self.plant(RID, handback_turn('Findings at %s: none.\nVerdict: LAND' % self.tip))
         out = self.assert_refused()
         self.assertIn('the reviewer %s gave no Checks: line (its final report)' % RID, out)
         self.assertIn('\nInstead: resume the reviewer %s (SendMessage to its id) and ask it to give '
                       'its full final lines again: each Done-when: line, the Checks: line' % RID,
                       out)
         self.assertIn('and the Verdict: line', out)
-        self.plant(RID, handback_turn(report('LAND').replace(', copies PASS', '')))
+        self.plant(RID, handback_turn(report('LAND', tip=self.tip).replace(', copies PASS', '')))
         self.assertIn("the reviewer %s's Checks: line lacks copies" % RID, self.assert_refused())
 
     def test_a_plain_land_over_an_unmet_done_when_is_refused(self):
         unmet = 'Done-when: EX-1 (c) UNMET - no test names it'
-        self.plant(RID, handback_turn(report('LAND WITH FOLLOW-UP', unmet)))
+        self.plant(RID, handback_turn(report('LAND WITH FOLLOW-UP', unmet, self.tip)))
         out = self.assert_refused(**{'--verdict': 'LAND'})
         self.assertIn('--verdict LAND, but the reviewer %s reports %s' % (RID, unmet), out)
         self.assertIn('\nInstead: queue it with --verdict "LAND WITH FOLLOW-UP" --follow-up <ID>', out)
@@ -226,7 +241,7 @@ class ReviewerVerdict(GateRepoCase):
 
     def test_land_with_follow_up_needs_an_open_follow_up(self):
         """The CLI wiring; verdicts.follow_up_why's cases are test_verdicts'."""
-        self.plant(RID, handback_turn(report('LAND WITH FOLLOW-UP')))
+        self.plant(RID, handback_turn(report('LAND WITH FOLLOW-UP', tip=self.tip)))
         with self.backlog({'EX-9': 'open'}):
             out = self.assert_refused(**{'--verdict': 'LAND WITH FOLLOW-UP',
                                          '--follow-up': 'EX-CLOSED'})
@@ -253,7 +268,7 @@ class ReviewerVerdict(GateRepoCase):
 
     def test_a_new_source_needs_an_approved_design_review(self):
         wt, tip, over = self.new_class_branch()
-        self.plant(RID, handback_turn(report('LAND')))
+        self.plant(RID, handback_turn(report('LAND', tip=tip)))
         out = self.assert_refused(**over)
         self.assertIn('the diff adds pkg/mod.py, pkg/mod.py:Fresh, and no --design-reviewer-id', out)
         self.assertTrue(out.strip().endswith(V.DESIGN_INSTEAD), out)
@@ -267,7 +282,8 @@ class ReviewerVerdict(GateRepoCase):
         self.repo.write('pkg/mod.py', 'class Fresh:\n    pass\n\n\nclass Second:\n    pass\n',
                         root=wt)
         tip2 = self.repo.commit('second class', 'pkg/mod.py', cwd=wt)
-        over = {'--branch': 'kit/b', '--tip': tip2, '--range': '%s..%s' % (tip[:10], tip2[:10])}
+        self.plant(RID, handback_turn(report('LAND', tip=tip2)))
+        over ={'--branch': 'kit/b', '--tip': tip2, '--range': '%s..%s' % (tip[:10], tip2[:10])}
         out = self.assert_refused(**over)
         self.assertIn('the diff adds pkg/mod.py:Second, and no --design-reviewer-id', out)
         self.assertTrue(out.strip().endswith(V.DESIGN_INSTEAD), out)

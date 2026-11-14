@@ -34,7 +34,7 @@ add() is given the models the reviewer's transcript shows (seen_models, the host
 is not the reviewer_model stated (model_mismatch_why), nothing written; ReviewerSaid (a BadEntry)
 when add() is given what the reviewer's transcript says (seen_verdicts, the host's reader) and its
 final report says SEND BACK or has no `Verdict:` line, or a transcript found cannot be read
-(reviewer_verdict_why), or the report's `Checks:` and `Done-when:` lines, the follow-ups or the
+(reviewer_verdict_why), or it does not name the tip (tip_why), or the report's `Checks:` and `Done-when:` lines, the follow-ups or the
 design review named for a new source file or class fail (checks_why, done_when_why,
 follow_up_why, design_why), nothing written;
 LightReview (a BadEntry)
@@ -353,6 +353,27 @@ def reviewer_verdict_why(entry, said):
     return head + ('run verdict.py add again once the transcript can be read, or resume the '
                    'reviewer %s (SendMessage to its id) and ask for its final Verdict: line again'
                    % ', '.join(unread))
+
+
+TIP_SHOWN = 10              # the tip's hex characters a reviewer's final report must name
+
+
+def tip_why(entry, said):
+    """Why add() refuses `entry` because a reviewer's final report does not name its tip, or
+    None: the report must hold the tip's first TIP_SHOWN hex characters, case aside, at the start
+    of a hex run (a full sha, `<tip10>` or `<base>..<tip10>`), so `reviewer <id> said <verdict> at
+    <tip>` is true. A report naming only an older tip, or none, is refused alike. `said` is
+    seen_verdicts(); an id with no transcript or no report read is not checked. Pure."""
+    want = re.compile(r'(?<![0-9a-f])' + re.escape(entry['tip'][:TIP_SHOWN].lower()))
+    off = [rid for rid, (found, _, text) in sorted(said.items())
+           if found and text is not None and not want.search(text.lower())]
+    if not off:
+        return None
+    return ('--verdict %s, but %s; nothing was queued\nInstead: %s' % (
+        entry['verdict'], '; '.join("the reviewer %s's final report does not name the tip %s"
+                                    % (rid, entry['tip'][:TIP_SHOWN]) for rid in off),
+        '; '.join('resume reviewer %s to review %s; its report must name the tip'
+                  % (rid, entry['tip']) for rid in off)))
 
 
 def said_lines(entry, said):
@@ -861,7 +882,7 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     seen_models() for the entry; a model seen that is not its reviewer_model is ModelMismatch
     (model_mismatch_why). `said`: seen_verdicts() for the entry; a reviewer whose final report
     says SEND BACK, or has no `Verdict:` line, is ReviewerSaid (reviewer_verdict_why); so is one
-    with no `Checks:` line or one lacking a CODE_CHECKS id (checks_why), and a plain LAND over a
+    that does not name the tip (tip_why), one with no `Checks:` line or one lacking a CODE_CHECKS id (checks_why), and a plain LAND over a
     Done-when item it reports UNMET (done_when_why). `follow_ups`: `{id: state}` of each
     --follow-up (follow_up_why), None not checked. `new`: new_sources() of the range, None not
     checked; when it lists any, `design_id` and `design_said` (seen_reports() of it, None with no
@@ -879,8 +900,8 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     why = model_mismatch_why(entry, seen) if seen else None
     if why:
         raise ModelMismatch(why)
-    for why in ((reviewer_verdict_why(entry, said) or checks_why(entry, said)
-                 or done_when_why(entry, said)) if said else None,
+    for why in ((reviewer_verdict_why(entry, said) or tip_why(entry, said)
+                 or checks_why(entry, said) or done_when_why(entry, said)) if said else None,
                 follow_up_why(entry, follow_ups) if follow_ups is not None else None,
                 design_why(entry, new, design_id, design_said) if new is not None else None):
         if why:

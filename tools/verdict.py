@@ -27,7 +27,8 @@
       verdicts.reviewer_verdict_why); an
       id with no transcript prints `NOTE: the reviewer's verdict is not checked: ...`. Before
       QUEUED, each verdict read prints `reviewer <id> said <verdict> at <tip>`.
-      The same final report must carry a `Checks:` line giving each verdicts.CODE_CHECKS id PASS,
+      The same final report must name the tip's first 10 hex characters (verdicts.tip_why).
+      It must carry a `Checks:` line giving each verdicts.CODE_CHECKS id PASS,
       FAIL or N/A (skill specialty-review "Report"; verdicts.checks_why), and a plain LAND is
       refused when it reports a Done-when item UNMET, with an `Instead:` line naming
       `--verdict "LAND WITH FOLLOW-UP" --follow-up <ID>` (verdicts.done_when_why). LAND WITH

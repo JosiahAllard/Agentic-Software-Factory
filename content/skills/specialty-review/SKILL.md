@@ -51,7 +51,8 @@ No approved design came with the brief: run design checks 1, 2, 5 and 7 on the d
 - Each: file, symbol; one-sentence defect; trigger (input/state), effect; CONFIRMED (code path read) or PLAUSIBLE.
 - Then: out-of-scope files; changes no test reaches; "no blocking findings" or "blocking: N".
 - Code review: per Done-when item `Done-when: <ID> (<item>) MET - <evidence>` or `... UNMET - <evidence>`; one `Checks:` line, every code-review id PASS, FAIL or N/A: `Checks: scope PASS, done-when PASS, defects PASS, tests PASS, copies PASS, home N/A, reuse N/A, size N/A, layering N/A`.
-- Last line: `Verdict: LAND`, `Verdict: LAND WITH FOLLOW-UP` or `Verdict: SEND BACK` (blocking finding). `<kit>/tools/verdict.py add` reads them from transcript; refuses LAND over your SEND BACK, no verdict, no full `Checks:` line, plain LAND over UNMET. Re-asked after fix: fresh line.
+- Name the tip you reviewed: full or 10-character sha.
+- Last line: `Verdict: LAND`, `Verdict: LAND WITH FOLLOW-UP` or `Verdict: SEND BACK` (blocking finding). `<kit>/tools/verdict.py add` reads them from transcript; refuses LAND over your SEND BACK, no verdict, report not naming the queued tip, no full `Checks:` line, plain LAND over UNMET. Re-asked after fix: fresh line.
 - No praise, change summary, rewrite over a line.
 
 Details: skill `mutation-testing` (decorative green guards).

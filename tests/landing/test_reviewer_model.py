@@ -17,14 +17,15 @@ RID = 'a13560c0143b859e7'           # the shape of every Claude subagent id
 RID2 = 'a082f4af73b3c82f2'
 
 
-def records(*models):
-    """Transcript records: a user turn, then one assistant turn per model of `models`, each ending
-    with a final `Verdict: LAND` line (a report with none is refused: test_reviewer_verdict)."""
+def records(*models, tip=''):
+    """Transcript records: a user turn, then one assistant turn per model of `models`, each naming
+    `tip` and ending with a final `Verdict: LAND` line (a report with none is refused:
+    test_reviewer_verdict)."""
     out = [{'type': 'user', 'agentId': RID, 'message': {'role': 'user', 'content': 'review it'}}]
     for m in models:
         out.append({'type': 'assistant', 'message': {'role': 'assistant', 'model': m, 'content': [
-            {'type': 'text', 'text': 'ok\nChecks: %s\nVerdict: LAND'
-             % ', '.join('%s PASS' % c for c in V.CODE_CHECKS)}]}})
+            {'type': 'text', 'text': 'ok at %s\nChecks: %s\nVerdict: LAND'
+             % (tip, ', '.join('%s PASS' % c for c in V.CODE_CHECKS))}]}})
     return out
 
 
@@ -47,7 +48,7 @@ class ReviewerModel(GateRepoCase):
         d = os.path.join(self.home, folder, 'projects', 'Q--repo', session, 'subagents')
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, 'agent-%s.jsonl' % rid), 'w', encoding='utf-8') as f:
-            for r in records(*models):
+            for r in records(*models, tip=self.tip):
                 f.write(json.dumps(r) + '\n')
 
     def add(self, **over):

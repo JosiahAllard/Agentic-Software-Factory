@@ -1223,10 +1223,11 @@ class Job(JobBase):
                                            entry_name='yak-coord-a1', new_name=yak_new.name)
         self.write(U.STATE_FILE, doc)
         with mock.patch.object(U.handoff, 'record_move', side_effect=LaunchError('sessions.json: bad')):
-            with self.assertRaisesRegex(U.StepFailed, 'sessions.json: bad'):
+            with self.assertRaises(Exception) as raised:
                 self.run_job()
         self.assertEqual([c[0] for c in self.calls], ['stop'])          # the stop before it ran
         self.assertEqual([name for name, _ in self.sent], ['zed-coord-a2'])     # the ask after it ran
+        self.assertEqual((type(raised.exception), str(raised.exception)), (U.StepFailed, 'sessions.json: bad'))
         self.assertEqual((self.crossing('zed')['phase'], self.crossing('zed')['delivered']), (D.ASKED, True))
         self.assertEqual(self.crossing('yak')['phase'], D.STARTING)
 

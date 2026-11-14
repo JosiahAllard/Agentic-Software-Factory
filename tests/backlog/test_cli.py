@@ -12,6 +12,7 @@ import types
 import unittest
 from unittest import mock
 
+from kitlib.backlog import orphans
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog import store_ref
@@ -257,6 +258,29 @@ class Cli(unittest.TestCase):
         out = self.ok('list', '--area', 'docs')
         self.assertIn('BAR', out)
         self.assertNotIn('FOO', out)
+
+    def test_list_orphans_states_and_routes(self):
+        def rec(i, branch, session):
+            fields = {'pulled_by': branch, 'pulled_session': session}
+            return types.SimpleNamespace(id=i, get=fields.get)
+        recs = [rec('A', 'gone', 'x'), rec('B', 'bare', 'x'), rec('C', 'dead', None),
+                rec('D', 'busy', 'x')]
+        probed = []
+
+        def liveness(branch):
+            probed.append(branch)
+            return (None, 't') if branch == 'dead' else ('process in tree', None)
+        out = orphans.render(recs, {'bare', 'dead', 'busy'}, {'dead', 'busy'}, liveness,
+                             lambda b: ('2026-11-07', 3))
+        self.assertEqual(probed, ['dead', 'busy'])      # a branch with no worktree is not probed
+        self.assertRegex(out[0], r'^A  gone  session=x  no branch  -> release')
+        self.assertRegex(out[1], r'^B  bare  last 2026-11-07  ahead 3  session=x  NO WORKTREE  '
+                                 r'-> quiet release')
+        self.assertRegex(out[2], r'session=none  NO LIVE AGENT  -> release')
+        self.assertRegex(out[3], r'live: process in tree  -> ask the PM')
+        self.assertIn('unreadable', orphans.render(recs[:1], None, None, None, None)[0])
+        self.assertEqual(self.run_tool('list', '--orphans', '--area', 'docs')[0], 2)
+        self.ok('list', '--orphans')
 
     def test_park_list_parked_and_unpark(self):
         self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py', *ADD_FLAGS)

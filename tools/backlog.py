@@ -3,7 +3,7 @@
   backlog.py [-C DIR] [--session S] [--as BRANCH] [--no-fetch] <verb> ...
 
   reads   next [--cap N | --all] [--with ID]...     show ID     check     landable BRANCH...
-          list [--blocked [--on M]] [--needs-priority] [--status S] [--area A]
+          list [--blocked [--on M]] [--needs-priority] [--status S] [--area A] [--orphans]
           stale [--days N]       find TEXT      (open and closed records: id, summary, body)
   writes  add ID --summary S --scope P... --found-on BRANCH|none --why-not-folded T
               [--uses NAME]... [--effort s|m|l] [--ref R] [--reopen] [--body-file F]
@@ -45,6 +45,7 @@ from kitlib import kitroot                                          # noqa: E402
 from kitlib.backlog import find as findmod                        # noqa: E402
 from kitlib.backlog import landable as landmod                      # noqa: E402
 from kitlib.backlog import offer as omod                            # noqa: E402
+from kitlib.backlog import orphans                                  # noqa: E402
 from kitlib.backlog import plan as pmod                             # noqa: E402
 from kitlib.backlog import plan_narrow                              # noqa: E402
 from kitlib.backlog import policy                                   # noqa: E402
@@ -153,6 +154,7 @@ def build_parser():
     v.add_argument('--needs-priority', action='store_true')
     v.add_argument('--status', default=None, choices=rmod.STATES)
     v.add_argument('--area', default=None)
+    v.add_argument('--orphans', action='store_true')
     sub.add_parser('check')
     v = sub.add_parser('stale')
     v.add_argument('--days', type=int, default=stalemod.DEFAULT_DAYS)
@@ -375,6 +377,13 @@ def do_find(args, ctx, snap):
 
 def do_list(args, ctx, snap):
     banner(snap)
+    if args.orphans:
+        if args.blocked or args.on or args.needs_priority or args.status or args.area:
+            raise Usage('`--orphans` takes no other `list` filter (it lists the pulled records)')
+        say('')
+        for line in orphans.lines(ctx, snap):
+            say(line)
+        return 0
     ranks = omod.ranked(snap)
     recs = snap.readable
     if args.area:

@@ -2,6 +2,7 @@
 paths removed from it, over the tracked tree, or None when it cannot be done."""
 import json
 import random
+import types
 import unittest
 from unittest import mock
 
@@ -9,16 +10,18 @@ from kitlib.backlog import check as checkmod
 from kitlib.backlog import offer as omod
 from kitlib.backlog import plan as pmod
 from kitlib.backlog import plan_narrow
+from kitlib.backlog import policy
 from kitlib.backlog import record as rmod
+from kitlib.backlog import roles
 from kitlib.backlog import scope as smod
 from kitlib.backlog import store as sstore
 from kitlib.backlog import store_ref
-from kitlib.backlog.errors import Refusal
+from kitlib.backlog.errors import Refusal, Usage
 
 from tests import inproc
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
 from tests.backlog import test_cli
-from tests.backlog.helpers import (ADD_WHY, BRANCH, TODAY, StoreCase, kit_json_ref, priced,
+from tests.backlog.helpers import (ADD_WHY, BRANCH, TODAY, StoreCase, kit_json_ref, parse, priced,
                                    rec, record_text)
 from tests.backlog.test_offer import snap as osnap
 
@@ -324,6 +327,15 @@ class SharedPathWrites(StoreCase):
         self.verb('set', 'MINE', [('scope', ['kit/mine.py', LIST])])
         self.assertEqual(self.get('MINE').all('scope'), ['kit/mine.py', LIST])
 
+    def test_set_add_scope_takes_the_same_collision_refusal_as_scope(self):
+        with self.assertRaises(Refusal) as want:
+            self.verb('set', 'MINE', [('scope', ['kit/mine.py', LIST])])
+        with self.assertRaises(Refusal) as got:
+            self.verb('set', 'MINE', [], add_scope=[LIST])
+        self.assertEqual(str(got.exception).split('. Narrowing')[0],
+                         str(want.exception).split('. Narrowing')[0])
+        self.assertEqual(self.get('MINE').all('scope'), ['kit/mine.py'])
+
     def test_add_found_on_a_branch_that_changed_a_listed_file_warns_and_files(self):
         self.share()
         for i, scope in enumerate(([LIST], ['docs/**'])):
@@ -335,6 +347,86 @@ class SharedPathWrites(StoreCase):
                 self.assertIn('(changed on kit/holder)', warning)
                 self.assertIn('(scope of HOLD, pulled by kit/holder)', warning)
                 self.assertIsNotNone(self.get('NEW%d' % i))
+
+
+class ScopeEdit(StoreCase):
+    """`set --add-scope` / `--drop-scope` (plan_edit._scope_edit): the list edited in place, then
+    every `--scope` check on the result."""
+
+    def setUp(self):
+        super().setUp()
+        self.seed(priced('OPEN', scope=['kit/a.py', 'kit/b.py', 'Docs/sub/**', 'kit/c.py']))
+
+    def scope(self):
+        return self.get('OPEN').all('scope')
+
+    def test_a_drop_keeps_the_rest_in_order_and_an_add_appends(self):
+        change = self.verb('set', 'OPEN', [], drop_scope=['kit/b.py'])
+        self.assertEqual(self.scope(), ['kit/a.py', 'Docs/sub/**', 'kit/c.py'])
+        self.assertIn('removed 1 scope entry: kit/b.py', '\n'.join(change.lines))
+        self.verb('set', 'OPEN', [], add_scope=['kit/d.py'], drop_scope=['kit/a.py'])
+        self.assertEqual(self.scope(), ['Docs/sub/**', 'kit/c.py', 'kit/d.py'])
+
+    def test_an_add_the_list_covers_is_a_no_op(self):
+        for covered_path in ('kit/a.py', 'KIT/A.py', 'docs/sub/x.md'):
+            with self.subTest(path=covered_path):
+                self.verb('set', 'OPEN', [], add_scope=[covered_path])
+                self.assertEqual(self.scope(), ['kit/a.py', 'kit/b.py', 'Docs/sub/**', 'kit/c.py'])
+
+    def test_the_edits_the_list_cannot_take_are_usage(self):
+        cases = {
+            'absent drop': dict(drop_scope=['kit/zzz.py']),
+            'drop by another case': dict(drop_scope=['KIT/a.py']),
+            'mixed with --scope': dict(changes=[('scope', ['kit/x.py'])], add_scope=['kit/y.py']),
+            'added and dropped': dict(add_scope=['kit/a.py'], drop_scope=['kit/a.py']),
+            'bad add member': dict(add_scope=['kit/*.py']),
+            'none added to a list': dict(add_scope=['none']),
+            'every path dropped': dict(drop_scope=['kit/a.py', 'kit/b.py', 'Docs/sub/**', 'kit/c.py']),
+        }
+        for name, kw in cases.items():
+            with self.subTest(name):
+                with self.assertRaises(Usage):
+                    self.verb('set', 'OPEN', kw.pop('changes', []), **kw)
+                self.assertEqual(self.scope(), ['kit/a.py', 'kit/b.py', 'Docs/sub/**', 'kit/c.py'])
+
+    def test_a_drop_names_the_path_and_a_bad_add_names_its_flag(self):
+        with self.assertRaises(Usage) as cm:
+            self.verb('set', 'OPEN', [], drop_scope=['KIT/a.py'])
+        self.assertIn('`--drop-scope KIT/a.py`', str(cm.exception))
+        self.assertIn('did you mean `kit/a.py`', str(cm.exception))
+        with self.assertRaises(Usage) as cm:
+            self.verb('set', 'OPEN', [], add_scope=['kit/*.py'])
+        self.assertIn('bad `--add-scope kit/*.py`', str(cm.exception))
+
+    def test_none_is_dropped_then_a_path_added(self):
+        self.verb('set', 'OPEN', [('scope', ['none'])])
+        with self.assertRaises(Usage):
+            self.verb('set', 'OPEN', [], add_scope=['kit/a.py'])
+        self.verb('set', 'OPEN', [], add_scope=['kit/a.py'], drop_scope=['none'])
+        self.assertEqual(self.scope(), ['kit/a.py'])
+
+
+class ScopeEditPolicy(unittest.TestCase):
+    """The role check sees the edit as a `scope` write (policy.given_of), as it sees `--scope`."""
+
+    def given(self, **kw):
+        return policy.given_of(types.SimpleNamespace(verb='set', id='OPEN', **kw))
+
+    def test_a_drop_or_add_only_call_sorts_as_a_scope_write_a_builder_may_take(self):
+        snap = parse(scope=['kit/a.py'])
+        want = policy.sort('set', self.given(f_scope=['kit/a.py']), snap)
+        self.assertEqual(want, ['set-text'])
+        for kw in (dict(drop_scope=['kit/a.py']), dict(add_scope=['kit/b.py'])):
+            with self.subTest(**kw):
+                self.assertEqual(policy.sort('set', self.given(**kw), snap), want)
+        self.assertIsNone(policy.refusal('worker', want, (roles.OWN_PULL,)))
+        self.assertIsNotNone(policy.refusal('worker', want))        # not on a record it holds
+
+    def test_the_guards_reader_reads_the_flags_as_a_scope_field(self):
+        words = [(w, True) for w in ('set', 'OPEN', '--drop-scope', 'kit/a.py', '--add-scope', 'x.py')]
+        got = policy.read_argv(words)
+        self.assertEqual(got.given['fields'], ['scope', 'scope'])
+        self.assertNotIn(policy.UNKNOWN, got.given)
 
 
 class SharedPathsCli(unittest.TestCase):

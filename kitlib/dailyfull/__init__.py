@@ -501,7 +501,7 @@ def age_hours(result, now=None):
 def summary_lines(out, stale_hours, now=None):
     """What a session start or preflight prints about the daily run: one status line, and the
     failing steps when the last run is red, with the call that bisects it when a probe can run
-    one of its steps. Pure but for reading `out`."""
+    one of its steps and it is not bisected yet. Pure but for reading `out`."""
     every = results(out)
     if not every:
         return ['daily     no daily full run recorded yet (tools/daily_full.py; the kit never '
@@ -536,7 +536,7 @@ def summary_lines(out, stale_hours, now=None):
             lines.append('            failed: %s %s' % (st.get('name'), st.get('log')))
     if last.get('error'):
         lines.append('            failed: %s' % last['error'])
-    if B.bisectable(last):
+    if B.bisectable(last) and not last.get('bisect'):        # bisected: its result has `bisect`
         lines.append(BISECT_LINE % os.path.basename(last['dir']))
     tried = [r for r in every if isinstance(r.get('promotion'), dict)]
     p = tried[-1]['promotion'] if tried else None

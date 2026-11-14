@@ -3,6 +3,8 @@ staging branch (tests/dailyfull/test_promote.StagingCase), the merged gate run f
 scratch machine-lock store. Stood in: the promotion record (write_record's own call is WriteRecord's),
 the landing lock (a stand-in that logs its takes) and the main checkout's sync (the
 landing's sync_checkout: tests/landing/test_sync_checkout.py)."""
+import importlib.util
+import io
 import os
 import stat
 import time
@@ -25,6 +27,11 @@ from tests.dailyfull.test_promote import StagingCase
 from tests.realgit import real_git
 from tests.staging.test_advance import FakeLock
 
+KIT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_spec = importlib.util.spec_from_file_location('kit_promote_entry_for_tests',
+                                               os.path.join(KIT, 'tools', 'promote.py'))
+tool = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(tool)
 HOUR = 3600
 # The gate's logs and the attempts' folder inside the scratch repository (kitlib.records.place
 # log_base), never the machine's kit temp folder; `.claude/` is ignored there.
@@ -500,7 +507,7 @@ class Inspect(Case):
         self.assertEqual(self.attempts()[-1].rec['fix']['sha'], fix)
         out = self.run_promote()
         self.assertEqual(out.code, G.FAILED, out.lines)
-        self.assertIn('the culprit hunt runs', '\n'.join(out.lines))
+        self.assertNotIn(CU.HANDED, out.lines)
         found = self.attempts()[-1].rec['culprit']
         self.assertEqual((found['end'], found['merge']), (CU.FOUND, culprit), out.lines)
         self.assertTrue([c for c in self.book_calls if c['slug'] == CU.SLUG])
@@ -546,6 +553,14 @@ class Fixed(Case):
         out = self.fixed('0' * 40)
         self.assertEqual(out.code, G.REFUSED, out.lines)
         self.assertIn('names no commit', out.lines[0])
+
+    def test_an_empty_sha_on_the_command_line_is_refused_and_runs_no_promotion(self):
+        self.crafted('red')
+        with mock.patch.object(SP, 'run', side_effect=AssertionError('a promotion ran')), \
+                mock.patch('sys.stdout', new_callable=io.StringIO):
+            code = tool.main(['-C', self.main_dir, '--fixed', ''])
+        self.assertEqual(code, G.REFUSED)
+        self.assertNotIn('fix', self.attempts()[-1].rec)
 
     def test_a_commit_not_on_staging_is_refused(self):
         self.crafted('red')

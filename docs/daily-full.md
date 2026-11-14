@@ -12,7 +12,7 @@
 - A step's own machine-lock booking nests in the run's slot and takes nothing more. The module isolation run is such a step: a `daily_cmd` of `module_map.py --isolate` (docs/module-map.md "Isolation runs").
 - A lock refusal is a recorded skip, not a red. The cause is one of busy, timeout, lock-unavailable, reserved or hold.
 - `--summary` prints the status lines from the recorded runs:
-  - the last verdict, with its failing steps, and for a red a probe can run, `bisect it after one failed fix: tools/daily_full.py --bisect <stamp>`;
+  - the last verdict, with its failing steps, and for a red a probe can run that is not bisected yet (its `result.json` has no `bisect`), `bisect it after one failed fix: tools/daily_full.py --bisect <stamp>`;
   - the skips in a row;
   - STALE, when the newest attempt is over `"daily_full".stale_hours` old.
 

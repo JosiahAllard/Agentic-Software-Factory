@@ -62,7 +62,7 @@ def main(argv=None):
         for line in promote.status_lines(root, cfg):
             say(line)
         return G.OK
-    if args.fixed:
+    if args.fixed is not None:               # `--fixed ""` is refused, not a promotion run
         out = promote.fixed(root, cfg, args.fixed, say=say)
     elif args.hunt:
         out = promote.hunt(root, cfg, say=say)

@@ -516,8 +516,7 @@ class AfterRed(unittest.TestCase):
             'failing': ['t.py'], 'failures': [{'step': 'unit', 'id': 't.A.test_a', 'cls': 't.A'}],
             'results': [{'name': 'unit', 'status': 'FAIL', 'reasons': ['exit 1'], 'log': 'u.log'}]})
         self.assertNotIn('culprit', rec)
-        self.assertEqual(lines[-1], CU.HANDED)
-        self.assertIn('1 failing test(s); 1 suspect(s): %s' % L1[:10], lines[0])
+        self.assertEqual(lines, [CU.inspect_line(rec['inspect']), CU.HANDED])
 
     def test_a_red_that_repeats_a_fixed_one_hunts_by_itself(self):
         self.stand_in_hunt()

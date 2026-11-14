@@ -654,10 +654,12 @@ class Summary(unittest.TestCase):
         self.assertIn('failed: unit L', lines[1])
         self.assertEqual(lines[2], D.BISECT_LINE % '20261009-040000')
 
-    def test_the_bisect_call_is_named_only_for_a_red_a_probe_can_run(self):
+    def test_the_bisect_call_is_named_only_for_a_red_a_probe_can_run_not_yet_bisected(self):
         last = [('20261008-040000', dict(verdict='red', red=['unit'], error='the gate failed')),
                 ('20261008-050000', dict(verdict='red', red=['infra'])),
-                ('20261009-040000', dict(verdict='green', red=[]))]
+                ('20261009-040000', dict(verdict='green', red=[])),
+                ('20261009-050000', dict(verdict='red', red=['unit'],
+                                         bisect={'verdict': 'flake', 'probes': []}))]
         for stamp, r in last:                       # each the latest run in turn
             with self.subTest(stamp):
                 self.put(stamp, sha='a' * 40, steps=[], **r)

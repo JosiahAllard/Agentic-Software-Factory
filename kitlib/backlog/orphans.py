@@ -44,13 +44,15 @@ def state(branch, v):
 
 
 def route(st, rid, key):
-    """What stops the pull: `release` by anyone, a quiet release (`key`, the caller's `--session`,
-    is the pull's or a successor's: refused unless 4 h quiet), or the PM."""
+    """What stops the pull, as the `backlog.py` call (`--session` is a top-level option): `release`
+    by anyone, a quiet release (`key`, the caller's `--session`, is the pull's or a successor's;
+    every live row gets it, since the probe's text does not tell what `quiet_hold` will refuse),
+    or the PM."""
     if st in (NO_BRANCH, DEAD):
-        return 'release %s --reason "<why>"' % rid
+        return 'backlog.py -C <checkout> release %s --reason "<why>"' % rid
     if key and (st == NO_TREE or st.startswith('live: ')):
-        return ('release %s --session %s --reason "<why>" (quiet release: refused unless 4 h quiet)'
-                % (rid, key))
+        return ('backlog.py -C <checkout> --session %s release %s --reason "<why>" (refused unless '
+                'quiet: 4 h, no process, lock or queued verdict)' % (key, rid))
     return 'ask the PM'
 
 

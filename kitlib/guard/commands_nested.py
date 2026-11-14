@@ -8,9 +8,9 @@ command) marks the parse unclean. The program each command runs is kitlib.guard.
 import re
 
 from . import shell as sh
-from .commands import (BASH_SHELLS, PS_SHELLS, Unread, _param, env_nested, fill_words, invocation, passed,
-                       quoted, run_dir)
-from .commands_env import mark_git_env
+from .commands import (ASSIGN_RE, BASH_NO_PROGRAM, BASH_SHELLS, PS_KEYWORDS, PS_SHELLS, Unread, _param, env_nested,
+                       fill_words, invocation, passed, quoted, run_dir)
+from .commands_env import EXPORTERS, PS_ENV_ITEM_CMDLETS, mark_git_env
 from .commands_git import git_dyn_word
 
 
@@ -549,10 +549,66 @@ def _nest(parsed, cmd, text, shell, cwd, cwd_home):
     return cmds
 
 
+# literal_programs: what may set a variable unseen (VAR_SETTERS), and the names the shell sets itself
+VAR_SETTERS = EXPORTERS | set(PS_ENV_ITEM_CMDLETS) | BASH_NO_PROGRAM | PS_KEYWORDS | sh.BASH_PREFIX_WORDS | {
+    'getopts', 'readarray', 'mapfile', 'read', 'printf', 'unset', 'let', 'eval', 'source', '.', 'wait', 'coproc',
+    'iex', 'invoke-expression', 'new-variable', 'nv', 'remove-variable', 'rv', 'clear-variable', 'clv'}
+SHELL_VARS = {sh.BASH: {'_', 'OPTARG', 'BASH_REMATCH', 'PWD', 'OLDPWD'}, sh.PS: {
+    '_', 'psitem', 'matches', 'args', 'input', 'lastexitcode', 'pwd', 'this', 'foreach', 'switch', 'error'}}
+LITERAL_RE = re.compile(r'([\'"]?)([\w./:@%+,-]+(?: [\w./:@%+,-]+)*)\1')     # the value's source: fields, maybe quoted
+
+
+def _literal_set(c, ps):
+    """(name, value) of `c` when it only sets a variable to a plain literal (literal_programs), else None."""
+    w = c.words[-1] if c.words else None
+    if c.redirects or w is None or w.dyn or w.synth or len(c.words) != (3 if ps else 1):
+        return None
+    src = c.source[w.start:w.end]
+    if ps:
+        name = re.fullmatch(r'\$(\w+)', c.source[c.words[0].start:c.words[0].end])
+        m = name and c.words[1].text == '=' and quoted(c, w) and LITERAL_RE.fullmatch(src)
+        return (name.group(1), m.group(2)) if m else None
+    name, _eq, raw = src.partition('=')
+    m = ASSIGN_RE.match(src) and not name.endswith('+') and LITERAL_RE.fullmatch(raw)
+    return (name, m.group(2)) if m and m.group(2).split()[0].lower() not in VAR_SETTERS else None
+
+
+def literal_programs(parsed):
+    """parsed.text with each program word that is a variable set once to a plain literal earlier on the
+    line written out as that literal, or None (docs/guard-core.md "Parsing" gives the rule)."""
+    text, shell = parsed.text or '', parsed.shell
+    ps, flags, out = shell == sh.PS, re.I if shell == sh.PS else 0, []
+    if shell not in SHELL_VARS or LINE_CD_RE.search(text) or not ps and re.search(r'(?<!\w)IFS(?!\w)', text) or any(
+            {c.words[0].text.lower(), (getattr(invocation(c), 'name', None) or '').lower()} & VAR_SETTERS
+            for c in parsed.commands if c.words):
+        return None
+    top = [c for c in parsed.commands if not (c.depth or c.groups or c.nested_in) and c.source == text]
+    for k, a in enumerate(top):
+        found = _literal_set(a, ps) if a.prev_op in (None, ';', '\n') and a.next_op in (';', '\n', '&&') else None
+        if found is None or (found[0].lower() if ps else found[0]) in SHELL_VARS[shell]:
+            continue
+        (name, value), uses = found, []
+        use = (r'\$%s|\$\{%s\}' if ps else r'"?\$%s"?|"?\$\{%s\}"?') % (name, name)
+        for u, inv in ((u, invocation(u)) for u in top[k + 1:]):
+            w = inv.word if inv is not None and inv.dyn and inv.via is None and u.start >= a.end else None
+            raw = w and u.source[w.start:w.end]
+            if raw and re.fullmatch(use, raw, flags) and ((inv.index and u.words[inv.index - 1].text == '&') if ps
+                                                          else raw[0] != '"' or ' ' not in value):
+                uses.append(w)
+        if uses and len(re.findall(r'(?<!\w)%s(?!\w)' % name, text, flags)) == 1 + len(uses):
+            out += [(w.start, w.end, "'%s'" % value if ps else value) for w in uses]
+    for start, end, value in sorted(out, reverse=True):
+        text = text[:start] + value + text[end:]
+    return text if out else None
+
+
 def read(text, shell, cwd, home=None):
-    """parse() then expand(): every command `text` runs, nested shells included. `~` is `home`
-    (shell.home_folder)."""
+    """parse() then expand(): every command `text` runs, nested shells included, a program word
+    literal_programs reads written out first. `~` is `home` (shell.home_folder)."""
     parsed, _cmds = sh.parse(text, shell, cwd, home=home)
     expand(parsed)
+    lit = None if parsed.clean else literal_programs(parsed)
+    if lit is not None:
+        return read(lit, shell, cwd, home)
     mark_git_env(parsed)
     return parsed

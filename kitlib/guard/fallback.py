@@ -1,64 +1,8 @@
-"""A command line the parser cannot read cleanly (docs/guard-fallback.md "Fallback").
-
-kitlib.guard.shell marks a parse unclean when the text holds something it does not model (an
-unclosed quote, an encoded command, a program named by a variable, a word the shell rewrites).
-The rules have already run on what it did read; check() then looks at the raw text, so an
-unreadable line is never a way around a rule, and a plain line is never denied by it:
-
-  - the owner's tools by name (NAMED), first, in every session but the owner's own: text naming
-    the hub tool (hub.py, tools.hub, -m hub, kit hub) is refused as `hub-owner-verb`, text naming
-    the lock CLI (machine_lock.py, tools.machine_lock, kit machine_lock) as `owner-tool`, read
-    verbs included, and text
-    naming the owner's delegation list (owner-delegations) as `owner-delegations`, reads included.
-    The part of the line holding the name is read again first (named_reread): a hub owner verb, a
-    lock owner-only write or a write of the list there gives that rule's own refusal; otherwise the reason says the line
-    names the tool and the alternative is plainly()'s.
-  - the roles' tools by name, for a subagent only (named_runs): text naming tools/backlog.py, or
-    gate.py allow, that the rules have not read (_read_at: not a literal word of a literal,
-    non-runner command, so a commit message naming it is a mention, unless its output is piped
-    into a runner: _pipe_runner, _piped_text) has its part of the line read again and judged by
-    backlogrole.runs or gaterole.shell; a part that still does not read, or whose program is
-    computed, is refused as backlog-role or gate-allow, its alternative the tool's literal form.
-  - a git or root-search pattern that matches: the text from the match to the next ; | & or
-    newline is read again as a command of its own and the rules run on it. A rule that denies it
-    gives the deny, its real alternative included; none: the `unreadable` deny, whose advice is
-    to write the names literally or run a script file (plainly(): advice only, the line is never
-    rewritten).
-    The location-dependent git patterns are checked when the call's directory is a main checkout or one git cannot place; the push --no-verify pattern when that
-    directory's repository has a PM data record (or git cannot place it), in every session but
-    the owner's own. The git-shared-ref patterns (SHARED_REF_PATTERNS: update-ref, a push into a
-    repository named by a path or one the shell computes, a fetch or pull that may write a ref
-    (its option abbreviations included), symbolic-ref with two names or -d, replace other than a
-    listing, a notes write, branch -f/-m/-M/-C, tag -f/-d, checkout -B, switch -C,
-    --ignore-other-worktrees, worktree add -B/-f, rebase --update-refs or rebase.updateRefs, remote
-    remove/rm/rename/set-head and add --mirror, fast-import and filter-branch) are checked
-    wherever the call runs, in a session rules.shared_ref_held holds. The push-to-main pattern in a repository that does not set
-    repo.push_block (one with no .kit.json among them) gives only the re-read's own deny (a delete
-    or a forced push of main); no deny lets the line run.
-  - a heavy program's name: the same, and a program named by a variable is denied as heavy with
-    the lock line that runs it.
-  - anything else: a subagent is denied (`unreadable`); another jailed session (a mark in
-    guard_agent_marks) is denied (`write-jail`) when the line holds the word git, as the unread
-    part may move git to a checkout the jail cannot place; a session the jail does not hold only
-    in a main checkout or a place git cannot tell, and only when the line runs a program the text does not name, runs
-    a shell, eval, Invoke-Expression, source or an encoded command, pipes into a shell, or names
-    a git subcommand or option by a variable. Such a line in a repository with a PM data record
-    is denied too (`git-push-pmdata`), wherever in it, in every session but the owner's own: the
-    hidden program may be git push --no-verify. PowerShell's `& (<subexpression>)` leaves a line
-    clean (commands_nested.call_subexpr); rules.call_subexpr_pmdata judges it, on a clean line or one
-    unclean for another reason: that PM data check, and in any repository an agent session is
-    denied, as here (`unreadable` for a subagent, `write-jail` for another jailed session).
-
-The `unreadable` rule is a warning by default (kitlib.guard.modes): where it would
-deny, the warning is kept and the check goes on to the next pattern and the checks after it, so
-only a kept rule's own deny (a re-read one, git-push-pmdata) stops the line. A pattern whose rule
-is off (wrapped-gate by default) is not looked for. The owner can set each back to deny.
-
-Where a pattern matches, the directory is the one the command holding the match runs in (a
-literal cd before it is followed), not only the call's.
-
-The git patterns are an earlier per-repository git guard's ($g and its four rules) plus the
-kit's own git rules.
+"""A command line the parser cannot read cleanly: docs/guard-fallback.md "Fallback" holds each step
+and its rule. The rules have run on what the parser did read; check() then looks at the raw text
+(parsed.text), so an unreadable line is never a way around a rule and a plain line is never denied
+by it. A refusal standing for a run the guard could not read is KEPT's (`unreadable-kept`, a deny);
+`unreadable`, `heavy` and `unplaced` warn by default (kitlib.guard.modes).
 """
 import fnmatch
 import os
@@ -205,6 +149,7 @@ BACKLOG_NAME = re.compile(r'(?i)(?<![\w.-])backlog\.py\b|\btools\.backlog(?![\w.
 GATE_ALLOW_NAME = re.compile(r'(?i)(?:(?<![\w.-])gate\.py\b|\btools\.gate(?![\w.])|' + KIT_WORD + r'gate(?![\w.-]))'
                              r'[^;&|\n]*?(?<![\w.-])allow(?![\w.-])')
 PARSED_RULES = ('owner_tool', 'wrapped_gate', 'root_search', 'heavy', 'git_rules', 'shell_writes')
+KEPT = 'unreadable-kept'     # a refusal standing for a run the guard could not read: deny by default
 WHY = 'The guard could not read this command; write the program name literally. Why: %s.'
 # the alternative is a script file, never the line again nor a rewrite of it
 SCRIPT = (' Make every program name and nested shell text literal (a nested bash -c in single quotes; a '
@@ -384,7 +329,7 @@ def _piped_text(c, level):
     return '\n'.join(texts) if texts else None
 
 
-def named_runs(event, ctx, text, parsed, cwd, role, level=0):
+def named_runs(event, ctx, parsed, cwd, role, level=0):
     """A subagent's line the guard cannot read that names tools/backlog.py (BACKLOG_NAME), or runs
     gate.py allow (GATE_ALLOW_NAME), where the rules have not read it (_read_at): the part of the
     line holding the name (from the last ; | & or newline before it to the next) is read again and
@@ -408,6 +353,7 @@ def named_runs(event, ctx, text, parsed, cwd, role, level=0):
                        gaterole.INSTEAD))
     if not checks:
         return None
+    text = parsed.text
     why = WHY % ('; '.join(parsed.unclean) or 'the parser gave no reason')
     for rule, pat, judge, what, instead in checks:
         if modes.mode(rule) == modes.OFF:
@@ -450,7 +396,8 @@ def named_runs(event, ctx, text, parsed, cwd, role, level=0):
     return None
 
 
-def check(event, ctx, text, cwd, role, parsed):
+def check(event, ctx, cwd, role, parsed):
+    text = parsed.text
     why = WHY % ('; '.join(parsed.unclean) or 'the parser gave no reason')
     shell = parsed.shell
 
@@ -481,11 +428,11 @@ def check(event, ctx, text, cwd, role, parsed):
         if d is not None:
             return rules.reworded(d, '%s %s' % (why, d.reason))
         last, alt = plainly(ctx, parsed)
-        d = rules.refuse(rule, role, '%s Its text %s This session is %s.%s' % (
+        d = rules.refuse(KEPT, role, '%s Its text %s This session is %s.%s' % (
             why, what, rules.hub_session(event, ctx), last), alt)
         if d:
             return d                            # set to warn by the owner: the checks below still run
-    d = named_runs(event, ctx, text, parsed, cwd, role)
+    d = named_runs(event, ctx, parsed, cwd, role)
     if d:
         return d
 
@@ -574,7 +521,7 @@ def check(event, ctx, text, cwd, role, parsed):
             if d:
                 return d                        # warned by default: the PM data check below still runs
         if not owner and rules.pmdata_recorded(ctx, c.cwd):
-            return rules.refuse('git-push-pmdata', role, '%s It runs %s in a repository with a PM data record (%s): '
+            return rules.refuse(KEPT, role, '%s It runs %s in a repository with a PM data record (%s): '
                                 'it may be git push --no-verify, which skips the pre-push hook that keeps PM data '
                                 'off public remotes.%s' % (why, hidden, rules.pmdata.FILE_NAME, last), alt)
     return None

@@ -215,6 +215,18 @@ class Spellings(Base):
                 self.refused(self.cmd(text, tool=tool))
         self.refused(self.cmd(self.bl('close X-1'), env=COORDINATOR))
 
+    def test_a_variable_set_to_a_literal_on_the_line_is_that_literal(self):
+        # commands_nested.literal_programs: a variable set once to a plain literal is read as it
+        b, ps = 'B="python %s"; ' % self.tool, "$B = 'python'; & $B \"%s\" " % self.tool
+        for text, tool in ((b + '$B show X-1', 'Bash'), (b + '${B} -C "%s" next' % self.wt, 'Bash'),
+                           (ps + 'show X-1', 'PowerShell')):
+            with self.subTest(text):
+                self.allowed(self.cmd(text, tool=tool))
+        for text, tool in ((b + '$B close X-1', 'Bash'), (ps + 'close X-1', 'PowerShell'),
+                           ('B="$X"; $B "%s" close X-1' % self.tool, 'Bash')):
+            with self.subTest(text):
+                self.refused(self.cmd(text, tool=tool))
+
     def test_another_program_named_backlog_is_not_the_tool(self):
         for text in ('git log -- tools/backlog.py', 'grep close tools/backlog.py', 'cat docs/backlog.md'):
             with self.subTest(text):

@@ -74,8 +74,8 @@ Rules, in the order they are checked:
   busy-wait        (off by default) a foreground sleep loop with no counter, clock or timeout bounding it
   git-alias        (a warning by default) a git alias defined on the command line (-c alias.<name>=...)
 A rule's mode (deny, warn or off) is kitlib.guard.modes'; a rule it does not name is deny.
-A command line the parser cannot read cleanly also goes through kitlib.guard.fallback (its rule,
-unreadable, is a warning by default).
+A command line the parser cannot read cleanly also goes through kitlib.guard.fallback (its rules:
+unreadable, a warning by default, and unreadable-kept, a deny).
 "Agent session" and "the owner's own" are the session mark's (docs/guard.md "Session mark").
 """
 import os
@@ -293,7 +293,7 @@ def shell_command(event, ctx, text, shell, cwd, role):
         return d
     if not parsed.clean:
         from . import fallback
-        d = asked.firm(fallback.check(event, ctx, text, cwd, role, parsed))
+        d = asked.firm(fallback.check(event, ctx, cwd, role, parsed))
         if d:
             return d
     return late or asked.first

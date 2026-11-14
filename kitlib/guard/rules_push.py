@@ -11,6 +11,8 @@ from . import commands_nested as cn
 from .rules_base import UNPLACED, agent_session, fwd, is_owner_session, kit_tool, own_worktree, quote, refuse
 from .rules_gitcore import _canon_long, _opts, git_call_judged
 
+KEPT = 'unreadable-kept'     # a refusal standing for a run the guard could not read: deny by default
+
 
 class Judged(object):
     """`ctx` as one judgement of the shared repository sees it from the PM data worktree: config,
@@ -351,17 +353,16 @@ def pmdata_possible(ctx, path):
 def call_subexpr_pmdata(event, ctx, cmd, inv, cwd, role):
     """PowerShell's call operator on a ( ) subexpression (`& (Get-Command git) push`,
     commands_nested.call_subexpr), in every session but the owner's own: the program is what the ( )
-    computes, so the rules that need a literal program (heavy, the write jail, the git rules)
-    cannot read it. In a repository with a PM data record it is denied as git-push-pmdata (it may
-    be git push --no-verify); elsewhere an agent session (agent_session) is refused as unplaced
-    (it may be git writing a checkout the jail cannot place; warn by default). Only the owner and
-    a session the jail does not hold (`plain`) read the line as any other."""
+    computes, so the rules that need a literal program cannot read it. In a repository with a PM data
+    record it is denied as KEPT (it may be git push --no-verify); elsewhere an agent session is refused
+    as unplaced (it may be git writing a checkout the jail cannot place; warn by default). Only the
+    owner and a session the jail does not hold (`plain`) read the line as any other."""
     if not cn.call_subexpr(inv) or is_owner_session(event, ctx):
         return None
     instead = ('& <program> %s' % ' '.join(w.text for w in inv.args)).rstrip()
     where = cmd.cwd
     if pmdata_possible(ctx, where):
-        return refuse('git-push-pmdata', role, '`& %s` runs the program a PowerShell subexpression computes, and this '
+        return refuse(KEPT, role, '`& %s` runs the program a PowerShell subexpression computes, and this '
                       'repository has %s (or the guard cannot tell): it may be git push --no-verify, which skips the '
                       'pre-push hook that keeps PM data off public remotes. Name the program literally:'
                       % (inv.path, pmdata.FILE_NAME), instead)

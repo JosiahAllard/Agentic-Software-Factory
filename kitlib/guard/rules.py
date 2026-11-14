@@ -125,7 +125,7 @@ from .rules_gitcore import (ALIAS_BLANKS, ALIAS_DEPTH, CONFIG_LONGS, CONFIG_LONG
                             git_config_call, git_hooks_path, git_prefix_configs, hooks_config_write, inline_alias,
                             kit_githooks, owner_identity, repo_config_file, restore_index_only, split_alias,
                             stash_reads)
-from .rules_push import (DataBranch, Judged, LAND_HOW, _branch_of, _guarded_mains, _no_verify_word,
+from .rules_push import (KEPT, DataBranch, Judged, LAND_HOW, _branch_of, _guarded_mains, _no_verify_word,
                          _push_names_branches, _unknown_dir_counts, call_subexpr_pmdata, data_copy, git_push,
                          git_push_pm_data, git_push_pmdata, git_send_pack_pmdata, home_config, hookless_refusal,
                          hookless_sub, kit_judged, landing_command, pmdata_possible, pmdata_recorded)

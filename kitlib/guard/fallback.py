@@ -1,7 +1,7 @@
 """A command line the parser cannot read cleanly: docs/guard-fallback.md "Fallback" holds each step
 and its rule. The rules have run on what the parser did read; check() then looks at the raw text
 (parsed.text), so an unreadable line is never a way around a rule and a plain line is never denied
-by it. A refusal standing for a run the guard could not read is KEPT's (`unreadable-kept`, a deny);
+by it. A refusal standing for a run the guard could not read is rules.KEPT's (`unreadable-kept`, a deny);
 `unreadable`, `heavy` and `unplaced` warn by default (kitlib.guard.modes).
 """
 import fnmatch
@@ -149,7 +149,6 @@ BACKLOG_NAME = re.compile(r'(?i)(?<![\w.-])backlog\.py\b|\btools\.backlog(?![\w.
 GATE_ALLOW_NAME = re.compile(r'(?i)(?:(?<![\w.-])gate\.py\b|\btools\.gate(?![\w.])|' + KIT_WORD + r'gate(?![\w.-]))'
                              r'[^;&|\n]*?(?<![\w.-])allow(?![\w.-])')
 PARSED_RULES = ('owner_tool', 'wrapped_gate', 'root_search', 'heavy', 'git_rules', 'shell_writes')
-KEPT = 'unreadable-kept'     # a refusal standing for a run the guard could not read: deny by default
 WHY = 'The guard could not read this command; write the program name literally. Why: %s.'
 # the alternative is a script file, never the line again nor a rewrite of it
 SCRIPT = (' Make every program name and nested shell text literal (a nested bash -c in single quotes; a '
@@ -428,7 +427,7 @@ def check(event, ctx, cwd, role, parsed):
         if d is not None:
             return rules.reworded(d, '%s %s' % (why, d.reason))
         last, alt = plainly(ctx, parsed)
-        d = rules.refuse(KEPT, role, '%s Its text %s This session is %s.%s' % (
+        d = rules.refuse(rules.KEPT, role, '%s Its text %s This session is %s.%s' % (
             why, what, rules.hub_session(event, ctx), last), alt)
         if d:
             return d                            # set to warn by the owner: the checks below still run
@@ -521,7 +520,7 @@ def check(event, ctx, cwd, role, parsed):
             if d:
                 return d                        # warned by default: the PM data check below still runs
         if not owner and rules.pmdata_recorded(ctx, c.cwd):
-            return rules.refuse(KEPT, role, '%s It runs %s in a repository with a PM data record (%s): '
+            return rules.refuse(rules.KEPT, role, '%s It runs %s in a repository with a PM data record (%s): '
                                 'it may be git push --no-verify, which skips the pre-push hook that keeps PM data '
                                 'off public remotes.%s' % (why, hidden, rules.pmdata.FILE_NAME, last), alt)
     return None

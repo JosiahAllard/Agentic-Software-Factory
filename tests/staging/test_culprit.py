@@ -414,6 +414,135 @@ class Pieces(unittest.TestCase):
         out = G.Outcome(G.FAILED, [], results=[{'name': 'gate', 'status': 'FAIL'}])
         self.assertEqual(CU.after_red({}, a, out, lambda line: None), [])
         self.assertNotIn('culprit', R.attempts(tmp)[0].rec)
+        self.assertNotIn('inspect', R.attempts(tmp)[0].rec)
+
+
+def attempt(phase, fix=False, red=None, tests=None):
+    """An attempt record in memory: `red` its inspect's red steps (None: no inspect), `tests`
+    its failures as (step, id) pairs."""
+    rec = {'phase': phase}
+    if fix:
+        rec['fix'] = {'sha': 'f' * 40, 'at': 'then'}
+    if red is not None:
+        rec['inspect'] = {'red': red, 'failures': [{'step': s, 'id': i, 'cls': i.rsplit('.', 1)[0]}
+                                                   for s, i in tests or []]}
+    return R.Attempt('unused', rec)
+
+
+def inspect(red, tests=None):
+    return attempt('red', red=red, tests=tests).rec['inspect']
+
+
+class Repeat(unittest.TestCase):
+    def test_a_red_repeats_only_a_marked_fix_on_the_same_tests(self):
+        ab, cd = ('unit', 't.A.test_a'), ('unit', 't.C.test_c')
+        rows = [
+            ('nothing before', [], inspect(['unit'], [ab]), False),
+            ('a red with no fix', [attempt('red', red=['unit'], tests=[ab])],
+             inspect(['unit'], [ab]), False),
+            ('a done after the fixed red', [attempt('red', True, ['unit'], [ab]),
+                                            attempt('done')], inspect(['unit'], [ab]), False),
+            ('a (step, id) overlap', [attempt('red', True, ['unit'], [ab, cd])],
+             inspect(['unit'], [cd]), True),
+            ('disjoint failures', [attempt('red', True, ['unit'], [ab])],
+             inspect(['unit'], [cd]), False),
+            ('the same id in another step', [attempt('red', True, ['unit'], [ab])],
+             inspect(['other'], [('other', ab[1])]), False),
+            ('no ids: the red steps meet', [attempt('red', True, ['unit', 'lint'])],
+             inspect(['lint']), True),
+            ('no ids now: the red steps meet', [attempt('red', True, ['unit'], [ab])],
+             inspect(['unit']), True),
+            ('no ids: the red steps apart', [attempt('red', True, ['unit'])],
+             inspect(['lint']), False),
+            ('no inspect to compare is the same', [attempt('red', True)],
+             inspect(['lint'], [cd]), True),
+            ('other ends in between are passed over', [attempt('red', True, ['unit'], [ab]),
+                                                       attempt('behind'), attempt('error')],
+             inspect(['unit'], [ab]), True),
+            ('the latest red is the one', [attempt('red', True, ['unit'], [ab]),
+                                           attempt('red', red=['unit'], tests=[ab])],
+             inspect(['unit'], [ab]), False),
+            ('a done is never a fixed red', [attempt('done', True, ['unit'], [ab])],
+             inspect(['unit'], [ab]), False),
+            ('a fixed red after a done', [attempt('done'), attempt('red', True, ['unit'], [ab])],
+             inspect(['unit'], [ab]), True),
+        ]
+        for why, earlier, now, want in rows:
+            self.assertEqual(CU.repeat(earlier, now), want, why)
+
+
+EV = {'why': None, 'lands': LANDS, 'gate': {'kind': 'cpu'}, 'failures': [
+    {'step': 'unit', 'id': 't.A.test_a', 'cls': 't.A', 'cwd': ''}], 'failing': {'t.py'},
+    'sus': [LANDS[0]], 'from': CU.FROM_KIT, 'sus_why': None}
+
+
+class AfterRed(unittest.TestCase):
+    """after_red: by default no prober is built and no slot booked; a repeat hunts."""
+
+    def setUp(self):
+        self.tmp = tmp = tempfile.mkdtemp(prefix='kit-culprit-')
+        self.addCleanup(shutil.rmtree, tmp, True)
+        self.a = R.start(tmp, L3, M, 'red', why='the gate failed')
+        self.out = G.Outcome(G.FAILED, [], results=[
+            {'name': 'unit', 'status': 'FAIL', 'reasons': ['exit 1'], 'log': 'u.log', 'x': 1}])
+        self.ctx = {'main': tmp, 'wt': tmp, 'tip': L3, 'base': M, 'git': FakeGit({}),
+                    'since': 5.0, 'book': {'no_wait': True}}
+        self.hunted = []
+        self.patch(CU, '_evidence', return_value=EV)
+        self.patch(CU.B, 'Prober', side_effect=AssertionError('a prober was built'))
+
+    def patch(self, *a, **kw):
+        p = mock.patch.object(*a, **kw)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def stand_in_hunt(self):
+        self.patch(CU, '_hunt', side_effect=self.fake_hunt)
+
+    def fake_hunt(self, ctx, red, results, ev, say, clock, deadline, budget, make):
+        self.hunted.append(red)
+        return CU._none('inconclusive: a stand-in'), None
+
+    def after_red(self, earlier):
+        make = mock.Mock(side_effect=AssertionError('a revert'))
+        return CU.after_red(dict(self.ctx, earlier=earlier), self.a, self.out, lambda line: None,
+                            make=make)
+
+    def test_a_first_red_writes_its_inspect_and_hands_it_over_with_no_probe(self):
+        lines = self.after_red([])      # the real _hunt: a hunt would build a prober and raise
+        rec = R.attempts(self.tmp)[0].rec
+        self.assertEqual(rec['inspect'], {
+            'red': ['unit'], 'since': 5.0, 'suspects': [L1], 'suspects_from': CU.FROM_KIT,
+            'failing': ['t.py'], 'failures': [{'step': 'unit', 'id': 't.A.test_a', 'cls': 't.A'}],
+            'results': [{'name': 'unit', 'status': 'FAIL', 'reasons': ['exit 1'], 'log': 'u.log'}]})
+        self.assertNotIn('culprit', rec)
+        self.assertEqual(lines[-1], CU.HANDED)
+        self.assertIn('1 failing test(s); 1 suspect(s): %s' % L1[:10], lines[0])
+
+    def test_a_red_that_repeats_a_fixed_one_hunts_by_itself(self):
+        self.stand_in_hunt()
+        lines = self.after_red([attempt('red', True, ['unit'], [('unit', 't.A.test_a')])])
+        self.assertEqual(self.hunted, [['unit']])
+        rec = R.attempts(self.tmp)[0].rec
+        self.assertEqual(rec['culprit']['verdict'], 'inconclusive: a stand-in')
+        self.assertIn('inspect', rec)
+        self.assertNotIn(CU.HANDED, lines)
+
+    def test_a_red_on_other_tests_after_a_fix_hands_over_again(self):
+        self.stand_in_hunt()
+        self.assertEqual(self.after_red([attempt('red', True, ['unit'], [('unit', 't.B.x')])])[-1],
+                         CU.HANDED)
+        self.assertEqual(self.hunted, [])
+
+    def test_the_hunt_on_request_reads_the_inspect_back(self):
+        self.stand_in_hunt()
+        self.after_red([])
+        a = R.attempts(self.tmp)[0]
+        CU.hunt_red(dict(self.ctx, since=None), a, lambda line: None,
+                    make=mock.Mock(side_effect=AssertionError('a revert')))
+        self.assertEqual(self.hunted, [['unit']])
+        self.assertEqual(CU._evidence.call_args[0][2], a.rec['inspect']['results'])
+        self.assertEqual(CU._evidence.call_args[0][0]['since'], 5.0)
 
 
 if __name__ == '__main__':

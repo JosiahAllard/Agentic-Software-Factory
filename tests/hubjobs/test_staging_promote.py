@@ -87,9 +87,18 @@ class Job(unittest.TestCase):
                                            ('promote-red', 'a:' + 'e' * 10)])
         self.assertIn('revert', sp.EVENTS)
 
-    def test_promote_revert_alone_is_owed_once_per_detail_and_its_text_says_review(self):
+    def test_promote_red_hands_the_red_over_to_fix_first_once_per_detail(self):
+        text = push.JOB_EACH['promote-red']
+        for said in ('coordinator', 'inspect and fix first', '--status', '--fixed <sha>',
+                     'After one failed fix', 'looks like a flake', '--hunt',
+                     'already hunted', 'flake, on-main, capped or inconclusive',
+                     'Nothing was reverted or pushed'):
+            self.assertIn(said, text)
+
+    def test_promote_red_and_revert_alone_are_owed_once_per_detail_and_revert_says_review(self):
         self.assertIn('promote-revert', push.JOB_EACH)
-        for end in ('red', 'refused', 'diverged', 'failed', 'error'):
+        self.assertIn('promote-red', push.JOB_EACH)
+        for end in ('refused', 'diverged', 'failed', 'error'):
             self.assertNotIn('promote-' + end, push.JOB_EACH)
         text = push.JOB_EACH['promote-revert']
         for said in ('revert/<landing sha10>', 'Reverts-landing', 'nothing was pushed',

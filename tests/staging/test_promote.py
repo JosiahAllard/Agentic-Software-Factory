@@ -85,6 +85,23 @@ class Case(StagingCase):
     def no_gate(self, *a, **k):
         raise AssertionError('the gate ran')
 
+    def red_then_hunt(self, say=None, **kw):
+        """A promotion run that ends red and hands it over, then the hunt asked for by hand
+        (promote.hunt): the hunt's Outcome."""
+        out = self.run_promote(**kw)
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertNotIn('culprit', self.attempts()[-1].rec)
+        return SP.hunt(self.main_dir, self.cfg(), say=say or (lambda line: None),
+                       book_kw=self.book_kw)
+
+    def crafted(self, phase, sha=None, **rec):
+        """An attempt record written at `phase` with `rec` added, as a run would leave it."""
+        a = R.start(SP.folder(self.cfg(), self.main_dir), sha or self.land(), self.remote_main(),
+                    phase)
+        a.rec.update(rec)
+        a.write()
+        return a
+
 
 class Promotes(Case):
     def test_the_gate_s_slot_is_booked_now_or_never(self):
@@ -457,9 +474,171 @@ class Look(Case):
         self.assertIn('left at pushing', note)
 
 
+class Inspect(Case):
+    """A red is inspected and handed to the coordinator: no probe, no hunt slot; the hunt is the
+    fallback after one failed fix (kitlib.staging.culprit after_red, repeat)."""
+
+    def test_a_red_writes_its_inspect_and_books_no_hunt_slot(self):
+        tip = self.land_red()
+        with mock.patch.object(CU.B, 'Prober', side_effect=AssertionError('a prober was built')):
+            out = self.run_promote()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertIn(CU.HANDED, out.lines)
+        a = self.attempts()[-1]
+        self.assertNotIn('culprit', a.rec)
+        self.assertEqual((a.rec['inspect']['red'], a.rec['inspect']['suspects']), (['unit'], [tip]))
+        self.assertEqual([c for c in self.book_calls if c['slug'] == CU.SLUG], [])
+        self.assertEqual(a.event(), ('red', tip[:10]))
+        self.assertIn('inspect: unit red', R.more_line(a))
+
+    def test_a_red_again_after_a_marked_fix_hunts_by_itself(self):
+        culprit = self.land_red()
+        self.run_promote()
+        fix = self.land()                       # a fix that did not fix it
+        out = SP.fixed(self.main_dir, self.cfg(), fix)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.attempts()[-1].rec['fix']['sha'], fix)
+        out = self.run_promote()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertIn('the culprit hunt runs', '\n'.join(out.lines))
+        found = self.attempts()[-1].rec['culprit']
+        self.assertEqual((found['end'], found['merge']), (CU.FOUND, culprit), out.lines)
+        self.assertTrue([c for c in self.book_calls if c['slug'] == CU.SLUG])
+
+    def test_a_red_again_with_no_fix_marked_is_handed_over_again(self):
+        self.land_red()
+        self.run_promote()
+        self.land()
+        out = self.run_promote()
+        self.assertIn(CU.HANDED, out.lines)
+        self.assertNotIn('culprit', self.attempts()[-1].rec)
+
+    def test_the_status_shows_the_inspect_and_the_fix(self):
+        self.land_red()
+        self.run_promote()
+        fix = self.land()
+        SP.fixed(self.main_dir, self.cfg(), fix)
+        lines = SP.status_lines(self.main_dir, self.cfg())
+        self.assertTrue(lines[1].startswith('          inspect: unit red'), lines)
+        self.assertIn('fix marked %s' % fix[:10], lines[1])
+
+
+class Fixed(Case):
+    """promote.fixed: the mark that a red's fix landed, on the last red alone."""
+
+    def fixed(self, sha):
+        return SP.fixed(self.main_dir, self.cfg(), sha)
+
+    def test_no_red_marks_nothing(self):
+        out = self.fixed(self.land())
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('no promotion attempt ended red', out.lines[0])
+
+    def test_a_red_followed_by_a_done_marks_nothing(self):
+        self.crafted('red')
+        self.crafted('done')
+        out = self.fixed(self.land())
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('promoted after the last red', out.lines[0])
+
+    def test_a_sha_that_names_no_commit_is_refused(self):
+        self.crafted('red')
+        out = self.fixed('0' * 40)
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('names no commit', out.lines[0])
+
+    def test_a_commit_not_on_staging_is_refused(self):
+        self.crafted('red')
+        off = self.repo.git('commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-m', 'off staging')
+        out = self.fixed(off)
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('is not on origin/staging', out.lines[0])
+        self.assertNotIn('fix', self.attempts()[-1].rec)
+
+    def test_a_commit_already_in_the_red_tip_is_refused(self):
+        tip = self.land()
+        self.crafted('red', sha=tip)
+        out = self.fixed(tip)
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('already in the red tip', out.lines[0])
+
+    def test_the_mark_goes_on_the_latest_red(self):
+        older = self.crafted('red')
+        self.crafted('red')
+        fix = self.land()
+        self.assertEqual(self.fixed(fix[:12]).code, G.OK)
+        self.assertEqual(self.attempts()[-1].rec['fix']['sha'], fix)
+        self.assertNotIn('fix', R.attempts(older.folder.rsplit(os.sep, 1)[0])[0].rec)
+
+    def test_a_held_promote_lock_is_busy(self):
+        self.crafted('red')
+        fix = self.land()
+        lock, _ = SP.lock_for(self.main_dir)
+        lock.acquire()
+        self.addCleanup(lock.release)
+        out = self.fixed(fix)
+        self.assertEqual(out.code, G.BUSY, out.lines)
+        self.assertNotIn('fix', self.attempts()[-1].rec)
+
+
+class NothingToHunt(Case):
+    """promote.hunt refuses, and its hunter never runs, when there is nothing to hunt."""
+
+    def setUp(self):
+        Case.setUp(self)
+        self.hunted = []
+
+    def hunter(self, ctx, a, say):
+        self.hunted.append(a.sha)
+        return ['hunted']
+
+    def hunt(self):
+        return SP.hunt(self.main_dir, self.cfg(), hunter=self.hunter)
+
+    def refused(self, said):
+        out = self.hunt()
+        self.assertEqual((out.code, self.hunted), (G.REFUSED, []), out.lines)
+        self.assertIn(said, out.lines[0])
+
+    def test_no_red(self):
+        self.crafted('done')
+        self.crafted('behind')
+        self.refused('no promotion attempt ended red')
+
+    def test_a_red_with_no_step_a_hunt_can_probe(self):
+        self.crafted('red')
+        self.refused('has no step a hunt can probe')
+
+    def test_a_hunt_marked_running(self):
+        self.crafted('red', inspect={'red': ['unit'], 'results': []},
+                     culprit={'verdict': R.HUNTING, 'pid': 1, 'red': ['unit']})
+        self.refused('is marked running')
+
+    def test_a_red_followed_by_a_done(self):
+        self.crafted('red', inspect={'red': ['unit'], 'results': []})
+        self.crafted('done')
+        self.refused('promoted after the last red')
+
+    def test_a_red_to_hunt_runs_the_hunter_at_its_tip(self):
+        a = self.crafted('red', inspect={'red': ['unit'], 'results': []})
+        out = self.hunt()
+        self.assertEqual((out.code, self.hunted), (G.OK, [a.sha]), out.lines)
+        self.assertEqual(self.repo.git('rev-parse', 'HEAD', cwd=SP.tree_of(self.cfg(),
+                                                                          self.main_dir)), a.sha)
+
+    def test_a_held_promote_lock_is_busy(self):
+        self.crafted('red', inspect={'red': ['unit'], 'results': []})
+        lock, _ = SP.lock_for(self.main_dir)
+        lock.acquire()
+        self.addCleanup(lock.release)
+        out = self.hunt()
+        self.assertEqual((out.code, self.hunted), (G.BUSY, []), out.lines)
+
+
 class Hunt(Case):
-    """The culprit hunt after a red, run for real: its probes in the promotion's tree on the
-    scratch store, its revert as a local branch of the main checkout (kitlib.staging.culprit)."""
+    """The culprit hunt asked for after a red (promote.hunt), run for real: its probes in the
+    promotion's tree on the scratch store, its revert as a local branch of the main checkout
+    (kitlib.staging.culprit)."""
 
     def branch(self, merge):
         return self.repo.git('rev-parse', '--verify', '-q', 'refs/heads/' + V.branch_of(merge),
@@ -467,8 +646,8 @@ class Hunt(Case):
 
     def test_one_red_landing_is_confirmed_by_its_revert_and_the_branch_prepared(self):
         tip = self.land_red()
-        out = self.run_promote()
-        self.assertEqual(out.code, G.FAILED, out.lines)
+        out = self.red_then_hunt()
+        self.assertEqual(out.code, G.OK, out.lines)
         said = '\n'.join(out.lines)
         self.assertIn('promote: hunt: culprit %s (confirmed by revert)' % tip[:10], said)
         self.assertIn('promote: REVERT PREPARED - local branch revert/%s' % tip[:10], said)
@@ -495,7 +674,7 @@ class Hunt(Case):
         self.land()
         culprit = self.land_red()
         tip = self.land()
-        out = self.run_promote()
+        out = self.red_then_hunt()
         found = self.attempts()[-1].rec['culprit']
         self.assertEqual((found['end'], found['merge'], found['by']),
                          (CU.FOUND, culprit, CU.BY_BISECT), out.lines)
@@ -510,7 +689,7 @@ class Hunt(Case):
         self.repo.git('push', '-q', 'origin', 'HEAD:refs/heads/main', cwd=self.stg)
         base = self.remote_main()
         tip = self.land()
-        out = self.run_promote()
+        out = self.red_then_hunt()
         found = self.attempts()[-1].rec['culprit']
         self.assertEqual(found['end'], CU.ON_MAIN, out.lines)
         self.assertEqual([p['what'] for p in found['probes']],
@@ -527,7 +706,7 @@ class Hunt(Case):
             out = self.gate(*a, **k)
             moved.append(self.land())           # a landing while the promotion ran
             return out
-        self.run_promote(gate=gate)
+        self.red_then_hunt(gate=gate)
         a, later = self.attempts()[-1], moved[0]
         self.assertEqual((a.rec['culprit']['merge'], a.rec['culprit']['by']), (tip, CU.BY_REVERT))
         revert = self.branch(tip)
@@ -548,15 +727,16 @@ class Hunt(Case):
             return real(*a, **k)
         with mock.patch.object(runner, 'run_steps', side_effect=run_steps):
             with self.assertRaises(RuntimeError):
-                self.run_promote()
+                self.red_then_hunt()
         self.assertTrue(R.hunting(self.attempts()[-1]))
+        self.assertEqual(self.attempts()[-1].rec['announced'], False)
         self.assertEqual(self.store.live_runs(), [])
         SP.look(self.main_dir, self.cfg(), lambda a: None)
         self.assertEqual(self.attempts()[-1].rec['culprit']['verdict'], CU.STOPPED)
 
     def test_the_probes_wait_for_their_slot_within_the_budget_and_the_gate_never_waits(self):
         self.land_red()
-        self.run_promote()
+        self.red_then_hunt()
         hunts = [c for c in self.book_calls if c['slug'] == CU.SLUG]
         self.assertTrue(hunts, self.book_calls)
         others = [c for c in self.book_calls if c['slug'] != CU.SLUG]
@@ -578,6 +758,15 @@ class Hunt(Case):
         self.assertEqual(self.attempts()[-1].rec['culprit']['verdict'], CU.STOPPED)
         self.assertEqual(self.attempts()[-1].event(), ('red', tip[:10]))
 
+    def test_a_dead_hunt_on_an_announced_red_is_marked_stopped_by_the_look_too(self):
+        a = self.crafted('red', announced=True,
+                         culprit={'verdict': R.HUNTING, 'pid': 1, 'red': ['unit']})
+        announced = []
+        SP.look(self.main_dir, self.cfg(), announced.append)
+        self.assertEqual(announced, [])
+        self.assertEqual(R.attempts(a.folder.rsplit(os.sep, 1)[0])[-1].rec['culprit']['verdict'],
+                         CU.STOPPED)
+
 
 # A step whose cmd selects by the change, as `kit_tests.py --select` does: it runs (and sees RED)
 # only where a landed-*.txt shows a landing to select; its daily_cmd runs everything.
@@ -596,8 +785,8 @@ class HuntDailyForm(Case):
         self.repo.git('push', '-q', 'origin', 'HEAD:refs/heads/main', cwd=self.stg)
         base = self.remote_main()
         tip = self.land()
-        out = self.run_promote()
-        self.assertEqual(out.code, G.FAILED, out.lines)
+        out = self.red_then_hunt()
+        self.assertEqual(out.code, G.OK, out.lines)
         found = self.attempts()[-1].rec['culprit']
         self.assertEqual(found['end'], CU.ON_MAIN, found)
         self.assertEqual([(p['what'], p['verdict']) for p in found['probes']],
@@ -635,7 +824,7 @@ class HuntSuspectsCmd(Case):
         culprit = self.land_red()
         self.land()
         said = []
-        out = self.run_promote(say=said.append)
+        out = self.red_then_hunt(say=said.append)
         found = self.attempts()[-1].rec['culprit']
         self.assertEqual((found['end'], found['merge'], found['by']),
                          (CU.FOUND, culprit, CU.BY_REVERT), out.lines)
@@ -655,7 +844,7 @@ class HuntSuspectsCmdFails(Case):
         culprit = self.land_red()
         self.land()
         said = []
-        out = self.run_promote(say=said.append)
+        out = self.red_then_hunt(say=said.append)
         found = self.attempts()[-1].rec['culprit']
         self.assertEqual((found['merge'], found['by']), (culprit, CU.BY_BISECT), out.lines)
         self.assertEqual((len(found['suspects']), found['suspects_from']), (3, CU.FROM_KIT))
@@ -698,6 +887,18 @@ class Off(StagingCase):
             code = tool.main(['-C', self.main_dir])
         self.assertEqual(code, G.USAGE)
         self.assertIn('promote: OFF', said.call_args_list[0][0][0])
+
+    def test_the_tool_s_hunt_and_fixed_are_one_at_a_time_and_report_off(self):
+        from tools import promote as tool
+        with mock.patch('builtins.print') as said:
+            for argv in (['--hunt'], ['--fixed', 'abc']):
+                self.assertEqual(tool.main(['-C', self.main_dir] + argv), G.USAGE)
+                self.assertIn('promote: OFF', said.call_args_list[-1][0][0])
+        with mock.patch('sys.stderr'), mock.patch('builtins.print') as said:
+            for argv in (['--hunt', '--force'], ['--fixed', 'abc', '--hunt'],
+                         ['--status', '--fixed', 'abc'], ['--fixed']):
+                self.assertEqual(tool.main(['-C', self.main_dir] + argv), G.USAGE, argv)
+            self.assertEqual(said.call_args_list, [])       # refused at parsing: nothing ran
 
 
 @real_git('the pre-push hook: the fake git runs no hook')

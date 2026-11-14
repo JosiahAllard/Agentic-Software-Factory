@@ -130,8 +130,8 @@ last success, `ok_at`, None before one) is the snapshot's and GET health's `watc
 Jobs (the hub's timed jobs, kitlib.hubsite.jobs): job_event(name, event, detail=None), on any
 thread, owes the PM one `job <name> <event>` push, with `detail:<detail>` after the event when
 one is given (one owed push per job name: a newer event of the same job replaces one still owed,
-its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill`, `stale-lock`
-and the usage crossover's words, is owed once per detail instead, beside the rest, and its text says what to
+its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill`, `stale-lock`,
+`promote-red`, `promote-revert` and the usage crossover's words, is owed once per detail instead, beside the rest, and its text says what to
 do: each names one thing); the
 thread sends each owed one every round (send_jobs), tried on the same schedule until a try is
 written or GIVE_UP_S passes. Owed job pushes live in memory only, never in the outbox: a restart
@@ -293,7 +293,18 @@ JOB_EACH = {'stale-code': 'The hub server (serve.py, job name hub) will not rest
                               'that repository\'s coordinator to review, then gate and land '
                               '(new_worktree.py --existing revert/<landing sha10>); never land '
                               'it unreviewed. `tools/promote.py --status` there shows the '
-                              'attempt and the hunt.'}
+                              'attempt and the hunt.',
+            'promote-red': 'The hub staging-promote job: a promotion of a staging branch ended '
+                           'red. Detail is <repo>:<staging tip sha10>. Hand it to that '
+                           "repository's coordinator to inspect and fix first: "
+                           '`tools/promote.py --status` there shows the red steps, the failing '
+                           'tests and the suspect landings (or, for a red that already hunted, '
+                           "the hunt's end: flake, on-main, capped or inconclusive). The fix is "
+                           'a branch from the staging tip, gated and landed; then '
+                           '`tools/promote.py --fixed <sha>` marks it, so the same tests red '
+                           'again hunt the culprit by themselves. After one failed fix, or when '
+                           'the red looks like a flake, `tools/promote.py --hunt` runs the '
+                           'culprit hunt. Nothing was reverted or pushed.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
                'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}

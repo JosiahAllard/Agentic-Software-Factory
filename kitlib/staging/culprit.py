@@ -1,5 +1,6 @@
-"""kitlib.staging.culprit: after a promotion ends red, the landing that turned the staging tip red,
-and its revert prepared for the coordinator (docs/modules/staging-design.md "Culprit and revert").
+"""kitlib.staging.culprit: after a promotion ends red, what it hands the coordinator to inspect and
+fix first, and, as the fallback, the landing that turned the staging tip red and its revert
+prepared for the coordinator (docs/modules/staging-design.md "Culprit and revert").
 
   landings(root, git, base, tip)          ([Landing], None) or (None, why): every first-parent
                                           commit of base..tip (kitlib.staging.changes
@@ -10,7 +11,19 @@ and its revert prepared for the coordinator (docs/modules/staging-design.md "Cul
   cmd_suspects(argv, values, folder, tests, lands, timeout)   the repository's own suspects
                                           ("staging".suspects_cmd), or why they cannot be had
   hunt(lands, base, tip, sus, probe, make, deadline, clock)   the hunt (below): a dict
-  after_red(...)                          the whole, in the promotion's tree, for promote._test
+  repeat(earlier, inspect)                whether a red repeats one a fix was marked landed for
+  after_red(...)                          after a red, for promote._test: the attempt's `inspect`,
+                                          and the hunt only when repeat says so
+  hunt_red(...)                           the hunt on request (promote.hunt), from `inspect`
+
+By default a red runs no probe and books no slot: after_red writes the attempt's `inspect` (the
+red steps, S's failing tests, the paths they live in and the suspects below, with the red's step
+entries and start so a later hunt can read them) and the hub item hands the red to the
+coordinator to fix on a branch from the staging tip. The hunt is the fallback, after one failed
+fix: by itself when the red repeats (repeat: the latest earlier attempt that ended red or done is
+red, carries `fix` (promote.fixed) and failed on the same tests: their (step, test) sets meet,
+or, when either names no test, their red steps meet; one with no `inspect` to compare counts as
+the same), or when the coordinator asks (`tools/promote.py --hunt`).
 
 Suspects. A landing is a candidate when it selects one of the red steps by the paths it changed
 (kitlib.gate.steps.selects on its own paths, `always` and `manual` set aside, content read in the
@@ -41,9 +54,9 @@ the daily form, kitlib.dailyfull.plan, as the daily bisect does: a change-select
 HUNT_BUDGET_S bounds the whole hunt, the machine-lock waits included: each probe's slot waits at
 most the time left (the lock's wait_s), and a hunt with none left ends `inconclusive (budget)`.
 A detached run waits inside the promote lock, so the hub job sees it busy and starts nothing; a
-hand-run `tools/promote.py --force` runs the hunt in the foreground, within the same budget.
+hand-run `tools/promote.py --hunt` runs the hunt in the foreground, within the same budget.
 
-The tree is put back at S afterwards. For a culprit, after_red fetches, reads the staging tip T
+The tree is put back at S afterwards. For a culprit, the hunt fetches, reads the staging tip T
 again and prepares `revert/<merge10>` on T (revert.prepare: local only, never pushed); the
 coordinator reviews and lands it. Nothing here prints; the caller says the lines.
 """
@@ -79,7 +92,12 @@ BY_REVERT, BY_BISECT = 'confirmed by revert', 'by bisect'
 SUSPECTS_TIMEOUT_S = 600        # suspects_cmd's run, or the hunt's budget left when that is less
 TESTS_FILE, LANDINGS_FILE, SUSPECTS_LOG = (
     'suspects-tests.json', 'suspects-landings.json', 'suspects.log')    # in the attempt's folder
-FROM_CMD, FROM_KIT = 'suspects_cmd', 'kit'          # the record's culprit.suspects_from
+FROM_CMD, FROM_KIT = 'suspects_cmd', 'kit'          # the record's suspects_from
+KEEP = ('step', 'id', 'cls', 'runner', 'scope')     # a failure's fields, as recorded and handed on
+STEP_KEYS = ('name', 'status', 'reasons', 'log')    # a step entry, as `inspect` keeps it
+HANDED = ('promote: RED handed to the coordinator: inspect it and fix it on a branch from the '
+          'staging tip; after one failed fix, tools/promote.py --hunt (docs/modules/'
+          'staging-design.md "Culprit and revert")')
 _SUSPECT = re.compile(r'^suspect ([0-9a-f]{40})$')
 _PREFIX = 'daily: bisect'
 
@@ -298,22 +316,87 @@ def red_steps(out):
     return B.bisectable({'red': [r['name'] for r in results if r.get('status') == 'FAIL']})
 
 
+def repeat(earlier, inspect):
+    """Whether a red whose `inspect` is this one repeats the red a fix was marked landed for (the
+    module docstring): `earlier` the attempts before it (record.attempts), oldest first."""
+    prev = next((a for a in reversed(earlier) if a.phase in ('red', 'done')), None)
+    if prev is None or prev.phase != 'red' or not prev.rec.get('fix'):
+        return False
+    was = prev.rec.get('inspect') or {}
+    if not was.get('red'):
+        return True                 # nothing to compare: unsure is the same
+    had, has = _tests(was), _tests(inspect)
+    if had and has:
+        return bool(had & has)
+    return bool(set(was['red']) & set(inspect.get('red') or []))
+
+
+def _tests(inspect):
+    return {(f.get('step'), f.get('id') or f.get('cls')) for f in inspect.get('failures') or []}
+
+
 def after_red(ctx, attempt, out, say, clock=time.time, budget=HUNT_BUDGET_S, make=V.make):
-    """The hunt after the promotion of `attempt` (record.Attempt, ended red) failed with the gate
-    outcome `out`, and the revert branch of its culprit: the lines to say. `ctx`: {main, cfg (the
-    main checkout's), cfg_base (M's), staging, wt (the promotion's tree), tip, base, book
-    (the gate's booking), git, since (the gate's start, epoch seconds), log_dir}. Writes the
-    attempt's `culprit` (and, for a culprit, `revert`); nothing when no red step can be hunted
-    (red_steps). RecordError passes through."""
+    """After the promotion of `attempt` (record.Attempt, ended red) failed with the gate outcome
+    `out`: the lines to say. Writes the attempt's `inspect` (no probe, no slot) and, when it
+    repeats a red a fix was marked landed for (repeat, over ctx's `earlier`), hunts as hunt_red
+    does. `ctx`: {main, cfg (the main checkout's), cfg_base (M's), staging, wt (the promotion's
+    tree), tip, base, book (the gate's booking), git, since (the gate's start, epoch seconds),
+    log_dir, earlier}. Nothing when no red step can be hunted (red_steps). RecordError passes
+    through."""
     red = red_steps(out)
     if not red:
         return []
+    results = [{k: r.get(k) for k in STEP_KEYS} for r in out.facts.get('results') or []]
+    ctx = dict(ctx, log_dir=ctx.get('log_dir') or attempt.folder, folder=attempt.folder)
+    deadline = clock() + budget
+    ev = _evidence(ctx, red, results, say, clock, deadline)
+    rec = {'red': red, 'results': results, 'since': ctx.get('since')}
+    if ev['why']:
+        rec['why'] = ev['why']
+    else:
+        rec.update(failures=[{k: f[k] for k in KEEP if f.get(k) is not None}
+                             for f in ev['failures']],
+                   failing=sorted(ev['failing']), suspects=[x.sha for x in ev['sus']],
+                   suspects_from=ev['from'], **({'suspects_why': ev['sus_why']}
+                                                if ev['sus_why'] else {}))
+    attempt.rec['inspect'] = rec
+    attempt.write()
+    lines = [inspect_line(rec)]
+    if not repeat(ctx.get('earlier') or [], rec):
+        return lines + [HANDED]
+    lines.append('promote: the same tests are red again after a fix was marked landed: the '
+                 'culprit hunt runs')
+    return lines + _hunted(ctx, attempt, red, results, ev, say, clock, deadline, budget, make)
+
+
+def inspect_line(rec):
+    """The line of a red's `inspect`."""
+    if rec.get('why'):
+        return 'promote: inspect: %s red; no suspects: %s' % (', '.join(rec['red']), rec['why'])
+    sus = rec.get('suspects') or []
+    return 'promote: inspect: %s red, %d failing test(s); %d suspect(s)%s' % (
+        ', '.join(rec['red']), len(rec.get('failures') or []), len(sus),
+        ': ' + ' '.join(s[:10] for s in sus) if sus else '')
+
+
+def hunt_red(ctx, attempt, say, clock=time.time, budget=HUNT_BUDGET_S, make=V.make):
+    """The hunt on request (promote.hunt) of the red `attempt`, from its `inspect` (its red steps,
+    step entries and start): the lines to say. `ctx` as after_red's, less `since` and `earlier`.
+    Writes the attempt's `culprit` (and, for a culprit, `revert`). RecordError passes through."""
+    rec = attempt.rec['inspect']
+    red, results = rec['red'], rec['results']
+    ctx = dict(ctx, since=rec.get('since'), log_dir=ctx.get('log_dir') or attempt.folder,
+               folder=attempt.folder)
+    deadline = clock() + budget
+    ev = _evidence(ctx, red, results, say, clock, deadline)
+    return _hunted(ctx, attempt, red, results, ev, say, clock, deadline, budget, make)
+
+
+def _hunted(ctx, attempt, red, results, ev, say, clock, deadline, budget, make):
+    """The hunt and the revert branch of its culprit: the lines to say."""
     attempt.rec['culprit'] = {'verdict': HUNTING, 'pid': os.getpid(), 'red': red}
     attempt.write()
-    found, mode = _hunt(dict(ctx, log_dir=ctx.get('log_dir') or attempt.folder,
-                             folder=attempt.folder), red,
-                        out.facts.get('results') or [], say, clock, clock() + budget, budget,
-                        make)
+    found, mode = _hunt(ctx, red, results, ev, say, clock, deadline, budget, make)
     lines = ['promote: hunt: %s (%d probe(s))' % (found['verdict'], len(found['probes']))]
     rec = {k: found[k] for k in ('end', 'verdict', 'merge', 'by', 'suspects', 'probes')}
     rec.update((k, found[k]) for k in ('suspects_from', 'suspects_why') if found.get(k))
@@ -328,21 +411,31 @@ def after_red(ctx, attempt, out, say, clock=time.time, budget=HUNT_BUDGET_S, mak
     return lines
 
 
-def _hunt(ctx, red, results, say, clock, deadline, budget, make):
-    """`(the hunt dict, the probes' mode)` in the promotion's tree, put back at S after."""
-    main, wt, tip, base, git = ctx['main'], ctx['wt'], ctx['tip'], ctx['base'], ctx['git']
-    lands, why = landings(main, git, base, tip)
+def _evidence(ctx, red, results, say, clock, deadline):
+    """What a red hands on, read in the promotion's tree at S, no probe and no slot: {why: None,
+    lands, gate (M's), failures, failing, sus, from, sus_why}, or {why} when it cannot be read."""
+    main, wt, base, git = ctx['main'], ctx['wt'], ctx['base'], ctx['git']
+    lands, why = landings(main, git, base, ctx['tip'])
     if lands is None:
-        return _none('inconclusive: %s' % why), None
+        return {'why': why}
     try:
         gate = detect.effective(ctx['cfg_base'], wt, base=base).gate
     except (ConfigError, detect.DetectError, S.GateConfigError) as e:
-        return _none('inconclusive: the gate at %s: %s' % (base[:10], e)), None
+        return {'why': 'the gate at %s: %s' % (base[:10], e)}
     specs = {s['name']: s for s in gate.get('steps') or []}
-    found_f = failures(wt, results, red, specs, ctx.get('since'))
-    failing = failing_paths(wt, found_f)
-    sus, origin, why = _suspects_of(ctx, red, found_f, failing, lands, specs, say, clock,
-                                    deadline)
+    found = failures(wt, results, red, specs, ctx.get('since'))
+    failing = failing_paths(wt, found)
+    sus, origin, why = _suspects_of(ctx, red, found, failing, lands, specs, say, clock, deadline)
+    return {'why': None, 'lands': lands, 'gate': gate, 'failures': found, 'failing': failing,
+            'sus': sus, 'from': origin, 'sus_why': why}
+
+
+def _hunt(ctx, red, results, ev, say, clock, deadline, budget, make):
+    """`(the hunt dict, the probes' mode)` in the promotion's tree, put back at S after."""
+    main, wt, tip, base, git = ctx['main'], ctx['wt'], ctx['tip'], ctx['base'], ctx['git']
+    if ev['why']:
+        return _none('inconclusive: %s' % ev['why']), None
+    lands, gate = ev['lands'], ev['gate']
     prober = B.Prober(wt, red, gate['kind'], place.repo_name(ctx['cfg_base'], main), SLUG,
                       ctx['log_dir'], say_as_hunt(say), ctx.get('book') or {}, git,
                       D.plan, steps=results)
@@ -355,13 +448,13 @@ def _hunt(ctx, red, results, say, clock, deadline, budget, make):
             if sha not in chain:    # a revert commit no ref reaches: leave it quietly, for S
                 git(wt, 'switch', '-q', '--detach', tip)
     try:
-        found = hunt(lands, base, tip, sus, probe_at,
+        found = hunt(lands, base, tip, ev['sus'], probe_at,
                      lambda merge, onto: make(wt, merge, onto), deadline, clock, budget=budget)
     finally:
         rc, _, err = git(wt, 'switch', '-q', '--detach', tip)
-    found['suspects_from'] = origin
-    if why:
-        found['suspects_why'] = why
+    found['suspects_from'] = ev['from']
+    if ev['sus_why']:
+        found['suspects_why'] = ev['sus_why']
     if rc != 0:
         found['back'] = 'could not put %s back at %s: %s' % (wt, tip[:10], err or 'exit %d' % rc)
     return found, (prober.mode if found['probes'] else None)
@@ -375,9 +468,8 @@ def _suspects_of(ctx, red, found, failing, lands, specs, say, clock, deadline):
     argv = ctx['cfg_base'].written('staging', 'suspects_cmd')
     if not argv:
         return kit, FROM_KIT, None
-    keep = ('step', 'id', 'cls', 'runner', 'scope')
     tests = {'base': base, 'tip': ctx['tip'], 'red': list(red), 'failing': sorted(failing),
-             'failures': [{k: f[k] for k in keep if f.get(k) is not None} for f in found]}
+             'failures': [{k: f[k] for k in KEEP if f.get(k) is not None} for f in found]}
     timeout = max(1, int(min(SUSPECTS_TIMEOUT_S, deadline - clock())))
     shas, why = cmd_suspects(argv, S.mapping(wt, base, ctx['cfg_base'].tools_dir), ctx['folder'],
                              tests, lands, timeout)

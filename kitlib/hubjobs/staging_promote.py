@@ -15,10 +15,15 @@ before anything else, so two starts never run twice.
 An attempt that ended red, refused, diverged, failed or error gets one job push to the PM, word
 `promote-<end>` (EVENTS), detail `<repo>:<sha10>`, and is marked announced in its record; the PM
 raises it with the owner. A newer push of this job replaces one the hub still owes
-(push.PushWorker.job_event: these words are not in JOB_EACH), a known limit. A red attempt whose
-culprit hunt prepared a revert branch (kitlib.staging.culprit) is word `promote-revert` instead,
-detail `<repo>:<culprit's sha10>` (record.Attempt.event): in JOB_EACH, so it is owed once per
-detail, and its text tells the PM to hand the branch to the coordinator.
+(push.PushWorker.job_event: these words are not in JOB_EACH), a known limit, except
+`promote-red`: in JOB_EACH, owed once per detail, its text hands the red to the coordinator to
+inspect and fix first (the attempt's `inspect`, kitlib.staging.culprit after_red), naming
+`--fixed` and, after one failed fix or for a suspected flake, `--hunt`; it holds for a red that
+already hunted too. A red attempt whose culprit hunt prepared a revert branch is word
+`promote-revert` instead, detail `<repo>:<culprit's sha10>` (record.Attempt.event): in
+JOB_EACH, and its text tells the PM to hand the branch to the coordinator. A hunt run by hand
+(`tools/promote.py --hunt`) on a red already announced posts no item: its revert branch shows in
+`--status` and in the run's own output.
 
 Outcomes: a start is a success whose note names it; nothing to start is a skip; a repository
 whose config or git cannot be read, whose look raised (an announce that failed: that end stays

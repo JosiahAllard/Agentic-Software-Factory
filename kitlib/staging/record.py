@@ -18,9 +18,14 @@ The record (SCHEMA 1):
   tries       the pushes tried
   announced   True once the hub job has pushed its hub item (ANNOUNCE)
   history     [[phase, time], ...], oldest first
-  culprit     a red attempt's culprit hunt (kitlib.staging.culprit after_red): {verdict, red,
-              pid} while it runs (verdict HUNTING; `stopped` once the hub job's look found that
-              run gone), then {end, verdict, merge, by, suspects, probes, red[, mode]}
+  inspect     what a red hands the coordinator (kitlib.staging.culprit after_red, no probe):
+              {red, results, since} and {failures, failing, suspects, suspects_from
+              [, suspects_why]}, or {why} when they could not be read
+  fix         the coordinator's mark that the red's fix landed on the staging branch
+              (kitlib.staging.promote fixed): {sha, at}
+  culprit     a red attempt's culprit hunt (after_red on a repeat, or promote.hunt): {verdict,
+              red, pid} while it runs (verdict HUNTING; `stopped` once the hub job's look found
+              that run gone), then {end, verdict, merge, by, suspects, probes, red[, mode]}
   revert      for a culprit found: {branch, base, commit, note} (the local branch prepared), or
               {why[, base]} when none could be
 
@@ -183,3 +188,18 @@ def line(a):
         (r.get('phase') or '?').upper(), (r.get('sha') or '?')[:10],
         'on main %s' % (r.get('base') or '?')[:10], r.get('updated') or r.get('started') or '?',
         ' - %s' % r['why'] if r.get('why') else '', more)
+
+
+def more_line(a):
+    """The indented line of attempt `a`'s `inspect` and `fix`, or None when it has neither."""
+    ins, fix = a.rec.get('inspect') or {}, a.rec.get('fix') or {}
+    bits = []
+    if ins.get('why'):
+        bits.append('inspect: %s red; %s' % (', '.join(ins.get('red') or []), ins['why']))
+    elif ins:
+        bits.append('inspect: %s red, %d failing test(s), suspects %s' % (
+            ', '.join(ins.get('red') or []), len(ins.get('failures') or []),
+            ' '.join(s[:10] for s in ins.get('suspects') or []) or 'none'))
+    if fix.get('sha'):
+        bits.append('fix marked %s at %s' % (fix['sha'][:10], fix.get('at') or '?'))
+    return '          %s' % '; '.join(bits) if bits else None

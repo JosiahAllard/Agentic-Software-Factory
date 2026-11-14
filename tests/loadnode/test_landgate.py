@@ -277,13 +277,6 @@ class LandGate(Repo):
         rec, _ = landgate.read_record(self.repo.root, self.merge)
         self.assertEqual((gate_ok.mode_of(rec), rec['staging_skipped']), ('select', ['slow']))
 
-    def test_a_land_job_without_staging_runs_every_selected_step(self):
-        del self.spec['staging']
-        self.assertEqual(self.land(), 0, self.said)
-        self.assertIs(self.calls[0][2]['staging'], False)
-        rec, _ = landgate.read_record(self.repo.root, self.merge)
-        self.assertIsNone(rec['staging_skipped'])
-
     def test_another_kit_is_refused_and_nothing_runs(self):
         self.assertEqual(self.land(kit='f' * 64), landgate.EXIT_REFUSED)
         self.assertEqual(self.calls, [])

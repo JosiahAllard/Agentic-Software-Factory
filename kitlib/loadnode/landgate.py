@@ -71,8 +71,7 @@ def land_gate(wt, spec, say, merged_gate=None, kit_hash=None):
     from kitlib.git import cmd, refs
     from kitlib.records import gate_ok, place
     sha, base = spec['sha'], spec['base']
-    full, docs = spec['full'] is True, spec['docs'] is True
-    staging = spec.get('staging') is True       # absent: every selected step runs
+    full, docs, staging = spec['full'] is True, spec['docs'] is True, spec['staging'] is True
     mine = (kit_hash or kit_files)()
     if mine != spec['kit_files']:
         say("REFUSED: this node's kit files are not main's; a landing's merged gate runs only on "

@@ -484,6 +484,27 @@ class PmPhases(unittest.TestCase):
         d = decide_pm(cross=pm_crossing(D.READY, stalled=True), accounts={'1': HOT, '2': on(96)})
         self.assertEqual((d.action, d.word, d.detail, d.remember), (D.CLEAR, 'no-room', 'pm', False))
 
+    def test_ready_holds_quietly_when_only_the_last_start_there_leaves_no_room(self):
+        c = pm_crossing(D.READY, state_path='Z:/note-6.md')
+        ready = dict(cross=c, note_at=NOW - 30, quiet=600, running={'1': 1})
+        old = D.WAIT_READY_S + 120          # read before the starts below: they block it
+        d = decide_pm(accounts={'1': HOT, '2': on(20, age=old)}, landed={'2': NOW - D.WAIT_READY_S + 1}, **ready)
+        self.assertEqual((d.action, d.word, d.target), (D.HOLD, None, None))
+        self.assertEqual(d.note, 'waiting for a reading of account 2 since the last start there')
+        d = decide_pm(accounts={'1': HOT, '2': on(20, age=old)}, landed={'2': NOW - D.WAIT_READY_S}, **ready)
+        self.assertEqual((d.action, d.word, d.detail), (D.CLEAR, 'no-room', 'pm:unknown:a2'))
+        # several blocked: the newest start among them bounds it, the probe's pick names the note
+        two = {'1': HOT, '2': on(20, age=old), '3': on(20, age=old, week_in=3 * DAY)}
+        d = decide_pm(accounts=two, landed={'2': NOW - D.WAIT_READY_S - 60, '3': NOW - 60}, **ready)
+        self.assertEqual((d.action, d.note), (D.HOLD, 'waiting for a reading of account 2 since the last start there'))
+
+    def test_ready_still_clears_on_no_room_the_probe_cannot_fill_either(self):
+        # account 2 under 95% but stale with a live session on it; the last start on 3, at 96%
+        accounts = {'1': HOT, '2': on(20, age=7200), '3': on(96)}
+        d = decide_pm(cross=pm_crossing(D.READY, state_path='Z:/note-6.md'), note_at=NOW - 30, quiet=600,
+                      accounts=accounts, running={'1': 1, '2': 1}, landed={'3': NOW - 30})
+        self.assertEqual((d.action, d.word, d.detail), (D.CLEAR, 'no-room', 'pm:unknown:a2.a3'))
+
     def test_starting_is_done_once_coordinators_json_names_the_new_pm_on_the_target(self):
         c = pm_crossing(D.STARTING)
         d = decide_pm(cross=c, recorded=D.Recorded('pm-sid-2', 'pm-a2', 2), names={'pm-a2', 'pm-session'})
@@ -688,6 +709,22 @@ class Ready(unittest.TestCase):
     def test_no_room_holds_with_nothing_stopped(self):
         d = self.step(accounts={'1': HOT, '2': on(99)})
         self.assertEqual((d.action, d.word), (D.HOLD, 'no-room'))
+
+    def test_no_room_only_for_the_last_start_there_holds_quietly_until_the_bound(self):
+        old = D.WAIT_READY_S + 120          # read before the starts below: they block it
+        two = {'1': HOT, '2': on(20, age=old)}
+        d = self.step(accounts=two, landed={'2': NOW - D.WAIT_READY_S + 1})
+        self.assertEqual((d.action, d.word, d.target), (D.HOLD, None, None))
+        self.assertEqual(d.note, 'waiting for a reading of account 2 since the last start there')
+        d = self.step(accounts=two, landed={'2': NOW - D.WAIT_READY_S})
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'no-room', 'kit:unknown:a2'))
+        # a session's tier 2 counts: account 3 at 97%, started on last, bounds it; 2 names the note
+        three = dict(two, **{'3': on(97, age=old)})
+        d = self.step(accounts=three, landed={'2': NOW - D.WAIT_READY_S - 60, '3': NOW - 60})
+        self.assertEqual((d.action, d.word, d.note),
+                         (D.HOLD, None, 'waiting for a reading of account 2 since the last start there'))
+        d = self.step(accounts={'1': HOT, '2': on(97, age=old)}, landed={'2': NOW - 60})
+        self.assertEqual((d.action, d.word), (D.HOLD, None))
 
     def test_a_stalled_session_already_stopped_starts_with_nothing_live(self):
         self.assertEqual(self.step(live=(), fields={'stalled': True}).action, D.START)
@@ -1143,12 +1180,56 @@ class Job(JobBase):
         self.put(crossing(D.STARTING))
         self.write('coordinators.json', {'kit': 1, 'pm_account': 3})
         self.live = [OLD, NEW]
+        listed = self.procs
+
+        def procs():            # after the run read both files: written again by someone
+            self.write('sessions.json', {'kit': dict(ENTRY), 'yak': {'name': 'yak-a1'}})
+            self.write('coordinators.json', {'kit': 1, 'pm_account': 3, 'yak': 1})
+            return listed()
+        self.job.procs = procs
         self.run_job()
+        self.assertEqual(self.read('sessions.json').get('yak'), {'name': 'yak-a1'})
         self.assertEqual(self.calls, [])
         self.assertEqual(self.read('sessions.json')['kit']['name'], NEW.name)
         self.assertEqual(self.read('sessions.json')['kit']['account'], 2)
-        self.assertEqual(self.read('coordinators.json'), {'kit': 2, 'pm_account': 3})
+        self.assertEqual(self.read('coordinators.json'), {'kit': 2, 'pm_account': 3, 'yak': 1})
         self.assertEqual(self.crossing()['phase'], D.STARTED)
+
+    def test_a_finish_whose_entry_has_gone_is_left_for_the_next_run(self):
+        self.put(crossing(D.STARTING))
+        self.write('coordinators.json', {'kit': 1})
+        self.live = [OLD, NEW]
+        listed = self.procs
+
+        def procs():            # after the run read sessions.json: the entry removed
+            self.write('sessions.json', {'_note': 'x'})
+            return listed()
+        self.job.procs = procs
+        with mock.patch.object(U.handoff, 'record_move') as move:
+            self.assertIn('kit: finish left for the next run: no sessions.json entry now', self.run_job())
+        move.assert_not_called()
+        self.assertEqual((self.read('sessions.json'), self.read('coordinators.json')), ({'_note': 'x'}, {'kit': 1}))
+        self.assertEqual(self.crossing()['phase'], D.STARTING)
+
+    def test_a_launcher_file_error_in_a_finish_leaves_the_rest_to_run_and_fails_the_run_saved(self):
+        self.stop_and_ask()
+        self.put(crossing(D.STOPPING))
+        self.write('sessions.json', {'kit': MOVED, 'zed': self.read('sessions.json')['zed'],
+                                     'yak': dict(ENTRY, stem='yak-coord', name='yak-coord-a1')})
+        yak_new = D.Live('yak-coord-a2', 44, CREATED)
+        self.live += [D.Live('yak-coord-a1', 43, CREATED), yak_new]
+        doc = self.doc()
+        doc['crossings']['yak'] = crossing(D.STARTING, old_name='yak-coord-a1', old_pid=43,
+                                           entry_name='yak-coord-a1', new_name=yak_new.name)
+        self.write(U.STATE_FILE, doc)
+        with mock.patch.object(U.handoff, 'record_move', side_effect=LaunchError('sessions.json: bad')):
+            with self.assertRaises(Exception) as raised:
+                self.run_job()
+        self.assertEqual([c[0] for c in self.calls], ['stop'])          # the stop before it ran
+        self.assertEqual([name for name, _ in self.sent], ['zed-coord-a2'])     # the ask after it ran
+        self.assertEqual((type(raised.exception), str(raised.exception)), (U.StepFailed, 'sessions.json: bad'))
+        self.assertEqual((self.crossing('zed')['phase'], self.crossing('zed')['delivered']), (D.ASKED, True))
+        self.assertEqual(self.crossing('yak')['phase'], D.STARTING)
 
     def test_a_failed_start_counts_and_fails_the_run_with_the_state_kept(self):
         self.ready()
@@ -1232,17 +1313,105 @@ class Job(JobBase):
                                        '--pid', '11']])
         self.assertEqual(self.saved_at_child['crossings']['kit']['phase'], D.STALL_STOP)
 
-    def test_one_acting_step_per_run_a_stop_before_an_ask(self):
+    def stop_and_ask(self):
+        """kit's stop due, zed (account 2 at 99%) due an ask; the ask notes how many children
+        ran before it."""
         other = D.Live('zed-coord-a2', 33, CREATED)
         self.write('sessions.json', {'kit': MOVED, 'zed': dict(ENTRY, stem='zed-coord', name=other.name,
                                                                account=2)})
         self.usage = {'1': reading(50), '2': reading(99), '3': reading(20)}
         self.put(crossing(D.STOPPING))
         self.live = [OLD, NEW, other]
+        self.before_ask = []
+        real = self.deliver
+        self.job.deliver = lambda name, text: (self.before_ask.append(len(self.calls)), real(name, text))[1]
+
+    def test_every_acting_step_runs_in_one_run_a_stop_before_an_ask(self):
+        self.stop_and_ask()
         self.run_job()
-        self.assertEqual(self.calls[0][0], 'stop')
-        self.assertEqual(self.sent, [])
-        self.assertEqual(len(self.calls), 1)
+        self.assertEqual([c[0] for c in self.calls], ['stop'])
+        self.assertEqual([name for name, _ in self.sent], ['zed-coord-a2'])
+        self.assertEqual(self.before_ask, [1])
+
+    def test_a_failed_step_leaves_the_rest_to_run_and_fails_the_run_with_the_state_saved(self):
+        self.stop_and_ask()
+        self.code = 2
+        with self.assertRaisesRegex(U.StepFailed, 'exited 2'):
+            self.run_job()
+        self.assertEqual([name for name, _ in self.sent], ['zed-coord-a2'])
+        self.assertEqual((self.crossing('zed')['phase'], self.crossing('zed')['delivered']), (D.ASKED, True))
+        self.assertEqual(self.crossing()['phase'], D.STOPPING)
+
+    def test_a_hub_closing_mid_run_leaves_the_later_steps_for_the_next_run(self):
+        self.stop_and_ask()
+        ctx = Ctx()
+        real = self.child
+
+        def child(argv, cwd):           # the hub begins to close while the stop runs
+            ctx.stop.set()
+            return real(argv, cwd)
+        self.job.child = child
+        text = self.run_job(ctx)
+        self.assertEqual(([c[0] for c in self.calls], self.sent), (['stop'], []))
+        self.assertIn('zed: left for the next run (the hub is closing)', text)
+        self.assertNotIn('zed', self.doc()['crossings'])
+
+    def four_over(self, target_room):
+        """Three coordinators and the PM on account 1 at 99%; `target_room`: the accounts at 20%."""
+        self.write('sessions.json', {k: dict(ENTRY, repo=k, stem='%s-coord' % k, name='%s-coord-a1' % k)
+                                     for k in ('kit', 'yak', 'zed')})
+        self.write('coordinators.json', {'pm_session_id': 'pm-sid-1', 'pm_account': 1, 'pm_folder': self.tmp})
+        self.usage = {n: reading(20 if n in target_room else 99) for n in ('1', '2', '3')}
+        self.live = [D.Live('%s-coord-a1' % k, 30 + i, CREATED) for i, k in enumerate(('kit', 'yak', 'zed'))]
+        self.live.append(D.Live('pm-session', 40, CREATED))
+
+    def test_three_coordinators_and_the_pm_over_the_limit_are_all_asked_in_one_run(self):
+        self.four_over({'2'})
+        self.run_job()
+        self.assertEqual(sorted(name for name, _ in self.sent), ['kit-coord-a1', 'pm', 'yak-coord-a1', 'zed-coord-a1'])
+        self.assertEqual(sorted(self.ctx.events), [('crossing', 'kit:a2'), ('crossing', 'pm:a2'),
+                                                   ('crossing', 'yak:a2'), ('crossing', 'zed:a2')])
+        self.assertEqual(sorted(self.doc()['asks']), ['_pm', 'kit', 'yak', 'zed'])
+        # all four ready in one run, one account with room: the PM starts first; the rest wait
+        # for that account's next reading, with nothing pushed and their crossings as they were
+        self.newest = {k: self.note(i, NOW + 30) for i, k in enumerate(('kit', 'yak', 'zed', 'pm'), 7)}
+        for live in self.live:
+            self.host.written[live.name] = NOW + 120
+        self.now += 300
+        before = self.doc()['crossings']
+        self.run_job()
+        self.assertEqual([c[:3] for c in self.calls], [['pm-crossover', '--account', '2']])
+        self.assertEqual(self.ctx.events, [])
+        crossings = self.doc()['crossings']
+        self.assertEqual(crossings[D.PM_DOC]['phase'], D.STARTING)
+        for key in ('kit', 'yak', 'zed'):
+            moved = dict(phase=D.READY, phase_at=NOW + 300, state_path=self.newest[key]['state_path'])
+            self.assertEqual(crossings[key], dict(before[key], **moved), key)     # the target stays 2
+        self.assertEqual(self.doc()['starts'], {D.PM_DOC: [NOW + 300]})
+        # the next run, account 2 not read again: the three hold quietly, no `no-room` pushed
+        self.now += 60
+        self.run_job()
+        self.assertEqual((self.ctx.events, len(self.calls), len(self.sent)), ([], 1, 4))
+        notes = [l for l in self.log_text().splitlines() if 'waiting for a reading of account 2' in l]
+        self.assertEqual(len(notes), 3)
+
+    def test_each_start_is_stamped_at_its_own_step_and_the_second_takes_the_account_left(self):
+        self.four_over({'2', '3'})
+        self.write('coordinators.json', {})
+        self.live = self.live[:2]
+        self.run_job()
+        self.newest = {k: self.note(i, NOW + 30) for i, k in enumerate(('kit', 'yak'), 7)}
+        for live in self.live:
+            self.host.written[live.name] = NOW + 120
+        ticks = iter(range(int(NOW) + 300, int(NOW) + 400, 10))
+        self.job.clock = lambda: float(next(ticks))         # run at +300, then each start's own read
+        self.run_job()
+        self.assertEqual([c[:5] for c in self.calls], [['handoff', '--session', 'kit', '--account', '2'],
+                                                       ['handoff', '--session', 'yak', '--account', '3']])
+        doc = self.doc()
+        self.assertEqual(doc['starts'], {'kit': [NOW + 310], 'yak': [NOW + 320]})
+        self.assertEqual(doc['landed'], {'2': NOW + 310, '3': NOW + 320})
+        self.assertEqual([doc['crossings'][k]['phase_at'] for k in ('kit', 'yak')], [NOW + 310, NOW + 320])
 
     def test_every_key_is_still_decided_on_a_run_that_acts(self):
         self.write('sessions.json', {'kit': dict(ENTRY), 'zed': dict(ENTRY, stem='zed', name='zed-a3')})
@@ -1314,13 +1483,15 @@ class Notifying(JobBase):
         self.assertIsInstance(self.run_job(), jobs.Skip)
         self.assertEqual((self.ctx.events, len(self.calls)), ([], 2))
 
-    def test_a_would_cross_already_told_leaves_the_next_key_its_turn(self):
+    def test_every_would_cross_runs_in_one_run_and_one_already_told_is_no_step(self):
         other = D.Live('zed-a1', 33, CREATED)
         self.write('sessions.json', {'kit': dict(ENTRY), 'zed': dict(ENTRY, stem='zed', name=other.name)})
         self.live = [OLD, other]
         self.run_job()
-        self.run_job()
-        self.assertEqual(self.ctx.events, [('would-cross', 'zed:a2')])
+        self.assertEqual(self.ctx.events, [('would-cross', 'kit:a2'), ('would-cross', 'zed:a2')])
+        self.assertEqual(len(self.calls), 4)
+        self.assertIsInstance(self.run_job(), jobs.Skip)
+        self.assertEqual((self.ctx.events, len(self.calls)), ([], 4))
 
     def test_a_failed_dry_run_is_only_logged(self):
         self.code = 2
@@ -1542,6 +1713,18 @@ class PmJob(JobBase):
         c = self.saved_at_child['crossings'][D.PM_DOC]
         self.assertEqual((c['phase'], c['stalled']), (D.STARTING, True))
 
+    def test_ready_with_no_reading_since_the_last_start_on_the_one_free_account_holds(self):
+        rec = self.note(6, NOW - 30)
+        self.host.written['pm-session'] = NOW - 600
+        c = pm_crossing(D.READY, state_path=rec['state_path'])
+        self.write(U.STATE_FILE, {'crossings': {D.PM_DOC: c}, 'landed': {'2': NOW - 30}})
+        self.newest = {'pm': rec}
+        self.usage = {'1': reading(99), '2': reading(20), '3': reading(96)}
+        self.run_job()
+        self.assertEqual((self.calls, self.sent, self.ctx.events), ([], [], []))
+        self.assertEqual(self.crossing(D.PM_DOC), c)
+        self.assertEqual(self.doc().get('asks', {}), {})
+
     def test_a_stall_on_normal_is_pushed_and_left(self):
         self.usage['1'] = reading(20)
         self.stall('pm-session', 40, '1')
@@ -1669,9 +1852,9 @@ def ucrossing(phase, kind=UL.DEEP, old=DEEP_OLD, **fields):
 
 
 def udecide(cross=None, live=(DEEP_OLD,), sess=None, files=None, starts=None, mode='normal', accounts=ACCOUNTS,
-            stall=None, quiet=None, key=DEEP):
-    return D.decide_unlisted(key, sess, cross, list(live), stall, quiet, accounts, starts or {}, {'1': 1}, {},
-                             mode, NOW, files=files)
+            stall=None, quiet=None, key=DEEP, landed=None):
+    return D.decide_unlisted(key, sess, cross, list(live), stall, quiet, accounts, starts or {}, {'1': 1},
+                             landed or {}, mode, NOW, files=files)
 
 
 class DecideUnlisted(unittest.TestCase):
@@ -1706,6 +1889,15 @@ class DecideUnlisted(unittest.TestCase):
         d = udecide(ucrossing(D.READY, UL.CONSULTANT, CONS), live=(CONS,), files={'note': NOW - 30}, quiet=600,
                     key=CONS.name)
         self.assertEqual((d.action, d.phase), (D.ADVANCE, D.STOP_FIRST))
+
+    def test_ready_with_no_room_only_for_the_last_start_there_holds_quietly_until_the_bound(self):
+        ready = dict(cross=ucrossing(D.READY), files={'note': NOW - 30}, quiet=600,
+                     accounts={'1': HOT, '2': on(20, age=D.WAIT_READY_S + 120)})
+        d = udecide(landed={'2': NOW - D.WAIT_READY_S + 1}, **ready)
+        self.assertEqual((d.action, d.word, d.note),
+                         (D.HOLD, None, 'waiting for a reading of account 2 since the last start there'))
+        d = udecide(landed={'2': NOW - D.WAIT_READY_S}, **ready)
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'no-room', DEEP + ':unknown:a2'))
 
     def test_stop_first_stops_the_old_consultant_then_starts_it_with_nothing_live(self):
         c = ucrossing(D.STOP_FIRST, UL.CONSULTANT, CONS)

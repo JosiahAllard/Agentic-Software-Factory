@@ -43,12 +43,12 @@ class OwnerDelegations(unittest.TestCase):
     def run_one(self, payload_of, environ, sub, **kw):
         return decide(payload_of(sub), self.ctx(environ, **kw))
 
-    def assert_refused(self, payload_of, label, sessions=SESSIONS, instead='python -m json.tool "', **kw):
+    def assert_refused(self, payload_of, label, sessions=SESSIONS, instead='python -m json.tool "', rule=RULE, **kw):
         for environ, sub in sessions:
             with self.subTest(label, environ=environ, sub=sub):
                 d = self.run_one(payload_of, environ, sub, **kw)
                 self.assertIsNotNone(d, 'allowed')
-                self.assertEqual((d.verdict, d.rule), ('deny', RULE), d.reason)
+                self.assertEqual((d.verdict, d.rule), ('deny', rule), d.reason)
                 self.assertIn("the owner's delegation list", d.reason)
                 self.assertTrue(d.instead.startswith(instead), d.instead)
 
@@ -350,7 +350,8 @@ class OwnerDelegations(unittest.TestCase):
 
     def test_an_unreadable_line_that_names_the_list_is_refused(self):
         text = '"$p" ~/.pm-kit/owner-delegations.json'
-        self.assert_refused(lambda sub: bash(text, self.w.wt, sub), text, instead='bash "')   # plainly(): a script file
+        self.assert_refused(lambda sub: bash(text, self.w.wt, sub), text, instead='bash "',   # plainly(): a script file
+                            rule='unreadable-kept')
         self.assert_not_refused(lambda sub: bash(text, self.w.wt, sub), text, sessions=(OWNER,))
 
     def test_an_unreadable_line_that_writes_it_gives_the_rules_own_refusal(self):

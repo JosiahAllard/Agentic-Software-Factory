@@ -7,6 +7,7 @@ import unittest
 
 from kitlib.guard import commands as cm
 from kitlib.guard import commands_nested as cn
+from kitlib.guard import refusal_log
 from kitlib.guard import rules
 from kitlib.guard import shell as sh
 
@@ -128,7 +129,8 @@ class Hub(unittest.TestCase):
 
 class Unreadable(unittest.TestCase):
     """docs/guard-fallback.md "Fallback": a line the parser cannot read that names an owner's tool is
-    refused under that tool's rule, the kit command's spelling of the name included."""
+    refused, the kit command's spelling of the name included: as unreadable-kept when only its name is
+    seen, under the tool's own rule when its part, read again, runs the tool."""
 
     def setUp(self):
         self.w = W.World()
@@ -136,8 +138,8 @@ class Unreadable(unittest.TestCase):
 
     def test_a_kit_spelling_is_refused_as_the_tool_is(self):
         kit = W.fwd(self.w.kit_dir)
-        for tool, args, rule in (('hub', 'questions list "x', 'hub-owner-verb'),
-                                 ('machine_lock', 'status "x', 'owner-tool'),
+        for tool, args, rule in (('hub', 'questions list "x', 'unreadable-kept'),
+                                 ('machine_lock', 'status "x', 'unreadable-kept'),
                                  ('machine_setup', '--apply "x', 'owner-tool')):
             for text in ('python "%s/tools/%s.py" %s' % (kit, tool, args),
                          'python "%s/tools/kit.py" %s %s' % (kit, tool, args),
@@ -178,6 +180,25 @@ class Unreadable(unittest.TestCase):
                 d = decide(ev, self.w.ctx())
                 self.assertIsNotNone(d, 'allowed')
                 self.assertEqual((d.verdict, d.rule), ('deny', 'owner-tool'), d.reason)
+
+    def test_a_variable_set_to_a_literal_on_the_line_runs_that_literal(self):
+        # commands_nested.literal_programs: the tool's own rule reads the run, a read verb passes
+        kit = W.fwd(self.w.kit_dir)
+        for tool, read, write, rule in (('machine_lock', 'status', 'hold whole --for 1h', 'owner-tool'),
+                                        ('hub', 'questions', 'answer X-1 x', 'hub-owner-verb')):
+            for shell, set_it in ((bash, 'T="python %s/tools/%s.py"; $T ' % (kit, tool)),
+                                  (ps, "$T = 'python'; & $T %s/tools/%s.py " % (kit, tool))):
+                with self.subTest(set_it, verb=read):
+                    d = decide(shell(set_it + read, self.w.wt, True), self.w.ctx())
+                    self.assertIsNone(d, d and d.reason)
+                with self.subTest(set_it, verb=write):
+                    d = decide(shell(set_it + write, self.w.wt, True), self.w.ctx())
+                    self.assertEqual((d.verdict, d.rule), ('deny', rule), d.reason)
+
+    def test_a_kept_refusal_is_logged_under_its_own_rule(self):
+        d = decide(bash('T=$X; $T tools/machine_lock.py status', self.w.wt, True), self.w.ctx())
+        self.assertEqual((d.verdict, d.rule), ('deny', 'unreadable-kept'), d.reason)
+        self.assertEqual(refusal_log.entry(d, None, 'claude', 'worker', environ={})['rule'], 'unreadable-kept')
 
     def test_a_hidden_piped_gate_is_judged_the_same_in_every_form(self):
         W.deny_softened()                       # wrapped-gate is off by default (test_cheap.py)

@@ -7,7 +7,8 @@ own session:
     url.*, include.* and includeIf.*, and git config --edit;
   - GIT_CONFIG_GLOBAL / GIT_CONFIG_SYSTEM / GIT_CONFIG before a push: denied today (the place is
     blind), pinned here;
-  - a computed program name on an unreadable line, and `& (Get-Command git)`;
+  - a computed program name on an unreadable line, and `& (Get-Command git)`; a variable set to a
+    literal on the line is read as it;
   - hand-driven remote helpers (git remote-https, git http-push, git-remote-*).
 
 git aliases from config and a push from a copy of the data without a record (its root commit, a
@@ -248,18 +249,18 @@ class ComputedProgram(Base):
     be git push --no-verify. Denied for sessions the write jail does not hold, from a linked
     worktree too (before, only a main checkout or an unplaceable folder)."""
 
-    BASH = ('${G}t push --no-verify origin pmdata', 'G=git; $G push --no-verify origin pmdata')
+    BASH = ('${G}t push --no-verify origin pmdata', 'G=$X; $G push --no-verify origin pmdata')
     PS = ('& $env:G push --no-verify origin pmdata',)
 
     def test_pm_session_from_a_worktree_is_denied(self):
-        # a line naming git may meet the write jail first, where the session's mark is jailed
+        # the refusal stands for a run the guard could not read: unreadable-kept, a deny by default
         for text in self.BASH:
             with self.subTest(text):
-                self.assert_denied(self.decide(text, environ=PM), None if 'git' in text else 'git-push-pmdata')
+                self.assert_denied(self.decide(text, environ=PM), 'unreadable-kept')
         for text in self.PS:
             with self.subTest(text):
-                self.assert_denied(self.decide(text, environ=PM, shell=ps), 'git-push-pmdata')
-        self.assert_denied(self.decide(self.BASH[0], environ={context.ROLE_ENV: 'deep-worker'}), 'git-push-pmdata')
+                self.assert_denied(self.decide(text, environ=PM, shell=ps), 'unreadable-kept')
+        self.assert_denied(self.decide(self.BASH[0], environ={context.ROLE_ENV: 'deep-worker'}), 'unreadable-kept')
 
     def test_coordinator_too(self):
         self.assert_denied(self.decide(self.BASH[0], environ=COORD))
@@ -273,11 +274,45 @@ class ComputedProgram(Base):
 
     def test_call_operator_on_a_subexpression_is_a_computed_program(self):
         text = '& (Get-Command git) push --no-verify origin pmdata'
-        self.assert_denied(self.decide(text, sub=True, shell=ps), 'git-push-pmdata')
-        self.assert_denied(self.decide(text, environ=PM, shell=ps), 'git-push-pmdata')
+        self.assert_denied(self.decide(text, sub=True, shell=ps), 'unreadable-kept')
+        self.assert_denied(self.decide(text, environ=PM, shell=ps), 'unreadable-kept')
         self.assert_denied(self.decide('& (gcm git) push --no-verify origin pmdata', environ=PM, shell=ps),
-                           'git-push-pmdata')
+                           'unreadable-kept')
         self.assertIsNone(self.decide(text, shell=ps))
+
+
+class LiteralProgram(Base):
+    """A variable set once to a plain literal earlier on the line, then run as the program, is read
+    as that literal (commands_nested.literal_programs); any less certain form stays unreadable-kept."""
+
+    PUSH = ' push --no-verify origin pmdata'
+
+    def test_a_literal_git_is_judged_as_git(self):
+        for text, shell in (('B=git;$B' + self.PUSH, bash), ('B=git && "$B"' + self.PUSH, bash),
+                            ('B="git"\n${B}' + self.PUSH, bash), ("$B = 'git'; & $B" + self.PUSH, ps),
+                            ('$B = "git"; & ${b}' + self.PUSH, ps)):
+            for label, sub, environ in self.sessions():
+                with self.subTest(text, session=label):
+                    self.assert_denied(self.decide(text, sub, environ, shell=shell), 'git-push-pmdata')
+        self.assertIsNone(self.decide('B=git; $B status', environ=PM))
+        self.assertIsNone(self.decide("$B = 'git'; & $B status", environ=PM, shell=ps))
+        self.assertIsNone(self.decide("$B = 'git'; $B" + self.PUSH, environ=PM, shell=ps))     # no &: runs nothing
+
+    def test_a_value_or_line_it_cannot_be_sure_of_is_kept(self):
+        rows = [(t, bash) for t in ('B=$X; $B', 'B="GIT_DIR=x git"; $B', 'B=if; $B', 'B="gi\rt"; $B',
+                                    'B="gi\\\nt"; $B','B=git; cd x; $B', 'B=git; B=x; $B', 'B=git; B+=x; $B',
+                                    'A && B=git; $B', 'B=git | $B', 'B="g t"; "$B"', 'B=$(which git); $B',
+                                    'B=git; getopts x B; $B', 'B=git; readarray B; $B', 'B=git; IFS=x; $B',
+                                    '_=git; $_', 'OPTARG=git; $OPTARG', 'PWD=git; $PWD', 'B=git >x; $B',
+                                    'Bé=echo; $Bé', 'n=$(echo b | tr a-z A-Z); B=python; declare "$n=git"; $B',
+                                    'E="command declare"; n=$(echo b | tr a-z A-Z); B=python; $E "$n=git"; $B')]
+        rows += [(t, ps) for t in ("$P='python'; $p='git'; & $P", '$P = git; & $P', "$P = @'\ngit\n'@; & $P",
+                                   "$P = \"it's\"; & $P", "$Matches = 'git'; & $Matches", "$args = 'git'; & $args",
+                                   "$PSItem = 'git'; & $PSItem", "$P = 'git'; Set-Variable P x; & $P",
+                                   "$P = 'git'; cd x; & $P")]
+        for text, shell in rows:
+            with self.subTest(text):
+                self.assert_denied(self.decide(text + self.PUSH, environ=PM, shell=shell), 'unreadable-kept')
 
 
 class AliasAndCopyCut(Base):

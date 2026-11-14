@@ -452,9 +452,9 @@ class HubKept(World):
                          Decision('allow'))
 
     def test_a_verb_on_a_line_the_parser_cannot_read_is_denied(self):
-        for verb in ('questions', 'answer Q-1 --choice 1'):
+        for verb, rule in (('questions', 'unreadable-kept'), ('answer Q-1 --choice 1', 'hub-owner-verb')):
             with self.subTest(verb):
-                self.denied("echo 'x ; python \"%s\" %s" % (self.hub, verb), 'hub-owner-verb')
+                self.denied("echo 'x ; python \"%s\" %s" % (self.hub, verb), rule)
 
     def test_the_owner_runs_an_owner_verb_on_such_a_line(self):
         d = self.decide(W.bash("echo 'x ; python \"%s\" answer Q-1 --choice 1" % self.hub, self.w.wt))
@@ -496,7 +496,7 @@ class Warned(World):
         os.makedirs(common, exist_ok=True)
         pmdata.write(common, 'pmdata', 'private', 'a' * 40)
         d = self.decide(W.bash('echo godot; "$X" --headless; eval "$Y"', self.w.main, sub=True))
-        self.assertEqual((d.verdict, d.rule), ('deny', 'git-push-pmdata'), d.reason)
+        self.assertEqual((d.verdict, d.rule), ('deny', 'unreadable-kept'), d.reason)
 
     def test_a_held_lock_says_nothing(self):
         self.w.held = True

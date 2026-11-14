@@ -218,7 +218,7 @@ ROWS = [
     ('unclosed quote hiding a subagent merge in its worktree', lambda w: bash("echo 'x ; git merge kit/wt", w.wt, sub=True), 'deny', 'unreadable', None),
     ('cmd /c with a trailing backslash root', lambda w: bash('cmd /c "dir /s C:\\"', w.wt), 'deny', 'root-search', None),
     ('variable program running godot', lambda w: bash('GODOT=/c/tools/godot.exe; $GODOT --headless', w.wt), 'deny', 'heavy',
-     LOCK + ' --kind app-run --repo demo --slug wt -- <the program $GODOT names> --headless'),
+     LOCK + ' --kind app-run --repo demo --slug wt -- /c/tools/godot.exe --headless'),
 
     # ---------------------------------------------------------------- backlog roles (tests/guard/test_backlog_role.py)
     ('subagent builder closes a record', lambda w: bash('python "%s/tools/backlog.py" -C "%s" close X-1'
@@ -853,7 +853,7 @@ class OwnerLockTools(unittest.TestCase):
                 self.assertIsNone(d, d and d.reason)
 
     # docs/guard-fallback.md "Fallback": a line the parser cannot read that names the lock CLI is refused
-    # whole, its read verbs included, in every session but the owner's own
+    # whole as unreadable-kept, its read verbs included, in every session but the owner's own
     UNCLEAN = [
         ('bash', 'eval "$c"; python tools/machine_lock.py status'),
         ('bash', 'eval "$c"; python %s status' % LIVE),
@@ -873,12 +873,12 @@ class OwnerLockTools(unittest.TestCase):
                 with self.subTest(text, sub=sub, environ=environ):
                     d = self.run_one(shell, text, sub, environ)
                     self.assertIsNotNone(d, 'allowed')
-                    self.assertEqual((d.verdict, d.rule), ('deny', 'owner-tool'), d.reason)
+                    self.assertEqual((d.verdict, d.rule), ('deny', 'unreadable-kept'), d.reason)
                     self.assertIn('could not read this command', d.reason)
                     self.assertIn('names the lock CLI', d.reason)
             with self.subTest(text, owner=True):
                 d = self.run_one(shell, text, False, environ={})
-                self.assertTrue(d is None or d.rule != 'owner-tool', d and d.reason)
+                self.assertTrue(d is None or d.rule not in ('owner-tool', 'unreadable-kept'), d and d.reason)
 
     def test_an_unclean_line_running_an_owner_write_gives_the_write(self):
         d = self.run_one('bash', "echo 'x ; python tools/machine_lock.py hold whole --for 1h", True)

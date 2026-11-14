@@ -67,7 +67,7 @@ class CallSubexpressionAgents(Base):
         for label, sub, env in self.sessions():
             with self.subTest(label):
                 self.assert_denied(self.decide('& (Get-Command git) push', sub=sub, environ=env, shell=ps),
-                                   'git-push-pmdata')
+                                   'unreadable-kept')
 
 
 class HomeByArithmetic(Base):

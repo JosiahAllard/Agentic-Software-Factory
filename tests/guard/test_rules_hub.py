@@ -228,7 +228,8 @@ class SecretShell(Hub):
 
     def test_an_unclean_line_naming_the_hub_tool_is_refused(self):
         # docs/guard-fallback.md "Fallback": any hub tool call on a line the parser cannot read, read
-        # verbs included, is refused as hub-owner-verb; the owner's own session is not held
+        # verbs included, is refused as unreadable-kept, or as hub-owner-verb when its part, read again,
+        # runs an owner verb; the owner's own session is not held
         hub = self.hub
         rows = (
             ('read verb after eval', lambda sub: bash('eval "$c"; python "%s" questions' % hub, self.w.wt, sub)),
@@ -245,7 +246,7 @@ class SecretShell(Hub):
         )
         for name, make in rows:
             with self.subTest(name):
-                self.denied(make, 'hub-owner-verb')
+                self.denied(make, 'hub-owner-verb' if name == 'owner verb unread' else 'unreadable-kept')
                 self.owner_allowed(make)
                 d = decide(make(True), self.ctx(OWNER))
                 self.assertIn('could not read this command', d.reason)
@@ -259,7 +260,7 @@ class SecretShell(Hub):
             with self.subTest(cmd):
                 for label, sub, environ in HELD:
                     d = decide(bash(cmd, self.w.wt, sub), self.ctx(environ))
-                    self.assertTrue(d is None or d.rule != 'hub-owner-verb', d and d.reason)
+                    self.assertTrue(d is None or d.rule not in ('hub-owner-verb', 'unreadable-kept'), d and d.reason)
 
     def test_hub_tool_with_the_store_passes(self):
         st = W.fwd(self.store)

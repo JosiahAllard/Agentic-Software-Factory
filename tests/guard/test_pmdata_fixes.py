@@ -191,9 +191,9 @@ class CallSubexpression(Base):
     def test_in_a_pm_data_repository_it_is_denied(self):
         for label, sub, env in self.sessions():
             with self.subTest(label):
-                self.assert_denied(self.decide(self.TEXT, sub=sub, environ=env, shell=ps), 'git-push-pmdata')
+                self.assert_denied(self.decide(self.TEXT, sub=sub, environ=env, shell=ps), 'unreadable-kept')
         # an unclean line too (the unclosed quote): the fallback judges it the same way
-        self.assert_denied(self.decide(self.TEXT + "; echo 'x", environ=PM, shell=ps), 'git-push-pmdata')
+        self.assert_denied(self.decide(self.TEXT + "; echo 'x", environ=PM, shell=ps), 'unreadable-kept')
 
 
 class UnknownDirectory(Base):

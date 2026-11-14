@@ -1025,7 +1025,7 @@ def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1,
         if d:
             return rules.reworded(d, '%s, and in it: %s' % (head, d.reason))
     if not p.clean:
-        d = fallback.named_runs(event, ctx, text, p, cmd.cwd, role, level=level)
+        d = fallback.named_runs(event, ctx, p, cmd.cwd, role, level=level)
         if d:
             return rules.reworded(d, '%s, and in it: %s' % (head, d.reason))
     return None

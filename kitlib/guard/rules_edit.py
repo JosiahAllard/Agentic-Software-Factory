@@ -715,16 +715,14 @@ def pm_data_unknown(ctx, target, cwd, role, what):
 
 def edit_target(event, ctx, target, cwd, role, what, unknown_why=None, rewrite=None, run=None, redirect=False,
                 shell=None, item=False, stand_in=False):
-    """Deny an edit of `target` in a main checkout (or a place git cannot tell) by a role that
-    may not edit one, and an agent session's write outside its roots (write_jail). `rewrite(path)`
-    gives the same edit aimed at `path` (the alternative); `run` the command to rerun from the
-    worktree when it writes into the directory it runs in; `redirect`, a shell redirect's target:
-    output, so the alternative with no worktree of the session's own is the temp folder; `shell`,
-    the dialect of the line `run` is on (the cd line of worktree_alternative); `item`, a target the
-    guard cannot place that is a provider item on a line of more than plain calls (ps_provider_word);
-    `stand_in`, a target that stands for what the guard cannot read (the folder python runs in, the
-    pipeline's paths), which counts as the owner's delegation list only when it is that file
-    (delegfile.edit)."""
+    """Deny an edit of `target` in a main checkout (or a place git cannot tell) by a role that may not edit one, and an
+    agent session's write outside its roots (write_jail). `rewrite(path)` gives the same edit aimed at `path` (the
+    alternative); `run` the command to rerun from the worktree when it writes into the directory it runs in; `redirect`,
+    a shell redirect's target: output, so the alternative with no worktree of the session's own is the temp folder;
+    `shell`, the dialect of the line `run` is on (the cd line of worktree_alternative); `item`, a target the guard
+    cannot place that is a provider item on a line of more than plain calls (ps_provider_word); `stand_in`, a target
+    that stands for what the guard cannot read (the folder python runs in, the pipeline's paths), which counts as the
+    owner's delegation list only when it is that file (delegfile.edit)."""
     d = ledger_rule(event, ctx, target, role, what, stand_in, unread=False) or pm_data_unknown(ctx, target, cwd, role, what) or \
         lock_state(event, ctx, target, role, what) or hub_secret_edit(event, ctx, target, role, what) or \
         delegations_edit(event, ctx, target, role, what, stand_in) or \
@@ -833,7 +831,9 @@ def main_checkout(event, ctx, target, cwd, role, what, unknown_why=None, rewrite
     if place.kind == repo.UNKNOWN:
         mine = own_worktree(ctx, cwd)
         name, only, see = os.path.basename(target), '', ''
-        if mine and rewrite is not None:
+        if shell and rewrite is not None and not redirect and re.search(r'[\\/]\.git[\\/]worktrees[\\/][^\\/]+[\\/]index\.lock$', target, re.I):
+            instead, only = cd_line('<worktree>', rewrite(fwd(target)), shell), ' (its own index.lock: from that worktree)'
+        elif mine and rewrite is not None:
             instead = rewrite(fwd(os.path.join(mine, name)))
         elif no_wt or not main_top:
             instead = new_wt

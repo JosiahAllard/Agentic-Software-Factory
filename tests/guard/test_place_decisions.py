@@ -120,5 +120,91 @@ class SameDecisionsWhenConfigWorktreeWins(SameDecisions):
     LINKED_WT = '[core]\n\tbare = false\n\tlongpaths = true\n'
 
 
+@real_git('a path in a git dir is UNKNOWN to git and the filesystem reader alike; the fake World answers MAIN')
+class LinkedWorktreeIndexLock(unittest.TestCase):
+    """A subagent deletes the index.lock a git that died left in its linked worktree's git dir,
+    <common>/worktrees/<name>/index.lock (rules.own_index_lock, docs/guard-rules.md main-checkout row):
+    rm, unlink or Remove-Item, from that worktree; from the main checkout the Instead is that run, the
+    cd in the same call. Every other write into a git dir stays refused (KIT-GUARD-LINKED-WT-LOCK)."""
+
+    def setUp(self):
+        self.w = w = RealWorld()
+        self.addCleanup(shutil.rmtree, w.base, True)
+        W.deny_softened()
+        self.addCleanup(W.allow_unplaced)
+        self.wt2 = os.path.join(w.main, '.claude', 'worktrees', 'wt2')
+        self.git('worktree', 'add', '-q', self.wt2, '-b', 'kit/wt2')
+        self.other, self.owt = os.path.join(w.base, 'other'), os.path.join(w.base, 'owt')
+        os.makedirs(self.other)
+        for args in (('init', '-q', '-b', 'main'), ('-c', 'user.name=t', '-c', 'user.email=t@example.invalid',
+                                                     'commit', '-q', '--allow-empty', '-m', 'x'),
+                     ('worktree', 'add', '-q', self.owt, '-b', 'kit/owt')):
+            self.git(*args, cwd=self.other)
+        self.gd = os.path.join(w.main, '.git', 'worktrees', 'wt')
+        self.lock = W.fwd(os.path.join(self.gd, 'index.lock'))
+        for path in (self.lock, os.path.join(self.other, '.git', 'worktrees', 'owt', 'index.lock')):
+            open(path, 'w').close()
+
+    def git(self, *args, cwd=None):
+        subprocess.run(('git',) + args, cwd=cwd or self.w.main, env=gitfixture.fixture_env(), check=True,
+                       capture_output=True)
+
+    def judge(self, payload):
+        return decide(payload, self.w.ctx(classify=place.classify))
+
+    def test_own_lock_deleted_from_its_worktree(self):
+        w, lock = self.w, self.lock
+        typed = '/' + lock[0].lower() + lock[2:] if lock[1:2] == ':' else lock     # Git Bash's /z/... as observed
+        bash_instead = 'cd "<worktree>" && rm "%s"' % lock
+        ps_instead = 'cd "<worktree>"; if ($?) { Remove-Item "%s" }' % lock
+        refused = [  # (name, payload, Instead or None)
+            ('the observed replay, from the main checkout', W.bash('rm %s' % typed, w.main, sub=True), bash_instead),
+            ('relative, from the main checkout', W.bash('rm .git/worktrees/wt/index.lock', w.main, sub=True),
+             bash_instead),
+            ('PowerShell, from the main checkout', W.ps('Remove-Item "%s"' % lock, w.main, sub=True), ps_instead),
+            ('wt2\'s lock from wt', W.bash('rm %s/.git/worktrees/wt2/index.lock' % W.fwd(w.main), w.wt, sub=True),
+             'cd "<worktree>" && rm "%s/.git/worktrees/wt2/index.lock"' % W.fwd(w.main)),
+            ('another repository\'s worktree', W.bash('cd "%s" && rm "%s/.git/worktrees/owt/index.lock"' % (
+                W.fwd(self.owt), W.fwd(self.other)), w.main, sub=True), None),
+            ('its config.worktree', W.bash('rm %s/config.worktree' % W.fwd(self.gd), w.wt, sub=True), None),
+            ('its sync-base marker', W.bash('rm %s/kit-sync-base' % W.fwd(self.gd), w.wt, sub=True), None),
+            ('the main checkout\'s index.lock', W.bash('rm %s/.git/index.lock' % W.fwd(w.main), w.wt, sub=True), None),
+            ('a lock outside a worktree git dir', W.bash('rm %s/.git/worktrees/x/index.lock' % W.fwd(w.main), w.wt,
+                                                         sub=True), None),
+            ('its whole git dir', W.bash('rm -r %s' % W.fwd(self.gd), w.wt, sub=True), None),
+            ('a redirect onto it', W.bash('echo x > %s' % lock, w.wt, sub=True), None),
+            ('rm with a redirect onto it', W.bash('rm -f nothing 2> %s' % lock, w.wt, sub=True), None),
+            ('cp onto it', W.bash('cp %s/src/x %s' % (W.fwd(w.wt), lock), w.wt, sub=True), None),
+            ('a hard link onto it', W.bash('ln %s/.git/config %s' % (W.fwd(w.main), lock), w.wt, sub=True), None),
+            ('a PowerShell hard link onto it', W.ps('New-Item -ItemType HardLink -Path "%s" -Target "%s/.git/config"'
+                                                    % (lock, W.fwd(w.main)), w.wt, sub=True), None),
+            ('Remove-Item -Include under its git dir', W.ps('Remove-Item -Path "%s" -Include index.lock -Recurse'
+                                                            % W.fwd(self.gd), w.wt, sub=True), None),
+            ('the Write tool', W.event('Write', {'file_path': lock, 'content': ''}, w.wt, sub=True), None),
+        ]
+        for name, payload, instead in refused:
+            with self.subTest(name):
+                d = self.judge(payload)
+                self.assertIsNotNone(d)
+                self.assertEqual((d.verdict, d.rule), ('deny', 'main-checkout'))
+                if instead is not None:
+                    self.assertEqual(d.instead, instead)
+        allowed = [
+            ('rm -f from wt', W.bash('rm -f %s' % lock, w.wt, sub=True)),
+            ('/bin/rm from wt', W.bash('/bin/rm %s' % lock, w.wt, sub=True)),
+            ('unlink from wt', W.bash('unlink %s' % lock, w.wt, sub=True)),
+            ('the bash Instead, filled', W.bash(bash_instead.replace('<worktree>', W.fwd(w.wt)), w.main, sub=True)),
+            ('the PowerShell Instead, filled', W.ps(ps_instead.replace('<worktree>', W.fwd(w.wt)), w.main, sub=True)),
+            ('Remove-Item from wt', W.ps('Remove-Item -Force "%s"' % lock, w.wt, sub=True)),
+            ('module-qualified Remove-Item', W.ps('Microsoft.PowerShell.Management\\Remove-Item "%s"' % lock, w.wt,
+                                                  sub=True)),
+            ('del from wt', W.ps('del "%s"' % lock, w.wt, sub=True)),
+        ]
+        for name, payload in allowed:
+            with self.subTest(name):
+                d = self.judge(payload)
+                self.assertIsNone(d, d and d.reason)
+
+
 if __name__ == '__main__':
     unittest.main()

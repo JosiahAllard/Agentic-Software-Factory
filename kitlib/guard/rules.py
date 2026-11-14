@@ -95,9 +95,9 @@ from .rules_base import (AGENT_MARKS, ALLOW, ASK, Asked, CITE_MAX, DENY, ELIDED,
                          PS_ALIASES, PS_CMDLETS, PS_COMMON_ALIASES, PS_COMMON_SWITCHES, PS_COMMON_VALUES,
                          PS_NAMED_DYN_RE, SAFE_WORD_RE, SHELLS, TAG, UNPLACED, WIN_OPT_RE, _COMMAND, _FILTERS, _PATHS,
                          advice_kit, agent_session, bare, cited, fwd, here, is_owner_session, kept_word, kit_tool,
-                         literal_word, lock_tool, own_worktree, owner_host, ps_args, ps_bound, ps_native_unsure,
-                         ps_param_word, ps_params, quote, refuse, reworded, same_dir, shell_word, spelt, split_commas,
-                         subagent, tag, tag_role, tail_word, unowned_chat)
+                         literal_word, lock_tool, own_index_lock, own_worktree, owner_host, ps_args, ps_bound,
+                         ps_native_unsure, ps_param_word, ps_params, quote, refuse, reworded, same_dir, shell_word,
+                         spelt, split_commas, subagent, tag, tag_role, tail_word, unowned_chat)
 from .rules_owner import (COMPUTED_TAIL_RE, HUB_NAMES_LIMIT, HUB_OWNER_WHY, HUB_SCRIPT, HUB_SECRETS_WHY, HubPlaces,
                           HubShell, LOCK_SCRIPT, LOCK_VALUE_OPTS, NODE_EVAL, NODE_VALUE_OPTS, OPENERS, OWNER_LOCK_WHY,
                           OWNER_SETUP_WHY, PY_FLAG_RE, PY_RUN_RE, SETUP_APPLY, SETUP_SCRIPTS, UI_NAME_RE, _tool_run,

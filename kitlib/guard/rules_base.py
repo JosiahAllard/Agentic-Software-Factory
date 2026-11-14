@@ -1,8 +1,7 @@
-"""The helpers every family of the guard's rules shares (kitlib.guard.rules, which re-exports each name
-here): the verdicts, refuse and the tag a refusal ends with, the quoting an alternative's command uses,
-the kit folder and tools an alternative names, the PowerShell cmdlet tables several families read, the
-session helpers (is_owner_session, owner_host, unowned_chat, agent_session), own_worktree and the
-unplaced rule's name (UNPLACED)."""
+"""The helpers every family of the guard's rules shares (kitlib.guard.rules, which re-exports each name here): the
+verdicts, refuse and the tag a refusal ends with, the quoting an alternative's command uses, the kit folder and tools an
+alternative names, the PowerShell cmdlet tables several families read, the session helpers (is_owner_session,
+owner_host, unowned_chat, agent_session), own_worktree, own_index_lock and the unplaced rule's name (UNPLACED)."""
 import contextvars
 import os
 import re
@@ -35,10 +34,9 @@ _COMMAND = contextvars.ContextVar('kit_guard_command', default=None)   # the she
 
 
 def cited(what, command, cap=CITE_MAX):
-    """`what` with each backtick quote of the shell text `command` (or of a part of it) longer than
-    `cap` cut to its first `cap` characters and ELIDED. A quote runs from a backtick to the furthest
-    later backtick whose text between is all in `command`, so a PowerShell escape inside it does not
-    end it; text `command` does not hold is never cut."""
+    """`what` with each backtick quote of the shell text `command` (or of a part of it) longer than `cap` cut to its
+    first `cap` characters and ELIDED. A quote runs from a backtick to the furthest later backtick whose text between is
+    all in `command`, so a PowerShell escape inside it does not end it; text `command` does not hold is never cut."""
     if not command or len(command) <= cap or '`' not in what:
         return what
     ticks = [i for i, c in enumerate(what) if c == '`']
@@ -58,10 +56,9 @@ def cited(what, command, cap=CITE_MAX):
 
 
 def refuse(rule, role, what, instead, kind=DENY):
-    """The refusal `rule` makes, or None when its mode (kitlib.guard.modes) is warn, which keeps the
-    reason as the call's warning, or off. A warning quotes at most CITE_MAX characters of the
-    command decide() judges (cited); the Instead text and the tag stay whole, and a refusal keeps
-    its full text."""
+    """The refusal `rule` makes, or None when its mode (kitlib.guard.modes) is warn, which keeps the reason as the
+    call's warning, or off. A warning quotes at most CITE_MAX characters of the command decide() judges (cited); the
+    Instead text and the tag stay whole, and a refusal keeps its full text."""
     m = modes.mode(rule)
     if m == modes.OFF:
         return None
@@ -131,16 +128,15 @@ def literal_word(path):
 
 
 def advice_kit(ctx):
-    """The kit folder an alternative names (docs/guard.md "Kit paths in advice"): the installed
-    export the sessions' kit tools run from, when the guard can know it, else the kit the guard
-    runs from (ctx.kit). The guard names the export the machine's plugin marketplace names now
-    (kitlib.pluginsource.layout.current_folder under the plugin export root), when that folder is an
-    export (a 12-hex-digit name, the marker and kit.json in it) whose marker names the kit checkout
-    the guard is from (export_checkout): the guard's own checkout, or, for a guard run from an
-    export, the checkout that export's marker names. So a guard still running from an export a
-    refresh replaced names the current one, which prune keeps, and which kitlib.hookrun.headerfollow
-    then tells the session its header names. The hook is not told which folder a session's header
-    named, so a session that started on an older export is still pointed at the current one."""
+    """The kit folder an alternative names (docs/guard.md "Kit paths in advice"): the installed export the sessions' kit
+    tools run from, when the guard can know it, else the kit the guard runs from (ctx.kit). The guard names the export
+    the machine's plugin marketplace names now (kitlib.pluginsource.layout.current_folder under the plugin export root),
+    when that folder is an export (a 12-hex-digit name, the marker and kit.json in it) whose marker names the kit
+    checkout the guard is from (export_checkout): the guard's own checkout, or, for a guard run from an export, the
+    checkout that export's marker names. So a guard still running from an export a refresh replaced names the current
+    one, which prune keeps, and which kitlib.hookrun.headerfollow then tells the session its header names. The hook is
+    not told which folder a session's header named, so a session that started on an older export is still pointed at the
+    current one."""
     kit = getattr(ctx, 'kit', None)
     if not kit:
         return kit
@@ -212,13 +208,12 @@ PS_COMMON_ALIASES = {'ea': 'erroraction', 'wa': 'warningaction', 'infa': 'inform
 
 
 class PSCmdlet(object):
-    """A cmdlet's parameters as far as the guard needs them: `values` take a value, `switches`
-    do not, `pos` names the positional slots in order, `writes` the parameters naming a file it
-    writes (`'*'` in pos: every further positional binds to the last slot). `piped`: the groups of
-    those it binds from the pipeline when the line binds no parameter of the group (a path the
-    text does not show, PIPE_UNPLACED). `here`: the parameter whose absence makes it write the
-    location it runs in (Copy-Item with no -Destination). `provider`: a provider-aware item or
-    content cmdlet, whose item on a drive that holds no files is no file (PS_PROVIDER_CMDLETS)."""
+    """A cmdlet's parameters as far as the guard needs them: `values` take a value, `switches` do not, `pos` names the
+    positional slots in order, `writes` the parameters naming a file it writes (`'*'` in pos: every further positional
+    binds to the last slot). `piped`: the groups of those it binds from the pipeline when the line binds no parameter of
+    the group (a path the text does not show, PIPE_UNPLACED). `here`: the parameter whose absence makes it write the
+    location it runs in (Copy-Item with no -Destination). `provider`: a provider-aware item or content cmdlet, whose
+    item on a drive that holds no files is no file (PS_PROVIDER_CMDLETS)."""
 
     def __init__(self, values, switches=(), pos=(), writes=(), aliases=None, piped=(), here=None, provider=False):
         self.values = tuple(values) + PS_COMMON_VALUES
@@ -315,10 +310,9 @@ def ps_param_word(cmd, w):
 
 
 def ps_params(cmd, words, spec):
-    """({canonical param: [value Word]}, [positional Word]) of a cmdlet's arguments, by `spec`.
-    A parameter is matched as PowerShell does: exactly, by an alias, or by the one name it is a
-    prefix of. An ambiguous prefix binds to every name it could be (the guard fails closed). A
-    quoted word is never a parameter."""
+    """({canonical param: [value Word]}, [positional Word]) of a cmdlet's arguments, by `spec`. A parameter is matched
+    as PowerShell does: exactly, by an alias, or by the one name it is a prefix of. An ambiguous prefix binds to every
+    name it could be (the guard fails closed). A quoted word is never a parameter."""
     names = spec.names()
     named, pos = {}, []
     k = 0
@@ -436,14 +430,13 @@ def unowned_chat(event, ctx):
 
 
 def agent_session(event, ctx):
-    """True for a subagent, or a session whose mark is one of guard_agent_marks (default
-    AGENT_MARKS: coordinator, deep-worker, consultant and pm), case
-    ignored; a guard_agent_marks value replaces the default list. The rules only agents are held to (kill by name, lock state,
-    kit-json, the write jail, git-stash-shared) use it. The mark is compared without the kit plugin's prefix
-    (kitlib.host.agentname.bare_mark), so a role_resolver that does not strip it fails closed too.
-    On a host whose hooks carry no subagent identity (hosts.json capabilities
-    subagent_identity_in_hooks false: Codex) every session is an agent session, the unmarked
-    main chat too, and so is one on a host no hosts.json entry has the profile of (fail closed)."""
+    """True for a subagent, or a session whose mark is one of guard_agent_marks (default AGENT_MARKS: coordinator,
+    deep-worker, consultant and pm), case ignored; a guard_agent_marks value replaces the default list. The rules only
+    agents are held to (kill by name, lock state, kit-json, the write jail, git-stash-shared) use it. The mark is
+    compared without the kit plugin's prefix (kitlib.host.agentname.bare_mark), so a role_resolver that does not strip
+    it fails closed too. On a host whose hooks carry no subagent identity (hosts.json capabilities
+    subagent_identity_in_hooks false: Codex) every session is an agent session, the unmarked main chat too, and so is
+    one on a host no hosts.json entry has the profile of (fail closed)."""
     if subagent(event):
         return True
     marks = ctx.user().get('guard_agent_marks') or AGENT_MARKS
@@ -462,11 +455,19 @@ def own_worktree(ctx, cwd, main_top=None):
     here_ = ctx.place(cwd) if cwd else None
     if here_ is None or here_.kind != repo.LINKED or not here_.top:
         return None
-    if main_top is not None:
-        mine = ctx.main_top(cwd)
-        if not mine or paths.norm(mine) != paths.norm(main_top):
-            return None
+    if main_top is not None and not same_dir(ctx.main_top(cwd), main_top):
+        return None
     return here_.top
+
+
+def own_index_lock(ctx, target, runs_in, cwd):
+    """True when `target` is <common>/worktrees/<name>/index.lock of the linked worktree `runs_in` is in (the git dir its
+    .git file names), that worktree in `cwd`'s repository and the PM data worktree told; each path as repo.real gives it."""
+    p, here_ = (ctx.place(runs_in), ctx.place(cwd)) if runs_in and cwd and target else (None, None)
+    gd = repo.real(p.git_dir) if p and p.kind == repo.LINKED and p.git_dir and p.common and here_.common else None
+    return bool(gd) and not (ctx.pm_data_error(runs_in) or ctx.pm_data_error(cwd)) and \
+        repo.real(p.common) == repo.real(here_.common) and repo.real(target) == os.path.join(gd, 'index.lock') and \
+        os.path.dirname(gd) == repo.real(os.path.join(p.common, 'worktrees'))
 
 
 # A write the guard cannot place: a computed or unread target, code given on the line (python -c,

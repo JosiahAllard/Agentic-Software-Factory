@@ -186,11 +186,14 @@ def outcome_of(nj, merge):
     results = [{'name': s.get('name'), 'status': str(s.get('result')).upper(),
                 'seconds': s.get('seconds') or 0, 'reasons': []} for s in rec.get('steps') or ()]
     _ok, line = runner.verdict(results)
-    return G.Outcome(G.OK, [line, 'ran on load node %s as job %s' % (nj.node.name, nj.job)],
-                     verdict=line, results=results, docs=gate_ok.mode_of(rec) == 'docs',
-                     source=gate_ok.source_of(rec), head=merge, log_dir=None, ran_on=nj.ran_on,
-                     node=nj.node.name, job=nj.job, record=rec,
-                     staging_skipped=rec.get('staging_skipped'))
+    skipped = rec.get('staging_skipped')
+    # the node's own output is not relayed: the land log names what a staging landing left out
+    staging = [runner.STAGING_SKIPPED % ', '.join(skipped)] if skipped else []
+    lines = staging + [line, 'ran on load node %s as job %s' % (nj.node.name, nj.job)]
+    return G.Outcome(G.OK, lines, verdict=line, results=results,
+                     docs=gate_ok.mode_of(rec) == 'docs', source=gate_ok.source_of(rec),
+                     head=merge, log_dir=None, ran_on=nj.ran_on, node=nj.node.name, job=nj.job,
+                     record=rec, staging_skipped=skipped)
 
 
 def _not_landed(nj, node, code, error, expired, ceiling_s):

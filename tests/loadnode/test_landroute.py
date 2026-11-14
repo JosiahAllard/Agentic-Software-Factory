@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
+from kitlib.gate import runner
 from kitlib.loadnode import box, job, landgate, landroute, registry, remote, route
 from tests.loadnode.test_box import RefGit
 from tests.loadnode.test_cli import Cli, run_reply
@@ -353,7 +354,11 @@ class LandRun(Base):
                 rec = dict(REC, staging_skipped=skipped)
                 nj = types.SimpleNamespace(land_record=rec, ran_on={'node': 'box1'}, job=JOB,
                                            node=NODE)
-                self.assertEqual(landroute.outcome_of(nj, SHA).facts['staging_skipped'], skipped)
+                out = landroute.outcome_of(nj, SHA)
+                self.assertEqual(out.facts['staging_skipped'], skipped)
+                # the land log's line, as main's own merged gate says it
+                self.assertEqual([l for l in out.lines if l.startswith('STAGING')],
+                                 [runner.STAGING_SKIPPED % 'slow'] if skipped else [])
 
     def test_a_docs_gate_on_the_node_is_a_docs_outcome(self):
         rec = dict(REC, mode='docs', full=False, source='auto')

@@ -12,6 +12,7 @@ import types
 import unittest
 from unittest import mock
 
+from kitlib.backlog import orphans
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog import store_ref
@@ -257,6 +258,62 @@ class Cli(unittest.TestCase):
         out = self.ok('list', '--area', 'docs')
         self.assertIn('BAR', out)
         self.assertNotIn('FOO', out)
+
+    def test_list_orphans_states_and_routes(self):
+        def rec(i, branch, session='x'):
+            fields = {'pulled_by': branch, 'pulled_session': session}
+            return types.SimpleNamespace(id=i, get=fields.get)
+        probed = []
+
+        def liveness(branch):
+            probed.append(branch)
+            return (None, 't') if branch == 'dead' else ('process in tree', None)
+        view = orphans.View(
+            names={'bare', 'dead', 'busy', 'far', 'main'}, local={'bare', 'dead', 'busy', 'main'},
+            on={'dead', 'busy'}, main_on='main', bad={'bad name'}, liveness=liveness,
+            info=lambda b, local: ('2026-11-07', 3 if local else 4), why='git said no',
+            quiet=lambda r: 'me' if r.get('pulled_session') else None)
+        table = [(rec('A', 'gone'), r'^A  gone  session=x  no branch  -> backlog.py -C <checkout> release A --reason'),
+                 (rec('B', 'bare'), r'^B  bare  last 2026-11-07  ahead 3  session=x  NO WORKTREE'
+                                    r'  -> backlog.py -C <checkout> --session me release B --reason .*refused unless quiet'),
+                 (rec('B2', 'bare', None), r'NO WORKTREE  -> ask the PM$'),
+                 (rec('C', 'dead', None), r'session=none  NO LIVE AGENT  -> backlog.py -C <checkout> release C --reason'),
+                 (rec('D', 'busy'), r'live: process in tree  -> backlog.py -C <checkout> --session me release D .*quiet'),
+                 (rec('D2', 'busy', None), r'live: process in tree  -> ask the PM'),
+                 (rec('E', 'far'), r'ahead 4  session=x  remote only  -> ask the PM'),
+                 (rec('F', 'main'), r'main checkout is on it  -> ask the PM'),
+                 (rec('G', 'bad name'), r'no branch name  -> ask the PM'),
+                 (rec('H', ''), r'no branch name  -> ask the PM')]
+        for r, want in table:
+            self.assertRegex(orphans.render([r], view)[0], want)
+        self.assertEqual(probed, ['dead', 'busy', 'busy'])      # only a branch with a worktree is probed
+        gone = view._replace(on=None)
+        self.assertRegex(orphans.render([rec('A', 'bare')], gone)[0],
+                         r'unreadable: git said no  -> ask the PM')
+        self.assertEqual(self.run_tool('list', '--orphans', '--area', 'docs')[0], 2)
+
+    def test_list_orphans_reads_the_repository(self):
+        self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py', *ADD_FLAGS)
+        self.ok('set', 'FOO', '--priority', '2', '--priority-by', 'agent', '--effort', 's')
+        self.assertNotIn('FOO', self.ok('list', '--orphans'))
+        main = self.repo.git('branch', '--show-current')
+        self.repo.git('checkout', '-b', 'tools/wk')
+        self.ok('--session', 'kit-a', 'pull', 'FOO', '--reason', 'the test pulls it')
+        self.assertRegex(self.ok('list', '--orphans'), r'FOO  tools/wk  .*main checkout is on it')
+        self.repo.git('checkout', main)
+        self.assertRegex(self.ok('list', '--orphans'),
+                         r'FOO  tools/wk  last \d{4}-\d\d-\d\d  ahead \d+.*NO WORKTREE')
+        tree = tempfile.mkdtemp(prefix='kit-wk-')
+        self.addCleanup(rmtree, tree)
+        self.repo.git('worktree', 'add', tree + os.sep + 'wk', 'tools/wk')
+        self.repo.git('worktree', 'remove', '--force', tree + os.sep + 'wk')
+        # the printed quiet release is a call that parses: a refusal or a release, never USAGE
+        out = self.ok('--session', 'kit-a', 'list', '--orphans')
+        self.assertIn('backlog.py -C <checkout> --session kit-a release FOO --reason', out)
+        rc, said = self.run_tool('--session', 'kit-a', 'release', 'FOO', '--reason', 'the orphan check in a test')
+        self.assertNotIn('USAGE', said)
+        self.repo.git('worktree', 'add', tree + os.sep + 'wk', 'tools/wk')
+        self.assertRegex(self.ok('list', '--orphans'), r'FOO  tools/wk  .*  (live: |NO LIVE AGENT)')
 
     def test_park_list_parked_and_unpark(self):
         self.ok('add', 'FOO', '--summary', 'a thing to do', '--scope', 'tools/x.py', *ADD_FLAGS)

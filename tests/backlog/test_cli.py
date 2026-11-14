@@ -271,25 +271,25 @@ class Cli(unittest.TestCase):
         view = orphans.View(
             names={'bare', 'dead', 'busy', 'far', 'main'}, local={'bare', 'dead', 'busy', 'main'},
             on={'dead', 'busy'}, main_on='main', bad={'bad name'}, liveness=liveness,
-            info=lambda b, local: ('2026-11-07', 3 if local else 4), why='git said no')
+            info=lambda b, local: ('2026-11-07', 3 if local else 4), why='git said no',
+            quiet=lambda r: 'me' if r.get('pulled_session') else None)
         table = [(rec('A', 'gone'), r'^A  gone  session=x  no branch  -> release A --reason'),
                  (rec('B', 'bare'), r'^B  bare  last 2026-11-07  ahead 3  session=x  NO WORKTREE'
-                                    r'  -> quiet release .*successor'),
+                                    r'  -> release B --session me --reason .*quiet release'),
                  (rec('B2', 'bare', None), r'NO WORKTREE  -> ask the PM$'),
                  (rec('C', 'dead', None), r'session=none  NO LIVE AGENT  -> release C --reason'),
-                 (rec('D', 'busy'), r'live: process in tree  -> ask the PM'),
+                 (rec('D', 'busy'), r'live: process in tree  -> release D --session me .*quiet release'),
+                 (rec('D2', 'busy', None), r'live: process in tree  -> ask the PM'),
                  (rec('E', 'far'), r'ahead 4  session=x  remote only  -> ask the PM'),
                  (rec('F', 'main'), r'main checkout is on it  -> ask the PM'),
                  (rec('G', 'bad name'), r'no branch name  -> ask the PM'),
                  (rec('H', ''), r'no branch name  -> ask the PM')]
         for r, want in table:
             self.assertRegex(orphans.render([r], view)[0], want)
-        self.assertEqual(probed, ['dead', 'busy'])      # only a branch with a worktree is probed
+        self.assertEqual(probed, ['dead', 'busy', 'busy'])      # only a branch with a worktree is probed
         gone = view._replace(on=None)
         self.assertRegex(orphans.render([rec('A', 'bare')], gone)[0],
                          r'unreadable: git said no  -> ask the PM')
-        self.assertRegex(orphans.render([rec('A', 'dead')], view._replace(liveness=None))[0],
-                         r'liveness not probed  -> ask the PM')
         self.assertEqual(self.run_tool('list', '--orphans', '--area', 'docs')[0], 2)
 
     def test_list_orphans_reads_the_repository(self):

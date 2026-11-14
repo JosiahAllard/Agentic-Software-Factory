@@ -5,24 +5,24 @@ State per record, from the branch set and the worktree list, never from the prob
 branch name` (empty or invalid `pulled_by`); `no branch`; `remote only` (only `<remote>/<b>`: a
 quiet release needs the local branch); `main checkout is on it`; `NO WORKTREE` (a local branch no
 worktree is on: the probe calls that live, so only a quiet release stops it); `NO LIVE AGENT` (a
-worktree the probe finds dead); `live: <why>`; `unreadable: <why>`; `liveness not probed` (no probe
-on the Context)."""
+worktree the probe finds dead); `live: <why>`; `unreadable: <why>`."""
 import collections
 
 from kitlib.git import cmd, refs
 from kitlib.git import repo as gitrepo
 
-from . import plan
+from . import plan, plan_claim
 
-NO_NAME, NO_BRANCH, REMOTE, MAIN, NO_TREE, DEAD, UNPROBED = (
+NO_NAME, NO_BRANCH, REMOTE, MAIN, NO_TREE, DEAD = (
     'no branch name', 'no branch', 'remote only', 'main checkout is on it', 'NO WORKTREE',
-    'NO LIVE AGENT', 'liveness not probed')
+    'NO LIVE AGENT')
 
 # What one run read: `names` every local and remote branch, `local` the local ones, `on` the
 # branches with a linked worktree, `main_on` the main checkout's branch (each None when unread, with
-# `why` saying so), `bad` the invalid `pulled_by` values, `liveness(branch) -> (why live, tip)` or
-# None, `info(branch, local) -> (last commit date, commits ahead)`.
-View = collections.namedtuple('View', 'names local on main_on bad liveness info why')
+# `why` saying so), `bad` the invalid `pulled_by` values, `liveness(branch) -> (why live, tip)`,
+# `info(branch, local) -> (last commit date, commits ahead)`, `quiet(rec)` the caller's session key
+# when it may release `rec`'s pull as quiet (plan_claim.quiet_key_why), else None.
+View = collections.namedtuple('View', 'names local on main_on bad liveness info why quiet')
 
 
 def state(branch, v):
@@ -39,19 +39,18 @@ def state(branch, v):
         return MAIN
     if branch not in v.on:
         return NO_TREE
-    if v.liveness is None:
-        return UNPROBED
     why, _tip = v.liveness(branch)
     return DEAD if why is None else 'live: %s' % why
 
 
-def route(st, rid, session):
-    """What stops the pull: `release` by anyone, a quiet release (the caller's `--session`, or a
-    successor's, is the pull's: 4 h quiet), or the PM."""
+def route(st, rid, key):
+    """What stops the pull: `release` by anyone, a quiet release (`key`, the caller's `--session`,
+    is the pull's or a successor's: refused unless 4 h quiet), or the PM."""
     if st in (NO_BRANCH, DEAD):
-        return 'release %s --reason' % rid
-    if st == NO_TREE and session:
-        return 'quiet release if your --session (or its successor\'s) matches (4 h quiet), else ask the PM'
+        return 'release %s --reason "<why>"' % rid
+    if key and (st == NO_TREE or st.startswith('live: ')):
+        return ('release %s --session %s --reason "<why>" (quiet release: refused unless 4 h quiet)'
+                % (rid, key))
     return 'ask the PM'
 
 
@@ -63,12 +62,12 @@ def render(recs, v):
         branch, session = r.get('pulled_by'), r.get('pulled_session')
         st = state(branch, v)
         seen = ''
-        if st in (REMOTE, MAIN, NO_TREE, DEAD, UNPROBED) or st.startswith('live: '):
+        if st in (REMOTE, MAIN, NO_TREE, DEAD) or st.startswith('live: '):
             date, ahead = v.info(branch, branch in v.local)
             seen = '  last %s  ahead %s' % (date, ahead)
         out.append('%s  %s%s  session=%s  %s  -> %s'
                    % (r.id, branch or '-', seen, session or 'none', st,
-                      route(st, r.id, session)))
+                      route(st, r.id, v.quiet(r))))
     return out
 
 
@@ -93,6 +92,12 @@ def lines(ctx, snap):
         date, dwhy = cmd.run_text(['log', '-1', '--format=%cs', ref, '--'], ctx.root)
         ahead, awhy = cmd.run_text(['rev-list', '--count', '%s..%s' % (base, ref)], ctx.root)
         return date or '? (%s)' % dwhy, ahead or '? (%s)' % awhy
-    v = View(names, local, on, trees[0].branch if trees else None, bad, ctx.liveness, info,
-             why or twhy)
+
+    def no_probe(_branch):          # opener.open_store gives a Context no probe in some modes
+        return 'no liveness probe on this Context', None
+
+    def quiet(rec):
+        return ctx.session if plan_claim.quiet_key_why(ctx, rec) is None else None
+    v = View(names, local, on, trees[0].branch if trees else None, bad, ctx.liveness or no_probe, info,
+             why or twhy, quiet)
     return render(recs, v)

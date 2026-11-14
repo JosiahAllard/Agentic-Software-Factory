@@ -11,13 +11,9 @@
                      on standard input, is read one level deep, its first SCRIPT_CAP bytes, a
                      path that is not a regular file refused (script_file).
   backlog-raw-write  a write of the backlog that skips the tool and its role check: a subagent's
-                     python code importing kitlib.backlog (-c, standard input, -m, runpy) or naming
-                     tools/backlog.py (a script file's: only where its code can run it, py_reach,
-                     or what it prints may run as code, piped_script), except a script file
-                     that is its repository's landed code (landed_script);
-                     any session's but the owner's python code naming the hub's
-                     record writer by its module name, not its file's path
-                     (kitlib.hubsite.recordwrite, plan_answer: hub_writer_code);
+                     python code that uses kitlib.backlog or runs tools/backlog.py (py_reach,
+                     piped_script), but not landed code (landed_script); any session's but the
+                     owner's python code naming the hub's record writer (hub_writer_code);
                      any session's but the owner's git write of the store's ref
                      (refs/backlog/*; the backlog branch when the store is `branch`); any
                      session's but the owner's edit of a folder store's records.
@@ -48,11 +44,10 @@ TOOL = 'backlog'                                # rules.kit_tool's name for it
 UNIDENTIFIED = 'unidentified'                   # kitlib.hookrun.main.UNIDENTIFIED
 ASK = ('Ask a session whose role may take it (your coordinator; a coordinator asks the PM) to run it, '
        'and say why. Every role may read the record:')
-# python code that reaches the backlog's library or runs its tool: an import of kitlib.backlog
-# in any spelling, a name of tools/backlog.py, or the kit command naming it (['kit', 'backlog', ...]).
-# Other standard-input code and -c's other words are refused on it alone (backlog_code); a script
-# file's text, the -c code word (c_code) and a heredoc or here-string python reads (stdin_code) are
-# then read as python (py_reach), so a name they only print, hold in a comment or give as data passes.
+# python code naming the backlog's library, tools/backlog.py or `kit backlog`: refused on it alone
+# unless the guard reads the code as python (py_reach: a script file, c_code, stdin_code).
+# STORE_NAME_RE: the store's ref or a folder store's records, named in code that writes (_file_write)
+STORE_NAME_RE = re.compile(r'refs\W{1,6}(?:heads\W{1,6})?backlog|packed-refs|docs[/\\]+backlog[/\\]', re.I)
 CODE_RE = re.compile(r'kitlib\s*[./\\]\s*backlog\b|from\s+kitlib\s+import\s+[^\n;]*\bbacklog\b|'
                      r'\btools\s*[./\\]\s*backlog\b|\bbacklog\.py\b|\bkit(?:\.py|\.cmd|\.exe)?\W{1,4}backlog\b')
 # python code that names the hub's record writer or the store's answer filing: hubsite then
@@ -565,6 +560,8 @@ def reads_stdin(inv):
         return rules.sh.PS
     for w in inv.args:
         t = w.text
+        if py and t == '-' and not w.dyn:
+            break                               # python - <args>: the words after it are sys.argv
         if w.dyn or not t.startswith('-'):
             return None
         if rules.PY_FLAG_RE.match(t) if py else t.lower() in PS_CODE_OPTS if ps else BASH_C_RE.match(t):
@@ -872,12 +869,9 @@ PY_RUN_ATTRS = frozenset((
     '__getattribute__', '__loader__', 'chdir'))
 PY_RUN_BUILTINS = frozenset(('exec', 'eval', 'compile', 'execfile', 'getattr', 'globals', 'locals', 'vars',
                              'breakpoint'))
-# an import that reaches the tool or the kit's library: a dotted part (or a name it takes) that is
-# backlog (kitlib.backlog, tools.backlog, a bare `import backlog`) or kit (tools/kit.py); kitlib
-# only when the code also uses backlog as code (kitlib.backlog.store, x.backlog) or holds a string
-# that names the tool or the library other than as a kitlib/backlog path (_names_backlog:
-# 'kitlib.backlog.store', 'tools/backlog.py', 'kit backlog', a dotted part 'backlog', which a kitlib
-# helper may load or run): only a kitlib/backlog path given as data passes
+# an import with a dotted part (or a name it takes) backlog or kit counts when a name it binds is
+# named or it is `import *`; one with kitlib alone, and either, when the code uses backlog as code
+# (x.backlog) or names the tool or library in a string other than as a kitlib/backlog path (_names_backlog)
 PY_REACH_PARTS = frozenset(('backlog', 'kitlib', 'kit'))
 PY_BACKLOG_PATH_RE = re.compile(r'^kitlib\s*[/\\]')     # a CODE_RE match that is a kitlib/backlog path
 # a PEP 263 coding declaration; python reads it on the first two lines (the next one with -x)
@@ -887,19 +881,15 @@ PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgu
 
 def py_reach(text, writes=False):
     """How the python `text` a script file, -c code or heredoc runs reaches the backlog, as the
-    refusal's words ('names backlog.py', 'imports kitlib.backlog.store', 'names backlog.py and can
-    run it (subprocess)'), or None. CODE_RE finds a name first: none, None. The text is then read as
-    python's own syntax tree, so a name that is only in a string or a comment passes unless the
-    code can run something (PY_RUN_*), imports the tool or the kit's library (PY_REACH_PARTS), or,
-    with `writes` (heredoc code, stdin_code), opens a file for writing (_file_write). It
-    is read twice: whole, and from its second line on (python -x skips the first line); a reading
-    python -x cannot parse runs nothing. Fails closed to the name, as CODE_RE alone judged it,
-    when the text does not parse, may be cut at SCRIPT_CAP, or declares a coding other than UTF-8
-    (python would read its bytes as other text than the guard does)."""
+    refusal's words, or None: CODE_RE's name, then python's syntax tree (_tree_reach), read whole
+    and from its second line (python -x). With `writes` (heredoc code) a write of the store counts
+    (_file_write). Fails closed to the name when the text does not parse, may be cut at
+    SCRIPT_CAP, or declares a coding other than UTF-8."""
     m = CODE_RE.search(text)
     if not m:
         return None
     named = 'names %s' % m.group(0)
+    writes = bool(STORE_NAME_RE.search(text)) if writes else None
     if len(text.encode('utf-8', 'surrogatepass')) >= SCRIPT_CAP - 3:
         return named
     cut = text.find('\n')                       # python -x skips up to the first \n only
@@ -926,27 +916,30 @@ def py_reach(text, writes=False):
     return None
 
 
-def _tree_reach(ast, tree, writes=False):
-    """py_reach's reading of one syntax tree: 'imports <module>' for an import that reaches the
-    tool or the kit's library (PY_REACH_PARTS), else the first name that can run code or a process
-    (PY_RUN_*), else, with `writes`, the first call that opens a file for writing (_file_write),
-    else None."""
-    runner = kit_import = writer = None
+def _tree_reach(ast, tree, writes=None):
+    """py_reach's reading of one syntax tree: 'imports <module>' for an import that counts
+    (PY_REACH_PARTS), else the first name that can run code or a process (PY_RUN_*), else, with
+    `writes` not None, the first write of the store (_file_write), else None."""
+    runner = kit_import = reach = writer = None
     backlog_used = False                       # backlog as code (x.backlog) or named in a string (_names_backlog)
+    bound, names = set(), {'*'}                 # names a backlog or kit import binds; names the code holds
     for node in ast.walk(tree):
         found = ()
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             mod = (node.module or '') if isinstance(node, ast.ImportFrom) else ''
             paths = ([mod] if mod else []) + [a.name for a in node.names]
             parts = set(p for path in paths for p in path.split('.'))
+            what = 'imports %s' % (mod or ', '.join(a.name for a in node.names))
             if parts & (PY_REACH_PARTS - {'kitlib'}):
-                return 'imports %s' % (mod or ', '.join(a.name for a in node.names))
-            if 'kitlib' in parts and kit_import is None:
-                kit_import = 'imports %s' % (mod or ', '.join(a.name for a in node.names))
+                reach = reach or what
+                bound |= set(a.asname or a.name.split('.')[0] for a in node.names)
+            elif 'kitlib' in parts and kit_import is None:
+                kit_import = what
             found = parts & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
             if mod == 'sys' and 'path' in parts:
                 found = set(found) | {'sys.path'}
         elif isinstance(node, ast.Name):
+            names.add(node.id)
             found = {node.id} & (PY_RUN_ATTRS | PY_RUN_BUILTINS)
         elif isinstance(node, ast.Attribute):
             found = {node.attr} & PY_RUN_ATTRS
@@ -957,13 +950,13 @@ def _tree_reach(ast, tree, writes=False):
             s = node.value.strip()              # and each dotted part: pkgutil.resolve('os.system'), 'os:system'
             found = ({s} | set(PY_PART_RE.split(s))) & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
             backlog_used = backlog_used or _names_backlog(s)
-        elif writes and isinstance(node, ast.Call) and writer is None:
-            writer = _file_write(ast, node)
+        elif writes is not None and isinstance(node, ast.Call) and writer is None:
+            writer = _file_write(ast, node, writes)
         if found and runner is None:
             runner = sorted(found)[0]
-    if kit_import and backlog_used:
-        return kit_import
-    return runner or writer
+    if reach and (backlog_used or bound & names):
+        return reach
+    return (kit_import if backlog_used else None) or runner or writer
 
 
 # a file opened for writing (_file_write, heredoc code only): python's open mode, its letters each
@@ -988,30 +981,37 @@ def _read_flags(ast, v):
     return name in PY_READ_FLAGS
 
 
-def _file_write(ast, node):
-    """'opens a file for writing (<call>)' when the call `node` may write a file, else None:
-    write_text or write_bytes; os.open whose flags are not plainly read-only (_read_flags); or an
-    open() whose mode writes (_write_mode) or is not a literal. The mode is mode= (or ** that may
-    hold it), the builtin's second argument, or for an attribute .open (io.open, codecs.open,
-    Path(p).open) its first or second argument when that is a mode string."""
+def _file_write(ast, node, named):
+    """'opens a file for writing (<call>)' when the call `node` may write the store: its target a
+    literal STORE_NAME_RE matches, or one the guard cannot read while the code names the store
+    (`named`); else None. A write: write_text, write_bytes; os.open not plainly read-only
+    (_read_flags); an open whose mode (mode=, **, the builtin's second argument, an attribute .open's
+    first or second) writes (_write_mode) or is not a literal. The target: open's, os.open's,
+    io.open's or codecs.open's first argument, else the *Path(<literals>) the method is called on."""
     f = node.func
-    if isinstance(f, ast.Attribute) and f.attr in PY_WRITE_ATTRS:
-        return 'opens a file for writing (%s)' % f.attr
     builtin = isinstance(f, ast.Name) and f.id == 'open'
-    if not builtin and not (isinstance(f, ast.Attribute) and f.attr == 'open'):
-        return None
-    if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id == 'os':
-        flags = node.args[1:2] + [k.value for k in node.keywords if k.arg in ('flags', None)]
-        return None if flags and all(_read_flags(ast, v) for v in flags) else 'opens a file for writing (os.open)'
-    kw = [k.value for k in node.keywords if k.arg in ('mode', None)]
+    mod = isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in ('os', 'io', 'codecs')
 
     def literal(v):
         return isinstance(v, ast.Constant) and isinstance(v.value, str)
-    modes = kw + (node.args[1:2] if builtin else node.args[:2])
-    if not all(literal(v) for v in kw) or (builtin and len(node.args) > 1 and not literal(node.args[1])) or \
-            any(literal(v) and _write_mode(v.value) for v in modes):
-        return 'opens a file for writing (open)'
-    return None
+    if isinstance(f, ast.Attribute) and f.attr in PY_WRITE_ATTRS:
+        what = f.attr
+    elif not builtin and not (isinstance(f, ast.Attribute) and f.attr == 'open'):
+        return None
+    elif mod and f.value.id == 'os':
+        flags = node.args[1:2] + [k.value for k in node.keywords if k.arg in ('flags', None)]
+        what = None if flags and all(_read_flags(ast, v) for v in flags) else 'os.open'
+    else:
+        kw = [k.value for k in node.keywords if k.arg in ('mode', None)]
+        modes = kw + (node.args[1:2] if builtin else node.args[:2])
+        what = 'open' if not all(literal(v) for v in kw) or (builtin and len(node.args) > 1 and not literal(
+            node.args[1])) or any(literal(v) and _write_mode(v.value) for v in modes) else None
+    r = f.value if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Call) else None
+    on = node.args[:1] + [k.value for k in node.keywords if k.arg in ('file', 'path')] if builtin or mod else \
+        r.args if r and getattr(r.func, 'attr', getattr(r.func, 'id', '')).endswith('Path') else []
+    target = '/'.join(v.value for v in on) if on and all(literal(v) for v in on) else None
+    return 'opens a file for writing (%s)' % what if what and (
+        named if target is None else STORE_NAME_RE.search(target)) else None
 
 
 def _names_backlog(s):

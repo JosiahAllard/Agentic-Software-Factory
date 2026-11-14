@@ -941,13 +941,40 @@ class DryRuns(Base):
 
 
 class RawCode(Base):
-    def test_code_that_imports_the_backlog_package(self):
-        for text in ('python -c "from kitlib.backlog import store"',
-                     'python -c "import kitlib.backlog.roles as r; r.ACTIONS.clear()"',
-                     "python -c 'from kitlib import backlog'",
-                     'python -m kitlib.backlog.migrate',
+    # an import of kitlib.backlog or kit counts only when the code uses it (backlogrole._tree_reach):
+    # (code, used); used is refused, unused runs
+    IMPORTS = (('python -c "from kitlib.backlog import store"', False),
+               ('python -c "from kitlib.backlog import store; store.save()"', True),
+               ("python -c 'from kitlib import backlog'", False),
+               ("python -c 'from kitlib import backlog; backlog.store'", True),
+               ('python -c "import kitlib.backlog.store"', False),
+               ('python -Ic "import kitlib.backlog.store"', False),
+               ('python -Ic "import kitlib.backlog.store as s; s.save()"', True),
+               ('python -c "import kitlib.backlog.roles as r; r.ACTIONS.clear()"', True),
+               ('python -c "import kitlib.backlog.store, kitlib.backlog.opener; print(\'ok\')"', False),
+               ("python - <<'EOF'\nimport kitlib.backlog.store as s\nEOF", False),
+               ("python - <<'EOF'\nimport kitlib.backlog.roles as r\nprint('kitlib/backlog/roles.py')\nEOF", False),
+               ("python - <<'EOF'\nfrom kitlib.backlog.store import *\nEOF", True),
+               ("python - <<'EOF'\nimport kit  # tools/backlog.py\nEOF", False),
+               ("python - <<'EOF'\nimport kit  # tools/backlog.py\nkit.main(['backlog', 'close', 'X-1'])\nEOF", True),
+               # the second import is the used one
+               ("python - <<'EOF'\nimport kitlib.backlog.store as s\nfrom kitlib.backlog import roles\n"
+                "roles.ACTIONS.clear()\nEOF", True),
+               # the use comes before the import in ast.walk's breadth-first order
+               ("python - <<'EOF'\ns.save()\nif 1:\n    if 1:\n        if 1:\n            if 1:\n"
+                "                import kitlib.backlog.store as s\nEOF", True))
+
+    def test_an_import_of_the_backlog_counts_only_when_used(self):
+        for text, used in self.IMPORTS:
+            with self.subTest(text):
+                if used:
+                    self.refused(self.cmd(text), 'backlog-raw-write')
+                else:
+                    self.allowed(self.cmd(text))
+
+    def test_code_that_runs_the_backlog_package(self):
+        for text in ('python -m kitlib.backlog.migrate',
                      'python -m runpy kitlib.backlog.store',
-                     "python - <<'EOF'\nimport kitlib.backlog.store as s\nEOF",
                      'echo "import kitlib.backlog" | python -'):
             with self.subTest(text):
                 self.refused(self.cmd(text), 'backlog-raw-write')
@@ -979,8 +1006,7 @@ class RawCode(Base):
                 self.allowed(self.cmd(text))
 
     def test_c_code_that_loads_the_backlog_stays_refused(self):
-        for text in ('python -c "import kitlib.backlog.store"',
-                     'python -c "import runpy; runpy.run_path(\'kitlib/backlog/store.py\')"',
+        for text in ('python -c "import runpy; runpy.run_path(\'kitlib/backlog/store.py\')"',
                      "python -c \"import importlib; importlib.import_module('kitlib.backlog.store')\"",
                      "python -c \"exec(open('kitlib/backlog/store.py').read())\"",
                      "python -c \"__import__('kitlib.backlog.store')\"",
@@ -990,7 +1016,7 @@ class RawCode(Base):
                      "python -c \"from sys import path; path.append('kitlib/backlog'); import store\"",
                      "python -c \"import os; os.chdir('kitlib/backlog'); import store\"",
                      'python -c "import sys; exec(open(sys.argv[1]).read())" kitlib/backlog/store.py',
-                     "python \"-cimport kitlib.backlog.store\"", "python -Ic \"import kitlib.backlog.store\"",
+                     "python \"-cimport kitlib.backlog.store\"",
                      'python -c "print(\'kitlib/backlog/store.py\')" | bash',
                      'python -c "print(\'kitlib/backlog/store.py\')" | xargs python',
                      'python $(python -c "print(\'kitlib/backlog/store.py\')")',
@@ -1041,20 +1067,54 @@ class RawCode(Base):
                      # the write check is heredoc code's: -c code that edits a doc keeps its reading
                      "python -c \"import pathlib; p=pathlib.Path('docs/guard.md'); "
                      "p.write_text(p.read_text().replace('tools/backlog.py next','tools/backlog.py show'))\"",
-                     "python -c \"open('kitlib/backlog/roles.py', 'w').write('')\""):
-            with self.subTest(text):
-                self.allowed(self.cmd(text))
-
-    def test_standard_input_code_that_loads_or_writes_the_backlog_stays_refused(self):
-        for text in ("python - <<'EOF'\nimport kitlib.backlog.roles as r\nprint('kitlib/backlog/roles.py')\nEOF",
-                     "python - <<'EOF'\nimport sys\nsys.path.insert(0, 'Z:/repo/wt')\n"
-                     "from kitlib.backlog import roles\nprint('kitlib/backlog/roles.py')\nEOF",
-                     "python - <<'EOF'\nimport sys\nsys.path.insert(0, 'kitlib/backlog')\nimport roles\nEOF",
+                     "python -c \"open('kitlib/backlog/roles.py', 'w').write('')\"",
+                     # heredoc code writing a file that is not the store (backlogrole._file_write)
                      "python - <<'EOF'\nopen('kitlib/backlog/roles.py', 'w').write('')\nEOF",
                      "python - <<'EOF'\np = 'kitlib/backlog/roles.py'\nwith open(p, mode='a') as f:\n"
                      "    f.write('x')\nEOF",
                      "python - <<'EOF'\nimport pathlib\npathlib.Path('kitlib/backlog/roles.py').write_text('')\nEOF",
                      "python - <<'EOF'\nimport os\nos.open('kitlib/backlog/roles.py', os.O_WRONLY)\nEOF",
+                     # a literal target that is not the store, in code naming refs/backlog
+                     "python - <<'EOF'\nopen('docs/x.md', 'w').write('refs/backlog/main: tools/backlog.py')\nEOF",
+                     # python - <args>: the heredoc is its code
+                     "python - X-1 <<'EOF'\nprint('kitlib/backlog/roles.py')\nEOF"):
+            with self.subTest(text):
+                self.allowed(self.cmd(text))
+
+    # the record's samples (KIT-GUARD-BACKLOG-RAW-NAME-FP), in their shapes: an edit of docs and source
+    # naming the backlog, an import-time check
+    SAMPLES = ("python - <<'EOF'\nimport pathlib\np = pathlib.Path('docs/backlog.md')\nt = p.read_text(encoding='utf-8')\n"
+               "p.write_text(t.replace('python tools/backlog.py next', 'python <kit>/tools/backlog.py next'), "
+               "encoding='utf-8')\nEOF",
+               "python - <<'EOF'\np = 'docs/commit.md'\ns = open(p, encoding='utf-8').read()\n"
+               "open(p, 'w', encoding='utf-8').write(s.replace('kitlib/backlog/store.py', 'kitlib/backlog/opener.py'))\nEOF",
+               "python - <<'EOF'\nfrom pathlib import Path\nf = Path('tests/backlog/test_store.py')\n"
+               "f.write_text(f.read_text().replace('from kitlib.backlog import store', 'from kitlib.backlog import opener'))\nEOF",
+               "python - <<'EOF'\nimport re\np = 'kitlib/coordstate/log.py'\nsrc = open(p).read()\n"
+               "open(p, 'w').write(re.sub(r'kitlib\\.backlog\\.audit', 'kitlib.backlog.store', src))\nEOF",
+               'python -c "import kitlib.backlog.store, kitlib.backlog.policy; print(\'imports ok\')"',
+               'python -m unittest tests.backlog.test_store tests.guard.test_backlog_role')
+
+    def test_the_records_samples_run(self):
+        for text in self.SAMPLES:
+            with self.subTest(text):
+                self.allowed(self.cmd(text))
+
+    def test_standard_input_code_that_loads_or_writes_the_backlog_stays_refused(self):
+        for text in ("python - <<'EOF'\nimport sys\nsys.path.insert(0, 'Z:/repo/wt')\n"
+                     "from kitlib.backlog import roles\nprint('kitlib/backlog/roles.py')\nEOF",
+                     "python - <<'EOF'\nimport sys\nsys.path.insert(0, 'kitlib/backlog')\nimport roles\nEOF",
+                     # a write of the store: its ref, packed-refs, a branch store's, a folder store's record
+                     "python - <<'EOF'\nopen('.git/refs/backlog/main', 'w').write('x')  # kitlib/backlog/store.py\nEOF",
+                     "python - <<'EOF'\nimport pathlib\npathlib.Path('.git', 'refs/backlog/main').write_text('')"
+                     "  # tools/backlog.py\nEOF",
+                     "python - <<'EOF'\nimport os\nos.open('.git/packed-refs', os.O_WRONLY)  # tools/backlog.py\nEOF",
+                     "python - <<'EOF'\nopen('.git/refs/heads/backlog', 'w')  # tools/backlog.py\nEOF",
+                     "python - <<'EOF'\nopen('docs/backlog/X-1.md', 'w').write('see tools/backlog.py')\nEOF",
+                     # a target the guard cannot read, in code naming the store
+                     "python - <<'EOF'\ng = '.git'\np = g + '/refs/backlog/main'\nwith open(p, mode='a') as f:\n"
+                     "    f.write('x')  # tools/backlog.py\nEOF",
+                     "python - X-1 <<'EOF'\nfrom kitlib.backlog import store\nstore.save()\nEOF",
                      # what it prints runs as code (backlogrole._printed_name)
                      "python - <<'EOF' | bash\nprint('python tools/backlog.py close X-1')\nEOF",
                      # the text python reads is not the text as written: CODE_RE alone
@@ -1159,7 +1219,8 @@ class HubWriterCode(Base):
                 self.refused(self.cmd(text, **kw), 'backlog-raw-write')
 
     def test_a_subagent_keeps_the_backlog_code_refusal(self):
-        d = self.refused(self.cmd('python -c "from kitlib.backlog.plan import plan_answer"'), 'backlog-raw-write')
+        d = self.refused(self.cmd('python -c "from kitlib.backlog.plan import plan_answer; plan_answer(1)"'),
+                         'backlog-raw-write')
         self.assertIn('backlog.py', d.instead)
 
 
@@ -1484,8 +1545,9 @@ class Unread(Base):
         "import importlib\nimportlib.import_module('kitlib.backlog.store')\n",
         "exec(\"import os; os.system('python tools/backlog.py close X-1')\")\n",
         "import runpy\nrunpy.run_path('tools/backlog.py')\n",
-        "import kitlib.backlog.store as s\n",
-        "from kitlib import backlog\n",
+        "import kitlib.backlog.store as s\ns.save()\n",
+        "from kitlib import backlog\nbacklog.store.save()\n",
+        "from kitlib.backlog.store import *\n",
         "import sys\nsys.path.insert(0, 'tools')\nimport backlog\nbacklog.main(['close', 'X-1'])  # backlog.py\n",
         # python -x skips the first line: the string below it is then code
         "x = '''\nimport os; os.system('python tools/backlog.py close X-1')\n'''#'''\n",
@@ -1508,6 +1570,20 @@ class Unread(Base):
                 d = self.refused(self.cmd('python "%s"' % path), 'backlog-raw-write')
                 self.assertIn('whose code ', d.reason)
                 self.allowed(self.cmd('python "%s"' % path, sub=False, env=COORDINATOR))
+
+    def test_a_python_script_that_only_imports_the_backlog_runs(self):
+        # an import counts only when the code uses it (backlogrole._tree_reach); used: REACHES
+        for k, body in enumerate(("import kitlib.backlog.store as s\n", "from kitlib import backlog\n")):
+            with self.subTest(body):
+                self.allowed(self.cmd('python "%s"' % self.script('i%d.py' % k, body)))
+
+    def test_python_dash_with_arguments_reads_its_standard_input(self):
+        # python - <args>: standard input is the code, the words after `-` its sys.argv (backlogrole.reads_stdin)
+        bad = self.script('f.py', 'import kitlib.backlog.store as s\ns.save()\n')
+        gen = self.script('gen.py', self.PRINTS)
+        for text in ('python - x < "%s"' % bad, 'python "%s" | python - x' % gen):
+            with self.subTest(text):
+                self.refused(self.cmd(text), 'backlog-raw-write')
 
     def test_a_python_script_importing_kitlib_with_a_backlog_path_as_data(self):
         # backlogrole._tree_reach: a kitlib import counts only beside a use of the backlog, so a
@@ -1567,7 +1643,7 @@ class Unread(Base):
                 self.allowed(d)
 
     def test_the_kits_own_python_is_not_judged(self):
-        code = 'from kitlib.backlog import policy\n'
+        code = 'from kitlib.backlog import policy\npolicy.sort()\n'
         kit_tool = os.path.join(self.w.kit_dir, 'tools', 'audit.py')
         checkout = os.path.join(self.w.wt, 'kitco')
         for d in (os.path.dirname(kit_tool), os.path.join(checkout, 'kitlib'), os.path.join(checkout, 'tests')):
@@ -1584,7 +1660,7 @@ class Unread(Base):
         checkout = os.path.join(self.w.wt, 'kitco')
         os.makedirs(os.path.join(checkout, 'kitlib'), exist_ok=True)
         open(os.path.join(checkout, 'kit.json'), 'w').close()
-        for name, code in (('batch.py', 'from kitlib.backlog import policy\n'), ('ok.py', 'print(1)\n')):
+        for name, code in (('batch.py', 'from kitlib.backlog import policy\npolicy.sort()\n'), ('ok.py', 'print(1)\n')):
             with open(os.path.join(checkout, name), 'w', encoding='utf-8') as f:
                 f.write(code)
         d = self.refused(self.cmd('python "%s"' % W.fwd(os.path.join(checkout, 'batch.py'))), 'backlog-raw-write')

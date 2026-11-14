@@ -226,7 +226,7 @@ ROWS = [
      'deny', 'backlog-role', 'python "{kit}/tools/backlog.py" -C "{wt}" show X-1'),
     ('subagent builder adds a record', lambda w: bash('python "%s/tools/backlog.py" add --summary s'
                                                       % W.fwd(w.kit_dir), w.wt, sub=True), None, None, None),
-    ('subagent code importing the backlog library', lambda w: bash('python -c "from kitlib.backlog import store"',
+    ('subagent code importing the backlog library', lambda w: bash('python -c "from kitlib.backlog import store; store.save()"',
                                                                    w.wt, sub=True),
      'deny', 'backlog-raw-write', 'python "{kit}/tools/backlog.py" -C <worktree> <verb> <arguments>'),
     ('subagent push of the backlog store ref', lambda w: bash('git push origin HEAD:refs/backlog/main', w.wt, sub=True),

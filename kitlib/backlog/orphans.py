@@ -79,7 +79,10 @@ def lines(ctx, snap):
         return []
     names, why = ctx.live_branches(snap)
     trees, twhy = gitrepo.worktrees(ctx.root)
-    local = {b for b in (names or ()) if refs.ref_commit('refs/heads/%s' % b, ctx.root)[0]}
+    # Only the pulled branches are checked; a git that cannot answer leaves a branch non-local
+    # (`remote only`, whose route is the PM).
+    local = {b for b in {r.get('pulled_by') for r in recs} & (names or set())
+             if refs.ref_commit('refs/heads/%s' % b, ctx.root)[0]}
     on = None if trees is None else {t.branch for t in trees[1:] if t.branch}
     base = refs.default_base(ctx.root, ctx.code_remote, ctx.code_main)[0]
     bad = {r.get('pulled_by') for r in recs

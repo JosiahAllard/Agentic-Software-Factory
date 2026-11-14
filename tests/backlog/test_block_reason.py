@@ -18,51 +18,51 @@ class BlockReason(StoreCase):
 
     def test_the_reason_lands_in_subject_and_body(self):
         self.seed(rec('FOO', body='Existing notes.'))
-        change = self.verb('block', 'FOO', ['live-client'], reason=WHY)
-        self.assertEqual(change.subject, 'backlog: block FOO on live-client: %s' % WHY)
+        change = self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
+        self.assertEqual(change.subject, 'backlog: block FOO on upstream:client: %s' % WHY)
         r = self.get('FOO')
-        self.assertEqual(r.all('blocked_on'), ['live-client'])
+        self.assertEqual(r.all('blocked_on'), ['upstream:client'])
         self.assertIn('Existing notes.', r.body)
         self.assertTrue(r.body.rstrip('\n').endswith(
-            'Blocked on live-client (%s): %s' % (TODAY, WHY)), r.body)
+            'Blocked on upstream:client (%s): %s' % (TODAY, WHY)), r.body)
         self.assertNotIn('block_reason', dict(r.pairs()))
         self.assertIn('  reason (in the body): %s' % WHY, change.lines)
 
     def test_a_record_with_no_body_gets_just_the_line(self):
         self.seed(rec('FOO'))
-        self.verb('block', 'FOO', ['live-client'], reason='  waiting   on the client build  ')
+        self.verb('block', 'FOO', ['upstream:client'], reason='  waiting   on the client build  ')
         self.assertEqual(self.get('FOO').body.strip(),
-                         'Blocked on live-client (%s): waiting on the client build' % TODAY)
+                         'Blocked on upstream:client (%s): waiting on the client build' % TODAY)
 
     def test_a_short_reason_is_usage_and_writes_nothing(self):
         self.seed(rec('FOO'))
         tip = self.remote_tip()
         with self.assertRaises(Usage):
-            self.verb('block', 'FOO', ['live-client'], reason='later')
+            self.verb('block', 'FOO', ['upstream:client'], reason='later')
         self.assertEqual(self.remote_tip(), tip)
 
     def test_no_reason_is_unchanged(self):
         self.seed(rec('FOO', body='Existing notes.'))
-        change = self.verb('block', 'FOO', ['live-client'])
-        self.assertEqual(change.subject, 'backlog: block FOO on live-client')
+        change = self.verb('block', 'FOO', ['upstream:client'])
+        self.assertEqual(change.subject, 'backlog: block FOO on upstream:client')
         self.assertEqual(self.get('FOO').body.strip(), 'Existing notes.')
 
     def test_a_reason_on_an_owner_held_record_adds_beside_the_owner(self):
         # `block` adds, so the owner's hold stays and no ruling is taken.
         self.seed(rec('FOO', **test_verbs.OWNER_BLOCKED))
-        change = self.verb('block', 'FOO', ['live-client'], reason=WHY)
-        self.assertEqual(change.subject, 'backlog: block FOO on live-client: %s' % WHY)
+        change = self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
+        self.assertEqual(change.subject, 'backlog: block FOO on upstream:client: %s' % WHY)
         self.assertIsNone(change.ruling)
         r = self.get('FOO')
-        self.assertEqual((r.all('blocked_on'), r.get('hold_ruling')), (['owner', 'live-client'], None))
-        self.assertIn('Blocked on live-client (%s): %s' % (TODAY, WHY), r.body)
+        self.assertEqual((r.all('blocked_on'), r.get('hold_ruling')), (['owner', 'upstream:client'], None))
+        self.assertIn('Blocked on upstream:client (%s): %s' % (TODAY, WHY), r.body)
 
     def test_a_reason_with_a_machine_path_is_usage(self):
         self.seed(rec('FOO'))
         tip = self.remote_tip()
         for drive in test_verbs.MachinePaths.DRIVES:
             with self.assertRaises(Usage) as ctx:
-                self.verb('block', 'FOO', ['live-client'], reason='the log is in %s now' % drive)
+                self.verb('block', 'FOO', ['upstream:client'], reason='the log is in %s now' % drive)
             self.assertIn('machine path', str(ctx.exception))
         self.assertEqual(self.remote_tip(), tip)
 
@@ -78,11 +78,11 @@ class BlockReasonCli(unittest.TestCase):
     def test_show_prints_the_reason(self):
         self.ok('add', 'FOO', '--summary', 'a thing to hold for now', '--scope', 'a/foo.py',
                 *ADD_FLAGS)
-        self.ok('block', 'FOO', '--on', 'live-client', '--reason', WHY)
-        self.assertIn('Blocked on live-client (', self.ok('show', 'FOO'))
+        self.ok('block', 'FOO', '--on', 'upstream:client', '--reason', WHY)
+        self.assertIn('Blocked on upstream:client (', self.ok('show', 'FOO'))
         self.assertIn(WHY, self.ok('show', 'FOO'))
         log = self.repo.git('log', '-1', '--format=%s', smod.STORE_REF)
-        self.assertEqual(log, 'backlog: block FOO on live-client: %s' % WHY)
+        self.assertEqual(log, 'backlog: block FOO on upstream:client: %s' % WHY)
 
 
 if __name__ == '__main__':

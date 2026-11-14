@@ -217,9 +217,23 @@ class BlockUntil(StoreCase):
 
     def test_free_text_is_kept_and_said_so(self):
         self.seed(rec('FOO'))
-        change = self.verb('block', 'FOO', ['live-client'], until='when the client ships')
-        self.assertEqual(self.get('FOO').all('until'), ['live-client when the client ships'])
+        change = self.verb('block', 'FOO', ['upstream:client'], until='when the client ships')
+        self.assertEqual(self.get('FOO').all('until'), ['upstream:client when the client ships'])
         self.assertTrue(any('free text' in line for line in change.lines), change.lines)
+
+    def test_a_live_client_hold_needs_an_end_the_job_reads(self):
+        # live-client waits on the owner being present: a hold with no readable end never clears
+        self.seed(rec('FOO'))
+        tip = self.remote_tip()
+        for members, until in ((['live-client'], None), (['live-client'], 'when he is in'),
+                               (['live-client', 'upstream:x'], None)):
+            with self.assertRaises(Usage) as ctx:
+                self.verb('block', 'FOO', members, until=until)
+            self.assertIn('--until "todo:T-n done"', str(ctx.exception), (members, until))
+        self.assertEqual(self.remote_tip(), tip)
+        self.verb('block', 'FOO', ['live-client'], until='question:Q-5 answered')
+        self.verb('block', 'FOO', ['live-client'])      # already held there: its line stays
+        self.assertEqual(self.get('FOO').all('until'), ['live-client question:Q-5 answered'])
 
     def test_a_reblock_replaces_that_members_line_only(self):
         self.seed(rec('FOO'), rec('BAR'))
@@ -232,8 +246,8 @@ class BlockUntil(StoreCase):
     def test_refusals_write_nothing(self):
         self.seed(rec('FOO'), rec('BAR', **test_verbs.OWNER_BLOCKED))
         tip = self.remote_tip()
-        cases = [('FOO', ['live-client', 'deliberate'], 'todo:T-1 done', 'exactly one'),
-                 ('FOO', ['live-client'], '   ', 'needs the condition'),
+        cases = [('FOO', ['upstream:client', 'deliberate'], 'todo:T-1 done', 'exactly one'),
+                 ('FOO', ['upstream:client'], '   ', 'needs the condition'),
                  ('BAR', ['owner'], 'path:%s exists' % VARPATH, 'owner event'),
                  ('BAR', ['owner'], 'record:kit:FOO closed', 'owner event'),
                  ('BAR', ['owner'], 'plugin:x absent', 'owner event'),
@@ -282,14 +296,15 @@ class BlockUntil(StoreCase):
         self.verb('block', 'FOO', ['live-client'], until='todo:T-1 done')   # not the owner's
 
     def test_a_newly_blocked_member_drops_a_stale_line_it_did_not_give(self):
-        # an older plugin's unblock left `until: live-client ...` behind; a re-block on that
+        # an older plugin's unblock left `until: upstream:client ...` behind; a re-block on that
         # member without --until must not bring it back to life
         self.seed(rec('FOO', state='blocked', blocked_on='item:BAR',
-                      until=['item:BAR todo:T-2 done', 'live-client todo:T-1 done']), rec('BAR'))
-        self.verb('block', 'FOO', ['live-client'])
+                      until=['item:BAR todo:T-2 done', 'upstream:client todo:T-1 done']),
+                  rec('BAR'))
+        self.verb('block', 'FOO', ['upstream:client'])
         r = self.get('FOO')
         self.assertEqual((r.all('blocked_on'), r.all('until')),
-                         (['item:BAR', 'live-client'], ['item:BAR todo:T-2 done']))
+                         (['item:BAR', 'upstream:client'], ['item:BAR todo:T-2 done']))
         self.verb('block', 'FOO', ['item:BAR'])             # already blocked on: its line stays
         self.assertEqual(self.get('FOO').all('until'), ['item:BAR todo:T-2 done'])
 

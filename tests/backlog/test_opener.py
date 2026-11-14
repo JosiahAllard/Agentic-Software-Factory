@@ -119,23 +119,23 @@ class Planner(StoreCase):
 
     def test_block_carries_the_reason(self):
         self.seed(rec('FOO'))
-        change = self.write(args('block', id='FOO', on=['live-client'], owner_ask=None,
+        change = self.write(args('block', id='FOO', on=['upstream:client'], owner_ask=None,
                                  ruling=None, reason=WHY, until=None))
-        self.assertEqual(change.subject, 'backlog: block FOO on live-client: %s' % WHY)
+        self.assertEqual(change.subject, 'backlog: block FOO on upstream:client: %s' % WHY)
         self.assertTrue(self.get('FOO').body.rstrip('\n').endswith(
-            'Blocked on live-client (%s): %s' % (TODAY, WHY)))
+            'Blocked on upstream:client (%s): %s' % (TODAY, WHY)))
 
     def test_block_carries_the_until(self):
         self.seed(rec('FOO'))
-        self.write(args('block', id='FOO', on=['live-client'], owner_ask=None, ruling=None,
+        self.write(args('block', id='FOO', on=['upstream:client'], owner_ask=None, ruling=None,
                         reason=None, until='todo:T-7 done'))
-        self.assertEqual(self.get('FOO').all('until'), ['live-client todo:T-7 done'])
+        self.assertEqual(self.get('FOO').all('until'), ['upstream:client todo:T-7 done'])
 
     def test_unblock_clears_the_named_blocker_with_its_reason(self):
-        self.seed(rec('FOO', state='blocked', blocked_on=['item:BAR', 'live-client']), rec('BAR'))
+        self.seed(rec('FOO', state='blocked', blocked_on=['item:BAR', 'upstream:client']), rec('BAR'))
         change = self.write(args('unblock', id='FOO', ruling=None, on='item:BAR', reason=WHY))
         r = self.get('FOO')
-        self.assertEqual((r.get('state'), r.all('blocked_on')), ('blocked', ['live-client']))
+        self.assertEqual((r.get('state'), r.all('blocked_on')), ('blocked', ['upstream:client']))
         self.assertEqual(change.subject, 'backlog: unblock FOO from item:BAR: %s' % WHY)
 
     def test_retarget_rewrites_the_moved_path(self):

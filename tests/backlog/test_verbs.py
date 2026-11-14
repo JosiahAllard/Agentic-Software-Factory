@@ -138,24 +138,24 @@ class BlockUnblock(VerbCase):
         # A second block once wiped the first's blockers.
         self.seed(rec('FOO'), rec('BAR'), rec('BAZ'))
         self.verb('block', 'FOO', ['item:BAR'])
-        change = self.verb('block', 'FOO', ['live-client'])
-        self.assertEqual(self.get('FOO').all('blocked_on'), ['item:BAR', 'live-client'])
-        self.assertIn('  blocked_on: item:BAR -> item:BAR, live-client', change.lines)
-        self.verb('block', 'FOO', ['live-client', 'item:BAZ'])
+        change = self.verb('block', 'FOO', ['upstream:client'])
+        self.assertEqual(self.get('FOO').all('blocked_on'), ['item:BAR', 'upstream:client'])
+        self.assertIn('  blocked_on: item:BAR -> item:BAR, upstream:client', change.lines)
+        self.verb('block', 'FOO', ['upstream:client', 'item:BAZ'])
         self.assertEqual(self.get('FOO').all('blocked_on'),
-                         ['item:BAR', 'live-client', 'item:BAZ'])
+                         ['item:BAR', 'upstream:client', 'item:BAZ'])
         for m in ('item:BAR', 'item:BAZ'):
             self.verb('unblock', 'FOO', on=m, reason='that blocker is done now')
-        self.assertEqual(self.get('FOO').all('blocked_on'), ['live-client'])
+        self.assertEqual(self.get('FOO').all('blocked_on'), ['upstream:client'])
         self.verb('unblock', 'FOO')
         self.assertEqual((self.get('FOO').get('state'), self.get('FOO').get('blocked_on')),
                          ('open', '-'))
 
     def test_a_block_on_members_it_already_has_changes_nothing(self):
         self.seed(rec('FOO'), rec('BAR'))
-        self.verb('block', 'FOO', ['item:BAR', 'live-client'])
-        change = self.verb('block', 'FOO', ['live-client'])
-        self.assertEqual(self.get('FOO').all('blocked_on'), ['item:BAR', 'live-client'])
+        self.verb('block', 'FOO', ['item:BAR', 'upstream:client'])
+        change = self.verb('block', 'FOO', ['upstream:client'])
+        self.assertEqual(self.get('FOO').all('blocked_on'), ['item:BAR', 'upstream:client'])
         self.assertIn('  (no change)', change.lines)
 
     def test_block_refusals(self):
@@ -166,7 +166,7 @@ class BlockUnblock(VerbCase):
                 self.verb('block', 'FOO', members)
         # A pulled record blocks only with a reason (tests/backlog/test_block_stopped.py).
         with self.assertRaises(Usage) as cm:
-            self.verb('block', 'BAR', ['live-client'])
+            self.verb('block', 'BAR', ['upstream:client'])
         self.assertIn('needs `--reason T`', str(cm.exception))
 
     def test_the_owners_hold_is_released_only_by_unblock_with_the_role_check(self):
@@ -175,13 +175,13 @@ class BlockUnblock(VerbCase):
         with self.assertRaises(Refusal) as cm:
             self.verb('unblock', 'FOO')
         self.assertIn('`unblock-owner`', str(cm.exception))
-        self.verb('block', 'FOO', ['live-client'])
+        self.verb('block', 'FOO', ['upstream:client'])
         r = self.get('FOO')
         self.assertEqual((r.all('blocked_on'), r.get('hold_ruling'), r.get('owner_ask')),
-                         (['owner', 'live-client'], None, 'which one?'))
+                         (['owner', 'upstream:client'], None, 'which one?'))
         self.verb('unblock', 'FOO', on='owner', reason='the owner answered it', role_checked=True)
         r = self.get('FOO')
-        self.assertEqual((r.all('blocked_on'), r.get('hold_ruling')), (['live-client'], None))
+        self.assertEqual((r.all('blocked_on'), r.get('hold_ruling')), (['upstream:client'], None))
 
 
 class PullRelease(VerbCase):
@@ -208,7 +208,7 @@ class PullRelease(VerbCase):
         self.assertEqual(r.get('preempt_by'), BRANCH)
 
     def test_pull_refusals(self):
-        self.seed(rec('UNP'), priced('BLK', state='blocked', blocked_on='live-client'),
+        self.seed(rec('UNP'), priced('BLK', state='blocked', blocked_on='upstream:client'),
                   priced('MIN', state='blocked', blocked_on='owner', owner_ask='which?'),
                   priced('REQ', requires='item:UNP'))
         for rid in ('UNP', 'BLK', 'MIN', 'REQ'):
@@ -252,12 +252,12 @@ class CloseRetire(VerbCase):
 
     def test_close_deletes_and_unblocks_dependents(self):
         self.seed(priced('FOO'), rec('BAR', state='blocked', blocked_on='item:FOO'),
-                  rec('BAZ', state='blocked', blocked_on=['item:FOO', 'live-client']))
+                  rec('BAZ', state='blocked', blocked_on=['item:FOO', 'upstream:client']))
         change = self.verb('close', 'FOO', 'the work is finished')
         self.assertIsNone(self.get('FOO'))
         self.assertEqual((self.get('BAR').get('state'), self.get('BAR').get('blocked_on')),
                          ('open', '-'))
-        self.assertEqual(self.get('BAZ').all('blocked_on'), ['live-client'])
+        self.assertEqual(self.get('BAZ').all('blocked_on'), ['upstream:client'])
         self.assertEqual(change.subject, 'closes FOO: the work is finished')
         self.assertRegex(self.store.history('FOO', self.store.load()),
                          r'^[0-9a-f]{7,} closes FOO: the work is finished$')

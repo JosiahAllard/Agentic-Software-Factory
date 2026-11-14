@@ -42,13 +42,13 @@ class Block(StoppedCase):
     def test_the_holder_blocks_its_own_pull_in_one_commit_keeping_the_branch(self):
         self.seed(priced('FOO', pulled_by=BRANCH, **PULLED))
         before, tip = self.commits(), self.tip(BRANCH)
-        change = self.verb('block', 'FOO', ['live-client'], reason=WHY)
+        change = self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.assertEqual(self.commits(), before + 1)
         self.assertEqual(self.tip(BRANCH), tip)
         r = self.get('FOO')
-        self.assertEqual((r.get('state'), r.all('blocked_on')), ('blocked', ['live-client']))
+        self.assertEqual((r.get('state'), r.all('blocked_on')), ('blocked', ['upstream:client']))
         self.assert_freed('FOO')
-        self.assertIn('Stopped on branch %s at %s, branch kept.\nBlocked on live-client (%s): %s\n'
+        self.assertIn('Stopped on branch %s at %s, branch kept.\nBlocked on upstream:client (%s): %s\n'
                       % (BRANCH, tip[:10], TODAY, WHY), r.body)
         self.assertIn('  was pulled_by: %s' % BRANCH, change.lines)
 
@@ -67,7 +67,7 @@ class Block(StoppedCase):
         self.seed(priced('FOO', pulled_by=OTHER, **PULLED))
         asked = []
         self.ctx.liveness = lambda b: (asked.append(b), (None, self.tip(OTHER)))[1]
-        change = self.verb('block', 'FOO', ['live-client'], reason=WHY)
+        change = self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.assertEqual(asked, [OTHER])
         self.assert_freed('FOO')
         self.assertIn('Stopped on branch %s at %s, branch kept.' % (OTHER, self.tip(OTHER)[:10]),
@@ -79,7 +79,7 @@ class Block(StoppedCase):
         self.seed(priced('FOO', pulled_by=OTHER, **PULLED))
         self.ctx.liveness = lambda b: ('active 1.0 h ago', None)
         with self.assertRaises(Refusal) as cm:
-            self.verb('block', 'FOO', ['live-client'], reason=WHY)
+            self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.assertEqual(str(cm.exception),
                          '`FOO` is in flight (pulled by %s), and its tree is live: active 1.0 h '
                          'ago. Its holder blocks or releases it: from that branch, or as that '
@@ -94,7 +94,7 @@ class Block(StoppedCase):
         self.seed(priced('FOO', pulled_by=OTHER, session='kit', **PULLED))
         self.ctx.liveness = lambda b: ('active 1.0 h ago', None)
         with self.assertRaises(Refusal) as cm:
-            self.verb('block', 'FOO', ['live-client'], reason=WHY)
+            self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.assertIn('(backlog.py -C <store> --session kit --as %s block FOO --on <member> '
                       '--reason "<why>")' % OTHER, str(cm.exception))
 
@@ -103,12 +103,12 @@ class Block(StoppedCase):
         self.seed(priced('FOO', pulled_by=OTHER, **PULLED))
         self.assertIsNone(self.ctx.liveness)
         with self.assertRaises(Refusal) as cm:
-            self.verb('block', 'FOO', ['live-client'], reason=WHY)
+            self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.assertIn('a branch or worktree by that name exists', str(cm.exception))
 
     def test_a_dead_pull_blocks_with_no_stopped_line(self):
         self.seed(priced('FOO', pulled_by='tools/gone', **PULLED))
-        change = self.verb('block', 'FOO', ['live-client'], reason=WHY)
+        change = self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.assert_freed('FOO')
         self.assertNotIn('Stopped on branch', self.get('FOO').body)
         self.assertIn('  was pulled_by: tools/gone (dead)', change.lines)
@@ -116,7 +116,7 @@ class Block(StoppedCase):
     def test_blocking_a_pulled_record_needs_a_reason(self):
         self.seed(priced('FOO', pulled_by=BRANCH, **PULLED))
         with self.assertRaises(Usage) as cm:
-            self.verb('block', 'FOO', ['live-client'])
+            self.verb('block', 'FOO', ['upstream:client'])
         self.assertEqual(str(cm.exception), 'blocking a pulled record frees its scope: it needs '
                                             '`--reason T`, written to the body')
 
@@ -130,7 +130,7 @@ class Block(StoppedCase):
         self.ctx.liveness = lambda b: classify.branch_liveness(
             self.repo.root, b, now=time.time() + 3 * 24 * 3600, machine=lambda: ([], None),
             procs=lambda: (([], 0, 1), None))
-        self.verb('block', 'FOO', ['live-client'], reason=WHY)
+        self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.assert_freed('FOO')
         self.assertTrue(os.path.isdir(path))
         self.ctx.liveness = lambda b: classify.branch_liveness(
@@ -138,7 +138,7 @@ class Block(StoppedCase):
             procs=lambda: (([], 0, 1), None))
         self.seed(priced('BAR', pulled_by=OTHER, **PULLED))
         with self.assertRaises(Refusal) as cm:
-            self.verb('block', 'BAR', ['live-client'], reason=WHY)
+            self.verb('block', 'BAR', ['upstream:client'], reason=WHY)
         self.assertIn('its tree is live: active', str(cm.exception))
 
 
@@ -222,7 +222,7 @@ class PullResume(StoppedCase):
         self.seed(priced('FOO', pulled_by=OTHER, **PULLED))
         tip = self.tip(OTHER)
         self.ctx.liveness = lambda b: (None, tip)
-        self.verb('block', 'FOO', ['live-client'], reason=WHY)
+        self.verb('block', 'FOO', ['upstream:client'], reason=WHY)
         self.repo.git('branch', '-D', OTHER)
         self.verb('unblock', 'FOO')
         self.assertEqual(self.resume(self.verb('pull', 'FOO')),

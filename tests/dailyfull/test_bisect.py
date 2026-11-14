@@ -1,20 +1,25 @@
-"""kitlib.dailyfull.bisect and kitlib.dailyfull.file: after a red daily run, the first-parent
-commit that turned it red, and the backlog record filed for it through the real store (a ref
-store in the scratch repository, pushed to its bare remote). The record is always priced at
-priority 2 by an agent."""
+"""kitlib.dailyfull.bisect and kitlib.dailyfull.file: on request after a red daily run
+(kitlib.dailyfull.bisect_red; a red run never bisects by itself), the first-parent commit that
+turned it red, and the backlog record filed for it through the real store (a ref store in the
+scratch repository, pushed to its bare remote). The record is always priced at priority 2 by an
+agent."""
 import contextlib
+import io
 import os
 import shutil
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from unittest import mock
 
 from kitlib import dailyfull as D
+from kitlib import gate as G
 from kitlib.backlog import opener
 from kitlib.config import policy
 from kitlib.config.types import ConfigError
 from kitlib.dailyfull import bisect as B
 from kitlib.dailyfull import file as filing
+from kitlib.fs import treelock
 from kitlib.gate import hookrev, rerun, runner
 from kitlib.lock import run as lockrun
 from kitlib.lock import run_end
@@ -22,7 +27,7 @@ from kitlib.lock.store import LockError
 from tests import gitfixture
 from tests.gate import fixtures
 
-from .test_dailyfull import Case
+from .test_dailyfull import Case, tool
 
 
 def bisect_kit(prefix='KIT'):
@@ -90,17 +95,35 @@ class BisectCase(Case):
         Case.setUp(self)
         self.home = os.environ['USERPROFILE']        # Case's temp home
 
+    def bisect(self, stamp=None):
+        return D.bisect_red(self.main_dir, self.cfg(), stamp=stamp, book_kw=self.book_kw,
+                            out=self.out)
+
+    def red_run(self, stamp):
+        """A daily run that must end red, bisecting nothing by itself: its lines."""
+        o = self.run_daily(stamp)
+        self.assertEqual(o.code, G.FAILED, o.lines)
+        self.assertNotIn('bisect', self.result(stamp))
+        self.assertIn(D.BISECT_BY_HAND % stamp, o.lines)
+        return o.lines
+
+    def bisected(self, stamp):
+        """The red run at `stamp`, then its bisect on request: the red result."""
+        self.lines = self.red_run(stamp)
+        o = self.bisect()
+        self.lines += o.lines
+        self.assertEqual(o.code, G.OK, self.lines)
+        return self.result(stamp)
+
     def red_history(self):
-        """A green run, then a, b, RED, c, d pushed one commit each, then a red run: (sha of the
-        RED commit, the red result)."""
+        """A green run, then a, b, RED, c, d pushed one commit each, then a red run bisected on
+        request: (sha of the RED commit, the red result)."""
         self.run_daily('20261008-040000')
         shas = {}
         for name in ('a', 'b', 'RED', 'c', 'd'):
             self.push({name: 'x\n'})
             shas[name] = self.repo.git('rev-parse', 'HEAD')
-        o = self.run_daily('20261009-040000')
-        self.lines = o.lines
-        return shas['RED'], self.result('20261009-040000')
+        return shas['RED'], self.bisected('20261009-040000')
 
     def record(self, rid):
         ctx = opener.open_store(self.main_dir, fetch=True, probes=opener.NO_PROBES)
@@ -134,8 +157,7 @@ class Culprit(BisectCase):
         culprit, _r = self.red_history()
         rid = filing.record_id('KIT', culprit)
         before = self.record(rid).text
-        self.run_daily('20261010-040000')
-        r = self.result('20261010-040000')
+        r = self.bisected('20261010-040000')
         self.assertEqual(r['bisect']['culprit'], culprit)
         rec = self.record(rid)
         self.assertEqual(rec.text, before)
@@ -171,13 +193,106 @@ class Flake(BisectCase):
     def test_a_red_that_does_not_reproduce_is_a_flake_and_files_nothing(self):
         self.run_daily('20261008-040000')
         self.push({'a': 'x\n'})
-        self.run_daily('20261009-040000')
-        r = self.result('20261009-040000')
+        r = self.bisected('20261009-040000')
         self.assertEqual(r['verdict'], 'red')
         self.assertEqual(r['bisect']['verdict'], B.FLAKE)
         self.assertEqual(len(r['bisect']['probes']), 1)
         self.assertNotIn('filed', r['bisect'])
         self.assertEqual(self.daily_head(), r['sha'])
+
+
+class OnRequest(BisectCase):
+    """A red run bisects nothing by itself; bisect_red bisects a past one, and refuses what it
+    cannot."""
+
+    def red_at(self, stamp='20261009-040000'):
+        self.run_daily('20261008-040000')
+        self.push({'RED': 'x\n'})
+        return self.red_run(stamp)
+
+    def refused(self, o, why):
+        self.assertEqual(o.code, G.REFUSED, o.lines)
+        self.assertIn(why, o.lines[0])
+
+    def test_a_red_run_books_no_probe_and_the_summary_names_the_call(self):
+        self.red_at()
+        self.assertEqual(len(self.book_calls), 2)               # the green run and the red run
+        lines = D.summary_lines(self.out, 36)
+        self.assertIn(D.BISECT_LINE % '20261009-040000', lines)
+
+    def test_a_stamp_bisects_that_run_and_not_the_latest(self):
+        self.red_at()
+        self.red_run('20261010-040000')
+        o = self.bisect('20261009-040000')
+        self.assertEqual(o.code, G.OK, o.lines)
+        self.assertIn('bisect', self.result('20261009-040000'))
+        self.assertNotIn('bisect', self.result('20261010-040000'))
+
+    def test_each_refusal_touches_nothing(self):
+        self.refused(self.bisect(), 'no daily run that ran in')
+        self.run_daily('20261008-040000')
+        self.refused(self.bisect(), 'is green, not red')
+        self.push({'RED': 'x\n'})
+        self.red_run('20261009-040000')
+        self.refused(self.bisect('20261099-040000'), 'no daily run 20261099-040000 in')
+        path = os.path.join(self.out, '20261009-040000', D.RESULT)
+        with open(path, encoding='utf-8') as f:
+            text = f.read()
+        r = self.result('20261009-040000')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(text.replace('"unit"', '"infra"'))
+        self.refused(self.bisect(), 'has no step a probe can run (infra)')
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        real = D.settings
+
+        def settings(**changed):
+            return mock.patch.object(D, 'settings', lambda c, m: dict(real(c, m), **changed))
+        with settings(bisect={'max_probes': 0}):
+            self.refused(self.bisect(), '"daily_full".bisect.max_probes is 0')
+        with settings(worktree=os.path.join(self.tmp, 'gone')):
+            self.refused(self.bisect(), 'is not there')
+        self.assertEqual(len(self.book_calls), 2)
+        self.assertEqual(self.result('20261009-040000'), r)
+
+    def test_a_held_tree_is_busy_and_off_is_usage(self):
+        self.red_at()
+        lock, why = D.tree_lock(self.main_dir, D.settings(self.cfg(), self.main_dir)['worktree'])
+        held = treelock.TreeLock(lock.path, 'the first run').acquire()
+        try:
+            o = self.bisect()
+        finally:
+            held.release()
+        self.assertEqual(o.code, G.BUSY, o.lines)
+        self.assertNotIn('bisect', self.result('20261009-040000'))
+        cfg = self.cfg()
+        cfg._raw['daily_full']['enabled'] = False
+        o = D.bisect_red(self.main_dir, cfg, book_kw=self.book_kw, out=self.out)
+        self.assertEqual((o.code, o.lines), (G.USAGE, [D.OFF]))
+
+    def test_the_entry_point_bisects_the_latest_red(self):
+        self.red_at()
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = tool.main(['-C', self.main_dir, '--out', self.out, '--bisect'],
+                           book_kw=self.book_kw)
+        self.assertEqual(rc, G.OK, out.getvalue())
+        self.assertIn('daily: bisect: culprit ', out.getvalue())
+        with redirect_stdout(io.StringIO()) as out:
+            rc = tool.main(['-C', self.main_dir, '--out', self.out, '--bisect', 'nope'],
+                           book_kw=self.book_kw)
+        self.assertEqual(rc, G.REFUSED, out.getvalue())
+
+
+class WithoutBisectSettings(BisectCase):
+    """With no "daily_full".bisect a red run is still bisected on request, with the default
+    probe cap, and nothing is filed (no prefix)."""
+    KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test'}, 'backlog': {'store': 'ref'}}
+
+    def test_the_culprit_is_named_and_nothing_filed(self):
+        culprit, r = self.red_history()
+        self.assertEqual(r['bisect']['culprit'], culprit, self.lines)
+        self.assertNotIn('filed', r['bisect'])
 
 
 PROBE_MODULE = '''import os
@@ -246,7 +361,8 @@ class ProbeCase(BisectCase):
         return [c['kind'] for c in self.book_calls][2:]     # after the green and the red run
 
     def history(self, culprit_files):
-        """A green run, then a, b, the culprit's files, c, d, then a red run: (culprit, result)."""
+        """A green run, then a, b, the culprit's files, c, d, then a red run bisected on request:
+        (culprit, result)."""
         self.run_daily('20261008-040000')
         self.push({'a': 'x\n'})
         self.push({'b': 'x\n'})
@@ -254,9 +370,7 @@ class ProbeCase(BisectCase):
         culprit = self.repo.git('rev-parse', 'HEAD')
         self.push({'c': 'x\n'})
         self.push({'d': 'x\n'})
-        o = self.run_daily('20261009-040000')
-        self.lines = o.lines
-        return culprit, self.result('20261009-040000')
+        return culprit, self.bisected('20261009-040000')
 
 
 class TestsOnly(ProbeCase):
@@ -313,8 +427,7 @@ class TestsFlakeAtS(ProbeCase):
     def test_green_alone_and_green_whole_at_s_is_a_flake(self):
         self.run_daily('20261008-040000')
         self.push({'a': 'x\n'})
-        self.run_daily('20261009-040000')
-        r = self.result('20261009-040000')
+        r = self.bisected('20261009-040000')
         self.assertEqual(r['verdict'], 'red')
         found = r['bisect']
         self.assertEqual(found['verdict'], B.FLAKE)

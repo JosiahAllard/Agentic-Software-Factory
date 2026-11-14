@@ -1,5 +1,6 @@
-"""kitlib.dailyfull.bisect: after a red daily full run, the first-parent commit that turned its red
-steps red (docs/daily-full.md "Bisect").
+"""kitlib.dailyfull.bisect: for a past red daily full run, on request (kitlib.dailyfull bisect_red;
+a red run never bisects by itself), the first-parent commit that turned its red steps red
+(docs/daily-full.md "Bisect"; the promotion's culprit hunt probes with it too).
 
 G is the commit of the latest earlier green run that is an ancestor of the red run's commit S. The
 commits searched are `git rev-list --first-parent G..S`. Probes go in this order:

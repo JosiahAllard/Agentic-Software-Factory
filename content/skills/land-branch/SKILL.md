@@ -46,6 +46,7 @@ Whatever the verdict, verify separately, read-only: `git ls-remote origin <main>
 - Notices: `<merge>` from `LANDED <branch> on <main> at <merge>`, `<base>` from JSON `"base"`. Tell workstream `<W>` only if `git diff --name-only --no-renames <merge>...<W>` and `git diff --name-only --no-renames <base> <merge>` share a file; name the merge (skill branch-sync). PM: coordinator role's rule.
 - Cleanup: `land.py` removes branch, worktree, remote branch. `kept` lines, push verified: repo command (`--find cleanup`), else `python <kit>/tools/worktree_remove.py -C <main checkout> <worktree>`. "Filename too long"/"Permission denied": leave, report. Absolute paths only.
 - Test pinning files outside its module: map in gate selector (`--find gate`), else next landing reds.
+- Red promotion (hub `promote-red`) or daily run: fix first; fix landed: `<kit>/tools/promote.py -C <main checkout> --fixed <sha>`; one failed fix: `--hunt` (daily: `daily_full.py --bisect`); `<kit>/docs/modules/staging-design.md` "Culprit and revert".
 - New session: `land.py --queue`, record land results (skill session-handoff); never resubmit queued.
 
 ## Lander

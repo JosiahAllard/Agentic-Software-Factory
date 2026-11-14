@@ -652,6 +652,16 @@ class Summary(unittest.TestCase):
         lines = self.lines()
         self.assertTrue(lines[0].startswith('daily     RED aaaaaaaaaa'), lines)
         self.assertIn('failed: unit L', lines[1])
+        self.assertEqual(lines[2], D.BISECT_LINE % '20261009-040000')
+
+    def test_the_bisect_call_is_named_only_for_a_red_a_probe_can_run(self):
+        last = [('20261008-040000', dict(verdict='red', red=['unit'], error='the gate failed')),
+                ('20261008-050000', dict(verdict='red', red=['infra'])),
+                ('20261009-040000', dict(verdict='green', red=[]))]
+        for stamp, r in last:                       # each the latest run in turn
+            with self.subTest(stamp):
+                self.put(stamp, sha='a' * 40, steps=[], **r)
+                self.assertFalse(any('--bisect' in l for l in self.lines()), self.lines())
 
     def test_stale(self):
         self.put('20261006-040000', verdict='green', sha='b' * 40, red=[], steps=[])

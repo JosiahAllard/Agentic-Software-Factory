@@ -9,9 +9,12 @@ lock (kitlib.fs.treelock) is held from before the fetch until the result is writ
 Opt-in: nothing runs unless `"daily_full".enabled` is true in the main checkout's `.kit.json`. The
 kit never schedules it; a repository that wants it daily registers that itself.
 
-With "daily_full".bisect set, a red run (red steps, not `infra`) is bisected for the commit that
-turned it red, inside the same tree lock, and the red it reproduced is filed as a backlog record
-(kitlib.dailyfull.bisect, kitlib.dailyfull.file; docs/daily-full.md "Bisect").
+A red run is inspected and fixed first: it runs no bisect by itself, and summary_lines names the
+call that bisects it. bisect_red (`tools/daily_full.py --bisect [STAMP]`) bisects a past red run
+(red steps, not `infra`) on request for the commit that turned it red, inside the tree lock, with
+"daily_full".bisect's settings when set, and files the red it reproduced as a backlog record
+when its prefix is set (kitlib.dailyfull.bisect, kitlib.dailyfull.file; docs/daily-full.md
+"Bisect").
 
 With "staging".branch set on `<remote>/<main>`, a green run on the staging branch writes the
 commit's daily record (write_daily_record: the pre-push guard's tested record) and promotes the
@@ -45,6 +48,9 @@ SCHEMA = 1
 SLUG = 'daily-full'
 UNCHANGED = 'unchanged'    # the skip cause: the ref is where the last run that ran passed
 FETCH_TIMEOUT = 300       # seconds: a fetch, a worktree add / switch writing a tree, or a status over a big tree
+BISECT_BY_HAND = ('daily: inspect and fix the red first; to bisect it after one failed fix: '
+                  'tools/daily_full.py --bisect %s (docs/daily-full.md "Bisect")')
+BISECT_LINE = ('            bisect it after one failed fix: tools/daily_full.py --bisect %s')
 OFF = ('REFUSED: the daily full run is off: set "daily_full".enabled to true in .kit.json to use '
        'it (opt-in; the kit never schedules it)')
 # A lock refusal is a skip (nothing ran), with this cause; any other refusal is an error.
@@ -315,13 +321,14 @@ def _run_held(main, cfg, s, out, stamp, say, book_kw, git, lock, lock_why, force
                          log_dir=log_dir, skipped=cause)
     steps = [{'name': r['name'], 'status': r['status'], 'reasons': r['reasons'],
               'seconds': r['seconds'], 'log': r['log']} for r in ran]
-    earlier = results(out)
     result = write_result(log_dir, sha, started, steps)
     line = ('daily: RED %s' % ', '.join(result['red']) if result['red'] else
             'daily: GREEN at %s' % sha[:10])
     if result['error']:
         line += ' - %s' % result['error']
-    lines = [line] + _bisect(main, cfg, s, result, earlier, log_dir, say, kw, git)
+    lines = [line]
+    if B.bisectable(result):
+        lines.append(BISECT_BY_HAND % os.path.basename(log_dir))
     code = G.FAILED if result['red'] else G.OK
     if not result['red']:
         tested_by = {'cfg': tested, 'started_utc': started_utc, 'ran': ran}
@@ -375,19 +382,78 @@ def _promote(s, cfg, record, sha, staging, log_dir, git, main=None, tested_by=No
     return [P.line(p)], G.OK if p['status'] in P.OK else G.REFUSED
 
 
-def _bisect(main, cfg, s, result, earlier, log_dir, say, kw, git):
-    """After a red `result` with "daily_full".bisect set: bisect (kitlib.dailyfull.bisect), the
-    result rewritten with its `bisect`, and the record filed (kitlib.dailyfull.file). The lines to
-    add to the outcome; none when there is nothing to bisect."""
+def bisect_red(main, cfg, stamp=None, say=_quiet, book_kw=None, git=git, out=None):
+    """The bisect of a past red run on request (`tools/daily_full.py --bisect [STAMP]`): the run in
+    the results folder's (`out`, default settings') `stamp` folder, else the latest run that ran.
+    Under the tree's lock
+    (BUSY when another run holds it), in the daily worktree once tree_refusal passes, with
+    "daily_full".bisect's settings when set (max_probes, default bisect.DEFAULT_PROBES; prefix
+    files the red it reproduced). Its result.json is rewritten with `bisect`. Outcome codes: OK
+    (bisected, whatever its verdict), USAGE (off), REFUSED (no such run, a run that is not red, no
+    step a probe can run, max_probes 0, the tree), BUSY."""
+    s = settings(cfg, main)
+    if not s['enabled']:
+        return G.Outcome(G.USAGE, [OFF])
+    s['out'] = out or s['out']
+    lock, why = tree_lock(main, s['worktree'])
+    if lock is None:
+        return G.Outcome(G.REFUSED, ['REFUSED: the tree lock: %s' % why])
+    try:
+        lock.acquire()
+    except TreeBusy as e:
+        return G.Outcome(G.BUSY, ['daily: busy: %s (%s, lock %s); the bisect left the tree alone'
+                                  % (e, e.record.get('what') or s['worktree'], e.path)])
+    except TreeLockError as e:
+        return G.Outcome(G.REFUSED, ['REFUSED: the tree lock: %s' % e])
+    try:
+        return _bisect_held(main, cfg, s, stamp, say, book_kw, git)
+    finally:
+        lock.release()
+
+
+def _bisect_held(main, cfg, s, stamp, say, book_kw, git):
+    every = results(s['out'])
+    ran = [i for i, r in enumerate(every) if r.get('verdict') != 'skipped']
+    if stamp:
+        ran = [i for i in ran if os.path.basename(every[i]['dir']) == stamp]
+    if not ran:
+        return G.Outcome(G.REFUSED, ['REFUSED: no daily run %s in %s' % (
+            stamp or 'that ran', s['out'])])
+    i = ran[-1]
+    result, log_dir = dict(every[i]), every[i]['dir']
+    del result['dir']
+    name = os.path.basename(log_dir)
     conf = s.get('bisect') or {}
     probes = conf.get('max_probes', B.DEFAULT_PROBES)
     red = B.bisectable(result)
-    if not conf or probes < 1 or not red:
-        return []
+    if result.get('verdict') != 'red':
+        return G.Outcome(G.REFUSED, ['REFUSED: the daily run %s is %s, not red: nothing to '
+                                     'bisect' % (name, result.get('verdict'))])
+    if not red:
+        return G.Outcome(G.REFUSED, ['REFUSED: the red of the daily run %s has no step a probe '
+                                     'can run (%s)' % (name, ', '.join(result.get('red') or []))])
+    if probes < 1:
+        return G.Outcome(G.REFUSED, ['REFUSED: "daily_full".bisect.max_probes is %s: no probe may '
+                                     'run' % probes])
+    if not os.path.isdir(s['worktree']):
+        return G.Outcome(G.REFUSED, ['REFUSED: the daily worktree %s is not there' % s['worktree']])
+    why = tree_refusal(main, s['worktree'], git)
+    if why:
+        return G.Outcome(G.REFUSED, ['REFUSED: %s' % why])
+    kw = dict(book_kw or {}, gate_mode='daily')
+    kw.setdefault('wait_s', s['max_wait'])
+    say('daily: bisecting the red of %s at %s (%s)' % (name, (result.get('sha') or '?')[:10],
+                                                       ', '.join(red)))
+    lines = _bisect(main, cfg, s, result, every[:i], log_dir, say, kw, git, conf, probes, red)
+    return G.Outcome(G.OK, lines + ['logs: %s' % log_dir], log_dir=log_dir, result=result)
+
+
+def _bisect(main, cfg, s, result, earlier, log_dir, say, kw, git, conf, probes, red):
+    """The bisect of the red `result` (kitlib.dailyfull.bisect), the result rewritten with its
+    `bisect`, and the record filed (kitlib.dailyfull.file). The lines to say."""
     prober = B.Prober(s['worktree'], red, s['kind'], place.repo_name(cfg, main), SLUG, log_dir,
                       say, kw, git, plan, steps=result['steps'])
-    found = B.bisect(result, [r for r in earlier if r.get('dir') != log_dir], prober,
-                     s['worktree'], git, probes)
+    found = B.bisect(result, earlier, prober, s['worktree'], git, probes)
     if found['probes']:
         found['mode'] = prober.mode
     lines = ['daily: bisect: %s (%d probe(s))' % (found['verdict'], len(found['probes']))]
@@ -434,7 +500,8 @@ def age_hours(result, now=None):
 
 def summary_lines(out, stale_hours, now=None):
     """What a session start or preflight prints about the daily run: one status line, and the
-    failing steps when the last run is red. Pure but for reading `out`."""
+    failing steps when the last run is red, with the call that bisects it when a probe can run
+    one of its steps. Pure but for reading `out`."""
     every = results(out)
     if not every:
         return ['daily     no daily full run recorded yet (tools/daily_full.py; the kit never '
@@ -469,6 +536,8 @@ def summary_lines(out, stale_hours, now=None):
             lines.append('            failed: %s %s' % (st.get('name'), st.get('log')))
     if last.get('error'):
         lines.append('            failed: %s' % last['error'])
+    if B.bisectable(last):
+        lines.append(BISECT_LINE % os.path.basename(last['dir']))
     tried = [r for r in every if isinstance(r.get('promotion'), dict)]
     p = tried[-1]['promotion'] if tried else None
     if p and p.get('status') not in P.OK:       # until a later promotion is done or current

@@ -5,6 +5,10 @@
                                                   unless it passed green at this commit already
   daily_full.py [-C DIR] --plan                    print what would run; run nothing
   daily_full.py [-C DIR] --summary [--out DIR]     print the status lines from the recorded runs
+  daily_full.py [-C DIR] --bisect [STAMP] [--out DIR]
+                                                  bisect a past red run (default the latest that
+                                                  ran) after one failed fix: a red never bisects
+                                                  by itself
 
 A thin entry point: it parses, calls kitlib.dailyfull, prints and exits. It refuses unless
 `.kit.json` "daily_full".enabled is true. The kit never schedules it. With staging on, a green
@@ -13,6 +17,8 @@ promotion between daily runs is tools/promote.py's.
 Exit: 0 green, or skipped by the machine lock (recorded); 1 a step red; 2 usage, or
 off; 4 the worktree or its gate could not be readied (recorded red), or a promotion was not made;
 5 another run holds the tree (nothing touched or recorded); a lock usage code passes through.
+--bisect: 0 bisected (whatever its verdict); 2 usage, or off; 4 no such run, not red, nothing a
+probe can run, max_probes 0, or the tree refused; 5 another run holds the tree.
 """
 import argparse
 import os
@@ -39,6 +45,8 @@ def parse_args(argv):
     mode = p.add_mutually_exclusive_group()
     mode.add_argument('--plan', action='store_true', help='print the steps; run nothing')
     mode.add_argument('--summary', action='store_true', help='print the recorded runs\' status')
+    mode.add_argument('--bisect', nargs='?', const='', metavar='STAMP',
+                      help='bisect a past red run (default the latest that ran); run no gate')
     p.add_argument('--out', help='the results folder (default <gate log dir>/daily)')
     p.add_argument('--force', action='store_true',
                    help='run even when the ref is the commit the last run passed green at')
@@ -84,6 +92,11 @@ def main(argv=None, book_kw=None):
     if not s['enabled']:
         say(D.OFF)
         return G.USAGE
+    if a.bisect is not None:
+        out = D.bisect_red(top, cfg, stamp=a.bisect or None, say=say, book_kw=book_kw, out=a.out)
+        for line in out.lines:
+            say(line)
+        return out.code
     if a.plan:
         say('daily: %s in %s, kind %s, waits up to %d s for its slot' % (
             s['ref'], s['worktree'], s['kind'], s['max_wait']))

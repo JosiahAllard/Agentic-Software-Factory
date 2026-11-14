@@ -633,7 +633,9 @@ def _pack(lines, path, branch, base, diff):
     try:
         if base is None:
             cfg = load_config(top)
-            base, note = gitrefs.default_base(top, cfg.remote, kconfig.work_base(cfg))
+            base, _branch, note = kconfig.work_base_ref(cfg, top)
+            if base is None:
+                raise ConfigError(note)
             base_note = note
             if note and not diff:
                 lines.append('%s: %s' % (TOOL, note))

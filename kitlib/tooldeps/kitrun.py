@@ -28,15 +28,15 @@ FULL = ['-m', 'unittest', 'discover', '-s', 'tests', '-t', '.']
 
 
 def default_base(top):
-    """`(rev, note)`: the shared default base (kitlib.git.refs.default_base) for the checkout's
-    .kit.json "repo" remote and work base (kitlib.config.work_base); origin and main when .kit.json
-    cannot be read."""
+    """`(rev, note)`: the shared default base of the checkout (kitlib.config.work_base_ref);
+    kitlib.git.refs.default_base of origin and main when .kit.json cannot be read. `(None, why)`
+    when main's staging setting cannot be read."""
     try:
         disk = kconfig.load(top)
-        remote, main = disk.remote, kconfig.work_base(disk)
     except kconfig.ConfigError:
-        remote, main = 'origin', 'main'
-    return gitrefs.default_base(top, remote, main)
+        return gitrefs.default_base(top, 'origin', 'main')
+    rev, _branch, note = kconfig.work_base_ref(disk, top)
+    return rev, note
 
 
 def plan(root, changed, cfg, say):
@@ -214,6 +214,9 @@ def run(a, top, out):
             base = a.base
             if base is None:
                 base, note = default_base(top)
+                if base is None:
+                    say('kit_tests: refused: %s - no test ran' % note)
+                    return USAGE
                 if note:
                     say('kit_tests: %s' % note)
             changed, why = selftree.changed_paths(base, top)
@@ -230,6 +233,9 @@ def run(a, top, out):
             base = a.base
             if base is None:
                 base, note = default_base(top)
+                if base is None:
+                    say('kit_tests: refused: %s - no test ran' % note)
+                    return USAGE
                 if note:
                     say('kit_tests: %s' % note)
             changed, why = selftree.changed_paths(base, top)

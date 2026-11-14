@@ -179,11 +179,13 @@ def changed_between(root, a, b):
 
 
 def default_base(cfg, root):
-    """`(ref, note)`: kitlib.git.refs.default_base of the work base (kitlib.config.work_base:
-    `<remote>/<base>` when it resolves, else `<base>`; `note` says when the local one differs), or
-    `(None, why)` when neither resolves."""
-    base = kconfig.work_base(cfg)
-    ref, note = refs.default_base(root, cfg.remote, base)
+    """`(ref, note)`: the default base, kitlib.config.work_base_ref (`<remote>/<base>` when it
+    resolves, else `<base>`; `<remote>/<main>` while staging is being turned on; `note` says when
+    the local one differs, or that one is used), or `(None, why)` when it does not resolve or
+    main's staging setting cannot be read."""
+    ref, base, note = kconfig.work_base_ref(cfg, root)
+    if ref is None:
+        return None, note
     if refs.resolve(ref, root)[0]:
         return ref, note
     return None, 'neither %s/%s nor %s resolves: pass --base' % (cfg.remote, base, base)
@@ -597,16 +599,18 @@ def tested_tree(root):
 
 def merged_tip(cfg, root, branch, tree):
     """`(HEAD, main ref)` when a branch gate of `root` is not needed: its HEAD is already in the
-    main branch (default_base, `<remote>/<main>` else `<main>`). Only on git's exact yes
+    main branch (the default base, kitlib.config.work_base_ref). Only on git's exact yes
     (refs.is_ancestor) for a clean work tree (`tree`, tested_tree, not None) on a branch other
-    than the main branch; None otherwise: a detached HEAD, uncommitted files (they are what is
-    gated), a no, or any git failure (the gate runs)."""
-    if not branch or tree is None or branch in (cfg.main_branch, kconfig.work_base(cfg)):
+    than the main branch and the branch the default base names; None otherwise: a detached HEAD,
+    uncommitted files (they are what is gated), a no, or any git failure (the gate runs)."""
+    if not branch or tree is None or branch == cfg.main_branch:
         return None
     try:
+        ref, base, _ = kconfig.work_base_ref(cfg, root)
+        if branch == base:
+            return None
         head, _ = refs.head(root)
-        ref, _ = default_base(cfg, root)
-        if not head or not ref:
+        if not head or not ref or not refs.resolve(ref, root)[0]:
             return None
         yes, _ = refs.is_ancestor(head, ref, root)
     except Exception:               # noqa: BLE001 - a check that cannot answer never drops a gate

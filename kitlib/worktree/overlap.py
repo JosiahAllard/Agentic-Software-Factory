@@ -186,7 +186,9 @@ def look(root, files=None, branch=None, base=None, cfg=None):
             c = cfg if cfg is not None else load_config(root)
         except ConfigError as exc:
             return Outcome(CANNOT, ['CANNOT ANSWER: kit configuration: %s' % exc])
-        base, note = refs.default_base(root, c.remote, kconfig.work_base(c))
+        base, _branch, note = kconfig.work_base_ref(c, root)
+        if base is None:
+            return Outcome(CANNOT, ['CANNOT ANSWER: kit configuration: %s' % note])
         if note:
             lines.append('note      %s' % note)
     why = refs.bad_rev(base)

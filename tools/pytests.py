@@ -28,8 +28,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from kitlib.config import ConfigError, load as load_config, work_base  # noqa: E402
-from kitlib.git import refs as gitrefs                              # noqa: E402
+from kitlib.config import ConfigError, load as load_config, work_base_ref  # noqa: E402
 from kitlib.git import repo as gitrepo                              # noqa: E402
 from kitlib.pytests import child, runner                            # noqa: E402
 from kitlib.tooldeps import deps as tool_deps                       # noqa: E402
@@ -112,7 +111,9 @@ def main(argv=None, out=None):
         tcfg = tool_deps.config(top)
         base, base_note = a.base, None
         if a.select and not base:
-            base, base_note = gitrefs.default_base(top, kit.remote, work_base(kit))
+            base, _branch, base_note = work_base_ref(kit, top)
+            if base is None:
+                raise ConfigError(base_note)
     except ConfigError as e:
         say('pytests: refused: kit configuration: %s' % e)
         return USAGE

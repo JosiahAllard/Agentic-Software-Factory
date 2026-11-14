@@ -217,10 +217,12 @@ def _rel(root, path):
 def base_of(root, cfg, rev, map_path, ceilings_path):
     """`(ratchet.Base or None, notes)` for `rev`; with no `rev`, the default base (docs/gate-run.md
     "Default base"), and none (a note) when that does not resolve. MapError when a given `rev`
-    or the git reads fail."""
+    or the git reads fail, or main's staging setting cannot be read (kitlib.config.work_base_ref)."""
     notes = []
     if not rev:
-        rev, note = gitrefs.default_base(root, cfg.remote, kconfig.work_base(cfg))
+        rev, _branch, note = kconfig.work_base_ref(cfg, root)
+        if rev is None:
+            raise MapError(note)
         if note:
             notes.append('note: %s' % note)
         sha, why = gitrefs.resolve(rev, root)
@@ -273,7 +275,9 @@ def scope_base(root, cfg, rev):
     base is given and the default does not resolve."""
     if rev:
         return rev, []
-    rev, note = gitrefs.default_base(root, cfg.remote, kconfig.work_base(cfg))
+    rev, _branch, note = kconfig.work_base_ref(cfg, root)
+    if rev is None:
+        raise MapError(note)
     sha, why = gitrefs.resolve(rev, root)
     if not sha:
         raise MapError('no base (%s): pass --base' % why)

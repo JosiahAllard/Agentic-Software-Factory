@@ -14,7 +14,9 @@ PM kit's tools/sync_base.py; docs/sync-base.md).
   else the CLAUDE_AGENT_MODEL environment variable (a per-session fallback for the model name, not
   a root or config override); neither is a usage error in the entry point.
 - The base defaults to the work base (kitlib.config.work_base: `.kit.json` "staging".branch when
-  set, else "repo".main_branch); the remote is "repo".remote.
+  set, else "repo".main_branch); the remote is "repo".remote. While staging is turned on (the
+  staging branch cannot be fetched and <remote>/<main>, fetched fresh, turns no staging on:
+  kitlib.config.work_base_ref) the main branch is the base, and a `note` line says so.
 - Fetches <remote> <base> first, then refuses unless <target> is on the FETCHED
   refs/remotes/<remote>/<base> (refusal-log P27): a commit on local <base> alone is one the
   remote may never get (someone's unpushed commit, a local <base> ahead of the remote; a
@@ -102,6 +104,36 @@ def _git(root, *args, timeout=gitcmd.GIT_TIMEOUT, stdin=None, env=None):
     """`(rc, stdout text, stderr text)`; rc None when git did not run."""
     r = gitcmd.call(list(args), root, stdin=stdin, timeout=timeout, env=env)
     return r.rc, gitcmd.text(r.out).strip(), r.err
+
+
+def _fetch(root, remote, branch):
+    """`(rc, stderr text)` of fetching <remote> <branch> into refs/remotes/<remote>/<branch>, with
+    no prompt for credentials."""
+    rc, _, err = _git(root, 'fetch', '--quiet', remote,
+                      '+refs/heads/%s:refs/remotes/%s/%s' % (branch, remote, branch),
+                      timeout=FETCH_TIMEOUT,
+                      env=dict(gitcmd.scrubbed_env(), GIT_TERMINAL_PROMPT='0'))
+    return rc, err
+
+
+def turn_on_base(root, cfg, base, explicit):
+    """After the fetch of the work base `base` failed: `(True, note)` when staging is being turned
+    on, so the main branch is the base to judge against (kitlib.config.work_base_ref, after a
+    fresh fetch of <remote>/<main>; docs/gate-landing.md "Turning staging on"); `(False, why)` when
+    the main branch's name or staging setting cannot be used; None when no fallback applies (an
+    explicit --base, the base is main, main cannot be fetched either, or main's `.kit.json`
+    already names the staging branch: a missing one is refused, never measured round)."""
+    main = cfg.main_branch
+    if explicit or base == main:
+        return None
+    if gitrefs.bad_rev(main):
+        return False, gitrefs.bad_rev(main)
+    if _fetch(root, cfg.remote, main)[0] != 0:
+        return None
+    rev, branch, note = kconfig.work_base_ref(cfg, root)
+    if rev is None:
+        return False, note
+    return (True, note) if branch == main else None
 
 
 def merge_msg_path(root):
@@ -249,12 +281,13 @@ def in_flight_reader(top, cfg):
     return inflight.reader(main, cfg, landing.LandingLock.for_config(main, cfg))
 
 
-def owner_refusal(top, cfg, full):
+def owner_refusal(top, cfg, full, base):
     """The refusal lines, or None, for the clean merge of `full` in progress in `top`, before it
     is committed: an owner-only path it changes is committed only as commit.py would carry it
-    (kitlib.commit.checks.merge_owner_refusal, with <remote>/<main> as last fetched judged
-    already; with `"commit".merge_fold` off, it carries no path both sides changed). On a refusal
-    the merge is aborted."""
+    (kitlib.commit.checks.merge_owner_refusal, with <remote>/<base> as last fetched judged
+    already: `base` is the work base, or the main branch while staging is turned on
+    (turn_on_base); with `"commit".merge_fold` off, it carries no path both sides changed). On a
+    refusal the merge is aborted."""
     try:
         rules = cfg.owner_rules()
         fold = commit_settings(cfg)['merge_fold']
@@ -262,7 +295,7 @@ def owner_refusal(top, cfg, full):
         bad, why = None, 'kit configuration: %s' % e
     else:
         bad, why = kcommit.merge_owner_refusal(
-            top, rules, kcommit.landed_main(top, cfg.remote, kconfig.work_base(cfg)), fold=fold)
+            top, rules, kcommit.landed_main(top, cfg.remote, base), fold=fold)
         if bad and not why and not fold:
             why = ('.kit.json "commit".merge_fold is off, so a merge never carries the join of '
                    "both sides' changes to an owner-only path")
@@ -308,7 +341,8 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
         rule_pointer = cfg.section('checkout_guard').get('rule_pointer')
     except ConfigError as e:
         return done(USAGE, '%s: refused: kit configuration: %s' % (TOOL, e))
-    base = base if base is not None else kconfig.work_base(cfg)
+    explicit = base is not None
+    base = base if explicit else kconfig.work_base(cfg)
     remote = cfg.remote
     upstream = '%s/%s' % (remote, base)
     refusal = gitcheckout.main_refusal(top, 'a merge', 'sync_base.py', rule_pointer)
@@ -332,14 +366,20 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
         return done(USAGE, '%s: refused: kit configuration: %s' % (TOOL, e))
     if reader is not None:                    # before the fetch: a landing that pushes is fetched
         lines.extend(inflight.settle(reader, wait, say, sleep, clock)[1])
-    rc, _, err = _git(top, 'fetch', '--quiet', remote,
-                      '+refs/heads/%s:refs/remotes/%s' % (base, upstream), timeout=FETCH_TIMEOUT,
-                      env=dict(gitcmd.scrubbed_env(), GIT_TERMINAL_PROMPT='0'))
+    rc, err = _fetch(top, remote, base)
+    owner_base = kconfig.work_base(cfg)
     if rc != 0:
-        return done(FAILED, 'refused: could not fetch %s %s, so whether %s is pushed cannot be '
-                            'judged (%s). Fix the remote, then retry once; if still refused, tell '
-                            'the coordinator.' % (remote, base, target,
-                                                err or 'git fetch exited %s' % rc))
+        refused = ('refused: could not fetch %s %s, so whether %s is pushed cannot be judged (%s). '
+                   'Fix the remote, then retry once; if still refused, tell the coordinator.'
+                   % (remote, base, target, err or 'git fetch exited %s' % rc))
+        fallback = turn_on_base(top, cfg, base, explicit)
+        if fallback is None:
+            return done(FAILED, refused)
+        if not fallback[0]:
+            return done(FAILED, '%s %s' % (refused, fallback[1]))
+        base = owner_base = cfg.main_branch
+        upstream = '%s/%s' % (remote, base)
+        lines.append('note      %s' % fallback[1])
     full, why = gitrefs.resolve(target, top, known=True)
     if full is None and not gitrefs.bad_rev(target):
         return done(FAILED, 'refused: whether %s is a commit here could not be read (%s). Retry '
@@ -414,7 +454,7 @@ def sync(path, target, model, model_source='--model', base=None, wait=True, say=
                                 'where git keeps its message (MERGE_MSG) could not be read. '
                                 'Nothing was committed and the merge is left in progress: '
                                 '`git status` shows it. Tell the coordinator.' % full[:7])
-        refusal = owner_refusal(top, cfg, full)
+        refusal = owner_refusal(top, cfg, full, owner_base)
         if refusal:
             return done(FAILED, *refusal)
         with open(path, 'r', encoding='utf-8', errors='replace') as f:

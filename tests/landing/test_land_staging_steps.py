@@ -33,16 +33,17 @@ ALL_RAN = {'unit': 'pass', 'build': 'pass', 'lint': 'pass'}
 class StagingBase(test_reuse.ReuseCase):
     KIT = {'staging': {'branch': STAGING}}
     GATE = {'steps': [UNIT, BUILD, LINT]}
+    SAME_TREE_ONLY = True       # the records carry no input keys: only the same tree serves
 
     def setUp(self):
         test_reuse.ReuseCase.setUp(self)
         self.on_main()
         self.repo.git('push', '-q', 'origin', 'main:refs/heads/%s' % STAGING)
         self.repo.git('fetch', '-q', 'origin')
-        # the same tree alone: its records carry no input keys
-        p = mock.patch.object(reuse, 'record_keys', return_value=(None, None))
-        p.start()
-        self.addCleanup(p.stop)
+        if self.SAME_TREE_ONLY:
+            p = mock.patch.object(reuse, 'record_keys', return_value=(None, None))
+            p.start()
+            self.addCleanup(p.stop)
 
     def on_main(self):
         """Main's own commits before the staging branch is made from it: none here."""
@@ -97,6 +98,36 @@ class StagingSteps(StagingBase):
         self.assertEqual((self.results(rec), rec['staging_skipped']), (ALL_RAN, None))
         self.assert_no_staging_line()
         self.assertEqual(self.build_args(lander), ['args []'])
+
+
+class InputTreeStagingSteps(StagingBase):
+    """Staging moves on every landing, so a one-branch staging landing's merge rarely holds its
+    tip's tree: what it reuses comes from the input keys of the tip's --full record."""
+    SAME_TREE_ONLY = False
+
+    def move_staging(self, files):
+        other = self.repo.worktree('other')
+        for rel, text in files.items():
+            self.repo.write(rel, text, root=other)
+        moved = self.repo.commit('staging moves', *files, cwd=other)
+        self.repo.git('push', '-q', 'origin', '%s:refs/heads/%s' % (moved, STAGING))
+        return moved
+
+    def test_a_staging_landing_after_staging_moved_reuses_lint_from_the_input_tree(self):
+        _, tip = self.full_tip()
+        moved = self.move_staging({'o.py': 'o\n'})
+        ended = gate_ok.read(self.repo.root, tip)[0]['ended_utc']
+        lander, out = self.land(BRANCH, tip)
+        rec = self.record(out)
+        self.assertEqual(lander.expect_main, moved)
+        self.assertEqual((self.results(rec), rec['staging_skipped']),
+                         ({'build': 'pass', 'lint': 'reused'}, ['unit']))
+        self.assertIn(reuse.PREFIX + 'HIT lint: the input tree of the full record of %s (ended %s)'
+                      % (tip[:10], ended), self.lines())
+        self.assertFalse([l for l in self.lines() if l.startswith(reuse.PREFIX + 'SAME TREE')],
+                         self.said)
+        self.assert_not_ran(lander.gate_logs, 'unit', 'lint')
+        self.assertEqual(self.build_args(lander), ["args ['--compile']"])
 
 
 class ConfigStagingSteps(StagingBase):

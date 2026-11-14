@@ -14,11 +14,20 @@ CREATE_NEW_CONSOLE. A start that needs no job gets the same flags through kitlib
 call, popen); tests/proc/test_spawn_sites.py holds every start in the kit to one of the two.
 has_console lives in kitlib.proc.console, whose process-wide CreateProcess hook is the backstop
 for a start that goes through neither.
+
+Ending a tree and waiting for it: end_and_wait. Terminating a job only starts each process's end
+(TerminateJobObject on Windows, the cgroup or member kill on Linux), and the job lists none of
+them at once, so a caller that waits for its direct child alone can go on while a grandchild is
+still ending. end_and_wait holds each process first and returns once all have ended.
 """
+import os
+import select
+import time
+
 import kitlib.platform
 from kitlib.platform import jobparts
 from kitlib.platform.mask import cores_text  # noqa: F401  (job.cores_text stays a name)
-from kitlib.platform.windows import job as _win, win32
+from kitlib.platform.windows import job as _win, process as _winproc, win32
 
 from . import bash
 from .console import CONSOLE_CHOICE, has_console  # noqa: F401  (job.has_console stays a name)
@@ -51,6 +60,70 @@ class Job(_win.Job):
         cmd = bash.resolve(cmd, kw.get("shell", False), kw.get("env"))
         kw["creationflags"] = no_window_flags(kw.pop("creationflags", 0))
         return super().start(cmd, before_resume, **kw)
+
+
+GONE_WAIT = 5.0     # seconds a terminated job's processes have, together, to end
+_POLL = 0.25
+
+
+def end_and_wait(job):
+    """Terminate `job` and return once each process it held has ended, GONE_WAIT seconds at most
+    (read at each call). Each is held before the terminate: a terminated job lists none at once,
+    while each end is only started (one with 1.5 GB to tear down was signalled ~45 ms later,
+    2026-10-10). Held is a SYNCHRONIZE handle on Windows, a pidfd on Linux (it names the process,
+    not its pid, and is ready once it has exited, a zombie included). A job that cannot be asked
+    which processes it holds is terminated with nothing waited on; a process that ended before it
+    was held is skipped. The terminate's OSError is raised; the handles are freed on every exit,
+    Ctrl+C in the wait included. The wait runs in _POLL slices, so Ctrl+C reaches it."""
+    try:
+        pids = job.pids()
+    except OSError:
+        pids = []
+    held = []
+    try:
+        for pid in pids:
+            h = _hold_one(pid)
+            if h is not None:
+                held.append(h)
+        job.terminate()
+        end = time.monotonic() + GONE_WAIT
+        for h in held:
+            while True:
+                left = end - time.monotonic()
+                if left <= 0 or _ended(h, min(_POLL, left)):
+                    break
+    finally:
+        for h in held:
+            _release(h)
+
+
+def _hold_one(pid):
+    """A handle that is signalled when process pid ends (Linux: a pidfd), or None."""
+    if kitlib.platform.NAME == 'linux':
+        try:
+            return os.pidfd_open(pid)
+        except OSError:
+            return None
+    return _winproc.open_process(pid, _winproc.SYNCHRONIZE) or None
+
+
+def _release(h):
+    if kitlib.platform.NAME == 'linux':
+        try:
+            os.close(h)
+        except OSError:
+            pass
+        return
+    _winproc.close(h)
+
+
+def _ended(h, seconds):
+    """True when the process behind handle h has ended, waiting `seconds` at most."""
+    if kitlib.platform.NAME == 'linux':
+        poller = select.poll()
+        poller.register(h, select.POLLIN)
+        return bool(poller.poll(int(seconds * 1000)))
+    return _winproc.K32.WaitForSingleObject(h, int(seconds * 1000)) != _winproc.WAIT_TIMEOUT
 
 
 # On Linux the Job is containment's (kitlib.platform.linux.contain): the same methods and

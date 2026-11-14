@@ -63,7 +63,7 @@ from kitlib.git import repo as gitrepo
 from kitlib.lock import run as lockrun, run_wait
 from kitlib.lock.store import (EXIT_BUSY, EXIT_HOLD, EXIT_REQUIRE, EXIT_RESERVED, EXIT_TIMEOUT,
                                EXIT_USAGE, LockError, Store)
-from kitlib.proc.job import Job
+from kitlib.proc.job import Job, end_and_wait
 from kitlib.records import place as rplace
 from kitlib.redfirst import verdict as V
 from kitlib.tooldeps.selfrun import UNIT_TIMEOUT
@@ -236,8 +236,9 @@ def run_timeout(top, base):
 def default_run(argv, cwd, env, log, timeout=None):
     """Run one selector's command into `log` in a kill-on-close job (kitlib.proc.job); its exit
     code (127: could not start). Still running after `timeout` seconds (None: RUN_TIMEOUT): the job
-    ends the command and every process it started, and TimedOut is raised. An interrupt ends the
-    tree the same way (closing the job)."""
+    ends the command and every process it started, and TimedOut is raised once each has ended
+    (kitlib.proc.job end_and_wait: a grandchild can end after the command). An interrupt ends the
+    tree by closing the job."""
     full_env = cmd.scrubbed_env()
     full_env.update(env)
     limit = timeout or RUN_TIMEOUT
@@ -257,7 +258,7 @@ def default_run(argv, cwd, env, log, timeout=None):
             try:
                 return p.wait(timeout=limit)
             except subprocess.TimeoutExpired:
-                job.terminate()
+                end_and_wait(job)
                 p.wait()
                 why = 'still running after %d s; killed it and every process it started' % limit
                 fh.write('\nredfirst: TIMEOUT - %s\n' % why)

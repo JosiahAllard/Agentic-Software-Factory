@@ -2,7 +2,7 @@
 
 Purpose: find the kit's routing and labelling decisions and say whether a structured-decision model could make them cheaper.
 
-This is step 1 only: a desk study over 14 days of agent transcripts. There was no trial, because there is no TypeSafe account. Status at the base of 2026-11-03: unchanged. Step 2 is held for the owner (set up an account, or retire the audit) in the Jev fit audit backlog record. No code in the kit calls Jev, and the figures below are as measured then.
+This is step 1 only: a desk study over 14 days of agent transcripts. There was no trial, because there is no TypeSafe account. Status at the base of 2026-11-03: unchanged. Step 2 was dropped by the owner on 2026-11-14 (no account, no accuracy trial). No code in the kit calls Jev, and the figures below are as measured then.
 
 ## What Jev is
 
@@ -78,7 +78,9 @@ This assumes the turns that did nothing can be delivered later in a batch, or dr
 - The kit is standard-library Python only. An API call is possible with the standard library. An MCP server was not found.
 - A rule needs no account. A plain pattern on "done, gate green" may capture most of the $124 by itself.
 
-## What step 2 needs
+## What step 2 needed (dropped)
+
+The owner dropped step 2 on 2026-11-14, so accuracy stays unmeasured. What it would have needed:
 
 1. A TypeSafe account and key. That is the owner's call.
 2. A labelled set: a few hundred report-check, triage and refusal turns sampled from the transcripts. Label each by what the agent actually did next: acted, or only acknowledged. A read-only script can draw and pre-label the sample.
@@ -94,3 +96,12 @@ Do not put Jev inside the agent loop. On the measured numbers it costs more than
 The only fit is an out-of-loop notification pre-filter, worth at most about $124 per 14 days. Build and measure a rule-based filter first. Run step 2 only if the rule leaves a real gap.
 
 This ranks below the listing trim, code-aware search, cache-gap and start-up work of the cost audit (not in this repository), each worth more and needing no outside service.
+
+## Step 3: the owner's page
+
+The recommendation per step is on the Action Hub page `jev-fit-recommendation`, built from the step 1 estimates alone. In short:
+
+- Report check and message triage: no Jev in the loop. A rule-based pre-filter first (at most $124 per 14 days); Jev only if the rule leaves a gap.
+- Dispatch pick, hub routing, record labelling, refusal and denial handling: no. Each is a false saving or too small.
+- Codex auto-review: not the kit's to change.
+- Accuracy is unmeasured, which weighs against every step.

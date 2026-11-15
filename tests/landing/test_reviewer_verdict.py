@@ -266,45 +266,46 @@ class ReviewerVerdict(GateRepoCase):
         return wt, tip, {'--branch': 'kit/b', '--tip': tip,
                          '--range': '%s..%s' % (self.main[:10], tip[:10])}
 
+    def design(self, rid, session='coord-1'):
+        return self.run_tool('design', '--branch', 'kit/b', '--design-reviewer-id', rid, '--session', session)
+
     def test_a_new_source_needs_an_approved_design_review(self):
         wt, tip, over = self.new_class_branch()
         self.plant(RID, handback_turn(report('LAND', tip=tip)))
         out = self.assert_refused(**over)
-        self.assertIn('the diff adds pkg/mod.py, pkg/mod.py:Fresh, and no --design-reviewer-id', out)
+        self.assertIn('the diff adds pkg/mod.py, pkg/mod.py:Fresh, but no design approval is recorded', out)
         self.assertTrue(out.strip().endswith(V.DESIGN_INSTEAD), out)
-        over['--design-reviewer-id'] = RID2
         self.plant(RID2, handback_turn(DESIGN.replace('APPROVE', 'REVISE')))
-        self.assertIn('the design reviewer %s said REVISE' % RID2, self.assert_refused(**over))
+        code, out, _ = self.design(RID2)
+        self.assertEqual(code, 2, out)
+        self.assertIn('REFUSED: the design reviewer %s said REVISE' % RID2, out)
+        self.assertIsNone(V.read_design(wt, 'kit/b'))
+        self.design('coord-1')                          # the coordinator's own: no new file or class
+        self.assertIn("the coordinator's own (coord-1)", self.assert_refused(**over))
         self.plant(RID2, handback_turn(DESIGN))
+        code, out, err = self.design(RID2)
+        self.assertEqual((code, out.strip().splitlines()[-1]), (0, 'DESIGN APPROVED kit/b by %s' % RID2), err)
         code, out, err = self.add(**over)
         self.assertEqual((code, out.strip().splitlines()[-1]), (0, 'QUEUED kit/b %s' % tip), err)
-        # a class added to a file that already exists needs one too: this range adds no file
-        self.repo.write('pkg/mod.py', 'class Fresh:\n    pass\n\n\nclass Second:\n    pass\n',
-                        root=wt)
-        tip2 = self.repo.commit('second class', 'pkg/mod.py', cwd=wt)
-        self.plant(RID, handback_turn(report('LAND', tip=tip2)))
-        over ={'--branch': 'kit/b', '--tip': tip2, '--range': '%s..%s' % (tip[:10], tip2[:10])}
-        out = self.assert_refused(**over)
-        self.assertIn('the diff adds pkg/mod.py:Second, and no --design-reviewer-id', out)
-        self.assertTrue(out.strip().endswith(V.DESIGN_INSTEAD), out)
-        over['--design-reviewer-id'] = RID2
-        code, out, err = self.add(**over)
-        self.assertEqual((code, out.strip().splitlines()[-1]), (0, 'QUEUED kit/b %s' % tip2), err)
 
-    def test_a_design_review_with_no_transcript_or_reader_queues_with_a_note(self):
-        _, tip, over = self.new_class_branch()
-        over['--design-reviewer-id'] = RID2
-        code, out, err = self.add(**over)
+    def test_a_design_review_with_no_transcript_or_reader_is_recorded_with_a_note(self):
+        wt, _, _ = self.new_class_branch()
+        code, out, err = self.design(RID2)
         self.assertEqual(code, 0, (out, err))
         self.assertIn('NOTE: the design review is not checked: no transcript found for the design '
                       'reviewer id %s' % RID2, out)
         with mock.patch.dict(os.environ, {'PM_KIT_HOST': 'codex'}):
-            code, out, err = self.add(**over)
+            code, out, err = self.design(RID2)
             self.assertEqual(code, 0, (out, err))
             self.assertIn('NOTE: the design review is not checked: this host has no transcript '
                           'reader', out)
-            del over['--design-reviewer-id']
-            self.assertIn('no --design-reviewer-id', self.assert_refused(**over))
+        code, out, err = self.design('coord-1')
+        self.assertEqual((code, out), (0, 'DESIGN APPROVED kit/b by coord-1\n'), err)
+        self.assertEqual(V.read_design(wt, 'kit/b')['design_reviewer_id'], 'coord-1')
+        code, out, _ = self.run_tool('design', '--branch', 'kit/nosuch', '--design-reviewer-id', 'coord-1',
+                                     '--session', 'coord-1')
+        self.assertEqual(code, 1, out)
+        self.assertIn('NOT DONE: no linked worktree has kit/nosuch checked out', out)
 
     def test_new_sources_leaves_out_tests_renames_and_moved_classes(self):
         body = 'class Fresh:\n' + ''.join('    x%d = %d\n' % (i, i) for i in range(12))

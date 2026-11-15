@@ -43,6 +43,7 @@ class JailWorld(W.World):
         self.open = os.path.join(self.base, 'data', 'open')
         for d in (self.sib, self.foreign, self.add, self.ro, self.open):
             os.makedirs(d)
+        self.approve(os.path.join(self.main, '.git', 'worktrees', 'sib'), 'main')    # FakeGit's branch for sib
         roots = data_roots if data_roots is not None else [
             {'path': self.add, 'mode': 'add-only'},
             {'path': self.ro, 'mode': 'read-only'},

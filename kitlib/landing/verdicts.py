@@ -35,8 +35,9 @@ is not the reviewer_model stated (model_mismatch_why), nothing written; Reviewer
 when add() is given what the reviewer's transcript says (seen_verdicts, the host's reader) and its
 final report says SEND BACK or has no `Verdict:` line, or a transcript found cannot be read
 (reviewer_verdict_why), or it does not name the tip (tip_why), or the report's `Checks:` and `Done-when:` lines, the follow-ups or the
-design review named for a new source file or class fail (checks_why, done_when_why,
-follow_up_why, design_why), nothing written;
+branch's stored design approval for a new source file or class fail (checks_why, done_when_why,
+follow_up_why, approval_why), nothing written, and when record_design() is given a design review
+that is not approved (design_why), nothing written;
 LightReview (a BadEntry)
 when add() is given a High-risk verdict whose reviewer_model is not a strong-tier model (tier_why),
 nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
@@ -44,8 +45,12 @@ CarryRefused when carry() finds the head does not carry the verdict, nothing wri
 OtherBranch when the file for the branch named holds another branch's entry (names that differ
 only in case share one file on Windows); VerdictError itself for a queue file that cannot be read
 or written, or is not an entry, the queue lock not had in time, git giving no answer, or (add())
-hosts.json "tiers" unread when the tier rule needs them, nothing written. Nothing
-here prints.
+hosts.json "tiers" unread when the tier rule needs them, nothing written, or (record_design())
+no linked worktree on the branch. Nothing here prints.
+
+A branch's design approval (record_design, read_design) is DESIGN_FILE in the git dir of the linked
+worktree that has the branch checked out, so git removes it with the worktree; the guard reads it
+there before a source write (kitlib.guard.rules_edit.design_first, docs/guard-rules.md `design-first`).
 
 Residual race (inference, not tested): two callers that find the same stale lock at once can
 both remove it, the second removing the lock the first just made; that needs a holder to have
@@ -64,6 +69,7 @@ from kitlib.landing import carry as carrymod
 from kitlib.git import batch as gitbatch
 from kitlib.git import cmd as gitcmd
 from kitlib.git import refs
+from kitlib.git import repo
 from kitlib.host import registry
 from kitlib.records import verdict_entry as ve
 
@@ -74,6 +80,7 @@ CODE_CHECKS = ('scope', 'done-when', 'defects', 'tests', 'copies', 'home', 'reus
                'layering')
 DESIGN_CHECKS = ('home', 'reuse', 'cause', 'scope', 'size', 'contract', 'layering')
 CHECK_STATES = ('PASS', 'FAIL', 'N/A')
+DESIGN_FILE = 'kit-design.json'     # a branch's design approval, in its linked worktree's git dir (record_design)
 RETRIES = 5                 # tries of a read, replace or remove while it fails with PermissionError
 RETRY_SLEEP = 0.2           # seconds between them
 # RETRIES as a wait for kitlib.fs.replace: try k starts at least k-1 pauses in, so the last (at
@@ -529,34 +536,29 @@ def follow_up_why(entry, follow_ups):
 
 
 DESIGN_INSTEAD = ('Instead: run the design review: dispatch a fresh analyst with skill '
-                  'specialty-review, design review (skill branch-review, A.2), and queue again with '
-                  '--design-reviewer-id <its agent id>')
+                  'specialty-review, design review (skill branch-review, A.2), record it with verdict.py '
+                  'design --branch <branch> --design-reviewer-id <its agent id> --session <session>, '
+                  'and queue again')
 
 
-def design_why(entry, new, design_id, design_said):
-    """Why add() refuses `entry` because the diff adds a new non-test source file or class (`new`,
-    new_sources()) and no approved design review is named, or None. `design_id`: the
-    --design-reviewer-id given, or None. `design_said`: seen_reports() for it, or None when the
-    host has no reader (not checked). Refused: no design_id; one that is the session queueing it;
-    with a reader, an id that is not an agent id, a transcript found that cannot be read, or a
-    final report whose last `Design:` line is not APPROVE or whose Checks: line lacks a
-    DESIGN_CHECKS id. An id with no transcript is not checked. Pure."""
-    if not new:
-        return None
-    shown = ', '.join(new[:5]) + (' and %d more' % (len(new) - 5) if len(new) > 5 else '')
-    head = 'the diff adds %s' % shown
-    if not design_id or not design_id.strip():
-        return '%s, and no --design-reviewer-id names its design review; nothing was queued\n%s' % (
-            head, DESIGN_INSTEAD)
+def design_why(design_id, session, design_said):
+    """Why record_design() refuses the design review `design_id` names, or None. An id that is
+    `session` (the coordinator approving the design itself: skill branch-review A.2, or the
+    brief's design at dispatch) is not read. `design_said`: seen_reports() of `design_id`, None when
+    the host has no reader (not checked). Refused: a blank design_id; with a reader, an id that is
+    not an agent id, a transcript found that cannot be read, or a final report whose last
+    `Design:` line is not APPROVE or whose Checks: line lacks a DESIGN_CHECKS id. An id with no
+    transcript is not checked. Pure."""
     ids = _reviewer_ids(design_id)
-    session = entry['session'].strip().casefold()
-    parts = ['the design reviewer %s is the session queueing it' % i
-             for i in ids if i.casefold() == session]
+    if not ids:
+        return 'no --design-reviewer-id names the design review; nothing was recorded'
+    session = session.strip().casefold()
+    parts = []
     if design_said is not None:
         parts += ['the design reviewer %s is no agent id' % i
                   for i in ids if i not in design_said and i.casefold() != session]
         for rid, (found, v, report) in sorted(design_said.items()):
-            if not found:
+            if not found or rid.casefold() == session:
                 continue
             if v == UNREAD:
                 parts.append('a transcript of the design reviewer %s cannot be read' % rid)
@@ -569,9 +571,72 @@ def design_why(entry, new, design_id, design_said):
             if lacking:
                 parts.append('the design reviewer %s\'s Checks: line lacks %s'
                              % (rid, ', '.join(lacking)))
-    if not parts:
+    return '%s; nothing was recorded' % '; '.join(parts) if parts else None
+
+
+def approval_why(new, approval):
+    """Why add() refuses a range that adds a new non-test source file or class (`new`,
+    new_sources()), or None: the branch's stored design approval (`approval`, read_design()) is
+    missing, or its reviewer is the session that recorded it (a new file or class is never
+    self-reviewed: skill branch-review A.2). Pure."""
+    if not new:
         return None
-    return '%s, but %s; nothing was queued\n%s' % (head, '; '.join(parts), DESIGN_INSTEAD)
+    if approval is None:
+        why = 'no design approval is recorded for the branch'
+    elif any(i.casefold() == approval['session'].strip().casefold()
+             for i in _reviewer_ids(approval['design_reviewer_id'])):
+        why = 'its recorded design approval is the coordinator\'s own (%s)' % approval['session']
+    else:
+        return None
+    shown = ', '.join(new[:5]) + (' and %d more' % (len(new) - 5) if len(new) > 5 else '')
+    return 'the diff adds %s, but %s; nothing was queued\n%s' % (shown, why, DESIGN_INSTEAD)
+
+
+def design_path(root, branch):
+    """`<git dir>/DESIGN_FILE` of the linked worktree of the repository `root` is in that has
+    `branch` checked out, or None when none has. VerdictError when git gives no answer."""
+    trees, why = repo.worktrees(root)
+    if trees is None:
+        raise ve.VerdictError('git worktree list: %s' % why)
+    for t in trees[1:]:
+        if t.branch == branch:
+            path, why = repo.git_path(t.path, DESIGN_FILE)
+            if path is None:
+                raise ve.VerdictError('git cannot name the git dir of %s: %s' % (t.path, why))
+            return path
+    return None
+
+
+def read_design(root, branch):
+    """The design approval record_design() stored for `branch`, or None when none is stored, it
+    cannot be read, or it is not one for `branch`. VerdictError when git gives no answer."""
+    path = design_path(root, branch)
+    try:
+        with open(path or '', encoding='utf-8') as f:
+            got = json.load(f)
+    except (OSError, ValueError, RecursionError):
+        return None
+    keys = ('branch', 'design_reviewer_id', 'session')
+    if not isinstance(got, dict) or not all(isinstance(got.get(k), str) for k in keys) or got['branch'] != branch:
+        return None
+    return got
+
+
+def record_design(root, branch, design_id, session, design_said, now=None):
+    """Store the approved design of `branch` (tools/verdict.py design): `(path, approval)`, the
+    approval `{branch, design_reviewer_id, session, approved_utc}` written to design_path(),
+    replacing one there. ReviewerSaid when the review is not approved (design_why), nothing
+    written; VerdictError when no linked worktree has `branch` checked out, or git gives no answer.
+    `now`: a datetime for approved_utc."""
+    why = design_why(design_id, session, design_said)
+    if why:
+        raise ReviewerSaid('%s\n%s' % (why, DESIGN_INSTEAD))
+    path = design_path(root, branch)
+    if path is None:
+        raise ve.VerdictError('no linked worktree has %s checked out; nothing was recorded' % branch)
+    approval = {'branch': branch, 'design_reviewer_id': design_id.strip(), 'session': session.strip(),
+                'approved_utc': utc(now)}
+    return _write(path, approval), approval
 
 
 def _git_diff(cwd, args, base, tip):
@@ -872,7 +937,7 @@ def head_of(common_dir, branch):
 
 
 def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main_why=None,
-        seen=None, said=None, follow_ups=None, new=None, design_id=None, design_said=None):
+        seen=None, said=None, follow_ups=None, new=None, approval=None):
     """Queue `entry` (the GIVEN_KEYS; nothing else) for its branch, replacing an entry already
     queued for it: `(path, stored entry)`. The tip must be `refs/heads/<branch>` in the repository
     whose common dir is `common_dir`, else TipMismatch. A Medium or High-risk self-review is SelfReview
@@ -885,8 +950,8 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     that does not name the tip (tip_why), one with no `Checks:` line or one lacking a CODE_CHECKS id (checks_why), and a plain LAND over a
     Done-when item it reports UNMET (done_when_why). `follow_ups`: `{id: state}` of each
     --follow-up (follow_up_why), None not checked. `new`: new_sources() of the range, None not
-    checked; when it lists any, `design_id` and `design_said` (seen_reports() of it, None with no
-    reader) must name an approved design review (design_why). Each refusal is ReviewerSaid. A High-risk
+    checked; when it lists any, `approval` (read_design() of the branch) must be a design review
+    other than the coordinator's own (approval_why). Each refusal is ReviewerSaid. A High-risk
     verdict whose reviewer_model is not a strong-tier model is
     LightReview (tier_why); when it needs hosts.json "tiers" and they cannot be read, VerdictError
     (a configuration fault: nothing queued). Nothing seen or said is stored. `now`: a datetime for
@@ -903,7 +968,7 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     for why in ((reviewer_verdict_why(entry, said) or tip_why(entry, said)
                  or checks_why(entry, said) or done_when_why(entry, said)) if said else None,
                 follow_up_why(entry, follow_ups) if follow_ups is not None else None,
-                design_why(entry, new, design_id, design_said) if new is not None else None):
+                approval_why(new, approval) if new is not None else None):
         if why:
             raise ReviewerSaid(why)
 

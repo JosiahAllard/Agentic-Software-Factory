@@ -2,7 +2,7 @@
 
   verdict.py add --branch B --tip SHA --verdict V --risk R --reviewer TYPE --reviewer-model M
                  --reviewer-id ID --author A --range BASE..TIP --session S [--record ID ...]
-                 [--follow-up ID ...] [--design-reviewer-id ID] [-C DIR]
+                 [--follow-up ID ...] [-C DIR]
       queue B at SHA (the coordinator, after reading the review; never the reviewer). SHA must be
       B's head now. A re-add replaces B's entry. V: LAND | "LAND WITH FOLLOW-UP"; R: Low |
       Medium | High. Prints `QUEUED <branch> <tip>`. A Medium or High-risk verdict whose reviewer is the
@@ -35,16 +35,24 @@
       FOLLOW-UP needs --follow-up naming a record whose state in the backlog store as last fetched
       is open, blocked, parked or pulled, not one the branch carries (verdicts.follow_up_why; a
       store that cannot be read is NOT DONE). When --range adds a new non-test source file or
-      class (verdicts.new_sources), --design-reviewer-id must name the design review: its final
-      report's last `Design:` line APPROVE and a `Checks:` line giving each verdicts.DESIGN_CHECKS
-      id (verdicts.design_why); with no transcript, or a host with no reader, it prints
-      `NOTE: the design review is not checked: ...`. Each refusal prints `REFUSED: ...` and an
-      `Instead:` line (exit 2, nothing written).
+      class (verdicts.new_sources), the branch's design approval (verdict.py design) must be
+      stored and name a reviewer other than the session that recorded it (verdicts.approval_why).
+      Each refusal prints `REFUSED: ...` and an `Instead:` line (exit 2, nothing written).
       A High-risk verdict whose --reviewer-model is not a strong-tier model (hosts.json "tiers",
       or a full model id naming one) prints `REFUSED: ...` and an `Instead:` line naming a fresh
       strong-tier review, whoever built the branch (exit 2, nothing written; verdicts.tier_why,
       the rule land.py checks again at landing, where a strict branch needs one too); when
       hosts.json "tiers" cannot be read it is NOT DONE (exit 1, nothing written).
+  verdict.py design --branch B --design-reviewer-id ID --session S [-C DIR]
+      record B's approved design (verdicts.record_design): the file the guard reads before it lets
+      a source file be written in B's linked worktree (docs/guard-rules.md `design-first`), and
+      add reads for a new source file or class. ID is S when the coordinator approved the design
+      itself (skill branch-review A.2, or the brief's design at dispatch); else the design
+      reviewer's final report must have its last `Design:` line APPROVE and a `Checks:` line giving
+      each verdicts.DESIGN_CHECKS id (verdicts.design_why): `REFUSED: ...` and an `Instead:` line
+      (exit 2, nothing written); with no transcript, or a host with no reader, it prints `NOTE:
+      the design review is not checked: ...` and records it. Prints `DESIGN APPROVED <branch> by
+      <ID>`; NOT DONE (exit 1) when no linked worktree has B checked out.
   verdict.py carry --branch B [-C DIR]
       after a main sync of a queued branch: move B's verdict to B's head when every commit after
       the review is a conflict-free merge of main and B's own diff against main is the one
@@ -69,7 +77,8 @@ exits. Exit codes: 0 done; 1 not done (git gave no answer, a queue file cannot b
 the kit configuration cannot be read by add or carry,
 nothing queued to drop or carry, a carry refused, or list found a file that is not an entry); 2 usage (the arguments, or an
 entry add finds malformed, or a self-review, model mismatch, reviewer's SEND BACK, report lines,
-follow-up, design review or light review it refuses; nothing written); 3 tip mismatch (add: SHA is not the branch's head, or
+follow-up, design approval or light review it refuses, or a design review design refuses;
+nothing written); 3 tip mismatch (add: SHA is not the branch's head, or
 there is no such branch; nothing written).
 """
 import argparse
@@ -121,10 +130,13 @@ def parser():
     ad.add_argument('--follow-up', action='append', default=[], metavar='ID',
                     help='an open backlog record for the unmet part of a LAND WITH FOLLOW-UP '
                          '(repeatable)')
-    ad.add_argument('--design-reviewer-id', metavar='ID',
-                    help="the design reviewer's agent id: needed when the diff adds a new non-test "
-                         'source file or class')
     common(ad)
+    de = sub.add_parser('design', help="record a branch's approved design")
+    de.add_argument('--branch', required=True)
+    de.add_argument('--design-reviewer-id', required=True, metavar='ID',
+                    help="the design reviewer's agent id, or --session for the coordinator's own approval")
+    de.add_argument('--session', required=True, help='the coordinator session recording it')
+    common(de)
     ca = sub.add_parser('carry', help="move a queued verdict to the branch's head after a main sync")
     ca.add_argument('--branch', required=True)
     common(ca)
@@ -237,6 +249,21 @@ def carry(a, common_dir):
     return DONE
 
 
+def design(a):
+    """verdict.py design: the transcript is read unless the coordinator approved the design itself."""
+    own = a.design_reviewer_id.strip().casefold() == a.session.strip().casefold()
+    reader = None if own else verdict_reader()
+    said = verdicts.seen_reports(a.design_reviewer_id, reader) if reader is not None else None
+    verdicts.record_design(os.path.abspath(a.root), a.branch, a.design_reviewer_id, a.session, said)
+    if not own and reader is None:
+        print('NOTE: the design review is not checked: this host has no transcript reader', flush=True)
+    for rid in sorted(r for r, (found, _, _) in (said or {}).items() if not found):
+        print('NOTE: the design review is not checked: no transcript found for the design reviewer id %s'
+              % rid, flush=True)
+    print('DESIGN APPROVED %s by %s' % (a.branch, a.design_reviewer_id.strip()), flush=True)
+    return DONE
+
+
 def run(a, common_dir):
     if a.cmd == 'carry':
         return carry(a, common_dir)
@@ -257,28 +284,22 @@ def run(a, common_dir):
         said = verdicts.seen_verdicts(entry, reader) if well else {}
         follow_ups = follow_up_states(a.root, a.follow_up) if well else None
         new = new_sources(a.root, a.range) if well else None
-        design_id = a.design_reviewer_id
-        design_said = (verdicts.seen_reports(design_id, reader)
-                       if well and new and design_id and reader is not None else None)
+        approval = verdicts.read_design(a.root, a.branch) if new else None
         _, stored = verdicts.add(common_dir, entry, self_review_max_lines=cap, main=main,
                                  main_why=main_why, seen=seen, said=said, follow_ups=follow_ups,
-                                 new=new, design_id=design_id, design_said=design_said)
+                                 new=new, approval=approval)
         for rid in sorted(r for r, models in seen.items() if not models):
             print('NOTE: --reviewer-model %s is not checked: no transcript found for the reviewer '
                   'id %s' % (stored['reviewer_model'], rid), flush=True)
         for rid in sorted(r for r, (found, _, _) in said.items() if not found):
             print('NOTE: the reviewer\'s verdict is not checked: no transcript found for the '
                   'reviewer id %s' % rid, flush=True)
-        if new and reader is None:
-            print('NOTE: the design review is not checked: this host has no transcript reader',
-                  flush=True)
-        for rid in sorted(r for r, (found, _, _) in (design_said or {}).items() if not found):
-            print('NOTE: the design review is not checked: no transcript found for the design '
-                  'reviewer id %s' % rid, flush=True)
         for text in verdicts.said_lines(stored, said):
             print(text, flush=True)
         print('QUEUED %s %s' % (stored['branch'], stored['tip']), flush=True)
         return DONE
+    if a.cmd == 'design':
+        return design(a)
     if a.cmd == 'list':
         good, bad = verdicts.scan(common_dir)
         main, why = main_as_fetched(a.root) if good else (None, None)

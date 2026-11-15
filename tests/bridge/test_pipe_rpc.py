@@ -27,17 +27,30 @@ class PipeRpcTests(unittest.TestCase):
         self.leader=ServiceLeader(uuid.uuid4().hex)
         self.target=PipeTarget(self.leader.endpoint,os.getpid(),own_ctime())
         self.threads=[]
+        self.done=threading.Event()
 
     def tearDown(self):
+        self.done.set()
         for thread in self.threads: thread.join(timeout=4)
         self.leader.close()
         self.assertFalse(any(thread.is_alive() for thread in self.threads))
 
     def serve(self,handler=None):
+        # The server waits for the helper until the test ends: when the helper connects is
+        # bounded by request()'s budget, never by this fixture. A fixed 3 s accept window let
+        # a helper slow to start on a loaded machine connect to an unserved pipe and outlive
+        # its budget (native-write-uncertain).
         server=PipeServer(self.leader,handler=handler)
         failures=[]
         def run():
-            try: server.once(timeout=3)
+            try:
+                while True:
+                    last=self.done.is_set()  # one more look after the test ends
+                    try:
+                        server.once(timeout=.1)
+                        return
+                    except ProcError as error:
+                        if error.code!='private-pipe-accept-timeout' or last: raise
             except Exception as error: failures.append(getattr(error,'code',type(error).__name__))
         thread=threading.Thread(target=run)
         self.threads.append(thread)
@@ -201,9 +214,11 @@ class PipeRpcTests(unittest.TestCase):
 
     def test_bad_handler_is_content_free_and_next_connection_still_works(self):
         def fail(peer,message): raise RuntimeError('private message must not enter logs')
+        # The most run_worker allows (10 s): the helper's start under load must not decide
+        # the outcome; the budget is the fake-clock tests' job.
         self.serve(fail)
-        result=request(self.target,{'id':'bad'})
+        result=request(self.target,{'id':'bad'},timeout=10)
         self.assertEqual(result['error']['code'],'private-request-unavailable')
         self.threads[-1].join(timeout=3)
         self.serve(lambda peer,message:{'ok':True})
-        self.assertEqual(request(self.target,{'id':'good'}),{'ok':True})
+        self.assertEqual(request(self.target,{'id':'good'},timeout=10),{'ok':True})

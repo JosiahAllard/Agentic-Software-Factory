@@ -35,7 +35,7 @@ Low-level design of `kitlib/landing`. The high-level design is ARCHITECTURE.md (
 
 ## State
 
-The verdict queue (one file per branch in the git common dir), the landing lock (through `records`), the landing's own tree, the result record (through `gate`). The landing lock is held from the merge to the push or the end.
+The verdict queue (one file per branch in the git common dir), each branch's design approval (`verdicts.DESIGN_FILE`, `kit-design.json`, in the git dir of the linked worktree on the branch, written by `verdict.py design` and removed by git with the worktree; read by `verdict.py add` and by the guard's `design-first` rule), the landing lock (through `records`), the landing's own tree, the result record (through `gate`). The landing lock is held from the merge to the push or the end.
 
 ## Errors
 

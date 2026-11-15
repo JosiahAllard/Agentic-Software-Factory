@@ -184,16 +184,13 @@ class ReportLines(unittest.TestCase):
                       V.follow_up_why(land, {'EX-9': ('open', True)}) or '')
 
     def test_design_why_needs_an_approved_design_review(self):
-        e = given('kit/a', 'a' * 40)
-        new = ['pkg/mod.py', 'pkg/old.py:Foo']
         approve = ALL_DESIGN + '\nDesign: APPROVE'
-        self.assertIsNone(V.design_why(e, [], None, None))
-        self.assertIsNone(V.design_why(e, new, 'd1', {'d1': (True, None, approve)}))
-        self.assertIsNone(V.design_why(e, new, 'd1', None))            # no reader: not checked
-        self.assertIsNone(V.design_why(e, new, 'd1', {'d1': (False, None, None)}))
+        self.assertIsNone(V.design_why('d1', 'coord-1', {'d1': (True, None, approve)}))
+        self.assertIsNone(V.design_why('d1', 'coord-1', None))            # no reader: not checked
+        self.assertIsNone(V.design_why('d1', 'coord-1', {'d1': (False, None, None)}))
+        self.assertIsNone(V.design_why('Coord-1', 'coord-1', {}))         # the coordinator's own: not read
         cases = [
-            (None, None, 'no --design-reviewer-id names its design review'),
-            (e['session'], None, 'is the session queueing it'),
+            (' ', None, 'no --design-reviewer-id names the design review'),
             ('d1', {}, 'the design reviewer d1 is no agent id'),
             ('d1', {'d1': (True, 'unread', None)}, 'cannot be read'),
             ('d1', {'d1': (True, None, ALL_DESIGN + '\nDesign: REVISE')}, 'd1 said REVISE'),
@@ -202,9 +199,18 @@ class ReportLines(unittest.TestCase):
              "d1's Checks: line lacks layering"),
         ]
         for did, said, want in cases:
-            why = V.design_why(e, new, did, said) or ''
-            self.assertIn('the diff adds pkg/mod.py, pkg/old.py:Foo', why, did)
-            self.assertIn(want, why, did)
+            self.assertIn(want, V.design_why(did, 'coord-1', said) or '', did)
+
+    def test_approval_why_needs_a_stored_approval_by_another_reviewer(self):
+        new = ['pkg/mod.py', 'pkg/old.py:Foo']
+        other = {'branch': 'kit/a', 'design_reviewer_id': 'd1', 'session': 'coord-1'}
+        self.assertIsNone(V.approval_why([], None))
+        self.assertIsNone(V.approval_why(new, other))
+        own = dict(other, design_reviewer_id='COORD-1')
+        for approval, want in ((None, 'no design approval is recorded for the branch'),
+                               (own, "its recorded design approval is the coordinator's own (coord-1)")):
+            why = V.approval_why(new, approval) or ''
+            self.assertIn('the diff adds pkg/mod.py, pkg/old.py:Foo, but ' + want, why)
             self.assertTrue(why.endswith(V.DESIGN_INSTEAD), why)
 
 
@@ -419,6 +425,31 @@ class Queue(QueueCase):
         self.assertEqual(VE.file_name('a%2Fb'), 'a%252Fb.json')       # '%' itself is encoded
         self.assertEqual(VE.branch_of('a%252Fb.json'), 'a%2Fb')
         self.assertIsNone(VE.branch_of('kit%2fdeep%2fx.json'))       # not a name file_name makes
+
+    def test_record_design_stores_what_add_reads(self):
+        wt, tip = self.branch('a', {'a.txt': 'a\n'})
+        self.assertIsNone(V.read_design(self.repo.root, 'kit/a'))
+        with self.assertRaises(V.ReviewerSaid):
+            V.record_design(self.repo.root, 'kit/a', 'd1', 'coord-1',
+                            {'d1': (True, None, ALL_DESIGN + '\nDesign: REVISE')})
+        self.assertIsNone(V.read_design(self.repo.root, 'kit/a'))
+        with self.assertRaises(VE.VerdictError):
+            V.record_design(self.repo.root, 'kit/nosuch', 'coord-1', 'coord-1', None)
+        path, approval = V.record_design(wt, 'kit/a', 'coord-1', 'coord-1', None)    # the coordinator's own
+        self.assertEqual(os.path.normcase(os.path.normpath(path)),
+                         os.path.normcase(os.path.join(self.common, 'worktrees', os.path.basename(wt), V.DESIGN_FILE)))
+        self.assertEqual(V.read_design(self.repo.root, 'kit/a'), approval)
+        new = ['a.py']
+        with self.assertRaises(V.ReviewerSaid) as cm:
+            V.add(self.common, given('kit/a', tip), new=new, approval=approval)
+        self.assertIn("the coordinator's own", str(cm.exception))
+        V.record_design(self.repo.root, 'kit/a', 'd1', 'coord-1', None)
+        _, stored = V.add(self.common, given('kit/a', tip), new=new, approval=V.read_design(wt, 'kit/a'))
+        self.assertEqual(stored['tip'], tip)
+        for text in ('{', '[]', '{"branch": 1, "design_reviewer_id": "d1", "session": "s"}'):
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(text)
+            self.assertIsNone(V.read_design(wt, 'kit/a'), text)
 
     def test_add_refuses_a_tip_that_is_not_the_branch_head(self):
         self.branch('a', {'a.txt': 'a\n'})

@@ -22,7 +22,7 @@ Failed check = finding; `Checks:` id after name:
 6. **Contract and tests** (`contract`). Changed interface, wire format, schema, stored data names every reader; tests extend existing, no copies; stale go.
 7. **Layering** (`layering`). New dependency direction, disallowed cross-package import, misplaced responsibility, god object, tangled control flow.
 
-End with `Checks: home PASS, reuse PASS, cause PASS, scope PASS, size PASS, contract PASS, layering PASS` (each PASS, FAIL or N/A), then `Design: APPROVE` or `Design: REVISE` (any BLOCKING: REVISE). Branch adding non-test source file/class needs it to queue: `verdict.py add --design-reviewer-id` reads both.
+End with `Checks: home PASS, reuse PASS, cause PASS, scope PASS, size PASS, contract PASS, layering PASS` (each PASS, FAIL or N/A), then `Design: APPROVE` or `Design: REVISE` (any BLOCKING: REVISE). Before the build the guard holds source writes until `verdict.py design` records it; that reads both, and a branch adding a non-test source file/class needs it to queue.
 
 ## Code review (after the build): defects and tests
 

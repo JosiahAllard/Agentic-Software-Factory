@@ -27,7 +27,7 @@ Fields:
 - Risk: level; risk-map path or why higher (unlisted no reason).
 - Resources: assigned locks, ports, devices.
 - Tests: touched tests while building; no gate before review; one gate on reviewed tip after verdict.
-- Owner: where his answer is kept (record's `## Owner answer`); never restated.
+- Owner: where the owner's answer is kept (record's `## Owner answer`); never restated.
 - Limits: no land, merge or push.
 
 Rules:

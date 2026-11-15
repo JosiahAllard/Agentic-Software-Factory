@@ -327,6 +327,9 @@ def classify(procs, cpu_window_s):
     by_pid = {p["pid"]: p for p in procs}
     msys_win = {p["mpid"]: p["pid"] for p in procs if p.get("mpid") is not None}
     for p in procs:
+        if not WINDOWS and p["ppid"] == 0:
+            p["eparent"], p["parent_alive"] = None, True    # Linux's pid 1 and 2 have no parent
+            continue
         mpp = p.get("mppid")
         if mpp is not None and mpp != 1:
             # Git-Bash program: its Windows parent is a fork that has usually exited, so the
@@ -489,7 +492,8 @@ def summarize(procs):
     return rows
 
 
-def print_report(rows, procs, out=sys.stdout):
+def print_report(rows, procs, out=None):
+    out = out or sys.stdout         # looked up per call, so a redirected stdout gets the report
     sus = [r for r in rows if r["verdict"] == "SUSPECT"]
     print(f"procwatch {datetime.datetime.now():%Y-%m-%d %H:%M}: {len(procs)} processes, "
           f"{sum(r['count'] for r in sus)} suspect in {len(sus)} groups", file=out)

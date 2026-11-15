@@ -481,6 +481,11 @@ class LinuxRules(unittest.TestCase):
                                  lproc_(900, 1, "sleep", "sleep infinity", "/usr/bin/sleep", 2 * HOUR, parent=1)], 3.0))
         self.assertEqual((ps[900]["verdict"], ps[900]["kill_ok"]), ("EXPECTED", False))
 
+    def test_pid_1_and_2_with_parent_0_are_not_orphans(self):
+        ps = PW.classify([proc(1, 0, "systemd", "/sbin/init", "/usr/lib/systemd/systemd", 90 * HOUR),
+                          lproc_(2, 0, "kthreadd", "", "", 90 * HOUR, parent=0)], 3.0)
+        self.assertEqual([p["parent_alive"] for p in ps], [True, True])
+
     def test_root_search_and_python3_agent_scripts(self):
         ps = by_pid(PW.classify([
             lproc_(900, 1, "find", "find / -name foo", "/usr/bin/find", 5 * MIN, parent=0),
@@ -506,6 +511,7 @@ class LinuxRules(unittest.TestCase):
                 redirect_stdout(out):
             code = PW.main(["--sample", "0", "--log", log])
         self.assertEqual(code, 0)
+        self.assertIn("procwatch ", out.getvalue())     # the report itself, not only a vitals line
         self.assertNotIn("pool", out.getvalue())
         with open(log, encoding="utf-8") as f:
             line = f.read()
@@ -730,6 +736,7 @@ class LinuxProc(unittest.TestCase):
         self.add(11, "b", 1, 11, 0, 1)        # a service's own session: init is its parent
         self.add(12, "c", 10, 5, 34816, 1)    # a live parent, on a terminal
         self.assertEqual(self.L.msys_table(), {10: (10, 0, "?"), 11: (11, 1, "?"), 12: (12, 10, "pts/34816")})
+        self.assertEqual(sorted(self.lp.terminals()), [(10, 1, 5, 0), (11, 1, 11, 0), (12, 10, 5, 34816)])
 
     def test_terminate_verified_names_a_reused_or_missing_pid_and_kills_nothing(self):
         self.add(10, "a", 1, 10, 0, 500)

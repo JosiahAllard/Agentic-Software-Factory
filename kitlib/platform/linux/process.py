@@ -13,6 +13,7 @@ only ctimes below the stamp).
 
   identity(pid)       (ctime, exited) of pid, None when no process has it (kitlib.lock.store
                       wrapper_state); exited: a zombie, ended but not reaped
+  terminals()         [(pid, ppid, session id, tty_nr)] of every process, from one stat read each
   alive, proc_ctime, own_ctime, snapshot, process_parents, listed_ctimes, listed_ctime, _ancestor,
   ancestry, ancestors_of, own_ancestors, descendants, command_line, terminate_verified, kill_tree
                       as kitlib.platform.windows.process documents them
@@ -70,7 +71,8 @@ def _exists(pid):
 
 
 def _stat(pid):
-    """(state, ppid, starttime, comm) from /proc/<pid>/stat, or None when no process has pid.
+    """(state, ppid, starttime, comm, session id, tty_nr) from /proc/<pid>/stat, or None when no
+    process has pid.
     Raises OSError when it cannot be read otherwise. comm may hold spaces and parentheses, so
     the fields are read after its last ')'. A stat that is not there is no process only when
     signal 0 finds none (ESRCH, _exists): /proc mounted hidepid=2 hides another user's process
@@ -90,7 +92,7 @@ def _stat(pid):
     if head < 0 or close < head or len(fields) < 20:
         raise OSError('%s/%d/stat cannot be read: %r' % (PROC, pid, data[:200]))
     return (fields[0].decode('ascii', 'replace'), int(fields[1]), int(fields[19]),
-            data[head + 1:close].decode('utf-8', 'replace'))
+            data[head + 1:close].decode('utf-8', 'replace'), int(fields[3]), int(fields[4]))
 
 
 def _ctime(starttime, boot_id=None):
@@ -167,6 +169,21 @@ def snapshot():
             continue
         if st is not None:
             out.append((pid, st[1], st[3]))
+    return out
+
+
+def terminals():
+    """[(pid, ppid, session id, tty_nr)] of every process /proc lists, each from one read of its
+    stat (so a pid reused meanwhile never mixes two processes in a row). Raises OSError when /proc
+    cannot be read."""
+    out = []
+    for pid in _pids():
+        try:
+            st = _stat(pid)
+        except OSError:
+            continue
+        if st is not None:
+            out.append((pid, st[1], st[4], st[5]))
     return out
 
 

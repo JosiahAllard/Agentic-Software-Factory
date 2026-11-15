@@ -42,17 +42,6 @@ def _ctime(pid):
     return (None, None) if full is None else (full, _units(full & LOW))
 
 
-def _stat_fields(pid):
-    """(session id, tty_nr) of pid from its stat, or None."""
-    try:
-        with open("%s/%d/stat" % (lproc.PROC, pid), "rb") as f:
-            data = f.read()
-        fields = data[data.rfind(b")") + 2:].split()
-        return int(fields[3]), int(fields[4])
-    except (OSError, ValueError, IndexError):
-        return None
-
-
 def cpu_sample(pids):
     """{pid: (ctime, cpu seconds)} for the pids that can be read."""
     out = {}
@@ -94,11 +83,7 @@ def msys_table():
     """{pid: (pid, parent pid, tty)} for every process: tty `?` = no terminal, else `pts/<n>`
     (tty_nr). The parent is 0 (exited) when it is 1 and the process leads no session of its own."""
     table = {}
-    for pid, ppid, _name in lproc.snapshot():
-        got = _stat_fields(pid)
-        if got is None:
-            continue
-        sid, tty = got
+    for pid, ppid, sid, tty in lproc.terminals():
         table[pid] = (pid, 0 if ppid == 1 and sid != pid else ppid, "?" if tty == 0 else "pts/%d" % tty)
     return table
 

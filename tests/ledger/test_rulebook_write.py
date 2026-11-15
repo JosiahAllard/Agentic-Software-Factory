@@ -579,6 +579,7 @@ class CliTest(WriteBase):
         r = self.run_tool('rule-drop', 'landing.fast', '--repo', 'kit', '--book', 'all', '--prov', 'selected',
                           '--why', 'moved to docs', '--source', 's')
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('Q: Drop rule landing.fast from all.md?', write.show(self.read(self.log), rid(6)))
         self.assertIn('Decides: dropped landing.fast: moved to docs [rule all.md landing.fast dropped]',
                       write.show(self.read(self.log), rid(6)))
         self.assertNotIn('landing.fast', self.read(os.path.join(self.rules, 'all.md')))

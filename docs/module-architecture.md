@@ -446,6 +446,7 @@ None: no module is open to every other.
 | opt-loadnode | kitlib-root | build | entry uses base |
 | opt-loadnode | loadnode | build | entry uses work |
 | opt-loadnode | lock | build | entry uses services |
+| opt-procwatch | platform | build | entry uses base |
 | opt-procwatch | pmstart | build | entry uses apps |
 | opt-usage | config | build | entry uses facts |
 | ownerfiles | config | build | services uses facts |

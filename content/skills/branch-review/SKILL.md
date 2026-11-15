@@ -24,7 +24,7 @@ No architecture review after build: code review checks approved design.
 5. Known-flake-list flake (`--find flakes`): one rerun; other failures real.
 6. Findings to author, same agent: numbered, file, symbol, BLOCKING/FIX-HERE/NOTE. Author fixes, re-runs touched tests; re-review fix only. After verdict: author's one gate on reviewed tip; later changes, gate fixes included, reviewed before landing.
 7. Folding finding (skill builder, design rule 7): fixed on branch, never filed. Follow-up: non-folding work only (record bar: skill backlog-ops step 2); `backlog.py add` warns on branch scope overlap: note in `## Found`.
-8. Verdict: LAND; LAND WITH FOLLOW-UP (recorded, `--follow-up <ID>`; required on reviewer's UNMET); SEND BACK. Queue with branch, full tip, reviewed range (skill land-branch); new non-test source file or class: `--design-reviewer-id`.
+8. Verdict: LAND; LAND WITH FOLLOW-UP (recorded, `--follow-up <ID>`; required on reviewer's UNMET); SEND BACK. Queue with branch, full tip, reviewed range (skill land-branch); new non-test source file or class: the design approval recorded (A.2).
 
 ## Prevent, once
 

@@ -123,6 +123,13 @@ ROLE_DEFAULTS = {
 KINDS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'lock', 'kinds.json')
 
 
+def is_test_path(path, globs=DEFAULT_TEST_SOURCES):
+    """True when the repo-relative `path` (either slash) matches one of the fnmatch `globs`, case ignored:
+    what ModuleMap.is_test_source and the guard's design-first rule call a test."""
+    low = path.replace('\\', '/').strip('/').lower()
+    return any(fnmatch.fnmatchcase(low, g.lower()) for g in globs)
+
+
 # ---------------------------------------------------------------- heavy programs
 
 def heavy_programs(cfg=None):

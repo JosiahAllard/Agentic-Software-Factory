@@ -133,7 +133,8 @@ The package exports `ADAPTER`, a `kitlib.host.HostAdapter`:
   not), `verdict` its final report's last `Verdict:` line (`LAND`, `LAND WITH FOLLOW-UP`, `SEND
   BACK`) or `None` (refused), or `'unread'` when a transcript was found and cannot be read
   (refused: fail closed), `report` that final report's text (`None` when none was read), whose
-  `Checks:`, `Done-when:` and `Design:` lines `add` checks too; `None` for an id that is not a
+  `Checks:` and `Done-when:` lines `add` checks too, and whose `Checks:` and `Design:` lines `design`
+  checks (a design review); `None` for an id that is not a
   subagent's. Asked for with `getattr` the
   same way; without it no reviewer verdict is checked (Codex; docs/gate-landing-policy.md "Strict paths";
   Claude: `hosts/claude/adapter/agent_models.py` `verdict`).

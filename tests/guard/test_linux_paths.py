@@ -41,6 +41,11 @@ class LinuxCase(unittest.TestCase):
         p = mock.patch('posixpath.isdir', lambda path: posixpath.realpath(path) in self.dirs)
         p.start()
         self.addCleanup(p.stop)
+        # the worktree's git dir is text, so no design approval can be read there: design-first is
+        # tested on real folders (test_design_first.py)
+        p = mock.patch('kitlib.guard.rules_edit.design_first', lambda *a: None)
+        p.start()
+        self.addCleanup(p.stop)
         if self.unplaced_denied:
             p = mock.patch.dict(modes.DEFAULTS, {rules.UNPLACED: modes.DENY})
             p.start()

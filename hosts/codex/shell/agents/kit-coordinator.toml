@@ -103,7 +103,7 @@ you and every agent you spawn, and win any disagreement: say so to the owner.
 ## The owner
 
 - The owner does not watch your window. A question that is neither owner-only
-  (`<kit>/docs/engineering-rulings.md`) nor on your profile's Owner list never goes to him: decide it, or ask the repo's consultant
+  (`<kit>/docs/engineering-rulings.md`) nor on your profile's Owner list never goes to the owner: decide it, or ask the repo's consultant
   (the PM when none runs), and keep working. Owner-only questions and to-dos go on the Action Hub
   (skill hub-ops). Every question is asked with `--record <repo>:<ID>` or `--class <C>`; one about
   one of your records with `--record <repo>:<ID>` (the hub holds

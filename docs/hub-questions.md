@@ -252,7 +252,7 @@ wants the answer to hold beyond this record, so the same question is not asked a
 standing rule, which the PM logs in the ledger (`questions log`, docs/ledger.md).
 - On the answer: `POST /api/v1/questions/{id}/answer` with `standing` true beside `choice` sets `standing`
   `{at, via}` (the answer's own). A re-answer without it clears `standing`. It is refused `invalid`, field
-  `standing`, on a question bound to no record: the PM logs every such answer already.
+  `standing`, on a question bound to no record: the PM logs only delegated calls and owner run orders (docs/delegations.md); the hub keeps other one-off answers.
 - Afterwards (promote): the same route with `standing` true and no `choice` keeps the answer as it is and
   files nothing again; it sets `standing` `{at, via}` at the time of the promote (`_promote`). It takes an
   optional `if_version`; a `note` is refused `invalid`, field `note`. It is refused `invalid`, field

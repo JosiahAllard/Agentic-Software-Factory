@@ -19,8 +19,10 @@ R-nnnn ledger: read by show, grep, list and check, never written. Without `ledge
   ledger.py conflicts --repo REPO --topic T --key KEY --text TEXT
       the rules a proposed rule clashes with (same key, same topic, shared words), docs to search,
       and the `checked:` hash add --rule needs.
-  ledger.py rule-drop KEY --repo REPO --prov PROV --why WHY --source S [--q Q] [--a A] [commit flags]
-      drop rule KEY from REPO's rulebook, with a log entry `dropped KEY: WHY`.
+  ledger.py rule-drop KEY --repo REPO [--book NAME] --prov PROV --why WHY --source S [--q Q] [--a A]
+                [commit flags]
+      drop rule KEY from REPO's rulebook (--book NAME: that book; `all`: the shared one), with a
+      log entry `dropped KEY: WHY`.
   ledger.py rule-set --repo REPO (--repos A,B | --book-title T) --prov PROV --why WHY
                 --source S [--q Q] [--a A] [commit flags]
       set REPO's rulebook header (made when absent; it then needs --repos), with a log entry.
@@ -106,6 +108,8 @@ def parser():
     commit_flags(ad)
     rd = sub.add_parser('rule-drop', help="drop one rule from a repo's rulebook, with a log entry")
     rd.add_argument('key')
+    rd.add_argument('--book', metavar='NAME', help="drop from this rulebook (`all`: the shared one, or "
+                    "an existing book) instead of the one --repo maps to")
     entry_flags(rd)
     commit_flags(rd)
     rs = sub.add_parser('rule-set', help="set a rulebook's header (Repos, title), with a log entry")
@@ -246,9 +250,9 @@ def write_entry(a, found, repos, q, ans, decides, supersedes='-', rule=None):
 
 
 def do_rule_drop(a, found, repos):
-    name, _ = write.rule_target(found.rules, a.repo)
+    name, _ = write.rule_target(found.rules, a.repo, a.book)
     why = ' '.join(a.why.split())
-    rule = write.RuleChange(found.rules, 'dropped', a.key)
+    rule = write.RuleChange(found.rules, 'dropped', a.key, book=a.book)
     return write_entry(a, found, repos, a.q or 'Drop rule %s from %s?' % (a.key, rulebook.file_name(name)),
                        a.a or why, 'dropped %s: %s' % (a.key, why), rule=rule)
 

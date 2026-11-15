@@ -1,6 +1,6 @@
 # The rulings ledger
 
-Append-only files hold the owner's rulings for every repository on the machine: one file per repository in the folder the machine config's `ledger_dir` names, or the one file `ledger_path` names ("Files"); no flag or environment variable names another. Entry point `tools/ledger.py`; logic `kitlib/ledger` (`read` the one reader, `fmt` the format, `files` which file holds what, `write` the writes, `vcs` the git, `standing` the standing digest, `rulebook` the rulebooks, `audit` the whole-ledger `check`, `safepath` the path checks, `errors` the exceptions, `precommit` the opt-in hook).
+Append-only files hold the entries of owner standing rules and delegated calls for every repository: one file per repository in the folder the machine config's `ledger_dir` names, or the one file `ledger_path` names ("Files"); no flag or environment variable names another. Entry point `tools/ledger.py`; logic `kitlib/ledger`, one module per job (`read`, `fmt`, `files`, `write`, `vcs`, `standing`, `rulebook`, `audit` the whole-ledger `check`, `safepath`, `errors`, `precommit`).
 
 ## Format
 
@@ -153,7 +153,7 @@ Logic: `kitlib/ledger/rulebook.py` (`parse`, `render`, `load`, `check`, `for_rep
 
 The standing rules of the machine live in rulebooks beside the log, in a `rules` folder: `<ledger_dir>/rules/` with `ledger_dir` set, else `rules/` in the folder of the `ledger_path` file. No config key names it. The books are the lower-case `<name>.md` files there: one per repository, named by a short name, and `all.md`, the shared one (printed as "shared"). No file is no rulebook and no error. The verbs below write them, each change paired with a log entry. The owner can also make an answer on the Action Hub a standing rule (docs/hub-questions.md "A standing rule"): the hub then asks the PM to log it, and only logging the question (`hub questions log <id> --if-version N`) ends that ask.
 
-An owner standing rule goes through `add --rule` (design rules go in the design docs); an entry without `--rule` is only for delegated calls; a one-off go gets no entry. Each rule's ledger entry is its source and backs the crash check (`applied`), so it is not a second copy. Only the digest and the rulebooks cite ids; the PM relays a decision in words.
+An owner standing rule goes through `add --rule` (design rules go in the design docs); an entry without `--rule` is only for delegated calls; one-off answers (a go, a hold, a one-case no) get no entry. Each rule's entry is its source and backs the crash check (`applied`), not a second copy.
 
 ```
 # Alpha rules

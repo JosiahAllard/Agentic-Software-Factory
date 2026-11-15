@@ -10,11 +10,14 @@ the base's `owner` section alone, so a branch cannot name itself the owner. The 
 refused `merged`.
 
 `merged` (a landing's merged-tree gate): the first-parent merges in `<base>..HEAD` are the
-lander's own and are not branch commits. It holds with HEAD on the main branch, or detached at a
-landing's merge: the landing tree of kitlib.landing.merge, where HEAD's first-parent chain from the
-base is merges only, the oldest made onto the base itself (landing_head). On any other branch, or
-at any other detached HEAD, those merges are the branch's sync merges, so `merged` there is
-refused, never read as an exemption.
+lander's own and are not branch commits. It holds with HEAD on the work-base branch (the main
+branch, or the staging branch when staging is on); detached at a landing's merge: the landing tree
+of kitlib.landing.merge, where HEAD's first-parent chain from the base is merges only, the oldest
+made onto the base itself (landing_head); or detached at a commit on the first-parent chain of
+`<remote>/<work base>` from the base, as last fetched: a staging promotion's tip (published_head),
+whose plain commits are judged as any commit is. On any other branch, or at any other detached
+HEAD, those merges are the branch's sync merges, so `merged` there is refused, never read as an
+exemption.
 """
 import collections
 
@@ -68,10 +71,37 @@ def landing_head(base, root):
     return True, None
 
 
-def _merged_refusal(root, base, main):
+def published_head(base, root, remote, branch):
+    """`(True, None)` when HEAD of `root` is on the first-parent chain of `<remote>/<branch>` from
+    `base` (`rev-list --first-parent <base>..<remote>/<branch>`), as last fetched: a commit the
+    branch itself published, such as a staging promotion's tip (kitlib.staging.promote tests the
+    fetched staging tip). A landing's merge is pushed only after its gate, so it is never on it
+    during that gate; a branch tip reached only through a second parent is not either. Else
+    `(False, why not)` (a missing ref included), or `(None, why)` when git cannot tell."""
+    ref = 'refs/remotes/%s/%s' % (remote, branch)
+    tip, why = gitrefs.resolve(ref, root, known=True)
+    if tip is None:
+        return None, why
+    if not tip:
+        return False, 'there is no %s/%s' % (remote, branch)
+    head, why = gitrefs.resolve('HEAD', root)
+    if head is None:
+        return None, why
+    chain, why = gitcmd.run_text(['rev-list', '--first-parent', '%s..%s' % (base, tip), '--'],
+                                 root)
+    if chain is None:
+        return None, why
+    if head in chain.split():
+        return True, None
+    return False, 'nor on the first-parent chain of %s/%s from the base' % (remote, branch)
+
+
+def _merged_refusal(root, base, main, remote):
     """None when `merged` may exempt the lander's merges in `root`: HEAD on `main` (a landing
-    merged in the main checkout), or a detached HEAD that is a landing's merge onto `base` (the
-    landing tree, docs/gate-landing.md "Landing" step 5; landing_head). Else what HEAD is and why not."""
+    merged in the main checkout), a detached HEAD that is a landing's merge onto `base` (the
+    landing tree, docs/gate-landing.md "Landing" step 5; landing_head), or a detached HEAD
+    `<remote>/<main>` published (a staging promotion's tip; published_head). Else what HEAD is and
+    why not."""
     branch, why = gitrefs.current_branch(root)
     if branch is None:
         return 'git cannot tell what HEAD is (%s)' % why
@@ -84,7 +114,13 @@ def _merged_refusal(root, base, main):
         return None
     if landing is None:
         return 'HEAD is detached, and git cannot tell whether it is a landing merge (%s)' % why
-    return 'HEAD is detached and not a landing merge: %s' % why
+    published, why_not = published_head(base, root, remote, main)
+    if published:
+        return None
+    if published is None:
+        return ('HEAD is detached and not a landing merge (%s), and git cannot tell whether it '
+                'is on %s/%s (%s)' % (why, remote, main, why_not))
+    return 'HEAD is detached and not a landing merge: %s; %s' % (why, why_not)
 
 
 def check(root, base=None, cfg=None, merged=False):
@@ -103,12 +139,13 @@ def check(root, base=None, cfg=None, merged=False):
     if why:
         return Outcome(REFUSED, lines + ['trailers: NOT CHECKED: %s' % why])
     if merged:
-        why = _merged_refusal(root, base, main)
+        why = _merged_refusal(root, base, main, cfg.remote)
         if why:
             return Outcome(REFUSED, lines + [
                 "trailers: REFUSED - --merged exempts the lander's merges and holds only on %s "
-                "itself or at a landing's detached merge onto the base; %s. On a branch, run "
-                "without --merged." % (main, why)])
+                "itself, at a landing's detached merge onto the base, or detached on the "
+                "first-parent chain of %s/%s from the base (a staging promotion's tip); %s. On a "
+                "branch, run without --merged." % (main, cfg.remote, main, why)])
     try:
         rules = ownermod.merge(load_at(root, 'HEAD').owner_rules(),
                                load_at(root, base).owner_rules())

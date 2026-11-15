@@ -39,7 +39,8 @@ def build_parser():
     p.add_argument('--base', default=None,
                    help='default: <remote>/<main>, else <main> (docs/gate-run.md "Default base")')
     p.add_argument('--merged', action='store_true',
-                   help="a landing's merged-tree gate: the lander's own merges on main are exempt")
+                   help="a landing's or promotion's merged-tree gate: the lander's own merges "
+                        "are exempt")
     return p
 
 

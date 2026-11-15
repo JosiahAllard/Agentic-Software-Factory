@@ -8,7 +8,8 @@ import io
 import os
 import sys
 
-from tests.reviewpack.repo import AGENT, KIT, TRAILERED_MSG, PackCase
+from tests.gitfixture import EMAIL
+from tests.reviewpack.repo import AGENT, KIT, TRAILERED_MSG, PackCase, WithOrigin
 
 sys.path.insert(0, os.path.join(KIT, 'tools'))
 import trailers as cli  # noqa: E402
@@ -258,3 +259,59 @@ class LandingTree(TrailersCase):
         self.assertEqual(code, 2, out)
         self.assertIn('REFUSED', out)
         self.assertIn('HEAD is on the branch other', out)
+
+
+class PromotionTip(TrailersCase, WithOrigin):
+    """A staging promotion gates the fetched staging tip, detached, against main
+    (kitlib.staging.promote). `--merged` takes a detached HEAD on the first-parent chain of
+    `origin/<work base>` from the base: staging's landings are exempt and its plain commits are
+    judged as any commit. A landed branch tip (reached through a second parent) and a fresh
+    landing-shaped merge are not on it and stay refused."""
+
+    CONFIG = {'owner': {'email': EMAIL}, 'staging': {'branch': 'staging'}}
+
+    def setUp(self):
+        super().setUp()
+        # feature: a trailered commit and a sync merge of main; staging, made from main, lands it
+        # by a trailerless lander merge and takes a plain agent commit directly; staging pushed
+        self.commit('1', 'work\n\n' + TRAILERED_MSG)
+        self.git('checkout', '-q', 'main')
+        self.write('g.txt', 'g')
+        self.commit_all('main moves\n\n' + TRAILERED_MSG)
+        self.base = self.git('rev-parse', 'main').strip()
+        self.git('checkout', '-q', 'feature')
+        self.git('merge', '--no-ff', '-q', '-m', 'sync main\n\n' + TRAILERED_MSG, 'main')
+        self.git('checkout', '-q', '-b', 'staging', 'main')
+        self.git('merge', '--no-ff', '-q', '-m', 'Merge feature', 'feature')
+        self.write('d.txt', 'd')
+        self.commit_all('direct', author=AGENT)
+        self.git('push', '-q', 'origin', 'staging')
+
+    def test_a_promotion_tip_passes_and_warns_on_its_plain_commit(self):
+        self.git('checkout', '-q', '--detach', 'origin/staging')
+        code, out = self.run_tool('--base', self.base, '--merged')
+        self.assertIn('1 lander merge(s) exempt', out)
+        self.assert_warned(code, out, '"direct"')
+        self.assertNotIn('"Merge feature" has', out)
+
+    def test_a_landed_branch_tip_is_refused(self):
+        # on origin/staging only through the lander merge's second parent: not published
+        self.git('checkout', '-q', '--detach', 'feature')
+        code, out = self.run_tool('--base', self.base, '--merged')
+        self.assertEqual(code, 2, out)
+        self.assertIn('HEAD is detached and not a landing merge', out)
+        self.assertIn('nor on the first-parent chain of origin/staging', out)
+
+    def test_a_fresh_landing_shaped_merge_over_a_plain_commit_is_refused(self):
+        tip = self.git('rev-parse', 'origin/staging').strip()
+        self.git('checkout', '-q', '-b', 'second', 'main')
+        self.write('s.txt', '2')
+        self.commit_all('more\n\n' + TRAILERED_MSG)
+        self.git('checkout', '-q', '--detach', tip)
+        self.write('p.txt', 'p')
+        self.commit_all('side\n\n' + TRAILERED_MSG)
+        self.git('merge', '--no-ff', '-q', '-m', 'Merge second', 'second')
+        code, out = self.run_tool('--base', tip, '--merged')
+        self.assertEqual(code, 2, out)
+        self.assertIn('not a landing merge', out)
+        self.assertIn('that are not merges', out)

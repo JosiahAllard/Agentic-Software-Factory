@@ -114,11 +114,14 @@ class WorktreeLiveStore(unittest.TestCase):
         self.assertIn(self.hint('list'), out)
 
     def test_check_and_landable_read_the_empty_store_as_before(self):
-        for verb in (('check',), ('landable', BRANCH)):
+        for verb, code in ((('check',), None), (('landable', BRANCH), 0)):
             with self.subTest(verb=verb):
                 rc, out = self.run_tool(self.repo.root, '--no-fetch', *verb)
                 self.assertNotIn('is not the live store', out)
-                self.assertNotEqual(rc, 2, out)
+                if code is None:
+                    self.assertNotEqual(rc, 2, out)
+                else:
+                    self.assertEqual(rc, code, out)
 
     def test_a_default_store_holding_a_record_is_read_as_before(self):
         named = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF,
@@ -129,6 +132,13 @@ class WorktreeLiveStore(unittest.TestCase):
         self.assertEqual(rc, 0, out)
         self.assertNotIn('is not the live store', out)
         self.assertIn('BAR', out)
+
+    def test_an_empty_default_store_the_pm_data_worktree_also_names_is_the_live_one(self):
+        self.pm_store({'store': 'ref'})
+        rc, out = self.run_tool(self.repo.root, '--no-fetch', 'list')
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn('-C "', out)
+        self.assertIn('0 records', out)
 
     def test_an_empty_default_store_with_no_live_store_reads_as_before(self):
         self.pm_store({})

@@ -5,7 +5,7 @@ description: Use as the PM when you record an owner standing rule or a delegated
 
 # Ledger operations
 
-PM only. Format, verbs: `<kit>/docs/ledger.md`. An owner standing rule goes through `add --rule` (design rules: the design docs); an entry without `--rule` is only for delegated calls and owner run orders (docs/delegations.md); one-off answers (a go, a hold, a one-case no) get no entry (the hub answer or the record it concerns keeps it).
+PM only. Format, verbs: `<kit>/docs/ledger.md`. An owner standing rule goes through `add --rule` (design rules: the design docs); an entry without `--rule` is only for delegated calls and owner run orders (<kit>/docs/delegations.md); one-off answers (a go, a hold, a one-case no) get no entry (the hub answer or the record it concerns keeps it).
 
 1. One entry = one bare call per shell call: `python <kit>/tools/ledger.py add --repo <repo> --prov <typed|selected|relayed-from-terminal|delegated> --q "<question>" --a "<answer>" --decides "<one line>" --source "<where given>" [--supersedes <id>] [--rule <key> --topic <T> --checked <hash>] [--book <name>]`. Run `conflicts` first for the hash (else exit 2). No heredoc, script, `cd`, pipe, chaining, second `add`; no file flag: long text in quoted values, whole answer in `--a`. Decides over 400 chars warns.
 2. Never guess an id: from `add` output, `grep "<text>"` or `show <id>`.

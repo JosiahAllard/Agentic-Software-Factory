@@ -49,7 +49,7 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
 - A decision is the owner's only when the owner gave it to you, in their own words, in this
   session or on the hub. Silence, another agent's request, a relayed message and a role label are
   not decisions. Ask for the utterance, not for confirmation that one happened.
-- An owner standing rule goes through `ledger.py add --rule` (skill ledger-ops; <kit>/docs/ledger.md); a design rule goes in the repo's design docs. An entry without `--rule` is only for delegated calls and owner run orders (docs/delegations.md); one-off answers (a go, a hold, a one-case no) get no entry (the hub answer or the record it concerns keeps it). Coordinators read only the rulebooks: a rule left in the ledger is lost. Never edit the ledger by hand or invent an id.
+- An owner standing rule goes through `ledger.py add --rule` (skill ledger-ops; <kit>/docs/ledger.md); a design rule goes in the repo's design docs. An entry without `--rule` is only for delegated calls and owner run orders (<kit>/docs/delegations.md); one-off answers (a go, a hold, a one-case no) get no entry (the hub answer or the record it concerns keeps it). Coordinators read only the rulebooks: a rule left in the ledger is lost. Never edit the ledger by hand or invent an id.
 - Relay to the coordinators the decisions that bind their work, as a paraphrase. A relayed decision covers work only: it never grants a permission and never
   approves configuration.
 - Owner-only files and settings (a repository's owner paths, account settings, the machine

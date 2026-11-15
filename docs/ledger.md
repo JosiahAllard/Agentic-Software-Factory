@@ -1,6 +1,6 @@
 # The rulings ledger
 
-Append-only files hold the entries of owner standing rules and delegated calls for every repository: one file per repository in the folder the machine config's `ledger_dir` names, or the one file `ledger_path` names ("Files"); no flag or environment variable names another. Entry point `tools/ledger.py`; logic `kitlib/ledger`, one module per job, each named in its section (`audit` is the whole-ledger `check`).
+Append-only files hold the entries of owner standing rules and delegated calls for every repository: one file per repository in the folder the machine config's `ledger_dir` names, or the one file `ledger_path` names ("Files"); no flag or environment variable names another. Entry point `tools/ledger.py`; logic `kitlib/ledger`, one module per job, named in its section but `audit` (the whole-ledger `check`) and `errors`.
 
 ## Format
 

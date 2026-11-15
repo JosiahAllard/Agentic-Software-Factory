@@ -3,12 +3,10 @@
 or rule text leaves this module, so the page and result.json carry numbers and rulebook file names
 only. The module stands alone; dropping it drops the counts and their findings and nothing else.
 
-  counts(home, user_config)  `({'stale_cites': n, 'rules': {file: n}, 'over_cap': [file],
-                             'conflict_pairs': n, 'overrides': n}, notes)` or `(None, notes)`
-                             when the machine names no ledger or it cannot be read
-  stale_cites(texts, digest) the STANDING digest's citations of a retired or absent id
-                             (kitlib.ledger.standing.problems, counted)
-  rulebook_counts(books)     the last four counts, over kitlib.ledger.rulebook Books: the rules of
+  counts(home, user_config)  `({'rules': {file: n}, 'over_cap': [file], 'conflict_pairs': n,
+                             'overrides': n}, notes)` or `(None, notes)` when the machine names no
+                             ledger or it cannot be read
+  rulebook_counts(books)     the four counts, over kitlib.ledger.rulebook Books: the rules of
                              each file, the files over rulebook.MAX_BYTES, the pairs of rules that
                              rulebook.conflicts finds sharing content words, and the repo rules
                              that override a shared rule
@@ -22,11 +20,7 @@ from kitlib import kitroot
 from kitlib.config import ConfigError
 from kitlib.config.user import user_config as _user_config
 from kitlib.ledger import files as lfiles
-from kitlib.ledger import read, rulebook, standing
-
-
-def stale_cites(texts, digest_text):
-    return len(standing.problems(list(texts), digest_text))
+from kitlib.ledger import read, rulebook
 
 
 def rulebook_counts(books):
@@ -67,15 +61,11 @@ def counts(home=None, user_config=_user_config):
     notes = ['ledger: %d file(s) could not be read' % unread] if unread else []
     if not texts:
         return None, notes + ['ledger NOT CHECKED: no ledger file could be read']
-    digest, dwhy = standing.read_digest(found.digest)
-    if dwhy:
-        notes.append('ledger: the STANDING digest could not be read')
     books, errs = rulebook.load(found.rules)
     if errs:
         notes.append('ledger: %d rulebook error(s) (ledger.py check names them)' % len(errs))
     rules, over, pairs, overrides = rulebook_counts(books)
-    return {'stale_cites': stale_cites(texts, digest), 'rules': rules, 'over_cap': over,
-            'conflict_pairs': pairs, 'overrides': overrides}, notes
+    return {'rules': rules, 'over_cap': over, 'conflict_pairs': pairs, 'overrides': overrides}, notes
 
 
 def findings(got):
@@ -85,12 +75,6 @@ def findings(got):
         return []
     tool = kitroot.command('ledger')
     out = []
-    n = got.get('stale_cites', 0)
-    if n:
-        out.append(Finding('ledger-stale-cites', 'stale_cites',
-                           '%d citation(s) in the STANDING digest of a retired or absent entry' % n,
-                           '%s check   (the PM: it names each one; re-point the digest line or'
-                           ' drop it)' % tool))
     over = got.get('over_cap') or []
     if over:
         out.append(Finding('ledger-over-cap', 'over_cap',

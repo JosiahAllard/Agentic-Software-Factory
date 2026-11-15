@@ -1,6 +1,6 @@
 """The one ledger reader: every consumer of the rulings ledger's entries reads through here (the
-digest feed `list` in kitlib.ledger, `check`'s standing-digest check in kitlib.ledger.standing, and
-kitlib.backlog.ledger, which re-exports `Entry` and `read_entries`).
+digest feed `list` in kitlib.ledger, and kitlib.backlog.ledger, which re-exports `Entry` and
+`read_entries`).
 
 A header is read leniently, `## <id> | <when> | <repo> | <kind>` (the id R-nnnn or H-<repo>-nnnn,
 kitlib.ledger.fmt.ID); `strict` says it also has the

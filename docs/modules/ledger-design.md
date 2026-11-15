@@ -19,7 +19,7 @@ Low-level design of `kitlib/ledger` and `kitlib/pending`. The high-level design 
 |---|---|
 | `ledger/files.py`, `safepath.py` | Which file holds what, from the machine config; the path checks |
 | `ledger/fmt.py`, `read.py`, `write.py` | The format; the one reader; add, retire, show, grep |
-| `ledger/rulebook.py`, `standing.py` | The rulebooks; the standing digest |
+| `ledger/rulebook.py` | The rulebooks |
 | `ledger/audit.py`, `precommit.py`, `vcs.py` | The whole-ledger check; the opt-in pre-commit check; commit and push of the ledger file |
 | `pending/` | The pending-steps file |
 

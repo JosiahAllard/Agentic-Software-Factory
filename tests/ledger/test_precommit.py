@@ -1,5 +1,5 @@
 """githooks/pre-commit and kitlib.ledger.precommit: inert unless .kit.json ledger.pre_commit_check
-opts in; opted in, a commit that changes the configured ledger file (or the standing digest beside
+opts in; opted in, a commit that changes the configured ledger file (or a rulebook beside
 it) runs `tools/ledger.py check --base HEAD`, and a failure refuses the commit; any other commit
 passes without the check (docs/ledger.md "Pre-commit check"). Real git in a throwaway repository
 (tests/gitfixture.py) with core.hooksPath set to the kit's githooks for the one commit. Ids are
@@ -34,6 +34,8 @@ def rid(n):
 ENTRY = ('## %s | 2026-10-06 08:00Z | all | selected\nQ: q\nA: a\nDecides: %s\nSource: s\n'
          'Supersedes: -\n\n')
 HEADER = '# Rulings ledger\n\n'
+BOOK = 'rulings/rules/kit.md'
+BOOK_TEXT = '# T\nRepos: x\n## A\n- a.b: with a source (from %s)\n'
 
 
 class FakeCommit:
@@ -157,16 +159,6 @@ class PreCommitTest(unittest.TestCase):
         self.assertNotIn(CHECK_RAN, out)
         self.assertEqual(self.last(), 'kit')
 
-    def test_opted_in_a_staged_standing_digest_is_checked(self):
-        self.opt_in()
-        self.repo.write('rulings/STANDING.md', '# Standing\n\n- see %s\n' % rid(9))
-        self.repo.git('add', '--', 'rulings/STANDING.md')
-        rc, out = self.hook_commit('-m', 'digest')
-        self.assertNotEqual(rc, 0, out)
-        self.assertIn(rid(9), out)
-        self.assertIn('commit refused', out)
-        self.assertEqual(self.last(), 'kit')
-
     def test_opted_in_a_staged_rulebook_alone_is_checked(self):
         self.opt_in()
         book = 'rulings/rules/kit.md'
@@ -200,13 +192,13 @@ class PreCommitTest(unittest.TestCase):
         self.assertIn('commit refused', out)
         self.assertEqual(self.last(), 'rules')
 
-    def test_opted_in_a_staged_digest_with_an_unstaged_ledger_change_is_refused(self):
+    def test_opted_in_a_staged_rulebook_with_an_unstaged_ledger_change_is_refused(self):
         """The check reads the working ledger too, so it must be what the commit holds."""
         self.opt_in()
-        self.repo.write('rulings/STANDING.md', '# Standing\n\n- see %s\n' % rid(1))
-        self.repo.git('add', '--', 'rulings/STANDING.md')
+        self.repo.write(BOOK, BOOK_TEXT % rid(1))
+        self.repo.git('add', '--', BOOK)
         self.append_entry()                           # working ledger only, not staged
-        rc, out = self.hook_commit('-m', 'digest')
+        rc, out = self.hook_commit('-m', 'rules')
         self.assertNotEqual(rc, 0, out)
         self.assertIn('unstaged changes', out)
         self.assertIn('rulings/LEDGER.md', out)
@@ -214,20 +206,20 @@ class PreCommitTest(unittest.TestCase):
         self.assertNotIn(CHECK_RAN, out)
         self.assertEqual(self.last(), 'kit')
 
-    def test_opted_in_a_staged_ledger_with_an_unstaged_digest_change_is_refused(self):
+    def test_opted_in_a_staged_ledger_with_an_unstaged_rulebook_change_is_refused(self):
         self.opt_in()
-        self.repo.write('rulings/STANDING.md', '# Standing\n\n- see %s\n' % rid(1))
-        self.repo.commit('digest', 'rulings/STANDING.md')
+        self.repo.write(BOOK, BOOK_TEXT % rid(1))
+        self.repo.commit('rules', BOOK)
         self.append_entry()
         self.repo.git('add', '--', 'rulings/LEDGER.md')
-        self.repo.write('rulings/STANDING.md', '# Standing\n\n- see %s\n' % rid(2))
+        self.repo.write(BOOK, BOOK_TEXT % rid(2))
         rc, out = self.hook_commit('-m', 'append')
         self.assertNotEqual(rc, 0, out)
         self.assertIn('unstaged changes', out)
-        self.assertIn('rulings/STANDING.md', out)
+        self.assertIn(BOOK, out)
         self.assertIn('commit refused', out)
         self.assertNotIn(CHECK_RAN, out)
-        self.assertEqual(self.last(), 'digest')
+        self.assertEqual(self.last(), 'rules')
 
     def test_opted_in_no_ledger_path_refuses(self):
         self.opt_in()
@@ -303,14 +295,14 @@ class TargetsTest(unittest.TestCase):
     def ledger_at(self, path):
         machine_config(self.home, {'ledger_path': path}, case=self)
 
-    def test_the_ledger_and_its_digest_are_targets(self):
+    def test_the_ledger_is_the_target(self):
         ledger = os.path.join(self.root, 'rulings', 'LEDGER.md')
         self.ledger_at(ledger)
         paths = precommit.targets(self.home)
-        self.assertEqual(paths, (ledger, os.path.join(self.root, 'rulings', 'STANDING.md')))
+        self.assertEqual(paths, (ledger,))
         staged = ['a.txt', 'rulings/LEDGER.md', 'rulings/STANDING.md', 'rulings/other.md']
         self.assertEqual(precommit.staged_targets(self.root, staged, paths),
-                         ['rulings/LEDGER.md', 'rulings/STANDING.md'])
+                         ['rulings/LEDGER.md'])
 
     @windows_only('case-insensitive paths are a Windows matter')
     def test_case_and_separators_do_not_hide_the_ledger(self):
@@ -320,9 +312,9 @@ class TargetsTest(unittest.TestCase):
 
     def test_both_targets_under_the_root_are_pathspecs(self):
         ledger = os.path.join(self.root, 'rulings', 'LEDGER.md')
-        paths = (ledger, os.path.join(self.root, 'rulings', 'STANDING.md'))
+        paths = (ledger, os.path.join(self.root, 'rulings', 'rules', 'kit.md'))
         self.assertEqual(precommit.under_root(self.root, paths),
-                         ['rulings/LEDGER.md', 'rulings/STANDING.md'])
+                         ['rulings/LEDGER.md', 'rulings/rules/kit.md'])
         self.assertEqual(precommit.under_root(self.root, (os.path.join(self.tmp, 'LEDGER.md'),)), [])
 
     def test_realpath_is_tried_only_for_a_target_file_name(self):

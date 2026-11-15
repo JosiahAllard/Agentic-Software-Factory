@@ -281,7 +281,7 @@ SECTIONS = {
         'in_flight': Field(IN_FLIGHT, None, 'how tools/new_worktree.py and tools/sync_base.py see a landing in flight before they fetch, and wait for it (unset: off; {}: the kit landing lock; wait_s unset: 100, inferred not measured; docs/new-worktree.md "Waiting for a landing in flight")'),
     },
     'ledger': {
-        'pre_commit_check': Field(Bool(), False, 'githooks/pre-commit runs tools/ledger.py check --base HEAD before each commit that changes the ledger file or its standing digest (opt-in; docs/ledger.md "Pre-commit check")'),
+        'pre_commit_check': Field(Bool(), False, 'githooks/pre-commit runs tools/ledger.py check --base HEAD before each commit that changes a ledger file or a rulebook (opt-in; docs/ledger.md "Pre-commit check")'),
     },
     'machine_paths': {
         'allow': Field(ListOf(Obj({'glob': Field(Str(), None, 'files'),

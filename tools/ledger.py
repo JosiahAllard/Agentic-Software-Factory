@@ -34,16 +34,12 @@ R-nnnn ledger: read by show, grep, list and check, never written. Without `ledge
       ledger's entries for REPO or `all`.
   ledger.py check [--base REV]
       validate every ledger file and check each only grew since REV (default <repo.remote>/<main
-      branch> of the file's repository; origin unless set), that the standing digest cites
-      only live entries, and the rulebooks (format, sources in the log, each logged rule change
-      applied, one heading per topic; overrides and a book over its byte cap are notes, not
-      failures).
+      branch> of the file's repository; origin unless set), and the rulebooks (format, sources in
+      the log, each logged rule change applied, one heading per topic; overrides and a book over
+      its byte cap are notes, not failures).
   ledger.py list --prov PROV --since YYYY-MM-DD [--repo REPO]
       one line per ruling of that provenance dated on or after the day: `<id> | date | Decides`.
       `--prov delegated` feeds the PM's daily digest of delegated engineering rulings.
-  ledger.py standing [WORD] [--repo REPO]
-      the standing digest's rule lines for a topic word, under their headings; --repo: only the
-      digest's `## REPO` section. WORD or --repo is needed.
   ledger.py rules (--repo FOLDER | --all) [--sources] [--topic WORD]
       the rulebooks in the `rules` folder beside the log (docs/ledger.md "Rulebooks"): --repo the
       shared one then FOLDER's own; --all every one. Rules print under their topic headings;
@@ -65,7 +61,7 @@ from kitlib import ledger                                          # noqa: E402
 from kitlib.config import user                                     # noqa: E402
 from kitlib.config.types import ConfigError                        # noqa: E402
 from kitlib.host import registry                                    # noqa: E402
-from kitlib.ledger import audit, files, fmt, rulebook, standing, vcs, write  # noqa: E402
+from kitlib.ledger import audit, files, fmt, rulebook, vcs, write  # noqa: E402
 from kitlib.ledger.errors import Failed, Refused, Usage            # noqa: E402
 
 
@@ -135,9 +131,6 @@ def parser():
     gr.add_argument('--repo', help="one repo's view: its file, and the frozen ledger's entries for it or `all`")
     ck = sub.add_parser('check', help='validate, and check every ledger file only grew since a revision')
     ck.add_argument('--base', help='revision to compare with (default <repo.remote>/<main branch>; origin unless set)')
-    st = sub.add_parser('standing', help="the standing digest's rule lines for a topic word")
-    st.add_argument('word', nargs='?')
-    st.add_argument('--repo', help="only the digest's `## REPO` section")
     rl = sub.add_parser('rules', help="the rulebooks: shared and a repo's own, or all")
     rl.add_argument('--repo', help="a checkout folder name (or rulebook name): the shared rulebook, then its own")
     rl.add_argument('--all', action='store_true', help='every rulebook')
@@ -325,20 +318,6 @@ def do_retire(a, found, repos):
     return 0
 
 
-def do_standing(a, p, found):
-    if a.word is None and a.repo is None:
-        raise Usage('standing needs a topic WORD, --repo, or both')
-    digest, why = standing.read_digest(found.digest)
-    if digest is None:
-        return fail(why or 'no standing digest at %s' % found.digest)
-    if a.repo is not None:
-        digest = standing.section(digest, a.repo)
-    lines = standing.topic(digest, a.word or '')
-    for line in lines:
-        print(line)
-    return 0 if lines else 1
-
-
 def do_rules(a, found):
     """Print the rulebooks `a` names; 1 when none exist or no rule matches."""
     if bool(a.repo) == bool(a.all):
@@ -384,8 +363,6 @@ def run(a, p, found, repos):
         for line in lines:
             print(line)
         return 0
-    if a.cmd == 'standing':
-        return do_standing(a, p, found)
     if a.cmd == 'rules':
         return do_rules(a, found)
     if a.cmd == 'add':

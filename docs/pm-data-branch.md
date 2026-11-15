@@ -53,7 +53,7 @@ The private remote is judged by the URL git hands the hook (its second argument)
 ## Guard place and commit hooks
 
 - `kitlib.git.repo.classify` calls the data worktree LINKED, which would let a subagent edit PM data and read the kit's `.kit.json` for it. So the configured `pm_data.path` is a MAIN-like place: the main-checkout rules (subagent edits, `checkout`, `reset --hard`, `clean`, `stash`, bulk add) apply to it, and its config is its own `.kit.json` (an exception to "a worktree's own `.kit.json` is never read": only this one path, which agents cannot edit).
-- `core.hooksPath` is one setting for the whole repository, so the kit's `githooks/` runs for the data worktree too. A repository-local `hooks/pre-commit` there (for example the ledger check) would never run. The opt-in `githooks/pre-commit` has a ledger-staged condition: it runs `tools/ledger.py check --base HEAD` only when the commit changes the configured ledger file (or the standing digest beside it), and nothing else (docs/ledger.md "Pre-commit check").
+- `core.hooksPath` is one setting for the whole repository, so the kit's `githooks/` runs for the data worktree too. A repository-local `hooks/pre-commit` there (for example the ledger check) would never run. The opt-in `githooks/pre-commit` has a ledger-staged condition: it runs `tools/ledger.py check --base HEAD` only when the commit changes a configured ledger file or a rulebook, and nothing else (docs/ledger.md "Pre-commit check").
 
 ## Session start: keep the kit current
 

@@ -119,7 +119,7 @@ Off with no file, each switched on by its key: `repo.push_block` (a push to main
 - `landing.reuse_max_age_h` (int from 0 to 168, default 24): hours a pass stored in the gate cache serves a branch gate rerun or a landing; 0: no gate reads or stores a step result
 - `landing.reuse_never` (list of string, default []): globs of paths whose change makes a gate (branch or landing) read and store no step result in the gate cache
 - `landing.in_flight` ({wait_s, command}): how tools/new_worktree.py and tools/sync_base.py see a landing in flight before they fetch, and wait for it (unset: off; {}: the kit landing lock; wait_s unset: 100, inferred not measured; docs/new-worktree.md "Waiting for a landing in flight")
-- `ledger.pre_commit_check` (bool, default false): githooks/pre-commit runs tools/ledger.py check --base HEAD before each commit that changes the ledger file or its standing digest (opt-in; docs/ledger.md "Pre-commit check")
+- `ledger.pre_commit_check` (bool, default false): githooks/pre-commit runs tools/ledger.py check --base HEAD before each commit that changes a ledger file or a rulebook (opt-in; docs/ledger.md "Pre-commit check")
 - `machine_paths.allow` (list of {glob, line, hit, why, temporary}, default []): machine-path hits allowed
 - `machine_paths.fixtures` (list of {glob, hits, line, why}, default []): test fixtures that name machine paths
 - `machine_paths.known_binary` (map path -> string, default {}): binary file -> why it may hold paths

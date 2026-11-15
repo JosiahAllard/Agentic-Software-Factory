@@ -1,12 +1,12 @@
 """The whole-ledger check `ledger.py check` prints (docs/ledger.md "Check"): every readable file
-validated and checked append-only, the standing digest against all of them, and the rulebooks.
+validated and checked append-only, and the rulebooks.
 
 Returns the lines to print and the exit code; it prints nothing itself.
 """
 import collections
 import os
 
-from . import files, read, rulebook, standing, vcs, write
+from . import files, read, rulebook, vcs, write
 
 # lines: what to print, in order. problems: the failure count (exit 1 when not 0).
 Checked = collections.namedtuple('Checked', 'lines problems')
@@ -33,7 +33,7 @@ def check_one(label, text, old, repos, repo, others):
 
 def check_all(found, repos, base=None):
     """Every readable file validated and checked append-only since `base` (default: each file's
-    repository's remote main); the digest against all of them. A Checked."""
+    repository's remote main), then the rulebooks. A Checked."""
     texts, errs, unchecked = [], [], []
     present = []
     for r, path in files.readable(found):
@@ -53,10 +53,6 @@ def check_all(found, repos, base=None):
         # The frozen (or one-file) ledger keeps its own repo columns (`all` among them); a repo's
         # file holds that repo only.
         errs += check_one(label, text, old, None if (found.split and r is None) else repos, r, others)
-    digest, dwhy = standing.read_digest(found.digest)
-    errs += standing.problems(texts, digest)
-    if dwhy:
-        errs.append('cannot read the standing digest: %s' % dwhy)
     lines = ['FAIL ' + e for e in errs]
     book_lines, book_errs, rules, books = rulebook_findings(found, texts)
     lines += book_lines

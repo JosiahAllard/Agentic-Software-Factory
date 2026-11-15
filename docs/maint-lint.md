@@ -135,7 +135,6 @@ repository's, or not fetched), counted.
 ## Ledger counts
 
 `kitlib/maintlint/ledger.py` gives these counts:
-- `stale_cites`: STANDING digest citations of a retired or absent entry;
 - `rules`: the rules of each rulebook file (`rules/<name>.md` beside the log,
   `kitlib/ledger/rulebook.py`; docs/ledger.md "Rulebooks"), by file name;
 - `over_cap`: the files over the size cap, `rulebook.MAX_BYTES` (16384 bytes, `rulebook.over_cap`);
@@ -146,9 +145,8 @@ repository's, or not fetched), counted.
 
 The counts are read through `rulebook.load` and `rulebook.conflicts`, not parsed again; a rulebook
 that does not parse is a note, and no rulebook folder gives zeros.
-Each of `stale_cites`, `over_cap` and `conflict_pairs` above 0 is also a finding for the PM,
-whose ledger it is: `ledger-stale-cites` (fix: `ledger.py check`, which names each citation, then
-re-point or drop the digest line), `ledger-over-cap` (fix: `ledger.py rules --all`, then
+Each of `over_cap` and `conflict_pairs` above 0 is also a finding for the PM,
+whose ledger it is: `ledger-over-cap` (fix: `ledger.py rules --all`, then
 `rule-drop`, or a shorter rule with `add --rule`) and `ledger-rule-conflicts` (fix: `ledger.py conflicts`, which
 shows what a rule is set against). Overrides are information only. The text carries numbers and
 file names only.

@@ -56,10 +56,9 @@ class ConfigMove(unittest.TestCase):
     def test_an_unmoved_config_keeps_its_ledger_dir_books(self):
         split = os.path.join(self.w.base, 'pm', 'split')
         self.put(self.new_dir, {'ledger_dir': split, 'ledger_repos': ['kit']})
-        for name in ('STANDING.md', os.path.join('rules', 'kit.md')):
-            d = self.edit_ledger(os.path.join(split, name))
-            self.assertIsNotNone(d, name)
-            self.assertEqual(d.rule, 'ledger', d.reason)
+        d = self.edit_ledger(os.path.join(split, 'rules', 'kit.md'))
+        self.assertIsNotNone(d)
+        self.assertEqual(d.rule, 'ledger', d.reason)
 
     def test_with_a_pointer_the_pm_ledger_is_protected_and_the_pm_folder_is_held(self):
         # the machine config read from the PM repository (World.user_config): its ledger_path is

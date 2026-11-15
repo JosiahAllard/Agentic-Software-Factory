@@ -18,22 +18,19 @@ from .errors import Usage
 from .fmt import repo_of
 
 # split: True with ledger_dir. repos: {repo: path} in ledger_repos order ({} unsplit). frozen: the
-# ledger_path file or None. digest: the retired standing digest's path, read only by the guard's
-# ledger rule until its digest kind goes. rules: the rulebooks' folder (kitlib.ledger.rulebook),
-# `rules` beside the log files.
-DIGEST = 'STANDING.md'
-Files = collections.namedtuple('Files', 'split repos frozen digest rules', defaults=(None,))
+# ledger_path file or None. rules: the rulebooks' folder (kitlib.ledger.rulebook), `rules` beside
+# the log files.
+Files = collections.namedtuple('Files', 'split repos frozen rules', defaults=(None,))
 
 
 def of_config(cfg):
     """The Files of a machine config, or None when it sets neither ledger_dir nor ledger_path."""
     folder, frozen = cfg.get('ledger_dir'), cfg.get('ledger_path')
     if folder:
-        return Files(True, files_of(cfg), frozen, os.path.join(folder, DIGEST),
-                     os.path.join(folder, rulebook.FOLDER))
+        return Files(True, files_of(cfg), frozen, os.path.join(folder, rulebook.FOLDER))
     if frozen:
         beside = os.path.dirname(os.path.abspath(frozen))
-        return Files(False, {}, frozen, os.path.join(beside, DIGEST), os.path.join(beside, rulebook.FOLDER))
+        return Files(False, {}, frozen, os.path.join(beside, rulebook.FOLDER))
     return None
 
 

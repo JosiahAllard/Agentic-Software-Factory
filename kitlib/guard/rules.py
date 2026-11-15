@@ -34,9 +34,9 @@ Rules, in the order they are checked:
                    the guard cannot read where the verb could be counts), in any session but the owner's own. Text
                    that only names the hub tool (prose, a pipe of a run into another program) is not read
   ledger          an edit of the machine config's ledger_path, of the rulebooks' folder or a
-                   `.md` file directly in it, or of the standing digest (kitlib.ledger.files
-                   of_config: `rules` and STANDING.md in ledger_dir, else beside ledger_path), by
-                   anyone; with a broken machine config, every subagent write
+                   `.md` file directly in it (kitlib.ledger.files of_config: `rules` in
+                   ledger_dir, else beside ledger_path), by anyone; with a broken machine
+                   config, every subagent write
   lock-state       an agent session's edit of a file in the machine lock's state folder
   machine-config   an edit of a file in the PM repository's machine config folder (<pointer>/.pm-kit) or in a .pm-kit
                    folder at the top of a checkout, in any session but the owner's own (its hub folder is

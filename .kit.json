@@ -8,7 +8,7 @@
   "modules": {"map": "docs/module-map.json", "ceilings": "docs/module-ceilings.json", "page": "docs/module-architecture.md"},
   "commit": {"merge_fold": true},
   "doc_index": {"enabled": false},
-  "daily_full": {"enabled": true, "bisect": {"max_probes": 5}},
+  "daily_full": {"enabled": true},
   "preflight": {"report_hooks": ["daily_full:summary_lines"]},
   "worktree_remove": {"build_output": ["__pycache__"]},
   "gate": {

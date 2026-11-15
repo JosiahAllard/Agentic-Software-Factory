@@ -1,15 +1,20 @@
 """Tests for procwatch.py. The classifier tests use made-up process lists; the live tests (Windows)
-start and stop only their own processes.
+start and stop only their own processes. The Linux tests patch procwatch.WINDOWS and a /proc tree in a
+temp folder, so they run on any platform; LiveLinux reads the real /proc.
 
     python -m unittest test_procwatch -v
 """
+import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
-from tests.platforms import windows_only
+from contextlib import redirect_stdout
+from unittest import mock
+from tests.platforms import posix_only, windows_only
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CODE = os.path.join(HERE, '..', '..', '..', 'optional', 'procwatch')
@@ -27,12 +32,14 @@ GONE = 99                # an MSYS parent pid that no longer exists
 
 _SAVED_HOME = {}
 _HOME_DIR = None
+_WINDOWS = mock.patch.object(PW, "WINDOWS", True)    # the Windows-data tests; LinuxRules patches it back off
 
 
 def setUpModule():
     # procwatch reads the machine config through kitlib (the kit temp folder); under the kit's home
     # fence that needs a temp home, here and in the procwatch processes the tests start.
     global _HOME_DIR
+    _WINDOWS.start()
     _HOME_DIR = tempfile.TemporaryDirectory()
     for k in ('USERPROFILE', 'HOME'):
         _SAVED_HOME[k] = os.environ.get(k)
@@ -40,6 +47,7 @@ def setUpModule():
 
 
 def tearDownModule():
+    _WINDOWS.stop()
     for k, v in _SAVED_HOME.items():
         if v is None:
             os.environ.pop(k, None)
@@ -350,6 +358,7 @@ class Classify(unittest.TestCase):
                         .endswith(" killed=1"))
 
 
+@windows_only("imports winproc (ctypes WinDLL)")
 class ParsePs(unittest.TestCase):
     """winproc.parse_ps_l: Git's `ps -l` text -> {windows pid: (msys pid, msys parent pid, tty)}."""
     TEXT = ("      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND\n"
@@ -440,6 +449,84 @@ class LogPath(unittest.TestCase):
             self.assertEqual(PW.log_path(inside, home=self.home, here=self.tool), self.default)
         finally:
             os.rmdir(link)                              # removes the junction, not its target
+
+
+LINUX_AGENT_TAIL = "tail -n +1 -F /q/.claude/worktrees/x/tasks/b1.output"
+
+
+def lproc_(pid, ppid, name, cmd, image, age, tty=NO_TTY, parent=None):
+    """A Linux process dict: msys fields as linuxproc.msys_table makes them (parent 0 = exited)."""
+    return proc(pid, ppid, name, cmd, image, age, msys=(pid, ppid if parent is None else parent, tty))
+
+
+class LinuxRules(unittest.TestCase):
+    def setUp(self):
+        patch = mock.patch.object(PW, "WINDOWS", False)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_orphaned_agent_follow_and_filter_are_kill_ok_and_a_terminal_filter_is_not(self):
+        ps = by_pid(PW.classify([
+            lproc_(900, 1, "tail", LINUX_AGENT_TAIL, "/usr/bin/tail", 2 * HOUR, parent=0),
+            lproc_(901, 1, "grep", "grep -E FAIL", "/bin/grep", 2 * HOUR, parent=0),
+            lproc_(902, 1, "grep", "grep -E FAIL", "/usr/bin/grep", 2 * HOUR, tty="pts/3", parent=0),
+            lproc_(903, 1, "grep", "grep -E FAIL", "/opt/x/usr/bin/grep", 2 * HOUR, parent=0)], 3.0))
+        self.assertEqual([(ps[i]["rule"], ps[i]["kill_ok"]) for i in (900, 901, 902)],
+                         [("msys-follow", True), ("msys-filter", True), ("msys-filter", False)])
+        self.assertIsNone(ps[903]["rule"])          # coreutils means that folder exactly
+
+    def test_a_service_child_of_init_is_not_an_orphan(self):
+        # linuxproc.msys_table gives parent 1 (not 0) to a session leader whose parent is init
+        ps = by_pid(PW.classify([proc(1, 0, "systemd", "/sbin/init", "/usr/lib/systemd/systemd", 90 * HOUR),
+                                 lproc_(900, 1, "sleep", "sleep infinity", "/usr/bin/sleep", 2 * HOUR, parent=1)], 3.0))
+        self.assertEqual((ps[900]["verdict"], ps[900]["kill_ok"]), ("EXPECTED", False))
+
+    def test_pid_1_and_2_with_parent_0_are_not_orphans(self):
+        ps = PW.classify([proc(1, 0, "systemd", "/sbin/init", "/usr/lib/systemd/systemd", 90 * HOUR),
+                          lproc_(2, 0, "kthreadd", "", "", 90 * HOUR, parent=0)], 3.0)
+        self.assertEqual([p["parent_alive"] for p in ps], [True, True])
+
+    def test_root_search_and_python3_agent_scripts(self):
+        ps = by_pid(PW.classify([
+            lproc_(900, 1, "find", "find / -name foo", "/usr/bin/find", 5 * MIN, parent=0),
+            lproc_(901, 1, "python3.12", "python3 /q/.claude/x.py", "/usr/bin/python3.12", 2 * HOUR, parent=0)], 3.0))
+        self.assertEqual((ps[900]["rule"], ps[900]["kill_ok"]), ("root-search", True))
+        self.assertEqual((ps[901]["rule"], ps[901]["verdict"]), ("agent-script", "SUSPECT"))
+
+    def test_a_script_under_a_posix_agent_temp_folder_is_an_agent_script(self):
+        with mock.patch.object(PW, "_agent_temp_claude", lambda: r"\work\t\claude" + "\\"):
+            ps = by_pid(PW.classify([lproc_(900, 1, "python3", "python3 /work/t/claude/x/job.py",
+                                            "/usr/bin/python3", 2 * HOUR, parent=0)], 3.0))
+        self.assertEqual(ps[900]["rule"], "agent-script")
+
+    def test_main_runs_without_the_windows_refusal_or_a_pool_line(self):
+        class W:
+            perf_info = staticmethod(lambda: None)
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        log = os.path.join(folder, "p.log")
+        out = io.StringIO()
+        with mock.patch.object(PW, "proc_module", lambda: W), \
+                mock.patch.object(PW, "collect", lambda s: [proc(7, 1, "bash", "bash", "/bin/bash", MIN)]), \
+                redirect_stdout(out):
+            code = PW.main(["--sample", "0", "--log", log])
+        self.assertEqual(code, 0)
+        self.assertIn("procwatch ", out.getvalue())     # the report itself, not only a vitals line
+        self.assertNotIn("pool", out.getvalue())
+        with open(log, encoding="utf-8") as f:
+            line = f.read()
+        self.assertIn("kill_ok=", line)
+        self.assertNotIn("pool=", line)
+
+
+class WindowsKeepsItsRules(unittest.TestCase):
+    def test_a_name_without_exe_matches_no_rule_on_windows(self):
+        with mock.patch.object(PW, "WINDOWS", True):
+            ps = by_pid(PW.classify([
+                proc(900, 1, "find", f'"{GIT}\\find" / -name x', GIT + "\\find", 5 * MIN),
+                proc(901, 1, "python3.exe", "python3.exe /q/.claude/x.py", r"C:\x\python3.exe", 2 * HOUR),
+                proc(902, 1, "tail", AGENT_TAIL, GIT + "\\tail", 2 * HOUR, msys=(60, GONE, NO_TTY))], 3.0))
+        self.assertEqual([ps[i]["rule"] for i in (900, 901, 902)], [None, None, None])
 
 
 class FakeWinproc:
@@ -605,6 +692,81 @@ class Live(unittest.TestCase):
             self.assertIn(r.returncode, (0, 1), r.stderr)
             with open(os.path.join(home, ".claude", "logs", "procwatch.log"), encoding="utf-8") as f:
                 self.assertIn(" procs=", f.read())
+
+
+def stat_line(pid, comm, state, ppid, sid, tty, ticks, start):
+    rest = [state, str(ppid), str(sid), str(sid), str(tty)] + ["0"] * 6 + [str(ticks), "0", "0", "0"] \
+        + ["0"] * 4 + [str(start)] + ["0"] * 10
+    return ("%d (%s) %s\n" % (pid, comm, " ".join(rest))).encode()
+
+
+class LinuxProc(unittest.TestCase):
+    """optional/procwatch/linuxproc.py over a /proc tree in a temp folder (ticks 100 a second)."""
+
+    def setUp(self):
+        import linuxproc
+        from kitlib.platform.linux import contain_proc, process as lproc
+        self.L, self.lp = linuxproc, lproc
+        self.root = tempfile.mkdtemp(prefix="procwatch-proc-")
+        self.addCleanup(shutil.rmtree, self.root, True)
+        for patch in (mock.patch.object(lproc, "PROC", self.root), mock.patch.object(contain_proc, "PROC", self.root),
+                      mock.patch.object(lproc, "boot", lambda: 7),
+                      mock.patch.object(lproc, "_clk_tck", lambda: 100)):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def add(self, pid, comm, ppid, sid, tty, start, ticks=250, args=()):
+        d = os.path.join(self.root, str(pid))
+        os.makedirs(d)
+        with open(os.path.join(d, "stat"), "wb") as f:
+            f.write(stat_line(pid, comm, "S", ppid, sid, tty, ticks, start))
+        with open(os.path.join(d, "cmdline"), "wb") as f:
+            f.write(b"".join(a.encode() + b"\0" for a in args))
+
+    def test_details_are_integer_100ns_units_and_a_missing_pid_is_gone(self):
+        self.add(10, "my (x)", 1, 10, 0, 500, args=("tail", "-f", "a b"))
+        d = self.L.details(10)
+        self.assertEqual((d["ctime"], d["cpu"], d["cmd"], d["gone"]), (500 * 10**7 // 100, 2.5, "tail -f a b", False))
+        self.assertIsInstance(d["ctime"], int)
+        self.assertEqual([x[2] for x in self.L.snapshot()], ["my (x)"])
+        self.assertTrue(self.L.details(99)["gone"])
+
+    def test_msys_table_gives_tty_and_marks_a_reparented_orphan_but_not_a_session_leader(self):
+        self.add(10, "a", 1, 5, 0, 1)         # init's child, not a leader: its parent exited
+        self.add(11, "b", 1, 11, 0, 1)        # a service's own session: init is its parent
+        self.add(12, "c", 10, 5, 34816, 1)    # a live parent, on a terminal
+        self.assertEqual(self.L.msys_table(), {10: (10, 0, "?"), 11: (11, 1, "?"), 12: (12, 10, "pts/34816")})
+        self.assertEqual(sorted(self.lp.terminals()), [(10, 1, 5, 0), (11, 1, 11, 0), (12, 10, 5, 34816)])
+
+    def test_terminate_verified_names_a_reused_or_missing_pid_and_kills_nothing(self):
+        self.add(10, "a", 1, 10, 0, 500)
+        with mock.patch.object(self.lp, "terminate_verified") as kill:
+            self.assertEqual(self.L.terminate_verified(10, 499 * 10**7 // 100), "reused")
+            self.assertEqual(self.L.terminate_verified(99, 1), "gone")
+            kill.assert_not_called()
+            kill.return_value = "killed"
+            self.assertEqual(self.L.terminate_verified(10, 500 * 10**7 // 100), "killed")
+            kill.assert_called_once_with(10, (7 << 64) | 500)
+
+
+@posix_only("reads the real /proc and kills its own child with a pidfd")
+class LiveLinux(unittest.TestCase):
+    def test_a_child_is_seen_with_its_parent_and_killed_only_at_its_own_ctime(self):
+        import linuxproc as L
+        child = subprocess.Popen(["sleep", "120"], stdin=subprocess.DEVNULL)
+        self.addCleanup(child.wait)
+        self.addCleanup(child.kill)
+        self.assertIn(child.pid, [p[0] for p in L.snapshot()])
+        d = L.details(child.pid)
+        self.assertEqual((d["gone"], d["cmd"]), (False, "sleep 120"))
+        self.assertIsInstance(d["ctime"], int)
+        self.assertEqual(L.cpu_sample([child.pid])[child.pid][0], d["ctime"])
+        self.assertEqual(L.msys_table()[child.pid][1], os.getpid())
+        self.assertTrue(0 < (L.filetime_now() - d["ctime"]) / 1e7 < 3600)
+        self.assertEqual(L.terminate_verified(child.pid, d["ctime"] + 1), "reused")
+        self.assertEqual(L.terminate_verified(child.pid, d["ctime"]), "killed")
+        child.wait(timeout=10)
+        self.assertEqual(child.returncode, -9)
 
 
 if __name__ == "__main__":

@@ -33,7 +33,9 @@ PROTECT_PATTERNS - ComfyUI plus any regexes in the PROCWATCH_PROTECT environment
 The origin label names the nearest known ancestor app; the PROCWATCH_ORIGINS environment
 variable (';'-separated exe names) adds more.
 
-Exit: 0 no suspects, 1 suspects reported, 2 error. Standard library only; Windows only.
+Exit: 0 no suspects, 1 suspects reported, 2 error. Standard library only; Windows and Linux. On Linux the
+processes come from /proc (linuxproc.py), the rules match names without `.exe`, the Git-Bash rules
+judge coreutils in /bin or /usr/bin by their terminal and parent, and there is no paged-pool check.
 """
 import argparse
 import datetime
@@ -45,6 +47,7 @@ import sys
 from collections import defaultdict
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+WINDOWS = os.name == "nt"
 sys.path.insert(0, HERE)
 
 MIN = 60
@@ -56,8 +59,8 @@ PROTECT_PATTERNS = [
     r"\\comfyui\\", r"(^|\\)comfy desktop\.exe",
 ] + [x for x in os.environ.get("PROCWATCH_PROTECT", "").split(";") if x]
 
-MSYS_FILTERS = {"grep.exe", "egrep.exe", "sed.exe", "awk.exe", "gawk.exe", "cut.exe", "tee.exe",
-                "head.exe", "wc.exe", "sort.exe", "uniq.exe", "tr.exe", "cat.exe", "xargs.exe"}
+MSYS_FILTERS = {"grep", "egrep", "sed", "awk", "gawk", "cut", "tee",
+                "head", "wc", "sort", "uniq", "tr", "cat", "xargs"}
 ROOT_SEARCH = re.compile(
     r"""(?ix)
     (^|[\s"'\\/])find(\.exe)?"?\s+(-\w+\s+)*["']?(/|/c/?|[a-z]:[\\/]?)["']?(\s|$)   # find / , find /c , find C:\
@@ -68,7 +71,16 @@ ROOT_SEARCH = re.compile(
 
 
 def _name(p):
-    return (p.get("name") or "").lower()
+    """The process name, lower case, without `.exe`. On Windows a name with no `.exe` is none (an
+    image always has it), so a rule written without it matches only what it matched with it."""
+    n = (p.get("name") or "").lower()
+    if n.endswith(".exe"):
+        return n[:-4]
+    return "" if WINDOWS else n
+
+
+def _python(n):
+    return n in {"python", "pythonw", "node"} or (not WINDOWS and bool(re.fullmatch(r"python3(\.\d+)?", n)))
 
 
 def _cmd(p):
@@ -81,7 +93,11 @@ COORDINATOR_ARG = re.compile(r"--agent (?:[\w.-]+:)?coordinator")
 
 
 def _in_git_usr_bin(p):
-    return "\\git\\usr\\bin\\" in (p.get("image") or "").lower()
+    """A Git-Bash program (Windows: in Git's usr\\bin) or a coreutils one (Linux: in /bin or /usr/bin)."""
+    image = (p.get("image") or "").lower()
+    if WINDOWS:
+        return "\\git\\usr\\bin\\" in image
+    return os.path.dirname(image) in ("/bin", "/usr/bin")
 
 
 def _msys_image(p):
@@ -179,7 +195,7 @@ def _agent_temp_claude():
         return "\x00"           # an impossible path: no match
     if not temp:
         return "\x00"
-    return os.path.join(temp.replace("/", "\\"), "claude", "").lower()
+    return (temp.replace("/", "\\").rstrip("\\") + "\\claude\\").lower()
 
 
 def _r_conhost(p, ctx):
@@ -236,23 +252,23 @@ RULES = [
     # id, label, match, suspect, kill
     ("root-search", "recursive search from a drive root",
      lambda p: bool(ROOT_SEARCH.search(p.get("cmd") or "")) and _name(p) in
-     {"find.exe", "cmd.exe", "powershell.exe", "pwsh.exe", "where.exe"}, _r_root_search, True),
+     {"find", "cmd", "powershell", "pwsh", "where"}, _r_root_search, True),
     ("msys-follow", "tail -f (Monitor / background watch)",
-     lambda p: _name(p) == "tail.exe" and re.search(r"\s(-\w*f|--follow|-F)\b", p.get("cmd") or ""),
+     lambda p: _name(p) == "tail" and re.search(r"\s(-\w*f|--follow|-F)\b", p.get("cmd") or ""),
      _r_follow, True),
     ("msys-filter", "Git-Bash pipeline filter (grep/sed/awk...)",
      lambda p: _name(p) in MSYS_FILTERS and _in_git_usr_bin(p), _r_filter, True),
-    ("msys-sleep", "Git-Bash sleep", lambda p: _name(p) == "sleep.exe" and _in_git_usr_bin(p), _r_sleep, True),
+    ("msys-sleep", "Git-Bash sleep", lambda p: _name(p) == "sleep" and _in_git_usr_bin(p), _r_sleep, True),
     ("msys-shell", "Git-Bash shell (tool shell / subshell)",
-     lambda p: _name(p) in {"bash.exe", "sh.exe"}, _r_msys_shell, False),
+     lambda p: _name(p) in {"bash", "sh"}, _r_msys_shell, False),
     ("msbuild-node", "MSBuild worker node",
-     lambda p: _name(p) in {"dotnet.exe", "msbuild.exe"} and "/nodemode:" in _cmd(p), _r_msbuild_node, True),
+     lambda p: _name(p) in {"dotnet", "msbuild"} and "/nodemode:" in _cmd(p), _r_msbuild_node, True),
     ("roslyn-server", "C# compiler server (VBCSCompiler)",
-     lambda p: _name(p) == "vbcscompiler.exe" or "vbcscompiler.dll" in _cmd(p), _r_roslyn, False),
+     lambda p: _name(p) == "vbcscompiler" or "vbcscompiler.dll" in _cmd(p), _r_roslyn, False),
     ("gradle-daemon", "Gradle daemon", lambda p: "gradledaemon" in _cmd(p), _r_gradle_daemon, False),
     ("kotlin-daemon", "Kotlin compile daemon", lambda p: "kotlincompiledaemon" in _cmd(p), _r_kotlin_daemon, False),
     ("test-host", "test host (dotnet testhost / Gradle test executor)",
-     lambda p: _name(p) == "testhost.exe" or "testhost.dll" in _cmd(p) or "gradle test executor" in _cmd(p),
+     lambda p: _name(p) == "testhost" or "testhost.dll" in _cmd(p) or "gradle test executor" in _cmd(p),
      _r_testhost, True),
     ("gradle-client", "Gradle client (gradlew)",
      lambda p: "gradle-wrapper.jar" in _cmd(p) or "org.gradle.launcher.gradlemain" in _cmd(p),
@@ -260,12 +276,13 @@ RULES = [
     ("godot-headless", "headless Godot run",
      lambda p: _name(p).startswith("godot") and "--headless" in _cmd(p), _r_godot_headless, False),
     ("agent-script", "agent background script (python/node from a .claude path)",
-     lambda p: _name(p) in {"python.exe", "pythonw.exe", "node.exe"} and
+     lambda p: _python(_name(p)) and
      ("\\.claude" in _cmd(p) or "/.claude" in _cmd(p) or "\\temp\\claude\\" in _cmd(p)
       or "\\agenttemp\\claude\\" in _cmd(p)                # agents' TEMP moved off the system drive
-      or _agent_temp_claude() in _cmd(p)),                # ... or the agent temp folder, as resolved
+      or _agent_temp_claude() in _cmd(p)             # ... or the agent temp folder, as resolved
+      or (not WINDOWS and _agent_path(p.get("cmd")))),   # (Linux: a posix path, see _agent_path)
      _r_agent_script, False),
-    ("conhost", "console host", lambda p: _name(p) == "conhost.exe", _r_conhost, False),
+    ("conhost", "console host", lambda p: _name(p) == "conhost", _r_conhost, False),
 ]
 RULE_IDS = [r[0] for r in RULES]
 
@@ -275,13 +292,13 @@ def protected(p):
     return any(re.search(x, s) for x in PROTECT_PATTERNS)
 
 
-ORIGIN_APPS = {"code.exe", "explorer.exe", "services.exe", "svchost.exe", "comfy desktop.exe",
-               "windowsterminal.exe"}
+ORIGIN_APPS = {"code", "explorer", "services", "svchost", "comfy desktop", "windowsterminal"}
 
 
 def _extra_origins():
-    """Exe names from env PROCWATCH_ORIGINS (';'-separated), read per call."""
-    return {x.strip().lower() for x in os.environ.get("PROCWATCH_ORIGINS", "").split(";") if x.strip()}
+    """Process names from env PROCWATCH_ORIGINS (';'-separated, `.exe` optional), read per call."""
+    return {x.strip().lower().removesuffix(".exe")
+            for x in os.environ.get("PROCWATCH_ORIGINS", "").split(";") if x.strip()}
 
 
 def origin(p, by_pid):
@@ -290,16 +307,16 @@ def origin(p, by_pid):
     while q["parent_alive"] and hops < 30 and q.get("eparent") in by_pid:
         q = by_pid[q["eparent"]]
         n = _name(q)
-        if n == "claude.exe":
+        if n == "claude":
             c = _cmd(q)
             if "--type=" in c or "\\windowsapps\\claude_" in (q.get("image") or "").lower():
                 return "Claude desktop app"
             if COORDINATOR_ARG.search(c):
                 m = re.search(r"-n\s+(\S+)", q.get("cmd") or "")
-                return "coordinator claude.exe " + (m.group(1) if m else str(q["pid"]))
-            return f"claude.exe {q['pid']} session"
+                return f"coordinator {q['name']} " + (m.group(1) if m else str(q["pid"]))
+            return f"{q['name']} {q['pid']} session"
         if n in ORIGIN_APPS or n in _extra_origins():
-            return n
+            return (q.get("name") or "").lower()
         hops += 1
     return "orphan" if not p["parent_alive"] else f"{q['name']} {q['pid']} (its parent is gone)"
 
@@ -310,6 +327,9 @@ def classify(procs, cpu_window_s):
     by_pid = {p["pid"]: p for p in procs}
     msys_win = {p["mpid"]: p["pid"] for p in procs if p.get("mpid") is not None}
     for p in procs:
+        if not WINDOWS and p["ppid"] == 0:
+            p["eparent"], p["parent_alive"] = None, True    # Linux's pid 1 and 2 have no parent
+            continue
         mpp = p.get("mppid")
         if mpp is not None and mpp != 1:
             # Git-Bash program: its Windows parent is a fork that has usually exited, so the
@@ -356,9 +376,9 @@ def classify(procs, cpu_window_s):
         p["rule"] = None
         p["verdict"], p["reason"] = "EXPECTED", ""
         n = _name(p)
-        if n == "claude.exe":
+        if n == "claude":
             p["group"] = "claude sessions / desktop app"
-        elif p["origin"].startswith(("coordinator", "claude.exe")):
+        elif p["origin"].startswith(ORIGIN_CLAUDE):
             p["group"] = "agent tool commands (parent alive)"
         elif p.get("session") == 0 or (p.get("image") or "").lower().startswith("c:\\windows\\") \
                 or p.get("image") is None:
@@ -372,8 +392,9 @@ def classify(procs, cpu_window_s):
 BURNER_MIN = 8          # same image under one parent, each busy: a deliberate load test or a runaway
 BUSY_PCT = 50.0         # % of one core over the sample window
 RUNAWAY_AGE = 30 * MIN
-DEV_IMAGES = {"bash.exe", "sh.exe", "python.exe", "pythonw.exe", "node.exe", "java.exe", "javaw.exe",
-              "dotnet.exe", "powershell.exe", "pwsh.exe", "cmd.exe", "find.exe"}
+DEV_IMAGES = {"bash", "sh", "python", "pythonw", "node", "java", "javaw",
+              "dotnet", "powershell", "pwsh", "cmd", "find"}
+ORIGIN_CLAUDE = ("coordinator", "claude.exe", "claude ")      # origin labels of an agent session
 
 
 def _flag_cpu(procs):
@@ -381,10 +402,10 @@ def _flag_cpu(procs):
     (BURNER_MIN+ busy siblings of one image) and single long-running busy processes. Build
     servers, daemons, engines and owner apps are left to their own rules."""
     def agentish(p):
-        started = p["origin"].startswith(("coordinator", "claude.exe")) or (
-            p["origin"] == "orphan" and _name(p) in DEV_IMAGES)
+        started = p["origin"].startswith(ORIGIN_CLAUDE) or (
+            p["origin"] == "orphan" and (_name(p) in DEV_IMAGES or _python(_name(p))))
         return (started and not protected(p)
-                and _name(p) != "claude.exe" and p["verdict"] == "EXPECTED"
+                and _name(p) != "claude" and p["verdict"] == "EXPECTED"
                 and p.get("rule") in (None, "msys-shell", "agent-script"))
     sib = defaultdict(list)
     for p in procs:
@@ -403,8 +424,17 @@ def _flag_cpu(procs):
             p["reason"] = f"agent-started process busy for {fmt_age(p['age'])} (check it is meant to be)"
 
 
+def proc_module():
+    """winproc on Windows, linuxproc (/proc) on Linux: one interface."""
+    if WINDOWS:
+        import winproc as W
+    else:
+        import linuxproc as W
+    return W
+
+
 def collect(sample_s=3.0):
-    import winproc as W
+    W = proc_module()
     snap = W.snapshot()
     first = W.cpu_sample([pid for pid, _pp, _n in snap])
     W.sleep(sample_s)
@@ -462,7 +492,8 @@ def summarize(procs):
     return rows
 
 
-def print_report(rows, procs, out=sys.stdout):
+def print_report(rows, procs, out=None):
+    out = out or sys.stdout         # looked up per call, so a redirected stdout gets the report
     sus = [r for r in rows if r["verdict"] == "SUSPECT"]
     print(f"procwatch {datetime.datetime.now():%Y-%m-%d %H:%M}: {len(procs)} processes, "
           f"{sum(r['count'] for r in sus)} suspect in {len(sus)} groups", file=out)
@@ -482,8 +513,7 @@ def kill(procs, only=None, terminate=None):
     """Terminate kill-allowlisted suspects, by pid and only while the creation time classify saw is
     still the pid's (terminate re-checks it). Returns [(pid, name, rule, result)]."""
     if terminate is None:
-        import winproc as W
-        terminate = W.terminate_verified
+        terminate = proc_module().terminate_verified
     done = []
     for p in procs:
         if (not p["kill_ok"] or p["verdict"] != "SUSPECT" or protected(p)
@@ -497,11 +527,11 @@ def kill(procs, only=None, terminate=None):
 
 
 def log_line(when, procs, rows, pool_gb, killed=None):
-    """The --log summary line. kill_ok= counts the suspects --kill would end (a report-only run
+    """The --log summary line (no pool= on Linux: pool_gb None). kill_ok= counts the suspects --kill would end (a report-only run
     shows what turning --kill on would do); killed= (only when --kill ran) counts those ended."""
     sus = [r for r in rows if r["verdict"] == "SUSPECT"]
     return (f"{when:%Y-%m-%dT%H:%M:%S} procs={len(procs)} suspect={sum(r['count'] for r in sus)} "
-            f"pool={pool_gb}G kill_ok={sum(r['kill_ok'] for r in sus)} " +
+            f"{'' if pool_gb is None else f'pool={pool_gb}G '}kill_ok={sum(r['kill_ok'] for r in sus)} " +
             " ".join(f"{r['group'].split(':')[0]}={r['count']}" for r in sus) +
             (f" killed={sum(1 for k in killed if k[3] == 'killed')}" if killed is not None else ""))
 
@@ -548,14 +578,11 @@ def main(argv=None):
     ap.add_argument("--kill", action="store_true", help="terminate kill-allowlisted suspects")
     ap.add_argument("--only", help="comma list of rule ids --kill may act on: " + ",".join(RULE_IDS))
     a = ap.parse_args(argv)
-    if os.name != "nt":
-        print("procwatch: Windows only", file=sys.stderr)
-        return 2
     only = set(a.only.split(",")) if a.only else None
     if only and not only <= set(RULE_IDS):
         print(f"procwatch: unknown rule(s) {sorted(only - set(RULE_IDS))}", file=sys.stderr)
         return 2
-    import winproc as W
+    W = proc_module()
     procs = classify(collect(a.sample), a.sample)
     rows = summarize(procs)
     killed = kill(procs, only) if a.kill else []
@@ -572,14 +599,15 @@ def main(argv=None):
         print()
     else:
         print_report(rows, procs)
-        print(vitals)
+        if WINDOWS:
+            print(vitals)
         for pid, name, rule, res in killed:
             print(f"kill {pid} {name} ({rule}): {res}")
     sus = [r for r in rows if r["verdict"] == "SUSPECT"]
     if a.log is not None:
         path = log_path(a.log or None)
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        line = log_line(datetime.datetime.now(), procs, rows, gb("paged_pool"), killed if a.kill else None)
+        line = log_line(datetime.datetime.now(), procs, rows, gb("paged_pool") if WINDOWS else None, killed if a.kill else None)
         with open(path, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     return 1 if (sus or pool_high) else 0

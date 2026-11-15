@@ -2827,6 +2827,12 @@
   },
   {
    "from": "opt-procwatch",
+   "to": "platform",
+   "kind": "build",
+   "why": "entry uses base"
+  },
+  {
+   "from": "opt-procwatch",
    "to": "pmstart",
    "kind": "build",
    "why": "entry uses apps"

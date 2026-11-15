@@ -20,6 +20,7 @@ import posixpath
 import re
 
 from kitlib.config.policy import DEFAULT_TEST_SOURCES   # noqa: F401 - the name stays importable here
+from kitlib.config.policy import is_test_path
 from kitlib.config.types import (ConfigError, Enum, Field, Int, ListOf, MapOf, Obj, RelPath, Str,
                                  is_note, parse_json)
 
@@ -311,8 +312,7 @@ class ModuleMap(object):
         return hit
 
     def is_test_source(self, path):
-        low = _norm(path).lower()
-        return any(fnmatch.fnmatchcase(low, g.lower()) for g in self.test_sources)
+        return is_test_path(path, self.test_sources)
 
     def edge_for(self, src, dst, kind):
         """The edge allowing a `kind` crossing from `src` to `dst`, or None."""

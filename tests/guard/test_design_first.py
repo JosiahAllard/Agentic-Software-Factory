@@ -66,7 +66,10 @@ class DesignFirst(unittest.TestCase):
         self.refused(self.write('pkg', 'new.py'))
         W.World.approve(self.git_dir, 'kit/wt')
         self.w.git.current_branch = lambda cwd: ('', None)
-        self.refused(self.write('pkg', 'new.py'))
+        for text in ('{"branch": "kit/wt"}', '{"branch": ""}'):      # an empty branch approves no detached HEAD
+            with open(self.approval, 'w', encoding='utf-8') as f:
+                f.write(text)
+            self.refused(self.write('pkg', 'new.py'))
         del self.w.git.current_branch
         for text in ('{', '[]', '{"branch": 1}', '"kit/wt"', '[' * 100000):
             with open(self.approval, 'w', encoding='utf-8') as f:

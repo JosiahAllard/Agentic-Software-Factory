@@ -720,8 +720,7 @@ def design_first(event, ctx, target, role, what):
         return None
     real, top = jail.real(target), jail.real(place.top)
     rel = fwd(real[len(top):]).strip('/').lower() if jail.inside(real, top) else None   # outside its top: source
-    if rel is not None and (rel.endswith('.md') or rel.startswith('docs/') or any(
-            fnmatch.fnmatchcase(rel, g.lower()) for g in kconfig.policy.DEFAULT_TEST_SOURCES)):
+    if rel is not None and (rel.endswith('.md') or rel.startswith('docs/') or kconfig.policy.is_test_path(rel)):
         return None
     from . import gaterole
     try:

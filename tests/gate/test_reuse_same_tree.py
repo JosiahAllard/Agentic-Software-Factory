@@ -1,7 +1,8 @@
 """kitlib.gate.reuse: the same-tree path (docs/gate-landing-policy.md "Gate reuse"), split from test_reuse so each
 module's run stays well under the test pool's unit timeout: a landing whose merge holds the very
-tree its tip passed gate.py --full on. Fixtures: test_reuse.ReuseCase."""
+tree its tip passed gate.py (--full or default mode) on. Fixtures: test_reuse.ReuseCase."""
 import datetime
+import json
 import sys
 import unittest
 from unittest import mock
@@ -26,11 +27,13 @@ NOT_USED = 'SAME TREE %s: the --full record of ' + BRANCH + ' at %s is not used:
 
 
 class SameTree(ReuseCase):
-    """A landing whose merge holds the very tree its tip passed gate.py --full on takes the steps
-    the cache does not serve from the tip's gate-OK record (docs/gate-landing-policy.md "Gate reuse", "The same
-    tree"): only a one-branch, non-strict landing, and only the record of the same base, gate
-    config and kit, within "landing".reuse_max_age_h."""
+    """A landing whose merge holds the very tree its tip passed gate.py --full or a default-mode
+    gate.py on takes the steps the cache does not serve from the tip's gate-OK record
+    (docs/gate-landing-policy.md "Gate reuse", "The same tree"): only a one-branch landing that is
+    neither strict nor --full, and only the record of the same base, gate config and kit, within
+    "landing".reuse_max_age_h."""
     GATE = {'steps': [UNIT, BASEY, WHOLE, MERGED, PLAIN]}
+    KIT = {'owner': {'paths': ['CLAUDE.md']}}   # a branch may change .kit.json (config escalation)
     ASKING = ('unit', 'basey', 'whole', 'merged')
 
     def setUp(self):
@@ -221,13 +224,45 @@ class SameTree(ReuseCase):
         lander, out = self.land(BRANCH, tip)
         self.assert_unused(out, lander, tip, 'the record was made with another gate config')
 
-    def test_a_select_record_serves_nothing(self):
-        # the landing fixture marks the select record full; its mode still says select
+    def select_tip(self, files=None):
+        """A default-mode gate of a new branch: its record's mode is select, never marked full."""
+        wt, tip = self.gated_branch(files=files)
+        self.assertEqual(gate_ok.mode_of(gate_ok.verify(self.repo.root, tip)[0]), 'select')
+        return wt, tip
+
+    def test_a_select_record_serves_a_select_landing(self):
+        # unit from the cache (the select gate stored it); basey and whole, which no cache key
+        # serves, from the select record: each ran there by the very cmd the landing runs
+        _, tip = self.select_tip()
+        ended = gate_ok.read(self.repo.root, tip)[0]['ended_utc']
+        lander, out = self.land_as_is(tip)
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.tree(out.merge), self.tree(tip))
+        self.assertEqual(out.verdict, 'GATE OK (reused: unit, basey, whole)')
+        self.assert_not_ran(lander.gate_logs, 'unit', 'basey', 'whole')
+        self.assert_ran(lander.gate_logs, 'merged', 'plain')
+        tree = self.tree(tip)[:10]
+        self.assertEqual(self.same_lines(), [
+            reuse.PREFIX + 'SAME TREE %s: %s at %s passed gate.py on this tree (record ended %s)'
+            % (tree, BRANCH, tip[:10], ended)], self.said)
+        self.assertEqual(len(self.lines('HIT')), 3, self.said)
+        self.assertTrue(self.lines('HIT')[0].startswith(reuse.PREFIX + 'HIT unit: key '), self.said)
+        for n in ('basey', 'whole'):
+            self.assertIn(reuse.PREFIX + 'HIT %s: the select record of %s (same tree %s, ended %s)'
+                          % (n, tip[:10], tree, ended), self.lines())
+            self.assertIn('REUSED %s: passed in the select gate of %s on the same tree (ended %s)'
+                          % (n, tip[:10], ended), self.lines())
+
+    def test_a_record_of_no_known_mode_serves_nothing(self):
+        # the landing fixture marks the select record full: mode select with full true is no mode
         wt, tip = self.branch('feature', dict(SRC))
         self.assertEqual(self.gate(wt).code, G.OK)
         lander, out = self.land(BRANCH, tip)
-        self.assert_unused(out, lander, tip, 'the record is not a --full record (mode None)',
-                           reused='unit')                            # the cache's hit stays
+        self.assertIsNone(gate_ok.mode_of(gate_ok.read(self.repo.root, tip)[0]))
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.same_lines(), [], self.said)
+        self.assertEqual(out.verdict, 'GATE OK (reused: unit)')     # the cache's hit stays
+        self.assert_ran(lander.gate_logs, 'basey', 'whole')
 
     def test_a_step_the_record_warned_runs(self):
         _, tip = self.full_tip()
@@ -245,22 +280,34 @@ class SameTree(ReuseCase):
             lander, out = self.land(BRANCH, tip)
         self.assert_none(out, lander.gate_logs, 'RuntimeError: boom')
 
+    # A batch, a strict and a config-escalated landing never read the tip's record (same_tree is
+    # not called), so a select record, which only a landing that selects as a default-mode gate
+    # may take, covers a --full one too.
+
     def test_a_batch_reads_no_record(self):
-        _, tip = self.full_tip()
+        _, tip = self.select_tip()
         real = reuse.planner
         with mock.patch.object(reuse, 'same_tree', wraps=reuse.same_tree) as read, \
                 mock.patch.object(reuse, 'planner',
                                   side_effect=lambda *a, **k: real(*a, **dict(k, batch=2))):
-            lander, out = self.land(BRANCH, tip)
+            lander, out = self.land_as_is(tip)
         read.assert_not_called()
-        self.assertEqual(out.verdict, 'GATE OK')
-        self.assert_ran(lander.gate_logs, 'unit', 'basey', 'whole')
+        self.assertEqual(out.verdict, 'GATE OK (reused: unit)')      # a batch reuses per step
+        self.assert_ran(lander.gate_logs, 'basey', 'whole')
+
+    def test_a_config_escalated_landing_reads_no_record(self):
+        # a change to .kit.json outside "gate": the record's gate config is the landing's, and
+        # Lander.config_escalate runs the merged gate --full
+        kit = dict(self.KIT, gate=self.GATE, repo={'name': 'renamed'})
+        _, tip = self.select_tip(dict(SRC, **{'.kit.json': json.dumps(kit, indent=1) + '\n'}))
+        with mock.patch.object(reuse, 'same_tree', wraps=reuse.same_tree) as read:
+            lander, out = self.land_as_is(tip)
+        read.assert_not_called()
+        self.assert_none(out, lander.gate_logs, '--full')
 
     def test_a_strict_tip_reads_no_record(self):
         path = reuse.STRICT_DEFAULTS[0].replace('**', 'strict.py')
-        wt, tip = self.branch('feature', dict(SRC, **{path: 'x = 1\n'}))
-        self.assertEqual(self.gate(wt, full=True).code, G.OK)
-        self.assertIsNotNone(gate_ok.verify_full(self.repo.root, tip)[0])
+        _, tip = self.select_tip(dict(SRC, **{path: 'x = 1\n'}))
         common, _ = land.repo.common_dir(self.repo.root)
         verdicts.add(common, {'branch': BRANCH, 'tip': tip, 'verdict': 'LAND', 'risk': 'High',
                               'reviewer': 'pm-kit:reviewer', 'reviewer_model': 'opus',
@@ -268,7 +315,7 @@ class SameTree(ReuseCase):
                               'range': '%s..%s' % (self.main[:10], tip), 'session': 's',
                               'records': []})
         with mock.patch.object(reuse, 'same_tree', wraps=reuse.same_tree) as read:
-            lander, out = self.land(BRANCH, tip)
+            lander, out = self.land_as_is(tip)
         read.assert_not_called()
         self.assert_none(out, lander.gate_logs, '--fresh')
 

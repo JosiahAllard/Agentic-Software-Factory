@@ -8,10 +8,9 @@ from unittest import mock
 
 from kitlib import gate as G
 from kitlib.gate import reuse, runner
-from kitlib.landing import lander as land
 from kitlib.gate import steps as S
 from kitlib.records import gate_ok
-from tests.gate import fixtures, test_reuse
+from tests.gate import test_reuse
 
 ReuseCase = test_reuse.ReuseCase
 BRANCH = test_reuse.BRANCH
@@ -64,14 +63,6 @@ class InputTree(ReuseCase):
         rec['input_keys']['steps'][step].update(parts)
         gate_ok.write(self.repo.root, rec)
         return rec
-
-    def land_as_is(self, tip):
-        """A landing of `tip` with the record its branch gate wrote (never marked --full)."""
-        self.said[:] = []
-        fixtures.queue_review(self.repo.root, BRANCH, tip)
-        lander = land.Lander(self.repo.root, BRANCH, None, tip, say=self.said.append,
-                             git_env=self.env, book_kw=self.book_kw, log_dir=self.logs)
-        return lander, lander.run()
 
     def tree_lines(self):
         return [l for l in self.lines() if l.startswith(reuse.PREFIX + 'INPUT TREE:')]

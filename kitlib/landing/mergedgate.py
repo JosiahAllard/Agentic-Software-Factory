@@ -163,8 +163,8 @@ class MergedGate(object):
 
     def node_gate(self):
         """Step 7 for a node-routed landing: the land job's Outcome (landroute.run_on_node), or
-        None once it fell back to main (rebook_here booked main's full run): the tip's --full
-        record has the merge's tree (same_tree_why), no node qualifies now (recheck, for the
+        None once it fell back to main (rebook_here booked main's full run): the tip's --full or
+        select record has the merge's tree (same_tree_why), no node qualifies now (recheck, for the
         slots of the base's kind: route_need; another node that does takes it), or nothing ran
         on the node (Fallback). Only those fall back:
         any other exception goes on up (recover: NOT LANDED). The machine lock not giving the

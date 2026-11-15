@@ -248,8 +248,9 @@ step by step.
    side only; job and dispatch never import it). `plan` chooses before the landing books main's
    lock (`route.choose` with only nodes that serve `land`), quietly main for a kit checkout, a
    test's merged gate or no registry; `recheck` asks the nodes again at the landing's turn;
-   `same_tree_why` keeps on main a one-branch landing whose tip's --full record has the merge's
-   tree (main reuses its steps; a node never does). `run_on_node` raises `Fallback` (main may gate
+   `same_tree_why` keeps on main a one-branch landing whose tip's --full or select record has
+   the merge's tree (main reuses its steps; a node never does): a node-routed landing whose tip's
+   select record has that tree falls back to main, as one with a --full record does. `run_on_node` raises `Fallback` (main may gate
    the merge itself) only while nothing ran on the node, or when the node's lock answered busy;
    once the job started, every other end is a failed gate, so the landing does not land, and the
    job is stopped after `CEILING_S` (4 hours, an estimate) of wall time.

@@ -51,9 +51,11 @@ stores nothing.
 Storing or pruning that fails says one line and never fails the gate.
 
 The same tree (same_tree). A branch's gate.py --full stores nothing, so a landing whose merge holds
-the very tree the tip passed --full on would run every step again. In a one-branch landing that
-landing_why lets reuse, the tip's gate-OK record serves a step the cache does not when: it is a
---full record (verify_full, mode full) of the tip, the merge's parents are exactly (base, tip), the
+the very tree the tip passed --full on would run every step again; a default-mode gate's steps that
+are never cached would too. In a one-branch landing that landing_why lets reuse (never a strict,
+--fresh, --full or config-escalated one: its merged gate selects as a default-mode gate does), the
+tip's gate-OK record serves a step the cache does not when: it is a --full or select record
+(SAME_MODES, gate_ok.mode_of) of the tip, the merge's parents are exactly (base, tip), the
 merge's tree is the record's tree, the record's base is the landing's base (--expect-main), its
 gate config hash is the landing's, its kit (runner.kit_identity: commit, interpreter, clean) is the
 kit gating the landing, and it ended within "landing".reuse_max_age_h hours. A step is taken from
@@ -66,8 +68,9 @@ history differs only by the merge commit, and the opt-in already promises the st
 git state). Tracked content only: the landing tree lacks the author worktree's ignored and
 generated files, and no step is checked for them (plan_steps takes the record on a miss as well as
 for a step that declares no input, and the key is built from the landing tree), so a step whose
-result depends on such a file must not set reuse. The result taken is the one of the step's --full
-command (full_cmd where it has one), not of the landing's cmd. Such a step gets no key and is never
+result depends on such a file must not set reuse. The result taken from a --full record is the one
+of the step's --full command (full_cmd where it has one), not of the landing's cmd; from a select
+record it is the one of its cmd, the command the landing runs. Such a step gets no key and is never
 stored, so the relaxation never reaches the cache. Anything that raises means every step runs.
 
 The input tree (input_tree). When main moved since the tip's gate, the merge's tree is not the
@@ -161,6 +164,8 @@ class NoInputs(NotCacheable):
 
 
 SameTree = collections.namedtuple('SameTree', 'record tip tree')
+# the record modes the same tree takes, each with the word its lines name the record and gate by
+SAME_MODES = {'full': '--full', 'select': 'select'}
 # the record the tip check accepted, its tip and mode, and {commit: tree_entries} filled as steps
 # ask (module docstring "The input tree")
 InputTree = collections.namedtuple('InputTree', 'record tip mode trees')
@@ -274,14 +279,13 @@ def landing_why(root, cfg, base, merge, prior, fresh, full):
 
 
 def _record_why(rec, cfg, base, tip, merge, root, now):
-    """Why the --full record `rec` of `tip`, whose tree the merge holds, serves no step, or None."""
+    """Why the --full or select record `rec` of `tip`, whose tree the merge holds, serves no step,
+    or None."""
     parents, why = cmd.run_text(['rev-list', '--parents', '-n', '1', merge], root)
     if parents is None:
         return 'git cannot read the parents of %s: %s' % (merge[:10], why)
     if parents.split()[1:] != [base, tip]:
         return 'the merge %s is not the merge of %s onto %s' % (merge[:10], tip[:10], base[:10])
-    if gate_ok.mode_of(rec) != 'full':
-        return 'the record is not a --full record (mode %s)' % gate_ok.mode_of(rec)
     if rec.get('ran_on') is not None:
         # a load node's record lands its tip but serves no step: those ran on another machine
         return 'the record ran on a load node (%s)' % (
@@ -311,9 +315,15 @@ def _record_why(rec, cfg, base, tip, merge, root, now):
 def same_tree(root, cfg, branch, tip, base, merge, now=None):
     """`(SameTree or None, the line to say or None)` for a one-branch landing of `tip` onto
     `base` as `merge` (module docstring "The same tree"). Nothing to say when `tip` has no --full
-    record or the merge's tree is not its tree. Raises when git cannot tell (every step runs)."""
-    rec, _ = gate_ok.verify_full(root, tip)
-    if rec is None:
+    or select record (SAME_MODES) or the merge's tree is not its tree. Raises when git cannot tell
+    (every step runs). The caller has ruled out every landing whose merged gate does not select as
+    a default-mode gate does, which is what lets a select record serve: planner calls it only once
+    landing_why let the landing reuse (no --fresh, so no strict branch; no --full, so no config
+    escalation) and for one branch, and kitlib.loadnode.landroute.same_tree_why only for one
+    branch that is neither --fresh nor --full."""
+    rec, _ = gate_ok.verify(root, tip)
+    named = SAME_MODES.get(gate_ok.mode_of(rec)) if rec is not None else None
+    if named is None:
         return None, None
     tree, why = refs.tree_of(merge, root)
     if not tree:
@@ -322,11 +332,12 @@ def same_tree(root, cfg, branch, tip, base, merge, now=None):
         return None, None
     why = _record_why(rec, cfg, base, tip, merge, root, now or _now())
     if why:
-        return None, 'SAME TREE %s: the --full record of %s at %s is not used: %s' % (
-            tree[:10], branch, tip[:10], why)
-    return SameTree(rec, tip, tree), ('SAME TREE %s: %s at %s passed gate.py --full on this tree '
-                                      '(record ended %s)' % (tree[:10], branch, tip[:10],
-                                                             rec['ended_utc']))
+        return None, 'SAME TREE %s: the %s record of %s at %s is not used: %s' % (
+            tree[:10], named, branch, tip[:10], why)
+    return SameTree(rec, tip, tree), ('SAME TREE %s: %s at %s passed gate.py%s on this tree '
+                                      '(record ended %s)' % (
+                                          tree[:10], branch, tip[:10],
+                                          ' --full' if named == '--full' else '', rec['ended_utc']))
 
 
 def _from_record(same, spec, step):
@@ -337,8 +348,8 @@ def _from_record(same, spec, step):
     results = [s.get('result') for s in same.record.get('steps') or [] if s.get('name') == step.name]
     if results != ['pass']:
         return None
-    return 'passed in the --full gate of %s on the same tree (ended %s)' % (
-        same.tip[:10], same.record['ended_utc'])
+    return 'passed in the %s gate of %s on the same tree (ended %s)' % (
+        SAME_MODES[gate_ok.mode_of(same.record)], same.tip[:10], same.record['ended_utc'])
 
 
 def branch_why(cfg, changed, full, only):
@@ -1004,8 +1015,9 @@ def plan_steps(root, cfg, chosen, base, changed, now=None, facts=None, same=None
                 why = None
         if why:
             taken[s.name] = why
-            said[s.name] = 'HIT %s: the --full record of %s (same tree %s, ended %s)' % (
-                s.name, same.tip[:10], same.tree[:10], same.record['ended_utc'])
+            said[s.name] = 'HIT %s: the %s record of %s (same tree %s, ended %s)' % (
+                s.name, SAME_MODES[gate_ok.mode_of(same.record)], same.tip[:10], same.tree[:10],
+                same.record['ended_utc'])
             return
         if itree is None:
             return

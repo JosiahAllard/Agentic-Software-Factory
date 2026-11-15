@@ -90,6 +90,14 @@ class ReuseCase(fixtures.GateRepoCase):
                              say=self.said.append, **kw)
         return lander, lander.run()
 
+    def land_as_is(self, tip):
+        """A landing of `tip` with the record its branch gate wrote (never marked --full)."""
+        self.said[:] = []
+        fixtures.queue_review(self.repo.root, BRANCH, tip)
+        lander = land.Lander(self.repo.root, BRANCH, None, tip, say=self.said.append,
+                             git_env=self.env, book_kw=self.book_kw, log_dir=self.logs)
+        return lander, lander.run()
+
     def lines(self, word=None):
         out = [l for l in self.said if l.startswith(reuse.PREFIX) or l.startswith('REUSED')]
         if word is None:

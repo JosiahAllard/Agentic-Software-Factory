@@ -206,7 +206,7 @@ class ReportLines(unittest.TestCase):
         other = {'branch': 'kit/a', 'design_reviewer_id': 'd1', 'session': 'coord-1'}
         self.assertIsNone(V.approval_why([], None))
         self.assertIsNone(V.approval_why(new, other))
-        own = dict(other, design_reviewer_id='COORD-1')
+        own = dict(other, design_reviewer_id='Coord-1')
         for approval, want in ((None, 'no design approval is recorded for the branch'),
                                (own, "its recorded design approval is the coordinator's own (coord-1)")):
             why = V.approval_why(new, approval) or ''

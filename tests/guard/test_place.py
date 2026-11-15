@@ -13,7 +13,7 @@ from tests import gitfixture
 
 from .claudehost import decide
 from .test_fsplace import MINE, OWNER_NOTE
-from .world import bash, event
+from .world import World, bash, event
 
 
 class RealPlaces(unittest.TestCase):
@@ -24,6 +24,7 @@ class RealPlaces(unittest.TestCase):
         self.repo.write('src/a.py', 'a\n')
         self.repo.commit('kit config', '.kit.json', 'src/a.py')
         self.wt = self.repo.worktree('wt')
+        World.approve(os.path.join(self.repo.common_dir(), 'worktrees', 'wt'), 'kit/wt')
         os.makedirs(os.path.join(self.wt, 'sub'))
         self.home = os.path.join(self.repo.base, 'home')
         os.makedirs(self.home)

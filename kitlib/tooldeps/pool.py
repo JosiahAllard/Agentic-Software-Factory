@@ -34,22 +34,19 @@ every process the unit started included, ended ones too) read once per unit and 
 worker's preload before its first unit is not charged to it.
 `close` ends them all: stdin closed so
 each exits, and its job closed (KILL_ON_JOB_CLOSE) after CLOSE_WAIT seconds at the latest.
-Ending a worker returns once every process in its job has ended, GONE_WAIT seconds at most:
-terminating a job only starts each process's end, and the worker's can come first.
+Ending a worker returns once every process in its job has ended (kitlib.proc.job end_and_wait,
+GONE_WAIT seconds at most): terminating a job only starts each process's end, and the worker's can
+come first.
 """
 import json
 import os
 import queue
-import select
 import subprocess
 import sys
 import threading
 import time
 
-import kitlib.platform
-from kitlib.platform.windows import process as winproc
-from kitlib.proc import process
-from kitlib.proc.job import Job, JobError
+from kitlib.proc.job import Job, JobError, end_and_wait
 from kitlib.pytests import runner as unit_runner
 
 WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pool_worker.py')
@@ -57,7 +54,6 @@ MARK = 'kit-pool: '                 # pool_worker.MARK
 READY_TIMEOUT = 120                 # seconds a new worker has to say it is ready
 LEFTOVER_GRACE = 2.0
 CLOSE_WAIT = 5.0
-GONE_WAIT = 5.0                     # seconds an ended worker's job has to empty
 POLL = 0.25
 
 
@@ -188,10 +184,8 @@ class Worker:
 
     def end(self, wait=0.0):
         """End the worker and everything in its job; `wait` > 0 first lets it exit on its own.
-        Returns once each process the job held has ended, GONE_WAIT seconds at most."""
-        held = []
+        Returns once each process the job held has ended (kitlib.proc.job end_and_wait)."""
         try:
-            held = self._hold()
             if wait:
                 try:
                     self.proc.stdin.close()
@@ -202,11 +196,10 @@ class Worker:
                 except subprocess.TimeoutExpired:
                     pass
             try:
-                self.job.terminate()
+                end_and_wait(self.job)
             except OSError:
                 pass
             self.proc.wait()
-            _wait_all(held, GONE_WAIT)
             self.reader.join(5)
             for f in (self.proc.stdin, self.proc.stdout):
                 try:
@@ -214,60 +207,7 @@ class Worker:
                 except OSError:
                     pass
         finally:
-            for h in held:
-                _release(h)
             self.job.close()
-
-    def _hold(self):
-        """A SYNCHRONIZE handle to each process in the job now, taken before it is terminated:
-        terminating a job empties its pid list at once, while each process's end is only started
-        (one with 1.5 GB to tear down was signalled ~45 ms later, 2026-10-10). None when the job
-        cannot be asked; a process that ended meanwhile is skipped. On Linux each is a pidfd."""
-        try:
-            pids = self.job.pids()
-        except OSError:
-            return []
-        return [h for h in (_hold_one(pid) for pid in pids) if h is not None]
-
-
-def _hold_one(pid):
-    """A handle that is signalled when process pid ends (Linux: a pidfd), or None."""
-    if kitlib.platform.NAME == 'linux':
-        try:
-            return os.pidfd_open(pid)
-        except OSError:
-            return None
-    return winproc.open_process(pid, winproc.SYNCHRONIZE) or None
-
-
-def _release(h):
-    if kitlib.platform.NAME == 'linux':
-        try:
-            os.close(h)
-        except OSError:
-            pass
-        return
-    winproc.close(h)
-
-
-def _ended(h, seconds):
-    """True when the process behind handle h has ended, waiting `seconds` at most."""
-    if kitlib.platform.NAME == 'linux':
-        poller = select.poll()
-        poller.register(h, select.POLLIN)
-        return bool(poller.poll(int(seconds * 1000)))
-    return winproc.K32.WaitForSingleObject(h, int(seconds * 1000)) != winproc.WAIT_TIMEOUT
-
-
-def _wait_all(handles, seconds):
-    """Wait, `seconds` at most in all, until every process handle is signalled. Waits in POLL
-    slices, so Ctrl+C reaches a main thread that waits here."""
-    end = time.monotonic() + seconds
-    for h in handles:
-        while True:
-            left = end - time.monotonic()
-            if left <= 0 or _ended(h, min(POLL, left)):
-                break
 
 
 class WorkerPool:

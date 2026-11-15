@@ -8,6 +8,9 @@ the command alone leaves the child alive.
 import io
 import json
 import os
+import shutil
+import sys
+import tempfile
 import time
 import unittest
 from contextlib import redirect_stdout
@@ -15,9 +18,11 @@ from unittest import mock
 
 from kitlib.config import schema
 from kitlib.content.oncommit import RENDER_TOOL
+from kitlib.proc import job as jobs
 from kitlib.proc import process
 from kitlib.redfirst import run as R
 from kitlib.redfirst import verdict as V
+from tests import testutil
 from tests.redfirst.test_run import CONFIG, Case, tool
 
 LIMIT = 6           # seconds: room for python to start and write its pids under load
@@ -74,6 +79,26 @@ class HangingTest(Case):
         self.assertFalse(process.alive(child, None), 'the process the hung test started still runs')
         self.assertEqual(self.throwaways(), [], text)
 
+
+class DefaultRun(unittest.TestCase):
+    """default_run returns from a timed-out run only once every process in its job has ended: a
+    killed job's grandchild can end after the command (the line-74 failure above, under load)."""
+
+    def test_a_timed_out_run_returns_only_once_every_process_in_its_job_has_ended(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        slow = []
+
+        def job(**kw):
+            j = jobs.Job(**kw)
+            slow.append(testutil.slow_to_end(self, j, 1.0))
+            return j
+        with mock.patch.object(R, 'Job', job), \
+                mock.patch.object(jobs, 'GONE_WAIT', 60.0, create=True):
+            with self.assertRaises(R.TimedOut):
+                R.default_run([sys.executable, '-c', 'import time; time.sleep(60)'], folder, {},
+                              os.path.join(folder, 'run.log'), timeout=1)
+        self.assertFalse(process.alive(slow[0].pid, None), 'a process of the killed job still runs')
 
 
 class ConfiguredLimit(HangingTest):

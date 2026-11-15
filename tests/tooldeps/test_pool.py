@@ -4,13 +4,11 @@ interpreter's state, then a unit that fails if any of it is left; and a unit tha
 crashes, is interrupted, or leaves a process or a thread running gets a new worker for the next;
 so does a worker that ended while idle, one whose job cannot be queried, one never ready, and one
 whose unit added an audit hook - but not one a preloaded package added.
-Ending a worker returns once every process in its job has ended (GONE_WAIT at most).
+Ending a worker returns once every process in its job has ended (kitlib.proc.job end_and_wait).
 """
 import _thread
 import json
 import os
-import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -18,6 +16,7 @@ import unittest
 from unittest import mock
 
 from kitlib.tooldeps import pool
+from tests import testutil
 from tests.gitfixture import fixture_parent, rmtree
 from tests.platforms import windows_only
 
@@ -330,45 +329,15 @@ class Pool(unittest.TestCase):
         self.assertEqual(self.pool.why_replaced(),
                          [('tests.p.test_orphan', 'processes it started still running')])
 
-    def slow_to_end(self, delay):
-        """The idle worker's job made to hold, too, a process that ends `delay` seconds after the
-        job is terminated: terminating a job only starts each process's end, and one with much to
-        tear down ends after the worker. As a real job does, it is no longer listed once the job is
-        terminated. (It is outside the job: a real one ends with the rest.)"""
-        self.unit('tests.p.test_pid')
-        job = self.pool.idle[0].job
-        slow = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
-        self.addCleanup(slow.wait)
-        self.addCleanup(slow.kill)
-        terminate, pids, terminated = job.terminate, job.pids, []
-
-        def slow_terminate(code=1):
-            terminated.append(code)
-            timer = threading.Timer(delay, slow.kill)
-            timer.start()
-            self.addCleanup(timer.cancel)
-            return terminate(code)
-        job.terminate = slow_terminate
-        job.pids = lambda: pids() + ([] if terminated or slow.poll() is not None else [slow.pid])
-        return slow
-
     def test_ending_a_worker_waits_until_every_process_in_its_job_has_ended(self):
+        # The wait itself, and its GONE_WAIT bound: tests/proc/test_job_end.py.
         from kitlib.proc import process
-        slow = self.slow_to_end(1.0)
+        self.unit('tests.p.test_pid')
+        slow = testutil.slow_to_end(self, self.pool.idle[0].job, 1.0)
         t = time.time()
         self.pool.close()
         self.assertFalse(process.alive(slow.pid, None))     # Popen's handle keeps its pid
         self.assertLess(time.time() - t, 15)
-
-    def test_a_process_in_the_job_that_does_not_end_holds_up_its_worker_s_end_gone_wait_at_most(
-            self):
-        from kitlib.proc import process
-        slow = self.slow_to_end(60)
-        with mock.patch.object(pool, 'GONE_WAIT', 1.0):
-            t = time.time()
-            self.pool.close()
-            self.assertLess(time.time() - t, 15)
-        self.assertTrue(process.alive(slow.pid, None))
 
     def test_a_thread_the_unit_left_running_fails_it_and_retires_its_worker(self):
         # As its own process the unit would never exit (a non-daemon thread holds it open) and

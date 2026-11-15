@@ -153,7 +153,7 @@ Logic: `kitlib/ledger/rulebook.py` (`parse`, `render`, `load`, `check`, `for_rep
 
 The standing rules of the machine live in rulebooks beside the log, in a `rules` folder: `<ledger_dir>/rules/` with `ledger_dir` set, else `rules/` in the folder of the `ledger_path` file. No config key names it. The books are the lower-case `<name>.md` files there: one per repository, named by a short name, and `all.md`, the shared one (printed as "shared"). No file is no rulebook and no error. The verbs below write them, each change paired with a log entry. The owner can also make an answer on the Action Hub a standing rule (docs/hub-questions.md "A standing rule"): the hub then asks the PM to log it, and only logging the question (`hub questions log <id> --if-version N`) ends that ask.
 
-An owner standing rule goes through `add --rule` (design rules go in the design docs); an entry without `--rule` is only for delegated calls; one-off answers (a go, a hold, a one-case no) get no entry (the hub answer or the record it concerns keeps it). Each rule's entry is its source and backs the crash check (`applied`), not a second copy.
+An owner standing rule goes through `add --rule` (design rules go in the design docs); an entry without `--rule` is only for delegated calls and owner run orders (docs/delegations.md); one-off answers (a go, a hold, a one-case no) get no entry (the hub answer or the record it concerns keeps it). Each rule's entry is its source and backs the crash check (`applied`), not a second copy.
 
 ```
 # Alpha rules

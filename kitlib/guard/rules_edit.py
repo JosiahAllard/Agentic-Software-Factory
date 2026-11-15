@@ -3,6 +3,7 @@ rulings ledger and the git calls that reach it, the machine lock's state, the PM
 main checkout, .kit.json, the machine config folder, the gate result folder, generated files, and the
 write jail with its Dev Drive bound, with the refusals and alternatives they give."""
 import fnmatch
+import json
 import os
 import re
 from kitlib.host import agentname
@@ -216,32 +217,10 @@ def _short_path(path):
 
 
 def ledger_git(event, ctx, cmd, inv, cwd, role):
-    """git run in a work tree that holds part of the ledger (outside git: run in a folder that
-    holds it) whose pathspec reaches that part (ledger_kind's files): rm and mv, restore (not
-    --staged alone, and only when every long option is one GIT_LONGS names: `--w` is
-    `--worktree` to git, and _canon_long leaves a one-letter body as written), checkout-index, and checkout of paths (after `--`, or every positional word
-    without one: git reads a word that names no branch as a path). A pathspec reaches a held path
-    as kitlib.guard.delegfile.covers reads it (the path, a folder above it, a wildcard whose
-    literal folder is above it; a computed word or unread magic always), or is a `.md` file
-    directly in the rulebooks' folder (a wildcard there: its literal folder, that folder). A
-    branch name is read as a path too (fail closed: `git checkout pm` from
-    the folder above the ledger's). Paths read from elsewhere (git_every_path:
-    `--pathspec-from-file`, checkout-index `-a` or `--stdin`) reach every path of the tree.
-    In such a tree, for the sessions ledger_wide_binds names, the forms that rewrite the whole
-    tree are refused too (ledger_git_tree_form: checkout or switch that discards changes, reset
-    --hard, --merge or --keep, a stash that is not a read, a clean that is not a dry run with no
-    pathspec or one that reaches a held path); and a git call whose directory the guard cannot
-    place (a computed -C, GIT_DIR, --git-dir, --work-tree and the like: gc.blind) is refused in
-    any of those writing forms while a ledger is configured, since it can act on the ledger's
-    tree (fail closed); a read there passes.
-    A subcommand the shell computes (`git $x LEDGER.md`), or the one xargs appends to a bare
-    `xargs git`, is unread: a tree form (it can be reset --hard), and in a placed tree its words
-    are judged as paths. git that xargs runs takes arguments the guard cannot read: a path
-    subcommand's are every path (git_every_path's reading), and checkout, switch, reset or clean
-    with them is a tree form. In a placed tree, for the same sessions, git that moves the tree
-    to other content is a tree form too (ledger_git_moves: switch, checkout of a branch, merge,
-    pull, apply that writes the tree, read-tree -u); a checkout whose word names a held path is
-    refused as that path."""
+    """git run in a work tree that holds part of the ledger (outside git: run in a folder that holds it) whose
+    pathspec reaches that part, the forms that rewrite or move such a tree for the sessions ledger_wide_binds names,
+    and git there whose subcommand, words or directory the guard cannot read: docs/guard-rules.md, the `ledger` row
+    (ledger_git_held, ledger_git_unread, ledger_git_tree_form, ledger_git_moves, git_every_path)."""
     gc = git_call_judged(inv)
     if gc is None:
         return None
@@ -249,7 +228,6 @@ def ledger_git(event, ctx, cmd, inv, cwd, role):
     held = ledger_guarded(ctx)
     if not held and not ctx.user().get('ledger_unread'):
         return None
-    from . import delegfile
     xargs = gc.inv is not None and gc.inv.via == 'xargs'
     unread = ('a git subcommand the shell computes' if gc.sub_dyn
               else 'the subcommand xargs appends' if xargs and not sub else None)
@@ -724,17 +702,37 @@ def edit_target(event, ctx, target, cwd, role, what, unknown_why=None, rewrite=N
     that stands for what the guard cannot read (the folder python runs in, the pipeline's paths), which counts as the
     owner's delegation list only when it is that file (delegfile.edit); `gone`, a shell delete (rm, unlink, Remove-Item),
     the one call a linked worktree's index.lock is aimed from that worktree for (main_checkout)."""
-    d = ledger_rule(event, ctx, target, role, what, stand_in, unread=False) or pm_data_unknown(ctx, target, cwd, role, what) or \
+    return ledger_rule(event, ctx, target, role, what, stand_in, unread=False) or pm_data_unknown(ctx, target, cwd, role, what) or \
         lock_state(event, ctx, target, role, what) or hub_secret_edit(event, ctx, target, role, what) or \
         delegations_edit(event, ctx, target, role, what, stand_in) or \
         machine_config(event, ctx, target, role, what) or kit_json(event, ctx, target, role, what) or \
         gate_result(event, ctx, target, role, what) or \
-        generated_file(ctx, target, role, what) or backlog_edit(event, ctx, target, role, what)
-    if d:
-        return d
-    return main_checkout(event, ctx, target, cwd, role, what, unknown_why, rewrite, run, redirect, shell, item, gone) or \
-        write_jail(event, ctx, target, cwd, role, what, rewrite, run) or \
+        generated_file(ctx, target, role, what) or backlog_edit(event, ctx, target, role, what) or \
+        main_checkout(event, ctx, target, cwd, role, what, unknown_why, rewrite, run, redirect, shell, item, gone) or \
+        write_jail(event, ctx, target, cwd, role, what, rewrite, run) or design_first(event, ctx, target, role, what) or \
         ledger_unread(ctx, role, what)          # last: any refusal above wins over the unread ask
+
+
+def design_first(event, ctx, target, role, what):
+    """A source write in a linked worktree with no design approval for its branch (docs/guard-rules.md `design-first`)."""
+    place = ctx.place(target)
+    if place.kind != repo.LINKED:
+        return None
+    real, top = jail.real(target), jail.real(place.top)
+    rel = fwd(real[len(top):]).strip('/').lower() if jail.inside(real, top) else None   # outside its top: source
+    if rel is not None and (rel.endswith('.md') or rel.startswith('docs/') or any(
+            fnmatch.fnmatchcase(rel, g.lower()) for g in kconfig.policy.DEFAULT_TEST_SOURCES)):
+        return None
+    from . import gaterole
+    try:
+        with open(os.path.join(place.git_dir, DESIGN_FILE), encoding='utf-8') as f:
+            branch = json.load(f).get('branch')
+    except (OSError, ValueError, RecursionError, AttributeError):   # unreadable or not an object: no approval
+        branch = None
+    if gaterole.may_allow(event, ctx) or isinstance(branch, str) and branch and branch == ctx._head_branch(target)[0]:
+        return None
+    return refuse('design-first', role, '%s: the branch of the worktree %s has no design approval recorded.'
+                  % (what, fwd(place.top)), 'report your design to your coordinator and wait for approval')
 
 
 # the rules a write the guard cannot place would otherwise be refused under (unplaced())
@@ -760,6 +758,7 @@ def in_git_dir(target):
 
 
 GATE_RESULT = 'kit-gate-result'                 # gate.result.DIR_NAME
+DESIGN_FILE = 'kit-design.json'                 # verdicts.DESIGN_FILE, in a linked worktree's git dir
 
 
 def gate_result(event, ctx, target, role, what):

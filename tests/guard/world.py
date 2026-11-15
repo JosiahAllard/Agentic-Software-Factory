@@ -11,6 +11,7 @@ from unittest import mock
 from kitlib.config import user
 from kitlib.git import repo
 from kitlib.guard import context
+from kitlib.guard.rules_edit import DESIGN_FILE
 
 SHA_HEAD = '1' * 40
 SHA_WT = '2' * 40
@@ -112,6 +113,7 @@ class World(object):
         with open(os.path.join(self.data, '.kit.json'), 'w', encoding='utf-8') as f:
             json.dump({'repo': {'name': 'data', 'main_branch': 'pmdata'}}, f)
         self.ledger = os.path.join(self.base, 'pm', 'rulings', 'LEDGER.md')
+        self.approve_wt = True                # the first ctx() records wt's design approval (approve)
         self.git = FakeGit(self)
         self.records = {SHA_GATED}
         self.held = False
@@ -119,6 +121,15 @@ class World(object):
 
     def cleanup(self):
         shutil.rmtree(self.base, True)
+
+    @staticmethod
+    def approve(git_dir, branch):
+        """The design approval of `branch` in the linked worktree git dir `git_dir`, as verdict.py design writes it
+        (rules_edit.design_first reads it). ctx() writes wt's once, not __init__, so a subclass's own `git init` and
+        `git worktree add` find no git dir there before them."""
+        os.makedirs(git_dir, exist_ok=True)
+        with open(os.path.join(git_dir, DESIGN_FILE), 'w', encoding='utf-8') as f:
+            json.dump({'branch': branch, 'design_reviewer_id': 'a' * 17, 'session': 'coord-1'}, f)
 
     def stub_main_checkout(self, case):
         """The mock standing in for kitlib.git.repo.main_checkout_toplevel in `case`, answering this
@@ -169,6 +180,9 @@ class World(object):
         return ({'commit': sha}, None) if sha in self.records else (None, 'no gate-OK record for %s' % sha)
 
     def ctx(self, **kw):
+        if self.approve_wt:
+            self.approve_wt = False
+            self.approve(os.path.join(self.main, '.git', 'worktrees', 'wt'), 'kit/wt')
         args = dict(environ=self.environ, home=self.home, classify=self.classify, gate_ok=self.gate_ok,
                     git=self.git, lock_held=lambda: (self.held, None if self.held else 'MACHINE_LOCK_RUN is not set'),
                     tempdir=self.temp, kit=self.kit_dir)

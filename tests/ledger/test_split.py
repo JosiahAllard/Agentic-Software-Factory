@@ -1,6 +1,6 @@
 """The per-repo ledger (docs/ledger.md "Files"): one file `<ledger_dir>/<repo>.md` per repo, ids
 `H-<repo>-nnnn` numbered from 1 in each file, a write lock per file, supersedes within one file and
-`under <id>` naming any file. kitlib.ledger.fmt, write, read, standing, files and precommit.
+`under <id>` naming any file. kitlib.ledger.fmt, write, read, files and precommit.
 
 Ids are built by rid(n) and hid(repo, n), so this file holds no ruling id of its own (tests/scrub)."""
 import os
@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 
 from tests.home import machine_config
-from kitlib.ledger import files, fmt, precommit, read, standing, write
+from kitlib.ledger import files, fmt, precommit, read, write
 from kitlib.ledger.errors import Refused, Usage
 
 WHEN = '2026-10-06 08:00Z'
@@ -224,20 +224,6 @@ class ReaderTest(Base):
         self.assertIsNone(why)
         self.assertIn(hid('alpha', 2), found)
 
-    def test_the_digest_is_checked_against_every_file(self):
-        self.add('alpha')
-        self.add('alpha')
-        self.add('beta-2')
-        write.retire(self.paths['alpha'], hid('alpha', 1), 'spent', 'x', repos=REPOS, split=True)
-        digest = ('# Standing\n\n## alpha\n- %s: live\n- %s: retired\n\n## beta-2\n- %s: live\n- %s: none\n'
-                  % (hid('alpha', 2), hid('alpha', 1), hid('beta-2', 1), hid('beta-2', 5)))
-        errs = standing.problems([self.text('alpha'), self.text('beta-2')], digest)
-        self.assertEqual(len(errs), 2, errs)
-        self.assertIn('%s, which is retired' % hid('alpha', 1), errs[0])
-        self.assertIn('%s, which is not in the ledger' % hid('beta-2', 5), errs[1])
-        # one text, as before
-        self.assertEqual(standing.problems(self.text('beta-2'), '- %s: x\n' % hid('beta-2', 1)), [])
-
 
 class FilesTest(Base):
 
@@ -252,7 +238,6 @@ class FilesTest(Base):
         self.assertTrue(f.split)
         self.assertEqual(f.repos, self.paths)
         self.assertEqual(f.frozen, frozen)
-        self.assertEqual(f.digest, os.path.join(self.dir, standing.NAME))
         self.assertEqual(files.path_of(f, hid('beta-2', 4)), self.paths['beta-2'])
         self.assertEqual(files.path_of(f, rid(4)), frozen)
         self.assertIsNone(files.path_of(f, hid('gamma', 4)))
@@ -284,18 +269,17 @@ class PrecommitTargetsTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.home, True)
         self.dir = os.path.join(self.home, 'rulings')
 
-    def test_every_file_the_frozen_one_and_the_digest(self):
+    def test_every_file_and_the_frozen_one(self):
         frozen = os.path.join(self.dir, 'LEDGER.md')
         machine_config(self.home, {'ledger_dir': self.dir, 'ledger_repos': ['alpha', 'pm'], 'ledger_path': frozen},
                        case=self)
         self.assertEqual(precommit.targets(self.home),
-                         (os.path.join(self.dir, 'alpha.md'), os.path.join(self.dir, 'pm.md'), frozen,
-                          os.path.join(self.dir, standing.NAME)))
+                         (os.path.join(self.dir, 'alpha.md'), os.path.join(self.dir, 'pm.md'), frozen))
 
     def test_without_the_frozen_file(self):
         machine_config(self.home, {'ledger_dir': self.dir, 'ledger_repos': ['alpha']}, case=self)
         self.assertEqual(precommit.targets(self.home),
-                         (os.path.join(self.dir, 'alpha.md'), os.path.join(self.dir, standing.NAME)))
+                         (os.path.join(self.dir, 'alpha.md'),))
 
 
 if __name__ == '__main__':

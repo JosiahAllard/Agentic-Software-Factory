@@ -63,8 +63,8 @@ a constructor argument, and the defaults read this machine.
                      non-string or unplaceable relative key), also sets 'ledger_unread' (why): the
                      ledger rule then asks the owner about every main-session write
                      (rules.ledger_unread).
-  ledger_files()     kitlib.ledger.files.of_config over user(): where the ledger's log files,
-                     standing digest and rulebooks' folder are (the ledger rule), or None
+  ledger_files()     kitlib.ledger.files.of_config over user(): where the ledger's log files
+                     and rulebooks' folder are (the ledger rule), or None
   config_location()  kitlib.config.user.locate(home) with the PM-repo pointer read once from the
                      registry (kitlib.config.pointer.read_raw; pm_repo_pointer shares that read)
                      and checked by kitlib.config.pointer.read with place()'s classify and the

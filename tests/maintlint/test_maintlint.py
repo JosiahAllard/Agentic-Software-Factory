@@ -24,7 +24,7 @@ from tests.backlog.helpers import BRANCH, StoreCase, kit_json_ref, priced, rec
 from tests.backlog.test_stale import at
 from tests.gitfixture import rmtree
 from tests.home import result_drive
-from tests.ledger.test_standing import entry, rid
+from tests.ledger.test_rulebook import log_text
 from tests.pathfree import without_paths
 from tools import maint_lint
 
@@ -299,21 +299,13 @@ class WorktreeChecks(unittest.TestCase):
 
 class LedgerCounts(unittest.TestCase):
 
-    def ledger(self):
-        sup = entry(3).replace('Supersedes: -', 'Supersedes: %s, %s' % (rid(1), rid(2)))
-        return '# Rulings ledger\n\n' + entry(1) + entry(2, retired=True) + sup
-
     def test_counts_only_and_no_entry_id_or_text_leaves_the_module(self):
         folder = temp_dir(self)
         path = os.path.join(folder, 'ledger.md')
         with open(path, 'w', encoding='utf-8', newline='\n') as fh:
-            fh.write(self.ledger())
-        with open(os.path.join(folder, 'STANDING.md'), 'w', encoding='utf-8', newline='\n') as fh:
-            fh.write('# Standing rulings\n\n- %s: an old rule.\n- %s: a live rule.\n'
-                     % (rid(2), rid(3)))
+            fh.write(log_text(3))
         got, notes = ledger.counts(user_config=lambda home: {'ledger_path': path})
-        self.assertEqual(got, {'stale_cites': 1, 'rules': {}, 'over_cap': [],
-                               'conflict_pairs': 0, 'overrides': 0})
+        self.assertEqual(got, {'rules': {}, 'over_cap': [], 'conflict_pairs': 0, 'overrides': 0})
         self.assertEqual(notes, [])
         res = {'repo': 'x', 'counts': {}, 'ledger': got, 'notes': notes, 'findings': []}
         for text in (json.dumps(got), page.render(res)):
@@ -324,18 +316,8 @@ class LedgerCounts(unittest.TestCase):
         self.assertEqual(ledger.counts(user_config=lambda home: {}),
                          (None, ['ledger NOT CHECKED: the machine config names no ledger']))
 
-    def test_stale_cites_above_0_is_a_finding_for_the_pm_with_numbers_only(self):
-        got = ledger.findings({'stale_cites': 2, 'rules': {}, 'over_cap': [],
-                               'conflict_pairs': 0, 'overrides': 0})
-        self.assertEqual([(f.check, f.key) for f in got], [('ledger-stale-cites', 'stale_cites')])
-        self.assertIn('2 citation(s)', got[0].text)
-        self.assertIn('ledger.py" check', got[0].fix)
-        self.assertIn('the PM', got[0].fix)
-        self.assertNotIn('R-', got[0].text + got[0].fix)
-
     def test_no_count_above_0_and_an_unchecked_ledger_are_no_finding(self):
-        self.assertEqual(ledger.findings({'stale_cites': 0, 'rules': {'kit': 4},
-                                          'over_cap': [], 'conflict_pairs': 0,
+        self.assertEqual(ledger.findings({'rules': {'kit': 4}, 'over_cap': [], 'conflict_pairs': 0,
                                           'overrides': 1}), [])
         self.assertEqual(ledger.findings(None), [])
 

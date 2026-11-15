@@ -11,7 +11,7 @@ from unittest import mock
 
 from tests.home import machine_config
 from tests.platforms import windows_only
-from kitlib.ledger import read, safepath, standing, write
+from kitlib.ledger import read, safepath, write
 from kitlib.ledger.errors import Refused
 
 TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -286,13 +286,6 @@ class ConsumerTest(Case):
         self.assertIsNone(got)
         self.assertIn('reparse point', why)
         self.assertEqual(read.read_file(path)[0], None)
-
-    def test_the_standing_digest_beside_it_refuses(self):
-        path = self.through_junction()
-        put(os.path.join(os.path.dirname(self.real), standing.NAME), '# Standing\n')
-        digest, why = standing.read_digest(standing.path_beside(path))
-        self.assertIsNone(digest)
-        self.assertIn('reparse point', why or '')
 
     def test_the_writer_refuses_and_writes_nothing(self):
         path = self.through_junction()

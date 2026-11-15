@@ -135,32 +135,14 @@ class ReadTest(Base):
         self.assertEqual(self.ok('list', '--prov', 'selected', '--since', '2026-10-06', '--repo', 'pm').splitlines(),
                          ['%s | 2026-10-06 | Old rule for all.' % rid(1), '%s | 2026-10-06 | Pm rule.' % hid('pm', 1)])
 
-    def test_check_covers_every_file_and_the_digest(self):
+    def test_check_covers_every_file(self):
         out = self.ok('check', '--base', 'none')
         self.assertIn('ledger: 4 entries in 3 files, OK', out)
-        with open(os.path.join(self.dir, 'STANDING.md'), 'w', encoding='utf-8') as f:
-            f.write('# Standing\n\n## alpha\n- %s: Alpha rule.\n- %s: gone\n\n## pm\n- %s: Pm rule.\n'
-                    % (hid('alpha', 1), hid('alpha', 7), hid('pm', 1)))
-        r = self.run_tool('check', '--base', 'none')
-        self.assertEqual(r.returncode, 1, r.stdout)
-        self.assertIn('cites %s, which is not in the ledger' % hid('alpha', 7), r.stdout)
-        os.remove(os.path.join(self.dir, 'STANDING.md'))
         with open(self.path('alpha'), 'a', encoding='utf-8') as f:
             f.write('## %s | %s | alpha | selected\nQ: only\n' % (hid('alpha', 5), WHEN))
         r = self.run_tool('check', '--base', 'none')
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn('FAIL alpha.md: ', r.stdout)
-
-    def test_standing_reads_one_repos_section(self):
-        with open(os.path.join(self.dir, 'STANDING.md'), 'w', encoding='utf-8') as f:
-            f.write('# Standing\n\n## alpha\n- %s: Alpha rule.\n\n## pm\n- %s: Pm rule.\n'
-                    % (hid('alpha', 1), hid('pm', 1)))
-        self.assertEqual(self.ok('standing', '--repo', 'alpha').splitlines(),
-                         ['## alpha', '- %s: Alpha rule.' % hid('alpha', 1)])
-        self.assertEqual(self.ok('standing', 'rule', '--repo', 'pm').splitlines(),
-                         ['## pm', '- %s: Pm rule.' % hid('pm', 1)])
-        self.assertEqual(len(self.ok('standing', 'rule').splitlines()), 4)
-        self.assertEqual(self.run_tool('standing').returncode, 2)
 
 
 class RetireTest(Base):

@@ -103,7 +103,7 @@ class DriveRelativeTest(_Case):
 
     def test_a_drive_relative_ledger_dir(self):
         books = self.drive() + 'books'
-        self.check('ledger_dir', books, books + '\\STANDING.md')
+        self.check('ledger_dir', books, books + '\\rules\\kit.md')
 
     def test_a_drive_relative_ledger_path(self):
         ledger = self.drive() + 'LEDGER.md'
@@ -142,7 +142,7 @@ class AcceptedTest(_Case):
         u = c.user()
         self.assertEqual(u['ledger_dir'], expected)
         self.assertFalse(u.get('broken'))
-        d = self.edit(os.path.join(expected, 'STANDING.md'), ctx=c)
+        d = self.edit(os.path.join(expected, 'rules', 'kit.md'), ctx=c)
         self.assertIsNotNone(d)
         self.assertEqual(d.rule, 'ledger', d.reason)
 
@@ -181,7 +181,7 @@ class BadStateTest(_Case):
         self.assertEqual((u['guard_mcp_tools'], u['guard_mcp_prefix'], u['ledger_repos']), (None, None, None))
 
     def test_a_main_session_edit_of_the_ledger_is_refused(self):
-        for path in (self.ledger, os.path.join(self.books, 'rules', 'kit.md'), os.path.join(self.books, 'STANDING.md')):
+        for path in (self.ledger, os.path.join(self.books, 'rules', 'kit.md')):
             d = self.edit(path)
             self.assertIsNotNone(d, path)
             self.assertEqual(d.rule, 'ledger', d.reason)
@@ -297,7 +297,7 @@ class UnreadTest(_Case):
         self.config({'ledger_path': '  ', 'ledger_dir': books, 'ledger_repos': ['kit']})
         self.assertTrue(self.ctx().user().get('ledger_unread'))
         self.assert_asked(self.write(os.path.join(self.pm, 'FROZEN.md')), 'FROZEN.md')
-        d = self.run_(self.write(os.path.join(books, 'STANDING.md')))
+        d = self.run_(self.write(os.path.join(books, 'rules', 'kit.md')))
         self.assertEqual((d.verdict, d.rule), ('deny', 'ledger'), d.reason)
 
     def test_a_shell_write_asks_a_main_session(self):
@@ -365,7 +365,7 @@ class UnreadTest(_Case):
         books = os.path.join(self.pm, 'books')
         self.config({'ledger_path': '', 'ledger_dir': books, 'ledger_repos': ['kit']})
         self.assertTrue(self.ctx().user().get('ledger_unread'))
-        cmd = 'git -C "%s" rm books/STANDING.md' % self.pm.replace('\\', '/')
+        cmd = 'git -C "%s" rm books/rules/kit.md' % self.pm.replace('\\', '/')
         for role in self.ROLES:
             self.assert_denied_as(bash(cmd, self.pm), role, 'ledger', cmd)
 

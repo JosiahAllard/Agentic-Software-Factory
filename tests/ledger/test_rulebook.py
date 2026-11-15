@@ -290,12 +290,12 @@ class FilesTest(Base):
         self.assertEqual(rulebook.paths(os.path.join(self.dir, 'missing')), {})
 
     def test_the_precommit_targets_list_each_rulebook_present(self):
-        self.assertEqual(precommit.targets(self.home), (self.log, os.path.join(self.dir, 'STANDING.md')))
+        self.assertEqual(precommit.targets(self.home), (self.log,))
         for name in ('kit', 'all', 'beta'):
             self.book(name, KIT)
         got = precommit.targets(self.home)
-        self.assertEqual(got[:2], (self.log, os.path.join(self.dir, 'STANDING.md')))
-        self.assertEqual(got[2:], tuple(os.path.join(self.dir, 'rules', n + '.md')
+        self.assertEqual(got[:1], (self.log,))
+        self.assertEqual(got[1:], tuple(os.path.join(self.dir, 'rules', n + '.md')
                                         for n in ('beta', 'kit', 'all')))
 
 

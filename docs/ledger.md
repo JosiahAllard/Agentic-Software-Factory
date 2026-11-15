@@ -49,7 +49,6 @@ python tools/ledger.py show ID
 python tools/ledger.py grep TEXT [--repo REPO]
 python tools/ledger.py check [--base REV]
 python tools/ledger.py list --prov PROV --since YYYY-MM-DD [--repo REPO]
-python tools/ledger.py standing [WORD] [--repo REPO]
 python tools/ledger.py rules (--repo FOLDER | --all) [--sources] [--topic WORD]
 ```
 
@@ -59,18 +58,17 @@ The commit and push options (`add`, `rule-drop`, `rule-set`) also take `--host N
 - **`retire`** turns an entry into its tombstone in place, in its own file, and prints its id. It is refused while a live entry's Decides or Items, in any ledger file, still names the entry. `--by` may name any file's entry. `--ruling` names the live entry whose Decides orders this retirement, and that entry's mention does not count.
 - **`show`** prints one entry from the file its id names; `grep` prints the header of every entry holding the text, ignoring case, from every file. Either exits 1 when nothing is found.
 - **`--repo REPO`** on `grep` and `list` reads one repository's view: its own file, and the frozen ledger's entries whose repo column is REPO or `all`.
-- **`check`** validates every ledger file and compares each with itself at `--base`: every older entry must be unchanged, or have become its own tombstone. A repository's file that the base lacks is new and is compared with nothing. The default base is `<repo.remote>/<main branch>` of the file's repository (`origin` unless its `.kit.json` sets `repo.remote`). A base that cannot be read prints `append-only NOT CHECKED` for that file and validates only. It also fails on each standing-digest line that cites a retired or missing entry ("Standing digest"), and checks the rulebooks ("Rulebooks"). With `ledger_dir` set, each finding names its file, and the summary counts entries and files.
+- **`check`** validates every ledger file and compares each with itself at `--base`: every older entry must be unchanged, or have become its own tombstone. A repository's file that the base lacks is new and is compared with nothing. The default base is `<repo.remote>/<main branch>` of the file's repository (`origin` unless its `.kit.json` sets `repo.remote`). A base that cannot be read prints `append-only NOT CHECKED` for that file and validates only. It also checks the rulebooks ("Rulebooks"). With `ledger_dir` set, each finding names its file, and the summary counts entries and files.
 - **`list`** is the read-only digest feed (docs/engineering-rulings.md "Kit pieces").
-- **`standing`** prints the standing digest's rule lines for a topic word, under their headings; `--repo` keeps only the digest's `## REPO` section, and with no word prints every rule line of it (never its other text). It needs a word, `--repo`, or both. Exits 1 on no match or no digest.
 - **Exit codes:** 0 ok; 1 no ledger configured, a ledger file that cannot be read, a refused write (a `REFUSED: <msg>` line on stderr), a failed check, nothing found, or a commit or push that failed after the entry was written; 2 usage.
 
 ## One reader
 
-`kitlib/ledger/read.py` (`parse`, `read_entries`, `Entry`) is the one reader of the ledger's entries (`fmt.parse_block`, which parses one block, is also called by `rulebook.py` and `write.py`). `kitlib.ledger.entries` and `list_rulings` (the digest feed) and `kitlib/ledger/standing.py` (`check`'s standing-digest check) read through it; `kitlib.backlog.ledger` re-exports `read_entries` and `Entry`, and no backlog write or `check` reads the ledger. It reads a header leniently and says whether it is also in the writer's form (`Entry.strict`); the validator and the append-only check in `kitlib/ledger/fmt.py` work on the text and stay apart, since they judge the format instead of reading entries. A file is read as UTF-8 with a leading BOM dropped.
+`kitlib/ledger/read.py` (`parse`, `read_entries`, `Entry`) is the one reader of the ledger's entries (`fmt.parse_block`, which parses one block, is also called by `rulebook.py` and `write.py`). `kitlib.ledger.entries` and `list_rulings` (the digest feed) read through it; `kitlib.backlog.ledger` re-exports `read_entries` and `Entry`, and no backlog write or `check` reads the ledger. It reads a header leniently and says whether it is also in the writer's form (`Entry.strict`); the validator and the append-only check in `kitlib/ledger/fmt.py` work on the text and stay apart, since they judge the format instead of reading entries. A file is read as UTF-8 with a leading BOM dropped.
 
 ## Path checks
 
-Before a ledger file, or the standing digest, is read or written, `kitlib/ledger/safepath.py` (`refusal`) checks its path. This is defence in depth beside the guard's `ledger` rule (docs/guard.md), which refuses an agent's edit, shell write, or git remove, move or restore of the `ledger_path` file, the rulebooks and the standing digest, but not of the per-repository files under `ledger_dir`. It is not a lock: the check and the open are separate calls, so a swap made between them is not caught. Three checks:
+Before a ledger file is read or written, `kitlib/ledger/safepath.py` (`refusal`) checks its path. This is defence in depth beside the guard's `ledger` rule (docs/guard.md), which refuses an agent's edit, shell write, or git remove, move or restore of the `ledger_path` file and the rulebooks, but not of the per-repository files under `ledger_dir`. It is not a lock: the check and the open are separate calls, so a swap made between them is not caught. Three checks:
 
 - **Reparse points.** The file and every existing folder above it, except the drive root, must not be a reparse point (a junction, a symlink or any other tag; `os.lstat` `st_file_attributes`). On Linux, which has no reparse points, a symlink (`os.lstat` `st_mode`, `S_ISLNK`) is refused the same way.
 - **Hard links.** The file must have one link (`st_nlink`). Through another name, an edit would reach the ledger by a path the guard does not watch. The writer's atomic replace leaves one link. Only a link present when the check runs is seen.
@@ -92,7 +90,7 @@ Cases that lock a ledger out, and the fix for each:
 
 The keys are in the machine config (docs/kit-json.md "Machine config keys"):
 
-- `ledger_dir` (in the PM repo config, relative to the PM repo root or absolute): the folder of the per-repository files and the standing digest ("Files"). It needs `ledger_repos`.
+- `ledger_dir` (in the PM repo config, relative to the PM repo root or absolute): the folder of the per-repository files ("Files"). It needs `ledger_repos`.
 - `ledger_repos`: the repository names. With `ledger_dir`, each name's file; without it, the repo columns `add --repo` accepts besides `all`, and unset any lower-case name is accepted. A name outside the list is a usage error, and `check` reports an entry with one.
 - `ledger_path` (in the PM repo config, relative to the PM repo root or absolute): the one-file ledger, or with `ledger_dir` the frozen one.
 
@@ -100,7 +98,7 @@ The keys are in the machine config (docs/kit-json.md "Machine config keys"):
 
 Set `ledger_dir` and `ledger_repos` (or `ledger_path` alone for one file); the first `add` for a repository creates its file from `templates/common/LEDGER.md`.
 
-**Moving from one file.** First retire, or supersede in the one file, each R-nnnn entry the owner means to end: after the split `retire R-nnnn` is refused. Then the owner edits the machine config: add `ledger_dir` and `ledger_repos` (including `pm`, since `--repo all` is refused once `ledger_dir` is set), and keep `ledger_path`, which is then the frozen file ("Files"). No entry is copied. The standing digest and the rulebooks, beside the `ledger_path` file without `ledger_dir`, are read from `ledger_dir` with it (the digest with one `## <repo>` section per repository), and the guard's ledger rule refuses an agent's move of them, so the owner moves the digest and the `rules` folder from beside the `ledger_path` file into `ledger_dir` by hand, each whole, right after the config edit (until then the two read as absent), and commits the move. Run `tools/ledger.py check`; new rulings go to each repository's file, and the R-nnnn entries stay readable in the frozen file. The guard's ledger rule holds the `ledger_path` file, the digest and the rulebooks; the per-repository files under `ledger_dir` are not guarded yet.
+**Moving from one file.** First retire, or supersede in the one file, each R-nnnn entry the owner means to end: after the split `retire R-nnnn` is refused. Then the owner edits the machine config: add `ledger_dir` and `ledger_repos` (including `pm`, since `--repo all` is refused once `ledger_dir` is set), and keep `ledger_path`, which is then the frozen file ("Files"). No entry is copied. The rulebooks, beside the `ledger_path` file without `ledger_dir`, are read from `ledger_dir` with it, and the guard's ledger rule refuses an agent's move of them, so the owner moves the `rules` folder from beside the `ledger_path` file into `ledger_dir` by hand, whole, right after the config edit (until then it reads as absent), and commits the move. Run `tools/ledger.py check`; new rulings go to each repository's file, and the R-nnnn entries stay readable in the frozen file. The guard's ledger rule holds the `ledger_path` file and the rulebooks; the per-repository files under `ledger_dir` are not guarded yet.
 
 To commit the ledger, put its folder inside a git work tree whose `.kit.json` names the main branch.
 
@@ -138,15 +136,6 @@ One writer per ledger file at a time. `add` and `retire` hold the file's write l
 - **The replace:** the atomic write's final `os.replace` is retried for up to `kitlib/fs/replace.py` `WAIT` seconds (2) while it fails with `PermissionError` (a reader holding the file open); any other error is not retried.
 - **git's `index.lock`:** two files in one repository still share git's index. A commit that fails because `index.lock` is busy is retried for `INDEX_LOCK_WAIT` seconds (3) in `kitlib/ledger/vcs.py` `commit_file`; any other failure is not retried, and after the bound the refusal says `index.lock busy`. A commit or push that fails after the write leaves the entry written and says what was not done.
 
-## Standing digest
-
-Logic: `kitlib/ledger/standing.py`.
-
-`STANDING.md` lists the rules still in force: one `- <id>: <rule>` line each, under `##` (and deeper) headings for repository and topic. It sits in `ledger_dir`, or beside the one-file ledger; with `ledger_dir` it keeps one `## <repo>` section per repository. The ledger tool only reads it, and the guard's `ledger` rule refuses an agent's write to it, so the owner edits it by hand. No digest is no finding.
-
-- `check` fails on each line citing an id that is retired or not in any ledger file.
-- `standing WORD` matches, ignoring case, a rule line holding the word or sitting under a heading that holds it. Each heading prints once. `--repo` first cuts the digest to that repository's section (`standing.section`).
-
 ## Rulebooks
 
 Logic: `kitlib/ledger/rulebook.py` (`parse`, `render`, `load`, `check`, `for_repo`, `view`, `lines`; the write side `target`, `conflicts`, `digest`, `set_rule`, `drop_rule`, `set_header`, `applied`); the paired write in `kitlib/ledger/write.py` (`add` with a `RuleChange`); the folder from `kitlib/ledger/files.py` `of_config` (`Files.rules`).
@@ -181,7 +170,7 @@ Repos: alpha-checkout
 
 Hook `githooks/pre-commit`; dispatch `kitlib/githooks/precommit.py`; ledger step `kitlib/ledger/precommit.py`.
 
-Opt-in: a repository sets `"ledger": {"pre_commit_check": true}` in `.kit.json` itself, not in a section file, and `git config core.hooksPath <kit>/githooks`. The hook then judges each commit that adds, changes or deletes a ledger file or the standing digest (`precommit.targets`: every repository's file, the `ledger_path` file, the digest and each rulebook file present): it runs `tools/ledger.py check --base HEAD` and refuses the commit when that fails. Any other commit passes after one `git diff --cached` (the index the commit is built from, so `commit -a` and `commit -- <paths>` count). The check reads the working files of all of them, so such a commit is refused before it runs when any of them has unstaged changes, whichever of them is staged. A staged deletion of a rulebook is judged too (`precommit.staged_rulebooks`), though the file is gone from disk: the check refuses it while a logged rule change still sets a rule in that book. To retire a book, log `ledger.py rule-drop` for each of its rules, then delete it.
+Opt-in: a repository sets `"ledger": {"pre_commit_check": true}` in `.kit.json` itself, not in a section file, and `git config core.hooksPath <kit>/githooks`. The hook then judges each commit that adds, changes or deletes a ledger file or a rulebook (`precommit.targets`: every repository's file, the `ledger_path` file and each rulebook file present): it runs `tools/ledger.py check --base HEAD` and refuses the commit when that fails. Any other commit passes after one `git diff --cached` (the index the commit is built from, so `commit -a` and `commit -- <paths>` count). The check reads the working files of all of them, so such a commit is refused before it runs when any of them has unstaged changes, whichever of them is staged. A staged deletion of a rulebook is judged too (`precommit.staged_rulebooks`), though the file is gone from disk: the check refuses it while a logged rule change still sets a rule in that book. To retire a book, log `ledger.py rule-drop` for each of its rules, then delete it.
 
 `githooks/pre-commit.py` makes one call, `kitlib.githooks.precommit.main`, which runs the kit's checks (`CHECKS`: the render step, `kitlib.githooks.render`, which acts only in a kit checkout with a render source staged (docs/content.md "Render on commit"), then the ledger step) in order and stops at the first refusal. Nothing there runs a repository's own `hooks/pre-commit`; a later step would be one more entry in `CHECKS` (docs/pm-data-branch.md "Decided by the owner").
 
@@ -189,10 +178,10 @@ Opt-in: a repository sets `"ledger": {"pre_commit_check": true}` in `.kit.json` 
 |---|---|
 | `.kit.json` absent, or its text never names `pre_commit_check` | pass; no python started (below) |
 | `.kit.json` sets `"pre_commit_check": false` | pass; python starts, loads the config, no check |
-| Opted in, no ledger file or digest in the commit | pass; no check |
-| A ledger file or the digest in the commit, check passes | pass |
-| A ledger file or the digest in the commit, check fails | refused |
-| A ledger file or the digest in the commit, and any of them has unstaged changes | refused |
+| Opted in, no ledger file or rulebook in the commit | pass; no check |
+| A ledger file or a rulebook in the commit, check passes | pass |
+| A ledger file or a rulebook in the commit, check fails | refused |
+| A ledger file or a rulebook in the commit, and any of them has unstaged changes | refused |
 | `.kit.json` names `pre_commit_check` but cannot be loaded | refused |
 | `.kit.json` cannot be loaded and does not name it | pass with a note |
 | Opted in, machine config unreadable, or neither `ledger_dir` nor `ledger_path` set | refused |

@@ -7,8 +7,7 @@ import unittest
 
 from kitlib.maintlint import ledger, page
 from tests.gitfixture import rmtree
-from tests.ledger.test_rulebook import big
-from tests.ledger.test_standing import entry
+from tests.ledger.test_rulebook import big, log_text
 
 
 def _id(n):
@@ -47,7 +46,7 @@ def home(test, books):
     folder = temp_dir(test)
     path = os.path.join(folder, 'ledger.md')
     with open(path, 'w', encoding='utf-8', newline='\n') as fh:
-        fh.write('# Rulings ledger\n\n' + entry(1))
+        fh.write(log_text(1))
     if books:
         os.makedirs(os.path.join(folder, 'rules'))
     for name, text in books.items():
@@ -99,7 +98,7 @@ class RulebookCounts(unittest.TestCase):
 class RulebookFindings(unittest.TestCase):
 
     def test_over_cap_and_conflicts_are_findings_and_overrides_are_not(self):
-        got = ledger.findings({'stale_cites': 0, 'rules': {'all': 2, 'kit': 3},
+        got = ledger.findings({'rules': {'all': 2, 'kit': 3},
                                'over_cap': ['kit'], 'conflict_pairs': 2, 'overrides': 1})
         self.assertEqual([(f.check, f.key) for f in got],
                          [('ledger-over-cap', 'over_cap'),
@@ -113,6 +112,6 @@ class RulebookFindings(unittest.TestCase):
             self.assertIn('the PM', f.fix)
 
     def test_nothing_above_0_is_no_finding(self):
-        self.assertEqual(ledger.findings({'stale_cites': 0, 'rules': {'kit': 1},
+        self.assertEqual(ledger.findings({'rules': {'kit': 1},
                                           'over_cap': [], 'conflict_pairs': 0,
                                           'overrides': 3}), [])

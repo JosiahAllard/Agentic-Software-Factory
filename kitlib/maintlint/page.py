@@ -96,10 +96,8 @@ def _document(result, limit):
     else:
         files = ledger.get('rules') or {}
         over = ledger.get('over_cap') or []
-        body.append('<p>%d stale citation%s in the STANDING digest. Rulebooks: %s. Over the byte cap: %s. '
+        body.append('<p>Rulebooks: %s. Over the byte cap: %s. '
                     '%d possible conflicting pair%s; %d override%s.</p>' % (
-                        ledger.get('stale_cites', 0),
-                        '' if ledger.get('stale_cites') == 1 else 's',
                         esc(', '.join('%d rules in %s' % (n, f) for f, n in files.items())
                             or 'none'),
                         esc(', '.join(over) or 'none'),

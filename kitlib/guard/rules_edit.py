@@ -44,7 +44,7 @@ def backlog_edit(event, ctx, target, role, what):
 
 def stream_free(path):
     """`path` with an NTFS stream suffix (`:name`, `::$DATA`, `:name:$DATA`) dropped from each of
-    its parts after the drive: `STANDING.md::$DATA` opens STANDING.md itself."""
+    its parts after the drive: `LEDGER.md::$DATA` opens LEDGER.md itself."""
     drive, rest = os.path.splitdrive(path)
     parts = re.split(r'([\\/])', rest)
     return drive + ''.join(p.split(':', 1)[0] if i % 2 == 0 else p for i, p in enumerate(parts))
@@ -55,7 +55,7 @@ LONG_PREFIX = re.compile(r'[\\/]{2}[?.][\\/]|(?:[A-Za-z]:)?[\\/]\?\?[\\/]')
 
 def unprefixed(path):
     r"""`path` without a Win32 namespace prefix (`\\?\`, `\\.\`, `\??\`, either slash), which
-    opens the same file: `\\?\<drive>:\pm\STANDING.md` is `<drive>:\pm\STANDING.md`, and
+    opens the same file: `\\?\<drive>:\pm\LEDGER.md` is `<drive>:\pm\LEDGER.md`, and
     `\\?\UNC\host\share` is `\\host\share`. `\??\` is also dropped after a drive
     (`<drive>:\??\<drive>:\pm`): abspath reads it as a
     folder of the current drive, but Windows opens it as the NT name it is, and no folder is
@@ -80,32 +80,29 @@ def file_key(path):
 
 
 def ledger_guarded(ctx):
-    """[(kind, real path)] of what the ledger rule holds: 'log' for ledger_path, 'rulebook' for
-    the rulebooks' folder and 'digest' for the standing digest (kitlib.ledger.files.of_config over
-    the machine config, Ctx.ledger_files). Paths are file_key()ed."""
+    """[(kind, real path)] of what the ledger rule holds: 'log' for ledger_path and 'rulebook' for
+    the rulebooks' folder (kitlib.ledger.files.of_config over the machine config,
+    Ctx.ledger_files). Paths are file_key()ed."""
     out = []
     ledger = ctx.user().get('ledger_path')
     if ledger:
         out.append(('log', file_key(ledger)))
     files = ctx.ledger_files()
-    if files is not None:
-        if files.rules:
-            out.append(('rulebook', file_key(files.rules)))
-        if files.digest:
-            out.append(('digest', file_key(files.digest)))
+    if files is not None and files.rules:
+        out.append(('rulebook', file_key(files.rules)))
     return out
 
 
 def ledger_kind(ctx, target, above=False):
     r"""What of the ledger `target` is: 'log' for the ledger file, 'rulebook' for the rulebooks'
-    folder or a `.md` file directly in it, 'digest' for the standing digest, else None. Names
-    compare as the filesystem opens them (file_key: case, a stream suffix, a trailing dot or
-    space, a namespace prefix, links, junctions and 8.3 names), first as the literal name (an
+    folder or a `.md` file directly in it, else None. Names compare as the filesystem opens them
+    (file_key: case, a stream suffix, a trailing dot or space, a namespace prefix, links,
+    junctions and 8.3 names), first as the literal name (an
     edit's path is never a wildcard: `[PM]` is a folder name), then, when it has a wildcard
     character after its namespace prefix (a DOS one too, LEDGER_GLOB_CHARS), as a wildcard that is any of them it can match
     (ledger_glob; the prefix's own `?` is no wildcard). A `\??\` unprefixed leaves (no drive after
-    it) is read both ways: as a prefix, and as a `??` wildcard folder (`<drive>:/??/STANDING.md`
-    names `<drive>:\pm\STANDING.md`). With `above`, a folder above a held path is that path's
+    it) is read both ways: as a prefix, and as a `??` wildcard folder (`<drive>:/??/LEDGER.md`
+    names `<drive>:\pm\LEDGER.md`). With `above`, a folder above a held path is that path's
     kind too, and a wildcard that can name such a folder (ledger_glob): removing or moving the
     folder writes what it holds."""
     full = file_key(target)
@@ -585,9 +582,6 @@ STANDING_WHY = {
     'rulebook': '%s writes a rulebook, which only ledger.py writes, each rule change paired with a log entry: read '
                 'the proposed rule against the others with conflicts, then add it with add --rule KEY --topic '
                 'TOPIC --checked HASH, or remove one with rule-drop (docs/ledger.md "Rulebooks").',
-    'digest': '%s writes the standing digest, which the rulebooks replace: it is read, never written, until it '
-              'goes, and a standing rule goes in a rulebook through ledger.py: conflicts, then add --rule '
-              '(docs/ledger.md "Rulebooks").',
 }
 
 

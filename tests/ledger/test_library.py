@@ -14,7 +14,6 @@ def rid(n):
 
 ENTRY = ('## ' + rid(1) + ' | 2026-10-01 08:00Z | alpha | selected\n'
          'Q: q\nA: a\nDecides: Rule one.\nSource: s\nSupersedes: -\n')
-DIGEST = '# Standing rulings\n\n## alpha\n\n### Landing\n- %s: land one branch at a time.\n' % rid(1)
 
 
 class Base(unittest.TestCase):
@@ -23,11 +22,8 @@ class Base(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.dir = tmp.name
         self.log = os.path.join(self.dir, 'LEDGER.md')
-        self.digest = os.path.join(self.dir, 'STANDING.md')
         with open(self.log, 'w', encoding='utf-8', newline='\n') as f:
             f.write('# Rulings ledger\n\n' + ENTRY)
-        with open(self.digest, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(DIGEST)
         self.found = files.of_config({'ledger_path': self.log})
 
 
@@ -48,14 +44,14 @@ class FilesTest(Base):
 
 
 class AuditTest(Base):
-    def test_check_all_counts_entries_and_a_cut_digest_citation_is_a_problem(self):
+    def test_check_all_counts_entries_and_a_malformed_entry_is_a_problem(self):
         with mock.patch.object(vcs, 'base_text', return_value=('', None)), \
                 mock.patch.object(vcs, 'default_base', return_value='origin/main'):
             got = audit.check_all(self.found, ['alpha'])
             self.assertEqual(got.problems, 0, got.lines)
             self.assertEqual(got.lines[-1], 'ledger: 1 entries, OK')
-            with open(self.digest, 'a', encoding='utf-8', newline='\n') as f:
-                f.write('- %s: cites nothing live.\n' % rid(9))
+            with open(self.log, 'a', encoding='utf-8', newline='\n') as f:
+                f.write('## %s | 2026-10-01 08:00Z | alpha | selected\nQ: only\n' % rid(2))
             bad = audit.check_all(self.found, ['alpha'])
         self.assertGreaterEqual(bad.problems, 1)
         self.assertTrue(bad.lines[0].startswith('FAIL '))

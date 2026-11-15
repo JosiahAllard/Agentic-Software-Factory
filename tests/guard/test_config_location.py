@@ -204,7 +204,7 @@ class LeftoverTest(_Case):
         self.assertEqual((u['guard_mcp_tools'], u['guard_mcp_prefix'], u['ledger_repos']), (None, None, None))
 
     def test_a_main_session_edit_of_the_ledger_is_refused(self):
-        for path in (self.ledger, os.path.join(self.split, 'rules', 'kit.md'), os.path.join(self.split, 'STANDING.md')):
+        for path in (self.ledger, os.path.join(self.split, 'rules', 'kit.md')):
             d = self.edit(path)
             self.assertIsNotNone(d, path)
             self.assertEqual(d.rule, 'ledger', d.reason)

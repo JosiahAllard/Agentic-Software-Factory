@@ -98,6 +98,21 @@ def unreadable_kit_json(pm_root, why):
         pm_root.replace('\\', '/'), why)
 
 
+def empty_default_refusal(root, store, snap):
+    """Why a read of `snap`, the store `store` loaded from `root`, is refused, else None: it holds
+    no record, it is the implicit default ref, and the repository has a live store in its PM data
+    worktree (pm_data_live_store). An empty read would pass for a lost store ("the id is unknown",
+    "0 records"); this names the live one."""
+    if snap.records or not getattr(store.backend, 'implicit', False):
+        return None
+    pm_root, named, why = pm_data_live_store(root)
+    if pm_root is None or why or named is None:
+        return None
+    return ('%s is empty and is not the live store: this repository\'s live store is in the PM '
+            'data worktree (store %s); read it with -C "%s"'
+            % (smod.STORE_REF, named, pm_root.replace('\\', '/')))
+
+
 def default_store_refusal(root):
     """Why a write to the implicit `ref` store is refused, and where to write instead: the PM data
     worktree and its store when the repository has one that names a store (pm_data_live_store),

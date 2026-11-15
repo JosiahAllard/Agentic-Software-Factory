@@ -90,6 +90,20 @@ class WorktreeLiveStore(unittest.TestCase):
         self.assertNotEqual(rc, 0, out)
         self.assertIn('tools/x/**', self.record_file())
 
+    def test_a_main_checkout_read_of_the_empty_default_store_names_the_live_store(self):
+        for verb in (('show', 'FOO'), ('list',), ('next',)):
+            with self.subTest(verb=verb):
+                rc, out = self.run_tool(self.repo.root, '--no-fetch', *verb)
+                self.assertNotEqual(rc, 0, out)
+                self.assertIn('-C "%s"' % self.pm.replace('\\', '/'), out)
+                self.assertNotIn('the id is unknown', out)
+                self.assertNotIn('0 records', out)
+
+    def test_an_empty_default_store_with_no_live_store_reads_as_before(self):
+        self.repo.write('.kit.json', json.dumps({'backlog': {}}) + '\n', root=self.pm)
+        rc, out = self.run_tool(self.repo.root, '--no-fetch', 'list')
+        self.assertNotIn('-C "', out)
+
     def test_the_pm_data_worktree_opens_its_own_store(self):
         ctx = opener.open_store(self.pm, fetch=False, probes=opener.NO_PROBES)
         self.assertTrue(same_path(ctx.root, self.pm), ctx.root)

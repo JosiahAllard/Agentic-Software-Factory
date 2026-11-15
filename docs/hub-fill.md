@@ -99,10 +99,14 @@ Read once per repository per run, and only for a coordinator that has a free slo
 work (`standdown()`). It reads the main checkout's `.kit.json` (docs/kit-json.md):
 
 - `backlog.fill_queued_max` (default 3): stood down, `queued N>=MAX`, while N branches wait to
-  land. Each branch is counted once, whether it is:
-  - in the verdict queue and not expired (`kitlib.landing.verdicts`: landed or its branch gone);
+  land. The count is the repository's, not the asking coordinator's: landings serialise per
+  repository, so every coordinator's entries count. Each branch is counted once, whether it is:
+  - in the verdict queue (the repo's, not the coordinator's) and not expired
+    (`kitlib.landing.verdicts`: landed or its branch gone);
   - or on a worktree, live or not, whose tip has a green gate-OK record (`classify.gate_state`)
-    and is not in main as fetched. A tip git cannot place against main counts.
+    and is not in the landing target as fetched: the staging branch when `"staging".branch` is set,
+    else main (`render.main_as_fetched`, the work base). A tip git cannot place against it counts.
+    A branch already on staging has landed, though it keeps its local branch until promotion.
 - `backlog.fill_idle_max` (default 2): stood down, `idle N>=MAX`, while N worktrees are class B
   (finished) or C (half-done) under `worktree_remove.py --classify` with a 2 h dead bar (fixed, not
   a key). L (live or kept) trees never count.

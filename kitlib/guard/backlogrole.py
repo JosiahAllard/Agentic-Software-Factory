@@ -828,8 +828,8 @@ PY_BACKLOG_PATH_RE = re.compile(r'^kitlib\s*[/\\]')     # a CODE_RE match that i
 # a PEP 263 coding declaration; python reads it on the first two lines (the next one with -x)
 PY_CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgutil.resolve's 'mod:attr'
-# a backlog.py a string names, with a closing quote or colon; a word the tool has no verb for (_names_run)
-TOOL_WORD_RE = re.compile(r'\bbacklog\.py\b["\':]?')
+# a backlog.py or kit command a string names, a closing quote or colon with it; a word the tool has no verb for
+TOOL_WORD_RE = re.compile(r'(?:\bbacklog\.py|\bkit(?:\.py|\.cmd|\.exe)?\W{1,4}backlog)\b["\':]?')
 PLAIN_RE = re.compile(r'[A-Za-z][A-Za-z0-9-]*')
 
 
@@ -916,6 +916,8 @@ def _tree_reach(ast, tree, writes=None):
         elif isinstance(node, (ast.List, ast.Tuple)):   # an item, or an argument of a call that is one, reads on
             for k, elt in enumerate(node.elts):
                 tails.update((id(c), (node.elts, k + 1)) for c in [elt] + (elt.args if type(elt) is ast.Call else []))
+                if k and isinstance(elt, ast.Constant) and elt.value == 'backlog':    # the kit command's word
+                    armed = armed or _names_run(ast, 'kit backlog', node.elts, k + 1)
         elif isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
             v = node.value.decode('latin-1') if isinstance(node.value, bytes) else node.value
             armed = armed or (id(node) not in inert and _names_run(ast, v, *tails.get(id(node), ())))
@@ -932,7 +934,7 @@ def _tree_reach(ast, tree, writes=None):
 
 
 def _names_run(ast, s, elts=(), k=0):
-    """True when the string `s` names the tool or library (CODE_RE) other than as a backlog.py run whose verb (its
+    """True when the string `s` names the tool or library (CODE_RE) other than as a run (TOOL_WORD_RE) whose verb (its
     words after it, then the list items elts[k:], each a string or one unread word, a starred one none) is a read
     (policy.READS) or a plain word the tool has no verb for (PLAIN_RE)."""
     from kitlib.backlog import policy
@@ -958,7 +960,7 @@ def _write_mode(s):
 
 
 def _read_flags(ast, v):
-    """True when os.open's flags `v` are plainly read-only: O_RDONLY, alone or with PY_READ_FLAGS' O_BINARY."""
+    """True when os.open's flags `v` are plainly read-only: O_RDONLY, alone or or-ed with PY_READ_FLAGS."""
     if isinstance(v, ast.BinOp) and isinstance(v.op, ast.BitOr):
         return _read_flags(ast, v.left) and _read_flags(ast, v.right)
     name = v.attr if isinstance(v, ast.Attribute) else v.id if isinstance(v, ast.Name) else None
@@ -966,12 +968,11 @@ def _read_flags(ast, v):
 
 
 def _file_write(ast, node, named, hit):
-    """'opens a file for writing (<call>)' when the call `node` may write the store: its target a
-    literal `hit` (store_hit) finds the store in, or one the guard cannot read while the code names
-    the store (`named`); else None. A write: write_text, write_bytes; os.open not plainly read-only
-    (_read_flags); an open whose mode (mode=, **, the builtin's second argument, an attribute .open's
-    first or second) writes (_write_mode) or is not a literal. The target: open's, os.open's,
-    io.open's or codecs.open's first argument, else the *Path(<literals>) the method is called on."""
+    """'opens a file for writing (<call>)' when the call `node` may write the store: its target a literal `hit`
+    (store_hit) finds the store in, or one the guard cannot read while the code names the store (`named`); else None. A
+    write: write_text, write_bytes; os.open not plainly read-only (_read_flags); an open whose mode (mode=, **, the
+    builtin's 2nd argument, an attribute .open's 1st or 2nd) writes (_write_mode) or is not a literal. The target:
+    open's, os.open's, io.open's or codecs.open's first argument, else the *Path(<literals>) it is called on."""
     f = node.func
     builtin = isinstance(f, ast.Name) and f.id == 'open'
     mod = isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in ('os', 'io', 'codecs')
@@ -1043,9 +1044,8 @@ def store_kind(ctx, path):
 
 
 def _store_read(ctx, path):
-    """(store_kind for `path`, why the .kit.json there did not read: a text, or None). A load that
-    raises other than ConfigError (a file that is not UTF-8: kitlib.config lets that through, so
-    ctx.config_error has no word of it) answers no store and its fault."""
+    """(store_kind for `path`, why its .kit.json did not read: a text, or None). A load raising other than ConfigError
+    (not UTF-8: kitlib.config lets it by, unseen by ctx.config_error) gives no store and its fault."""
     try:
         cfg = ctx.config(path)
         return (cfg.section('backlog')['store'] if cfg is not None else None), None

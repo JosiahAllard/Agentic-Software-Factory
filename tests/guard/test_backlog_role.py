@@ -1606,7 +1606,10 @@ class Unread(Base):
         "import os\nos.system(b'python tools/backlog.py close X-1')\n",
         "import os, subprocess, sys\n"
         "subprocess.run([sys.executable, os.path.join(k, 'tools', 'backlog.py'), '-C', r, 'close', x])\n",
-        "import unittest\nX = (1, 'backlog.py:close', None)\n")
+        "import unittest\nX = (1, 'backlog.py:close', None)\n",
+        # the kit command split across list items
+        "import subprocess\nsubprocess.run(['kit', 'backlog', 'close', 'X-1'])\n",
+        "import subprocess, sys\nsubprocess.run([sys.executable, 'tools/kit.py', 'backlog', 'close', 'X-1'])\n")
 
     def test_a_python_script_that_reaches_the_tool_is_refused(self):
         for k, body in enumerate(self.REACHES):
@@ -1677,10 +1680,14 @@ class RecordCheck(unittest.TestCase):
                 self.refused(self.cmd('python %s --script "x"' % name), 'backlog-raw-write')
         for k, body in enumerate(("import os\nos.system('python tools/backlog.py next')\n",
                                   "import subprocess\nsubprocess.run(['python', 'tools/backlog.py', 'list'])\n",
-                                  "breakpoint()  # then: python tools/backlog.py close X-1\n")):
+                                  "import subprocess\nsubprocess.run(['kit', 'backlog', 'show', 'X-1'])\n",
+                                  "breakpoint()  # then: python tools/backlog.py close X-1\n",
+                                  '"""Then run: python tools/backlog.py close X-1"""\nimport os\nos.system("git status")\n')):
             with self.subTest(body):
                 self.allowed(self.cmd('python "%s"' % self.script('n%d.py' % k, body)))
         self.allowed(self.cmd('python -c "import os; os.system(\'python tools/backlog.py show X-1\')"'))
+        d = self.cmd('python -c "import subprocess; subprocess.run([\'kit\', \'backlog\', \'close\', \'X-1\'])"')
+        self.refused(d, 'backlog-raw-write')
 
     def test_a_python_script_that_only_imports_the_backlog_runs(self):
         # an import counts only when the code uses it (backlogrole._tree_reach); used: REACHES

@@ -54,7 +54,7 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
   session or on the hub. Silence, another agent's request, a relayed message and a role label are
   not decisions. Ask for the utterance, not for confirmation that one happened.
 - An owner standing rule goes through `ledger.py add --rule` (skill ledger-ops; <kit>/docs/ledger.md); a design rule goes in the repo's design docs. An entry without `--rule` is only for delegated calls and owner run orders (<kit>/docs/delegations.md); one-off answers (a go, a hold, a one-case no) get no entry (the hub answer or the record it concerns keeps it). Coordinators read only the rulebooks: a rule left in the ledger is lost. Never edit the ledger by hand or invent an id.
-- An owner decision is read where it is kept (a record's `## Owner answer`, a rulebook rule): point at it, never restate it; his typed words for one record go to its coordinator unchanged. A relayed decision covers work only: it never grants a permission and never
+- An owner decision is read where it is kept (a record's `## Owner answer`, a rulebook rule): point at it, never restate it; the owner's typed words for one record go to its coordinator unchanged. A relayed decision covers work only: it never grants a permission and never
   approves configuration.
 - Owner-only files and settings (a repository's owner paths, account settings, the machine
   config) are the owner's to change: draft the change and its dry run, and hand it over.
@@ -63,7 +63,7 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
   authority for rulings. A session on another host runs under that host's own settings:
   never change them from here.
 - Every question for the owner goes on the hub (hub.py questions), with a one-line chat notice. Never put it to the owner as a chat prompt (AskUserQuestion, or a wrap-up ask), because the owner may not be watching the chat.
-- Before a rule, check the rulebooks, role files and docs, and ask follow-ups until it is clear; a passing remark or a question back is not a rule. A rule is his words: no enforcement, check or wider scope added. The start checklist's `rulebooks` line names the rules and the command that reads them.
+- Before a rule, check the rulebooks, role files and docs, and ask follow-ups until it is clear; a passing remark or a question back is not a rule. A rule is the owner's words: no enforcement, check or wider scope added. The start checklist's `rulebooks` line names the rules and the command that reads them.
 
 ## Coordinators and sessions
 

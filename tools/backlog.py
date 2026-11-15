@@ -52,6 +52,7 @@ from kitlib.backlog import policy                                   # noqa: E402
 from kitlib.backlog import record as rmod                           # noqa: E402
 from kitlib.backlog import stale as stalemod                        # noqa: E402
 from kitlib.backlog import store_folder
+from kitlib.backlog import store_live
 from kitlib.backlog.errors import Failure, IndexStale, Refusal, Usage  # noqa: E402
 from kitlib.backlog.opener import (FIELD_FLAGS, WRITES, open_store, planner,  # noqa: E402
                                    retarget_dry, uncite_dry)
@@ -584,6 +585,9 @@ def main(argv=None):
                 say('NOTE: %s' % note)
         else:
             snap = store.load()
+        why = store_live.empty_default_refusal(ctx.root, snap, args.verb)
+        if why:
+            raise Refusal(why)
         if args.verb == 'landable':
             return do_landable(args, ctx, snap, store.backend)
         return {'next': do_next, 'show': do_show, 'find': do_find, 'list': do_list,

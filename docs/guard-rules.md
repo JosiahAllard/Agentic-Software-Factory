@@ -96,6 +96,12 @@ A session's tool hook can run from another export than its start hook did, and f
 
 The hook is not told which folder the session's header named, so a session started on an older export is pointed at the current one. The `heavy` rule lets an interpreter run that export's `tools/gate.py` and `tools/machine_lock.py run` as it does the kit's own (`rules.kit_wrapper` through `rolepolicy.kit_export`, which takes any export folder right under the export root, the current one or not, that is neither inside nor holding a folder the session may write), so an alternative the guard gives is not itself refused as heavy (tests/guard/test_advice_workdir.py).
 
+### Role bypass by script
+
+A subagent can reach `tools/backlog.py` through a script or a line the guard cannot read, past the verbs its role may take. The fix is in the guard: it denies a script or unreadable command that names `backlog.py` (`backlog-role`, `unreadable`; docs/guard-jail-roles.md "Backlog roles").
+
+A hook rewrite that sets `PM_KIT_AGENT_ROLE` on such a command is not built. It would be its own record, taken up only after a probe shows that `updatedInput` works without an allow decision (the kit never returns allow). It would cover only interpreter, script-file or unreadable subagent commands, run only where the host has the capability, and only narrow the role; `roles.py` stays unchanged. Status: no rewrite for now. KIT-SUBAGENT-ROLE-ENV is closed on the deny; reopen it only if a live subagent backlog write gets past the deny, and measure the classifier effect first.
+
 ### Open
 
 - Owner identity rule ("Rules"): live with the guard. Open: an identity in the inherited environment.

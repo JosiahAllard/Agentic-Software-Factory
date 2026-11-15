@@ -12,7 +12,9 @@ from unittest import mock
 
 from kitlib.config import pmdata
 from kitlib.backlog import opener
-from kitlib.backlog import store_live
+from kitlib.backlog import record as rmod
+from kitlib.backlog import store as smod
+from kitlib.backlog import store_live, store_ref
 
 from tests.backlog import ownertree
 from tests.backlog.ownertree import setUpModule, tearDownModule  # noqa: F401 - the owner's tree
@@ -90,19 +92,49 @@ class WorktreeLiveStore(unittest.TestCase):
         self.assertNotEqual(rc, 0, out)
         self.assertIn('tools/x/**', self.record_file())
 
+    def pm_store(self, backlog):
+        self.repo.write('.kit.json', json.dumps({'backlog': backlog}) + '\n', root=self.pm)
+
+    def hint(self, verb):
+        return '-C "%s" %s' % (self.pm.replace('\\', '/'), verb)
+
     def test_a_main_checkout_read_of_the_empty_default_store_names_the_live_store(self):
-        for verb in (('show', 'FOO'), ('list',), ('next',)):
+        for verb in (('show', 'FOO'), ('list',), ('next',), ('find', 'x')):
             with self.subTest(verb=verb):
                 rc, out = self.run_tool(self.repo.root, '--no-fetch', *verb)
                 self.assertNotEqual(rc, 0, out)
-                self.assertIn('-C "%s"' % self.pm.replace('\\', '/'), out)
+                self.assertIn(self.hint(verb[0]), out)
                 self.assertNotIn('the id is unknown', out)
                 self.assertNotIn('0 records', out)
 
-    def test_an_empty_default_store_with_no_live_store_reads_as_before(self):
-        self.repo.write('.kit.json', json.dumps({'backlog': {}}) + '\n', root=self.pm)
+    def test_an_empty_named_ref_store_names_the_live_store_too(self):
+        self.repo.write('.kit.json', json.dumps({'backlog': {'store': 'ref'}}) + '\n')
         rc, out = self.run_tool(self.repo.root, '--no-fetch', 'list')
-        self.assertNotIn('-C "', out)
+        self.assertNotEqual(rc, 0, out)
+        self.assertIn(self.hint('list'), out)
+
+    def test_check_and_landable_read_the_empty_store_as_before(self):
+        for verb in (('check',), ('landable', BRANCH)):
+            with self.subTest(verb=verb):
+                rc, out = self.run_tool(self.repo.root, '--no-fetch', *verb)
+                self.assertNotIn('is not the live store', out)
+                self.assertNotEqual(rc, 2, out)
+
+    def test_a_default_store_holding_a_record_is_read_as_before(self):
+        named = store_ref.RefBackend(self.repo.root, 'origin', smod.STORE_REF, smod.STORE_REF,
+                                     fetch=False)
+        named.publish(smod.Store(named, rmod.Rules()).load(),
+                      priced('BAR', state='open'), 'seed\n')
+        rc, out = self.run_tool(self.repo.root, '--no-fetch', 'list')
+        self.assertEqual(rc, 0, out)
+        self.assertNotIn('is not the live store', out)
+        self.assertIn('BAR', out)
+
+    def test_an_empty_default_store_with_no_live_store_reads_as_before(self):
+        self.pm_store({})
+        rc, out = self.run_tool(self.repo.root, '--no-fetch', 'list')
+        self.assertEqual(rc, 0, out)
+        self.assertIn('0 records', out)
 
     def test_the_pm_data_worktree_opens_its_own_store(self):
         ctx = opener.open_store(self.pm, fetch=False, probes=opener.NO_PROBES)
@@ -122,7 +154,7 @@ class WorktreeLiveStore(unittest.TestCase):
         self.assertTrue(same_path(ctx.root, self.wt), ctx.root)
 
     def test_no_live_store_keeps_its_own(self):
-        self.repo.write('.kit.json', json.dumps({'backlog': {}}) + '\n', root=self.pm)
+        self.pm_store({})
         ctx = opener.open_store(self.wt, fetch=False, probes=opener.NO_PROBES)
         self.assertTrue(same_path(ctx.root, self.wt), ctx.root)
 

@@ -585,7 +585,7 @@ def main(argv=None):
                 say('NOTE: %s' % note)
         else:
             snap = store.load()
-        why = store_live.empty_default_refusal(ctx.root, store, snap)
+        why = store_live.empty_default_refusal(ctx.root, snap, args.verb)
         if why:
             raise Refusal(why)
         if args.verb == 'landable':

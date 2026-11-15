@@ -98,19 +98,29 @@ def unreadable_kit_json(pm_root, why):
         pm_root.replace('\\', '/'), why)
 
 
-def empty_default_refusal(root, store, snap):
-    """Why a read of `snap`, the store `store` loaded from `root`, is refused, else None: it holds
-    no record, it is the implicit default ref, and the repository has a live store in its PM data
-    worktree (pm_data_live_store). An empty read would pass for a lost store ("the id is unknown",
-    "0 records"); this names the live one."""
-    if snap.records or not getattr(store.backend, 'implicit', False):
+RECORD_READS = ('show', 'list', 'next', 'find')
+
+
+def empty_default_refusal(root, snap, verb):
+    """Why the record read `verb` of `snap`, the store `root` opened, is refused, else None: `verb`
+    is one of RECORD_READS, `snap` holds no record, and the repository's PM data worktree names a
+    live store that is not the one opened (`ref` or `branch` named by both is one store, shared by
+    every worktree; the PM data worktree itself is pm_data_live_store's None). An empty read would
+    pass for a lost store ("the id is unknown", "0 records"); this names the live one. `check` and
+    `landable` read the empty store as they always did."""
+    if verb not in RECORD_READS or snap.records:
         return None
-    pm_root, named, why = pm_data_live_store(root)
-    if pm_root is None or why or named is None:
+    from kitlib.config import load as load_config
+    try:
+        pm_root, named, why = pm_data_live_store(root)
+        opened = load_config(root).section('backlog')['store']
+    except Exception:                                # noqa: BLE001 - the advice is best effort
         return None
-    return ('%s is empty and is not the live store: this repository\'s live store is in the PM '
-            'data worktree (store %s); read it with -C "%s"'
-            % (smod.STORE_REF, named, pm_root.replace('\\', '/')))
+    if pm_root is None or why or named is None or (named == opened and named in ('ref', 'branch')):
+        return None
+    return ('%s holds no record and is not the live store: this repository\'s live store is in the '
+            'PM data worktree (store %s); read it with -C "%s" %s'
+            % (snap.where, named, pm_root.replace('\\', '/'), verb))
 
 
 def default_store_refusal(root):

@@ -28,13 +28,12 @@ No architecture review after build: code review checks approved design.
 
 ## Prevent, once
 
-- Defect class twice in honest use (not probe, reviewer's evasion form): prevent once at cause, in order: code guard (fail-fast check, test, step script); area reference doc; last, one instruction line (rule, not story; sharpen before adding). Ratchet names its rule; deleted at zero.
+- Defect class twice in honest use (not probe, reviewer's evasion form): prevent once at cause, in order: remove or simplify what allowed it; sharpen one existing instruction line (rule, not story); last, code guard (check, test, step script), only for a mistake that cannot be undone, one retired per one added. Ratchet names its rule; deleted at zero.
 - CI change only adding strictness (pass-string grep, test step, assertion), approved plan item: ordinary work, High-risk review, land.
 
 ## Never
 
 - Decide from green; review own implementation.
 - Write repo instruction files, tracked host config (owner-only: propose); restate instructions or reference docs in a profile.
-- Land a check removed, loosened, skipped, optional without owner's typed go.
 
 Details: `<kit>/docs/review-pack.md`.

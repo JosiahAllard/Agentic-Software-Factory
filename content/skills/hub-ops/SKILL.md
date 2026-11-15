@@ -8,7 +8,7 @@ description: Use when you post on the Action Hub - a question or a to-do for the
 Writes, except `todos ack`, `questions done`, `approvals add`, `skill-edit`: `python <kit>/tools/hub.py <verb> ... --from <your session key>`, one per call. MCP `hub_ask`, `hub_todo_add`, `hub_todo_ack`, `hub_page_publish`, `hub_approval_request`: same; `from` where verb takes `--from` (not `hub_todo_ack`, `hub_approval_request`). Key: start's `hub key:` line; others refused; unknown: ask PM.
 
 1. Question: `python <kit>/tools/hub.py questions add --title "<restates its subject>" --context-file <F> --option "label::description" [--option ...] --recommended <N> [--refs <ID> ...] --from <key> (--record <repo>:<ID> | --class <C>)`.
-   - `N` from 0. Proposing to build (tool, guard, check, audit, design, record kind): observed failures, count; what exists or goes (none: say so).
+   - `N` from 0. One decision per question, no bundle. Options include "do nothing" and, where something exists, "remove it"; each: what it adds, what it deletes. Recommend what leaves least behind; building (tool, guard, check, audit, record kind) only for a failure seen more than once, with count.
    - Record or class, never neither (`hub_ask`: `record` or `class`). `C`: `rule` (standing rule, delegation run line), `machine`, `cross-repo`, `go` (one-off landing/archive go).
    - `--record <repo>:<ID>`; kit records: PM repo folder name (`hub_view` view `repos`), `<pm-folder>:<ID>`, not `pm:<ID>`/`kit:<ID>`. Blocks record on owner until answered or withdrawn. Move on: no PM relay, no wait.
    - `python <kit>/tools/hub.py questions show <Q-id>`: options, answer, note (`questions`: all). Withdraw own open: `questions withdraw <Q-id> --from <key> --if-version <V>`.

@@ -20,14 +20,14 @@ description: Use as a coordinator before any dispatch - pulling the record, the 
 
 Fields:
 - Role: role; why raised (roster.md).
-- Record: ID, observed failure, done state; no unneeded machinery (option, tool, seam).
+- Record: ID, observed failure, done state; no unneeded machinery (option, tool, seam). Removal: what goes; done when net lines fall; nothing added to enforce it.
 - Design: design-doc section + "design first: report your design and wait for approval" (skill builder, step 3); small change: approved home, contract, files. Split or new class: never small, never set by docs; design (parts, one job each, dependency direction, net size) reviewed.
 - Read: exact files, sections, ranges, `path:Symbol` entries, code/tool/test extended; doc topics, never pasted rules. No paths: ~35 builder calls.
 - Scope: their files; others' files, whose.
 - Risk: level; risk-map path or why higher (unlisted no reason).
 - Resources: assigned locks, ports, devices.
 - Tests: touched tests while building; no gate before review; one gate on reviewed tip after verdict.
-- Owner: binding decisions, paraphrased, no ruling id.
+- Owner: where his answer is kept (record's `## Owner answer`); never restated.
 - Limits: no land, merge or push.
 
 Rules:

@@ -80,8 +80,8 @@ Success: the `RESULT pass` line carrying `LANDED`, `git rev-parse main origin/ma
 ## Owner decisions
 
 - Kept by the PM in the PM's ledger, never in a file of this repo; `<kit>/docs/ledger.md` names
-  the ledger. A decision reaches you as the PM's paraphrase, relayed in your brief, with no ruling
-  id. The owner's words are never quoted into a repo file (quoting relayed words into an authority
+  the ledger. A decision reaches you where it is kept (your record's `## Owner answer`), never
+  restated. The owner's words are never quoted into a repo file (quoting relayed words into an authority
   file is what the safety check refuses as instruction injection). Words the owner types in this
   repo's own session are passed on as a paraphrase too. Never invent one; silence is not agreement;
   a decision the PM has not relayed binds nothing until the owner confirms. For anything

@@ -20,7 +20,8 @@ AGENTS.md binds you.
 
 ## Start, and after every compaction
 
-1. Read the repository's conventions digest (the one the agent profile's **Records** section
+1. Read the owner's rules (`python <kit>/tools/ledger.py rules --repo <repo folder>`), the
+   conventions digest (the one the agent profile's **Records** section
    names, or `docs/conventions-digest.md` when it names none), then your notes file (the path is in your first message). Either one missing: say so in
    your reply; a missing notes file is created on your first call.
 2. Reply `ready` (plus anything missing from step 1) and stay idle until someone asks.
@@ -34,10 +35,10 @@ AGENTS.md binds you.
   tools. A broad search may go to a read-only search agent. Nothing that builds, tests, locks
   the machine or writes to the repository.
 - Engineering calls are yours: conventions, approach and design trade-offs, risk level of a
-  change, which agent tier a task needs, whether a branch's approach is sound, where code lives.
-  Not yours, and sent to the PM unanswered: priorities and pre-emptions, owner-held areas or
-  owner-only paths, live systems, spending, product or design taste, anything an owner decision
-  already settles the other way. Say \"not mine: ask the PM\" and why.
+  change, which agent tier a task needs, whether a branch's approach is sound, where code lives,
+  and any other question that is not owner-only.
+  Not yours, and sent to the PM unanswered: anything owner-only (`<kit>/docs/engineering-rulings.md`
+  \"What stays owner-only\"). Say \"not mine: ask the PM\" and why.
 - A call weighs fit first, by skill builder's design rules: the change the end-goal design has a
   home for wins; reshaping that home beats a bolt-on; an answer that adds a module, public name,
   tool, check, option or config key names the observed failure it serves and the existing piece it

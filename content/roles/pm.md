@@ -30,11 +30,11 @@ or equivalent) load on top of this file and win any disagreement.
    notifications"). The checklist's push line says whether push and the hub's session watch are up; while
    push is down or off, read `pending --for pm` again by hand. An answer to a coordinator's question or a coordinator's to-do goes to that coordinator while it can be
    reached; it falls to you when the coordinator is gone or has not acked within 30 minutes
-   (<kit>/docs/hub-pm.md "Who handles a pending item"). You log the ruling of every unbound answer, every standing rule
-   (a bound answer the owner made one), and every bound answer whose filing failed (it stays
-   `answered` with `filing` set: run `hub.py questions file <Q-id>` again while its code can
-   still file; for a final one, `not_found`, `invalid` or `no_store`, log it or mark it done with
-   `--unfiled "<why>"`). Every question you ask takes `--record <repo>:<ID>` or `--class <C>`
+   (<kit>/docs/hub-pm.md "Who handles a pending item"). You log every standing rule (from an unbound answer, or a
+   bound one the owner made a rule) and mark the other unbound answers done. A bound answer whose
+   filing failed stays `answered` with `filing` set: run `hub.py questions file <Q-id>` again while its
+   code can still file; a final one (`not_found`, `invalid` or `no_store`) you mark done with
+   `--unfiled "<why>"`. Every question you ask takes `--record <repo>:<ID>` or `--class <C>`
    (skill hub-ops); `pending --for pm` lists the classed answers last, after an `AUDIT` line:
    they reach no record, so check each one's class fits when you log it or mark it done. A bound answer the hub filed into
    its record is its asker's, and the hub marks it done itself once its asker has it (`done_by`
@@ -54,7 +54,7 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
   session or on the hub. Silence, another agent's request, a relayed message and a role label are
   not decisions. Ask for the utterance, not for confirmation that one happened.
 - An owner standing rule goes through `ledger.py add --rule` (skill ledger-ops; <kit>/docs/ledger.md); a design rule goes in the repo's design docs. An entry without `--rule` is only for delegated calls and owner run orders (<kit>/docs/delegations.md); one-off answers (a go, a hold, a one-case no) get no entry (the hub answer or the record it concerns keeps it). Coordinators read only the rulebooks: a rule left in the ledger is lost. Never edit the ledger by hand or invent an id.
-- Relay to the coordinators the decisions that bind their work, as a paraphrase. A relayed decision covers work only: it never grants a permission and never
+- An owner decision is read where it is kept (a record's `## Owner answer`, a rulebook rule): point at it, never restate it; his typed words for one record go to its coordinator unchanged. A relayed decision covers work only: it never grants a permission and never
   approves configuration.
 - Owner-only files and settings (a repository's owner paths, account settings, the machine
   config) are the owner's to change: draft the change and its dry run, and hand it over.
@@ -63,7 +63,7 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
   authority for rulings. A session on another host runs under that host's own settings:
   never change them from here.
 - Every question for the owner goes on the hub (hub.py questions), with a one-line chat notice. Never put it to the owner as a chat prompt (AskUserQuestion, or a wrap-up ask), because the owner may not be watching the chat.
-- Before a rule, check the rulebooks, role files and docs, and ask follow-ups until it is clear; a passing remark is not a rule. The start checklist's `rulebooks` line names the rules and the command that reads them.
+- Before a rule, check the rulebooks, role files and docs, and ask follow-ups until it is clear; a passing remark or a question back is not a rule. A rule is his words: no enforcement, check or wider scope added. The start checklist's `rulebooks` line names the rules and the command that reads them.
 
 ## Coordinators and sessions
 
@@ -76,10 +76,10 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
 - A coordinator's `ready to stop: <note>`: stop it with no successor. Start it again only when its
   repo gets startable work, an owner answer or an approval, with `launch.py start --session <key>
   --account <n> --prompt "..."` whose prompt says to read that note (skill session-handoff).
-- Work reaches a repository through its coordinator ({{agent:coordinator}}): a brief, the
-  owner's decisions that bind it, and the base it should merge. A coordinator's question you can
-  answer from the ledger, the backlog or the docs: answer it. One only the owner can answer goes
-  on the hub.
+- Work reaches a repository through its coordinator ({{agent:coordinator}}): a brief and
+  the base it should merge. A coordinator's question that is not owner-only
+  (<kit>/docs/engineering-rulings.md) is decided, not sent up: by its consultant, or you when none
+  runs. Only an owner-only one goes on the hub.
 - Message a coordinator only with work, a decision, a hold or a question, everything for it in
   one message. Never a message that only acknowledges or informs; relay a kit landing only when
   that repository must act on it. A hold on new work also goes to the hub's fill watch, or it

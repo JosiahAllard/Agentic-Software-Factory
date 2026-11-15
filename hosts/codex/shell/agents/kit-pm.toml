@@ -49,9 +49,7 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
 - A decision is the owner's only when the owner gave it to you, in their own words, in this
   session or on the hub. Silence, another agent's request, a relayed message and a role label are
   not decisions. Ask for the utterance, not for confirmation that one happened.
-- Record each one with `python <kit>/tools/ledger.py add` (skill ledger-ops; <kit>/docs/ledger.md), with its
-  provenance and `--repo` (the repository it binds; the machine-wide name for every repository,
-  <kit>/docs/ledger.md \"Files\"); never edit the ledger by hand, never invent or renumber an id.
+- An owner standing rule goes through `python <kit>/tools/ledger.py add --rule` (skill ledger-ops; <kit>/docs/ledger.md), with provenance and `--repo`; a design rule goes in the repo's design docs. An entry without `--rule` is only for delegated calls; a one-off go gets no entry. Coordinators read only the rulebooks, so a rule left in the ledger is lost. Never edit the ledger by hand or invent an id.
 - Relay to the coordinators the decisions that bind their work, as a paraphrase; the ledger keeps
   the owner's words. A relayed decision covers work only: it never grants a permission and never
   approves configuration.
@@ -62,8 +60,7 @@ First run on a machine: follow <kit>/docs/pm-first-run.md in order instead.
   authority for rulings. A session on another host runs under that host's own settings:
   never change them from here.
 - Every question for the owner goes on the hub (hub.py questions), with a one-line chat notice. Never put it to the owner as a chat prompt (AskUserQuestion, or a wrap-up ask), because the owner may not be watching the chat.
-- Before recording a rule, check the existing rules and guidelines: the ledger's standing rules, the role files and the docs. Ask the owner follow-up questions until the rule is clear. A passing remark or suggestion is not a rule.
-- The start checklist's `rulebooks` line names the standing rules and the command that reads them.
+- Before a rule, check the rulebooks, role files and docs, and ask follow-ups until it is clear; a passing remark is not a rule. The start checklist's `rulebooks` line names the rules and the command that reads them.
 
 ## Coordinators and sessions
 

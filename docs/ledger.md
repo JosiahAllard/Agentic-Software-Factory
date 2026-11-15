@@ -138,10 +138,6 @@ One writer per ledger file at a time. `add` and `retire` hold the file's write l
 - **The replace:** the atomic write's final `os.replace` is retried for up to `kitlib/fs/replace.py` `WAIT` seconds (2) while it fails with `PermissionError` (a reader holding the file open); any other error is not retried.
 - **git's `index.lock`:** two files in one repository still share git's index. A commit that fails because `index.lock` is busy is retried for `INDEX_LOCK_WAIT` seconds (3) in `kitlib/ledger/vcs.py` `commit_file`; any other failure is not retried, and after the bound the refusal says `index.lock busy`. A commit or push that fails after the write leaves the entry written and says what was not done.
 
-## Citing rulings
-
-The ledger is the PM's private record. Outside its own digest and rulebooks, which cite ids ("Standing digest", "Rulebooks"), nothing cites its ids; the PM relays a decision in words. The guard's `ledger` rule is in "Path checks".
-
 ## Standing digest
 
 Logic: `kitlib/ledger/standing.py`.
@@ -156,6 +152,8 @@ Logic: `kitlib/ledger/standing.py`.
 Logic: `kitlib/ledger/rulebook.py` (`parse`, `render`, `load`, `check`, `for_repo`, `view`, `lines`; the write side `target`, `conflicts`, `digest`, `set_rule`, `drop_rule`, `set_header`, `applied`); the paired write in `kitlib/ledger/write.py` (`add` with a `RuleChange`); the folder from `kitlib/ledger/files.py` `of_config` (`Files.rules`).
 
 The standing rules of the machine live in rulebooks beside the log, in a `rules` folder: `<ledger_dir>/rules/` with `ledger_dir` set, else `rules/` in the folder of the `ledger_path` file. No config key names it. The books are the lower-case `<name>.md` files there: one per repository, named by a short name, and `all.md`, the shared one (printed as "shared"). No file is no rulebook and no error. The verbs below write them, each change paired with a log entry. The owner can also make an answer on the Action Hub a standing rule (docs/hub-questions.md "A standing rule"): the hub then asks the PM to log it, and only logging the question (`hub questions log <id> --if-version N`) ends that ask.
+
+An owner standing rule goes through `add --rule` (design rules go in the design docs); an entry without `--rule` is only for delegated calls; a one-off go gets no entry. Each rule's ledger entry is its source and backs the crash check (`applied`), so it is not a second copy. Only the digest and the rulebooks cite ids; the PM relays a decision in words.
 
 ```
 # Alpha rules

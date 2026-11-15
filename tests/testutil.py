@@ -1,6 +1,6 @@
 """Process helpers for kit tests that check the pid shield (kitlib.platform.windows.shield): a
 child's own probe of its shield, and how long an OUTER shield keeps a new process of this one
-shielded.
+shielded; and a job whose terminate leaves a process ending late (slow_to_end).
 """
 import os
 import subprocess
@@ -112,3 +112,26 @@ def exited_object(pid):
         return k.WaitForSingleObject(h, 0) == 0                 # WAIT_OBJECT_0: it has exited
     finally:
         k.CloseHandle(h)
+
+
+def slow_to_end(case, job, delay):
+    """Job `job` (a real one) made to hold, too, a process that ends `delay` seconds after the job
+    is terminated, as its Popen: terminating a job only starts each process's end, and one with
+    much to tear down ends after the rest. As in a real job, it is no longer listed once the job is
+    terminated. (It is outside the job: a real one ends with the rest.) Cleanups on `case`."""
+    import threading
+    slow = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'],
+                            creationflags=CREATE_NO_WINDOW)
+    case.addCleanup(slow.wait)
+    case.addCleanup(slow.kill)
+    terminate, pids, terminated = job.terminate, job.pids, []
+
+    def slow_terminate(code=1):
+        terminated.append(code)
+        timer = threading.Timer(delay, slow.kill)
+        timer.start()
+        case.addCleanup(timer.cancel)
+        return terminate(code)
+    job.terminate = slow_terminate
+    job.pids = lambda: pids() + ([] if terminated or slow.poll() is not None else [slow.pid])
+    return slow

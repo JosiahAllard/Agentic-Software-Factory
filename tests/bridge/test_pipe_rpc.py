@@ -109,11 +109,14 @@ class PipeRpcTests(unittest.TestCase):
         holder=connect(self.leader.endpoint,os.getpid(),own_ctime())
         self.addCleanup(holder.close)
         self.leader.listener.accept(timeout=3)  # the one instance serves another client throughout
-        start=time.monotonic()
-        with self.assertRaises(BeforeWriteError) as caught:
-            request(self.target,{'id':'busy'},timeout=4)
+        # The busy window is shortened and the request budget made the most run_worker
+        # allows (10 s), far longer than a helper start, so load cannot make the helper
+        # outlast the budget (an uncertain kill) nor change the outcome; the budget
+        # arithmetic is the fake-clock tests' job.
+        with patch('optional.bridge.win.rpc.busy_wait',return_value=300),\
+                self.assertRaises(BeforeWriteError) as caught:
+            request(self.target,{'id':'busy'},timeout=10)
         self.assertEqual(caught.exception.code,'native-peer-unavailable-before-write')
-        self.assertLess(time.monotonic()-start,4)
 
     def busy_request_with_slow_helper_start(self,start_seconds):
         """request() at timeout=4 against a pipe that stays busy, where starting the helper

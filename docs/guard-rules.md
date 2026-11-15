@@ -100,7 +100,7 @@ The hook is not told which folder the session's header named, so a session start
 
 A subagent can reach `tools/backlog.py` through a script or a line the guard cannot read, past the verbs its role may take. The fix is in the guard: it denies a script or unreadable command that names `backlog.py` (`backlog-role`, `unreadable`; docs/guard-jail-roles.md "Backlog roles").
 
-A hook rewrite that sets `PM_KIT_AGENT_ROLE` on such a command is not built. It would be its own record, taken up only after a probe shows that `updatedInput` works without an allow decision (the kit never returns allow). It would cover only interpreter, script-file or unreadable subagent commands, run only where the host has the capability, and only narrow the role; `roles.py` stays unchanged. Status: no rewrite for now. KIT-SUBAGENT-ROLE-ENV is closed on the deny; reopen it only if a live subagent backlog write gets past the deny, and measure the classifier effect first.
+A hook rewrite that sets `PM_KIT_AGENT_ROLE` on such a command is not built. It would be its own record, taken up only after a probe shows that `updatedInput` works without an allow decision (the kit never returns allow). It would cover only interpreter, script-file or unreadable subagent commands, run only where the host has the capability, and only narrow the role; `roles.py` stays unchanged. Status: no rewrite for now; the deny is the fix. Revisit only if a live subagent backlog write gets past it, and measure the classifier effect first.
 
 ### Open
 

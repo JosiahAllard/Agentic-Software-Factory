@@ -766,6 +766,26 @@ class Survey(unittest.TestCase):
         self.in_main = {'h-kit/e'}
         self.assertEqual(self.survey()[0], 3)                  # a, b, c
 
+    def test_with_staging_on_a_branch_in_staging_is_landed_not_queued(self):
+        """Only --classify and the gate are doubled: main is the staging branch as fetched."""
+        from kitlib.worktree import classify
+        repo = gitfixture.TempRepo()
+        self.addCleanup(repo.cleanup)
+        repo.write('.kit.json', json.dumps({'staging': {'branch': 'staging'}}))
+        repo.commit('staging on', '.kit.json')
+        repo.write('landed.txt', 'x\n')
+        landed = repo.commit('landed on staging', 'landed.txt')
+        repo.git('update-ref', 'refs/remotes/origin/staging', landed)
+        repo.git('update-ref', 'refs/remotes/origin/main', repo.initial)
+        repo.write('later.txt', 'x\n')
+        waiting = repo.commit('not landed', 'later.txt')
+        trees = [tree('kit/landed', 'B', head=landed), tree('kit/waiting', 'B', head=waiting)]
+        with mock.patch.dict(os.environ, gitfixture.fixture_env(), clear=True), \
+                mock.patch.object(classify, 'classify', lambda t, dead_after_s=None, **k:
+                                  classify.Result(1, [], {'trees': trees, 'counts': {}})), \
+                mock.patch.object(classify, 'gate_state', lambda t, head: 'green'):
+            self.assertEqual(W.read_survey(repo.root)[0], 1)    # kit/waiting only
+
     def test_an_ancestry_git_cannot_tell_counts_as_queued(self):
         self.trees = [tree('kit/x', 'L', head='unknown')]
         self.green = {'unknown'}

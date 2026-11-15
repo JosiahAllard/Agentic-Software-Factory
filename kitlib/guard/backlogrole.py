@@ -1,22 +1,19 @@
 """The backlog roles in the guard (docs/guard-jail-roles.md "Backlog roles"; docs/backlog.md "Roles").
 
-  backlog-role       a subagent's run of tools/backlog.py, judged by kitlib.backlog.roles for the
-                     role its hook payload names (Action.agent_role), from the command's words
-                     (kitlib.backlog.policy.read_argv). A PM_KIT_ROLE the line sets changes
-                     nothing. A builder's own pull (roles.OWN_PULL) is read from the store the
-                     run's folder opens, as it is locally, only when it alone would decide; an
-                     --as branch is its own from that branch's linked worktree (own_pull_refusal).
-                     A computed script word ending in /backlog.py is the tool
-                     (rules.computed_script). A script file a subagent runs, or feeds a shell
-                     on standard input, is read one level deep, its first SCRIPT_CAP bytes, a
-                     path that is not a regular file refused (script_file).
-  backlog-raw-write  a write of the backlog that skips the tool and its role check: a subagent's
-                     python code that uses kitlib.backlog or runs tools/backlog.py (py_reach,
-                     piped_script), but not landed code (landed_script); any session's but the
-                     owner's python code naming the hub's record writer (hub_writer_code);
-                     any session's but the owner's git write of the store's ref
-                     (refs/backlog/*; the backlog branch when the store is `branch`); any
-                     session's but the owner's edit of a folder store's records.
+  backlog-role       a subagent's run of tools/backlog.py, judged by kitlib.backlog.roles for the role its hook payload
+                     names (Action.agent_role), from the command's words (kitlib.backlog.policy.read_argv). A
+                     PM_KIT_ROLE the line sets changes nothing. A builder's own pull (roles.OWN_PULL) is read from the
+                     store the run's folder opens, as it is locally, only when it alone would decide; an --as branch is
+                     its own from that branch's linked worktree (own_pull_refusal). A computed script word ending in
+                     /backlog.py is the tool (rules.computed_script). A script file a subagent runs, or feeds a shell
+                     on standard input, is read one level deep, its first SCRIPT_CAP bytes, a path not a regular file
+                     refused (script_file).
+  backlog-raw-write  a write of the backlog that skips the tool and its role check: a subagent's python code that uses
+                     kitlib.backlog or runs tools/backlog.py but to read (py_reach, piped_script), but not landed code
+                     (landed_script); any session's but the owner's python code naming the hub's record writer
+                     (hub_writer_code); any session's but the owner's git write of the store's ref (refs/backlog/*;
+                     the backlog branch when the store is `branch`); any session's but the owner's edit of a folder
+                     store's records.
   pm-data-audit      any session's but the owner's write in <pm_data>/audit/, the backlog's audit
                      log (kitlib.backlog.audit), which only tools/backlog.py appends to.
 
@@ -133,10 +130,9 @@ def run_words(inv):
 
 def argv_words(cmd, words):
     """read_argv's (text, readable) pairs: a computed word is unreadable, and so is a PowerShell word holding a double
-    quote (Windows PowerShell 5.1 passes it on unescaped, so it can split). A bash word that is all one double-quoted
-    string (`"$PWD"`, `"$M/x"`; not `"$@"` or `${a[@]}`, which split) is policy.ONE: one word, its text unknown. A
-    Start-Process -ArgumentList string comes already split as Windows splits it (commands._split_list): a double-quoted
-    segment is one word, spaces and all."""
+    quote (Windows PowerShell 5.1 passes it unescaped: it can split). A bash word all one double-quoted string
+    (`"$PWD"`, `"$M/x"`; not `"$@"` or `${a[@]}`, which split) is policy.ONE: one word, text unknown. A Start-Process
+    -ArgumentList string is split as Windows splits it (commands._split_list): a quoted segment is one word."""
     from kitlib.backlog import policy
     ps = cmd.shell == rules.sh.PS
     out = []
@@ -209,9 +205,8 @@ def role_run(event, ctx, cmd, inv, cwd, role):
 
 def _root(cmd, here, argv):
     """The folder the run names: its -C, read from `here`, the directory the tool runs in (commands.run_dir: the
-    command's, or a Start-Process -WorkingDirectory), else `here` itself. None, fail closed, when -C is a word the
-    guard cannot read (policy.UNREAD) or when the folder rests on a `here` the text cannot tell (run_dir's None: a cd
-    it cannot read, a computed or unplaceable -WorkingDirectory); never the hook's directory in its place."""
+    command's, or a Start-Process -WorkingDirectory), else `here`. None, fail closed, when -C is unread (policy.UNREAD)
+    or `here` is unknown (run_dir's None: an unread cd or -WorkingDirectory), never the hook's."""
     from kitlib.backlog import policy
     if argv.root is policy.UNREAD:
         return None
@@ -259,11 +254,10 @@ def _worktree_on(ctx, where, branch):
 
 def own_pull_refusal(ctx, cmd, argv, who, here=None, pairs=None):
     """(policy.refusal, the form sentence, the form or None) for a run only a builder's own pull would allow: the
-    record read where the tool runs (_root; none when unknown) through the store that folder opens (read_record), its
-    pull compared with the branch the run acts as: the branch checked out there, or an --as branch when `here`
-    (commands.run_dir; None is never evidence) is that branch's linked worktree (_worktree_on). The main checkout and
-    the PM data worktree are never its own. The form sentence names the accepted way when the own pull alone would
-    allow the run; the form is it written out (own_form), which changes no decision."""
+    record read where the tool runs (_root; none when unknown) through that folder's store (read_record), its pull
+    compared with the branch the run acts as: the one checked out there, or an --as branch when `here` (run_dir; None
+    is never evidence) is its linked worktree (_worktree_on); never the main checkout or PM data worktree. The sentence
+    names the accepted way when the own pull alone would allow it, written out by own_form (no decision changes)."""
     from kitlib.backlog import policy, roles
     root = _root(cmd, here, argv)                # None: no record read, so never its own pull
     rec, branch = None, None
@@ -292,11 +286,10 @@ def own_pull_refusal(ctx, cmd, argv, who, here=None, pairs=None):
 
 
 def own_form(ctx, argv, who, root, here, pairs):
-    """(branch, worktree, form) for a refused run its own pull would allow: the branch it acts as
-    (--as, else the one checked out at its folder), that branch's linked worktree as the guard sees
-    it (the tool's directory, else the -C folder), and the run as one bare `python <tool> -C
-    <worktree> <verb> <words>`, no --as, no cd. None when no such worktree shows, its store
-    (read_record) does not hold the record pulled by that branch, or the words do not read."""
+    """(branch, worktree, form) for a refused run its own pull would allow: the branch it acts as (--as, else the one
+    checked out at its folder), that branch's linked worktree as the guard sees it (the tool's directory, else the -C
+    folder), and the run as one bare `python <tool> -C <worktree> <verb> <words>`, no --as, no cd. None when no such
+    worktree shows, its store (read_record) does not hold the record that branch pulled, or the words do not read."""
     from kitlib.backlog import policy, roles
     b = argv.branch if argv.branch is not None else (_branch_at(ctx, root) if root else None)
     if not root or not isinstance(b, str) or not b:
@@ -322,9 +315,8 @@ def own_form(ctx, argv, who, root, here, pairs):
 
 
 def _rerun_words(pairs):
-    """The run's words from its verb on, after the global options it gives before the verb but -C
-    and --as (own_form writes its own -C and needs no --as), each a word both shells read as written
-    (rules.shell_word); None when a word does not read."""
+    """The run's words from its verb on, after its global options before the verb but -C and --as (own_form writes its
+    own -C, needs no --as), each a word both shells read as written (rules.shell_word); None when one does not read."""
     from kitlib.backlog import policy
     if not pairs or any(ok is not True for _t, ok in pairs):
         return None
@@ -434,12 +426,11 @@ C_FLAGS_RE = re.compile(r'^-[bBdEhiIOPqsSuvx]*c$')     # -c, or flags that take 
 
 
 def c_code(inv):
-    """The text of the code python runs from -c when it is the word after -c (C_FLAGS_RE), or None: no -c, the code
-    attached to it (-cCODE), any launch other than plain or xargs (commands.Invocation.via: a PowerShell process-start
-    call, which re-splits its words), or a word up to the code the line computes or the shell may hand python split
-    (rules.native_unsure: a PowerShell word holding a double quote, cmd's quotes), so python may run other code than
-    the guard reads. backlog_code reads the text with py_reach and judges None by CODE_RE alone over the line's code
-    texts; piped_script (_printed_name) judges no -c code at all when it is None."""
+    """The code python runs from -c when it is the word after -c (C_FLAGS_RE), or None: no -c, -cCODE, a launch other
+    than plain or xargs (commands.Invocation.via: a PowerShell process-start call re-splits its words), or a word up to
+    the code the line computes or the shell may split (rules.native_unsure: a PowerShell word holding a double quote,
+    cmd's quotes), so python may run other code than the guard reads. backlog_code reads it with py_reach, a None by
+    CODE_RE alone over the line's code texts; piped_script (_printed_name) judges no -c code when it is None."""
     if inv is None or rules.PY_RUN_RE.match(inv.name or '') is None or inv.via not in (None, 'xargs'):
         return None
     args, k = inv.args, 0
@@ -461,12 +452,10 @@ def c_code(inv):
 
 
 def stdin_code(inv):
-    """The text of the code python reads from standard input (reads_stdin: `python -` or flags
-    alone) when the line's one heredoc or here-string gives it as the guard reads it, or None: a
-    `<` file or a second such redirect, a launch other than plain, a here-string the line
-    computes, or an unquoted heredoc body holding $, ` or \\ (the shell rewrites those: the
-    text python reads is not the text as written). backlog_code reads it with py_reach, as
-    c_code's; piped_script (_printed_name) too."""
+    """The code python reads from standard input (reads_stdin: `python -` or flags alone) when the line's one heredoc
+    or here-string gives it as the guard reads it, or None: a `<` file or a second such redirect, a launch other than
+    plain, a computed here-string, or an unquoted heredoc body holding $, ` or \\ (the shell rewrites those). Read
+    with py_reach by backlog_code, as c_code's; piped_script (_printed_name) too."""
     if inv is None or inv.dyn or inv.via is not None or reads_stdin(inv) != 'py':
         return None
     given = [r for r in inv.cmd.redirects if r.op in ('<', '<<', '<<<') and r.fd == '0']
@@ -523,9 +512,8 @@ PS_PATH_OPTS = ('-path', '-literalpath', '-raw')
 
 
 def reads_stdin(inv):
-    """The kind (shell.BASH, shell.PS or 'py') a POSIX shell, PowerShell shell or python reads its
-    code from standard input in, when it has no script, -c, -m or -Command text of its own (a
-    PowerShell shell given `-` reads it); else None."""
+    """The kind (shell.BASH, shell.PS or 'py') a POSIX shell, PowerShell or python reads its code from standard input
+    in, when it has no script, -c, -m or -Command text of its own (PowerShell given `-` reads it); else None."""
     if inv is None or inv.dyn:
         return None
     name = (inv.name or '').lower()
@@ -589,10 +577,9 @@ NOT_REGULAR = object()                          # _script_text: a FIFO, a device
 
 
 def _script_text(cmd, text):
-    """(the absolute path, its first SCRIPT_CAP bytes as text) of the script file `text` names
-    from the command's directory; (path, None) when it does not read (missing, unplaceable);
-    (path, NOT_REGULAR) for a path that is there but is not a regular file (a FIFO, a folder,
-    /dev/stdin), which is never opened: what it gives is not a file the guard can read."""
+    """(the absolute path, its first SCRIPT_CAP bytes as text) of the script file `text` names from the command's
+    directory; (path, None) when it does not read (missing, unplaceable); (path, NOT_REGULAR) for a path there but not
+    a regular file (a FIFO, a folder, /dev/stdin), never opened: it is no file the guard can read."""
     if text == '/dev/null' or text.lower() == 'nul':
         return text, ''                         # empty: it runs nothing
     if text in cn.SOURCED_STDIN or text.startswith(('/dev/', '/proc/')):
@@ -645,17 +632,15 @@ FIXED_MAINS = ('main', 'master')               # the mains a derived main_branch
 
 
 def landed_script(event, ctx, cwd, path):
-    """True when the python script file `path` is its repository's landed code (the owner's ruling, trust landed code;
-    docs/guard-jail-roles.md "Landed scripts"): its whole bytes are the blob at the local refs/heads/<main branch>:<its
-    path>, or that blob (no CR) with each LF as CRLF. The guard refuses an agent's direct write of that ref
-    (git-shared-ref, git-push-main). Checked in this order, each failing to False: a checkout place (MAIN or LINKED,
-    not the PM data worktree) that holds `path`; a git common dir the session may not write (jail_roots), so a
-    repository it made or can rewrite is never trusted, before any git runs; a PM data record (rules.pmdata_recorded);
-    the main checkout's .kit.json, whose main_branch, when it writes none, is read from <remote>/HEAD and is then
-    trusted only as main or master; never the linked worktree's own branch; no branch that equals refs/heads/<main>
-    only when case is ignored (on NTFS a loose refs/heads/Main shadows a packed main); then `git --no-replace-objects
-    cat-file blob`, so a replace ref does not stand in for the blob. Any error is False: the script is judged as
-    before."""
+    """True when the python script `path` is its repository's landed code (owner's ruling; docs/guard-jail-roles.md
+    "Landed scripts"): its whole bytes are the blob at the local refs/heads/<main branch>:<its path>, or that blob (no
+    CR) with each LF as CRLF; agents may not write that ref (git-shared-ref, git-push-main). Checked in order, each
+    failing to False: a checkout place (MAIN or LINKED, not the PM data worktree) holding `path`; a git common dir the
+    session may not write (jail_roots: one it made or can rewrite is never trusted), before any git runs; a PM data
+    record (rules.pmdata_recorded); the main checkout's .kit.json main_branch, else <remote>/HEAD's, trusted only as
+    main or master; never the linked worktree's own branch; no branch equal to refs/heads/<main> only ignoring case (on
+    NTFS a loose refs/heads/Main shadows a packed main); then `git --no-replace-objects cat-file blob` (no replace ref
+    stands in). Any error is False: the script is judged as before."""
     try:
         return _landed(event, ctx, cwd, path)
     except Exception:                           # noqa: BLE001 - no trust read: judged as before
@@ -768,11 +753,10 @@ def _runs_piped_text(inv):
 
 def piped_script(event, ctx, cmd, inv, cwd, role):
     """A subagent's python script, -c or heredoc code (c_code, stdin_code) whose output may run as code, judged by
-    CODE_RE alone, not by py_reach's reading of its own code: piped, straight or through other commands, into a runner
-    (_runs_piped_text: `python gen.py | bash`, `... | tee log | python`), or held in another command's word (`eval
-    "$(python gen.py)"`, `bash <(python gen.py)`, a nested shell's text: shell.Command.nested_in), whose program then
-    reads what it prints, or run in a ( ) or { } group, whose output the guard does not follow (a pipe from a group has
-    no pipe_from). The kit's own (_kit_code) is not judged."""
+    CODE_RE alone, not py_reach: piped, straight or through other commands, into a runner (_runs_piped_text: `python
+    gen.py | bash`, `... | tee log | python`), held in another command's word (`eval "$(python gen.py)"`, `bash
+    <(python gen.py)`, a nested shell's text: shell.Command.nested_in) whose program reads what it prints, or run in a
+    ( ) or { } group, whose output is not followed (no pipe_from). The kit's own (_kit_code) is not judged."""
     if not _judged_subagent(event):
         return None
     if cmd.nested_in is not None or cmd.groups:
@@ -819,7 +803,7 @@ def _printed_name(ctx, role, cmd, chain, how):
 # PY_RUN_MODULES (any part of its dotted path, or a name it takes); a name or attribute in PY_RUN_ATTRS (os.system,
 # from os import system, obj.__subclasses__); a bare name in PY_RUN_BUILTINS (exec(...), breakpoint(), not re.compile);
 # a string that is one of these, whole or a dotted part of it (getattr(os, 'system'), sys.modules['subprocess'],
-# resolve('os.system')). Wide on purpose: a script that names the tool and holds any of them is refused as before.
+# resolve('os.system')). Wide on purpose: one counts while a string names the tool other than as a read (_names_run).
 PY_RUN_MODULES = frozenset((
     'subprocess', 'runpy', 'importlib', 'imp', 'pkgutil', 'zipimport', 'pty', 'ctypes', 'cffi', '_winapi',
     '_posixsubprocess', 'multiprocessing', 'code', 'codeop', 'timeit', 'pdb', 'bdb', 'cProfile', 'profile',
@@ -844,6 +828,9 @@ PY_BACKLOG_PATH_RE = re.compile(r'^kitlib\s*[/\\]')     # a CODE_RE match that i
 # a PEP 263 coding declaration; python reads it on the first two lines (the next one with -x)
 PY_CODING_RE = re.compile(r'^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)')
 PY_PART_RE = re.compile(r'[.:]')               # a dotted name's parts, and pkgutil.resolve's 'mod:attr'
+# a backlog.py or kit command a string names, a closing quote or colon with it; a word the tool has no verb for
+TOOL_WORD_RE = re.compile(r'(?:\bbacklog\.py|\bkit(?:\.py|\.cmd|\.exe)?\W{1,4}backlog)\b["\':]?')
+PLAIN_RE = re.compile(r'[A-Za-z][A-Za-z0-9-]*')
 
 
 def py_reach(text, writes=None):
@@ -869,9 +856,8 @@ def py_reach(text, writes=None):
 
 
 def py_trees(text):
-    """python's syntax trees of `text`, read whole and from its second line (python -x; dropped when
-    it does not parse), or None when the guard cannot read it: it does not parse whole, may be cut at
-    SCRIPT_CAP, or declares a coding other than UTF-8."""
+    """python's syntax trees of `text`, read whole and from its second line (python -x; dropped when it does not
+    parse), or None: it does not parse whole, may be cut at SCRIPT_CAP, or declares a non-UTF-8 coding."""
     if len(text.encode('utf-8', 'surrogatepass')) >= SCRIPT_CAP - 3:
         return None
     cut = text.find('\n')                       # python -x skips up to the first \n only
@@ -895,10 +881,11 @@ def py_trees(text):
 
 
 def _tree_reach(ast, tree, writes=None):
-    """py_reach's reading of one syntax tree: 'imports <module>' for an import that counts
-    (PY_REACH_PARTS), else the first name that can run code or a process (PY_RUN_*), else, with
-    `writes` not None, the first write of the store (_file_write), else None."""
+    """py_reach's reading of one syntax tree: 'imports <module>' for an import that counts (PY_REACH_PARTS), else the
+    first name that can run code or a process (PY_RUN_*) when a string names a run (_names_run), else, with `writes`
+    not None, the first write of the store (_file_write), else None."""
     runner = kit_import = reach = writer = None
+    armed, tails, inert = False, {}, set()      # a string names a run; list items after one (_names_run); docstrings
     backlog_used = False                       # backlog as code (x.backlog) or named in a string (_names_backlog)
     bound, names = set(), {'*'}                 # names a backlog or kit import binds; names the code holds
     for node in ast.walk(tree):
@@ -924,8 +911,17 @@ def _tree_reach(ast, tree, writes=None):
             backlog_used = backlog_used or node.attr == 'backlog'
             if node.attr == 'path' and isinstance(node.value, ast.Name) and node.value.id == 'sys':
                 found = {'sys.path'}            # a folder put on the import path: sys.path.insert(0, 'kitlib/backlog')
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            s = node.value.strip()              # and each dotted part: pkgutil.resolve('os.system'), 'os:system'
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            inert.add(id(node.value))           # a docstring: words, never run
+        elif isinstance(node, (ast.List, ast.Tuple)):   # an item, or an argument of a call that is one, reads on
+            for k, elt in enumerate(node.elts):
+                tails.update((id(c), (node.elts, k + 1)) for c in [elt] + (elt.args if type(elt) is ast.Call else []))
+                if k and isinstance(elt, ast.Constant) and elt.value == 'backlog':    # the kit command's word
+                    armed = armed or _names_run(ast, 'kit backlog', node.elts, k + 1)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, (str, bytes)):
+            v = node.value.decode('latin-1') if isinstance(node.value, bytes) else node.value
+            armed = armed or (id(node) not in inert and _names_run(ast, v, *tails.get(id(node), ())))
+            s = v.strip() if v is node.value else ''    # and its dotted parts: resolve('os.system'), 'os:system'
             found = ({s} | set(PY_PART_RE.split(s))) & (PY_RUN_MODULES | PY_RUN_ATTRS | PY_RUN_BUILTINS)
             backlog_used = backlog_used or _names_backlog(s)
         elif writes is not None and isinstance(node, ast.Call) and writer is None:
@@ -934,7 +930,21 @@ def _tree_reach(ast, tree, writes=None):
             runner = sorted(found)[0]
     if reach and (backlog_used or bound & names):
         return reach
-    return (kit_import if backlog_used else None) or runner or writer
+    return (kit_import if backlog_used else None) or (runner if armed else None) or writer
+
+
+def _names_run(ast, s, elts=(), k=0):
+    """True when the string `s` names the tool or library (CODE_RE) other than as a run (TOOL_WORD_RE) whose verb (its
+    words after it, then the list items elts[k:], each a string or one unread word, a starred one none) is a read
+    (policy.READS) or a plain word the tool has no verb for (PLAIN_RE)."""
+    from kitlib.backlog import policy
+
+    def drop(m):
+        verb = policy.read_argv([(w, True) for w in s[m.end():].split()] + [
+            (e.value, True) if isinstance(e, ast.Constant) and isinstance(e.value, str) else
+            ('', not isinstance(e, ast.Starred) and policy.ONE) for e in elts[k:]]).verb or ''
+        return ' ' if verb in policy.READS or (verb not in policy.OPTIONS and PLAIN_RE.fullmatch(verb)) else m.group(0)
+    return CODE_RE.search(TOOL_WORD_RE.sub(drop, s)) is not None
 
 
 # a file opened for writing (_file_write, heredoc code only): python's open mode, its letters each
@@ -944,15 +954,13 @@ PY_READ_FLAGS = frozenset(('O_RDONLY', 'O_BINARY', 'O_NOINHERIT', 'O_CLOEXEC')) 
 
 
 def _write_mode(s):
-    """True when `s` is a valid python open mode that writes ('w', 'a+', 'rb+'); 'art', 'tab',
-    'r' and a file name are not."""
+    """True when `s` is a python open mode that writes ('w', 'a+', 'rb+'; not 'art', 'tab', 'r' or a file name)."""
     return (len(set(s)) == len(s) and set(s) <= set('rwaxbt+U') and sum(c in s for c in 'rwax') == 1
             and not ('b' in s and 't' in s) and any(c in s for c in 'wax+'))
 
 
 def _read_flags(ast, v):
-    """True when os.open's flags `v` are plainly read-only: O_RDONLY, alone or or-ed with
-    PY_READ_FLAGS (os.O_RDONLY | os.O_BINARY)."""
+    """True when os.open's flags `v` are plainly read-only: O_RDONLY, alone or or-ed with PY_READ_FLAGS."""
     if isinstance(v, ast.BinOp) and isinstance(v.op, ast.BitOr):
         return _read_flags(ast, v.left) and _read_flags(ast, v.right)
     name = v.attr if isinstance(v, ast.Attribute) else v.id if isinstance(v, ast.Name) else None
@@ -960,12 +968,11 @@ def _read_flags(ast, v):
 
 
 def _file_write(ast, node, named, hit):
-    """'opens a file for writing (<call>)' when the call `node` may write the store: its target a
-    literal `hit` (store_hit) finds the store in, or one the guard cannot read while the code names
-    the store (`named`); else None. A write: write_text, write_bytes; os.open not plainly read-only
-    (_read_flags); an open whose mode (mode=, **, the builtin's second argument, an attribute .open's
-    first or second) writes (_write_mode) or is not a literal. The target: open's, os.open's,
-    io.open's or codecs.open's first argument, else the *Path(<literals>) the method is called on."""
+    """'opens a file for writing (<call>)' when the call `node` may write the store: its target a literal `hit`
+    (store_hit) finds the store in, or one the guard cannot read while the code names the store (`named`); else None. A
+    write: write_text, write_bytes; os.open not plainly read-only (_read_flags); an open whose mode (mode=, **, the
+    builtin's 2nd argument, an attribute .open's 1st or 2nd) writes (_write_mode) or is not a literal. The target:
+    open's, os.open's, io.open's or codecs.open's first argument, else the *Path(<literals>) it is called on."""
     f = node.func
     builtin = isinstance(f, ast.Name) and f.id == 'open'
     mod = isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in ('os', 'io', 'codecs')
@@ -993,9 +1000,8 @@ def _file_write(ast, node, named, hit):
 
 
 def _names_backlog(s):
-    """True when the string `s` names the tool or the backlog's library other than as a
-    kitlib/backlog path (PY_REACH_PARTS): a CODE_RE name that is not one, or a dotted part
-    'backlog' (a bare tool name a kitlib helper takes)."""
+    """True when the string `s` names the tool or library other than as a kitlib/backlog path (PY_REACH_PARTS): a
+    CODE_RE name that is not one, or a dotted part 'backlog' (a bare tool name a kitlib helper takes)."""
     if 'backlog' in PY_PART_RE.split(s):
         return True
     return any(PY_BACKLOG_PATH_RE.match(m.group(0)) is None for m in CODE_RE.finditer(s))
@@ -1003,12 +1009,11 @@ def _names_backlog(s):
 
 def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1, landed=False):
     """The code `cmd` runs from a script file or its standard input (`text`, read in `kind`: shell.BASH, shell.PS or
-    'py'): a shell's text is read as a command line in the shell that runs it and its commands judged by runs and
-    gate-allow (gaterole.shell), an unreadable one by fallback.named_runs at `level` (past level 0 it reads no file the
-    text names); a judged subagent's python by py_reach (CODE_RE, then its syntax tree: a name only printed or in a
-    comment passes), except the kit's own (_kit_code of `path`) and, with `landed` (the script file a command names),
-    its repository's landed code (landed_script). -c code is backlog_code's (py_reach for the code word, c_code). A
-    refusal is reworded to begin with `head`."""
+    'py'): a shell's text as a command line in the shell that runs it, its commands judged by runs and gate-allow
+    (gaterole.shell), an unreadable one by fallback.named_runs at `level` (past level 0 it reads no file the text
+    names); a judged subagent's python by py_reach (CODE_RE, then its syntax tree: a runner counts only beside a
+    string naming a run other than a read), except the kit's own (_kit_code of `path`) and, with `landed` (the script
+    file a command names), its landed code (landed_script). -c code is backlog_code's. A refusal begins with `head`."""
     if kind == 'py':
         why = py_reach(text) if _judged_subagent(event) else None
         if not why or (path and (_kit_code(ctx, path) or (landed and landed_script(event, ctx, cwd, path)))):
@@ -1039,9 +1044,8 @@ def store_kind(ctx, path):
 
 
 def _store_read(ctx, path):
-    """(store_kind for `path`, why the .kit.json there did not read: a text, or None). A load that
-    raises other than ConfigError (a file that is not UTF-8: kitlib.config lets that through, so
-    ctx.config_error has no word of it) answers no store and its fault."""
+    """(store_kind for `path`, why its .kit.json did not read: a text, or None). A load raising other than ConfigError
+    (not UTF-8: kitlib.config lets it by, unseen by ctx.config_error) gives no store and its fault."""
     try:
         cfg = ctx.config(path)
         return (cfg.section('backlog')['store'] if cfg is not None else None), None
@@ -1050,10 +1054,9 @@ def _store_read(ctx, path):
 
 
 def is_store_ref(name, store, short=False):
-    """True when the ref `name` is the store's: under refs/backlog/ always, and with a `branch`
-    store the backlog branch (refs/heads/backlog, refs/remotes/<remote>/backlog; `short`: its
-    bare name too, as push and branch read one). A wildcard matches when it would take one. Case
-    is not compared: on this machine's file system refs/Backlog/x is the file refs/backlog/x."""
+    """True when the ref `name` is the store's: under refs/backlog/ always, with a `branch` store the backlog branch
+    (refs/heads/backlog, refs/remotes/<remote>/backlog; `short`: its bare name too, as push and branch read one); a
+    wildcard if it would take one. Case is ignored: on this machine refs/Backlog/x is the file refs/backlog/x."""
     name = name.lstrip('+').lower()
     if '*' in name:
         import fnmatch
@@ -1069,10 +1072,9 @@ def is_store_ref(name, store, short=False):
 def _store_unsure(ctx, gc, where, fault=None):
     """Why store_kind's None for `where` is no proof that no store reads there (a text), or None: git re-pointed
     (gc.blind), a directory the text does not name (gc.unknown), a .kit.json that does not load (ctx.config_error) or
-    read (`fault`, _store_read), a place git cannot tell about, and any other place in a checkout: one whose main
-    checkout the guard does not find (ctx.main_top: a linked worktree whose git common dir is not named .git, as a bare
-    clone's or a --separate-git-dir repository's), so no .kit.json was read there. A folder in no checkout (repo.NONE)
-    is the one sure None."""
+    read (`fault`, _store_read), a place git cannot tell about, any other place in a checkout whose main checkout the
+    guard does not find (ctx.main_top: a git common dir not named .git, as a bare clone's or --separate-git-dir's), so
+    no .kit.json was read. A folder in no checkout (repo.NONE) is the one sure None."""
     if gc.blind:
         return 'git is re-pointed: %s' % gc.blind
     if gc.unknown:
@@ -1094,9 +1096,8 @@ def _store_unsure(ctx, gc, where, fault=None):
 def _written_refs(gc, store, unsure=None):
     """The store refs the git call `gc` writes (texts), and why it may write the store's ref (a text) when its words do
     not name it: a mirror push, or, where a store reads (`store` not None) or may (`unsure`, _store_unsure), an
-    update-ref whose ref the guard cannot read (rules._update_ref_unread: --stdin, an option it does not know, xargs, a
-    computed word, no ref). Where none reads, such an update-ref still writes every store ref its words name
-    literally."""
+    update-ref whose ref the guard cannot read (rules._update_ref_unread: --stdin, an unknown option, xargs, a computed
+    word, no ref). Where none reads, such an update-ref still writes every store ref its words name literally."""
     sub = gc.sub
     short, longs, pos = rules._opts(sub, gc.rest)
     texts = [w.text for w in pos if not w.dyn]
@@ -1143,10 +1144,10 @@ def _written_refs(gc, store, unsure=None):
 
 def store_ref_write(event, ctx, cmd, inv, cwd, role):
     """Any session's but the owner's git write of the backlog store's ref: update-ref, a push or a fetch whose
-    destination is it, a mirror push, an update-ref whose ref the guard cannot read where a store reads or the guard
-    cannot tell (store_kind, _store_unsure; it fails closed: --stdin, xargs, a computed ref; not in a scratch
-    repository, rules._scratch_repo, as git-shared-ref), and with a `branch` store a branch write of the backlog
-    branch. The store tool writes it (its compare-and-swap) as a process, which no rule reads."""
+    destination is it, a mirror push, an update-ref whose ref the guard cannot read where a store reads or may
+    (store_kind, _store_unsure; fails closed: --stdin, xargs, a computed ref; not in a scratch repository,
+    rules._scratch_repo, as git-shared-ref), and with a `branch` store a write of the backlog branch. The store
+    tool's own write (its compare-and-swap) is a process no rule reads."""
     if rules.is_owner_session(event, ctx):
         return None
     gc = rules.git_call_judged(inv)
@@ -1207,9 +1208,8 @@ def raw_edit(event, ctx, target, role, what):
 
 
 def audit_edit(event, ctx, target, role, what):
-    """Any session's but the owner's write in <pm_data>/audit/ (the machine config's pm_data.path):
-    the backlog's audit log, which tools/backlog.py alone appends to after its writes. With no
-    pm_data named there is no log, and nothing to refuse."""
+    """Any session's but the owner's write in <pm_data>/audit/ (the machine config's pm_data.path): the backlog's audit
+    log, which tools/backlog.py alone appends to after its writes. No pm_data, no log to refuse."""
     if not target or rules.is_owner_session(event, ctx):
         return None
     data = ctx.pm_data_path()

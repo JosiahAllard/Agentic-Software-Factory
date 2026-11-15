@@ -60,10 +60,12 @@ counts and the kit's own reason codes only, never free text.
 Stand-down (stage 4): read once per repository per run, and only for a coordinator that is free
 with something offered. `standdown(top)` reads the main checkout's `.kit.json`:
   backlog.fill_queued_max (default 3): 0 is `off` (always stood down, nothing surveyed); else
-             `queued N>=MAX` when N branches wait to land: the verdict queue's entries not expired
+             `queued N>=MAX` when N branches wait to land, the repository's count (the verdict queue
+             is the repo's, not the coordinator's): the verdict queue's entries not expired
              (kitlib.landing.verdicts), and every worktree branch, live or not, whose tip has a green
-             gate-OK record (classify.gate_state) and is not in main as fetched; each branch once.
-             A tip git cannot place against main counts.
+             gate-OK record (classify.gate_state) and is not in the landing target as fetched (the
+             staging branch when staging is on, else main); each branch once. A tip git cannot
+             place against it counts.
   backlog.fill_idle_max (default 2): `idle N>=MAX` when N worktrees are class B or C under
              `--classify` with a dead bar of IDLE_AFTER_S (2 h, fixed); L trees never count. 0 is
              always stood down.

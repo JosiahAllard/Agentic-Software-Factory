@@ -1595,10 +1595,21 @@ class Unread(Base):
         "#!x\r\r\r\n# coding: utf-7\n# tools/backlog.py +AAo-import os+AAo-\n",
         # text that does not parse: refused as the name alone
         "print('tools/backlog.py'\n",
-        "breakpoint()  # then: python tools/backlog.py close X-1\n",
         # a runner named by a string's dotted part (pkgutil.resolve and the like)
         "from mylib import resolve\nresolve('os.system')('python tools/backlog.py close X-1')\n",
-        "from mylib import resolve\nresolve('os:system')('python tools/backlog.py close X-1')\n")
+        "from mylib import resolve\nresolve('os:system')('python tools/backlog.py close X-1')\n",
+        # a verb that is no read (backlogrole._names_run): computed, starred, a format, an f-string's, a write
+        "import subprocess\nsubprocess.run(['python', 'tools/backlog.py', verb, 'X-1'])\n",
+        "import subprocess\nsubprocess.run(['python', 'tools/backlog.py', *args])\n",
+        "import os\nos.system('python tools/backlog.py %s X-1' % 'close')\n",
+        "import os\nv = 'close'\nos.system(f'python tools/backlog.py {v} X-1')\n",
+        "import os\nos.system(b'python tools/backlog.py close X-1')\n",
+        "import os, subprocess, sys\n"
+        "subprocess.run([sys.executable, os.path.join(k, 'tools', 'backlog.py'), '-C', r, 'close', x])\n",
+        "import unittest\nX = (1, 'backlog.py:close', None)\n",
+        # the kit command split across list items
+        "import subprocess\nsubprocess.run(['kit', 'backlog', 'close', 'X-1'])\n",
+        "import subprocess, sys\nsubprocess.run([sys.executable, 'tools/kit.py', 'backlog', 'close', 'X-1'])\n")
 
     def test_a_python_script_that_reaches_the_tool_is_refused(self):
         for k, body in enumerate(self.REACHES):
@@ -1607,6 +1618,76 @@ class Unread(Base):
                 d = self.refused(self.cmd('python "%s"' % path), 'backlog-raw-write')
                 self.assertIn('whose code ', d.reason)
                 self.allowed(self.cmd('python "%s"' % path, sub=False, env=COORDINATOR))
+
+    # a repository's script and its test that only ask the tool for a record (seen refused live: a game repository's
+    # tools/live_rerun_gate.py and tools/test_live_rerun_gate.py), their strings verbatim; backlogrole._names_run
+    GATE = r'''"""The rerun gate: names a record the backlog store does not hold (or the store
+cannot be asked: the live kit's
+`backlog.py show`, which fetches the store, fails closed).
+"""
+import os
+import subprocess
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import _paths  # noqa: E402  (the live kit, whose backlog.py answers for a record)
+
+
+def _record_exists(root, record):
+    """True when the backlog store holds `record` (an ended one too): the live kit's
+    `backlog.py -C <root> show <record>` exits 0; False on its exit 1 `NOT FOUND`."""
+    kit = _paths.live_kit()
+    r = subprocess.run([sys.executable, os.path.join(kit, 'tools', 'backlog.py'), '-C', root, 'show', record],
+                       capture_output=True, text=True)
+    if r.returncode == 0:
+        return True
+    raise RuntimeError('the backlog store cannot be asked for %s (backlog.py show exit %d)' % (record, r.returncode))
+'''
+    GATE_TEST = r'''"""Tests for tools/live_rerun_gate.py."""
+import os
+import sys
+import unittest
+from unittest import mock
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import live_rerun_gate as gate  # noqa: E402
+
+RECORD = 'X-1'
+
+
+class RecordCheck(unittest.TestCase):
+    """_record_exists asks the live kit's backlog.py show (its kit and process stubbed here)."""
+
+    def test_the_store_is_asked_through_the_kits_backlog_show(self):
+        with mock.patch.object(gate._paths, 'live_kit', return_value='KIT'), \
+                mock.patch.object(gate.subprocess, 'run') as run:
+            for rc, stdout, want in ((0, 'X  rank *  ended\n', True), (1, 'NOT FOUND: no record\n', False),
+                                     (1, 'backlog.py: fetch failed\n', None), (2, '', None)):
+                run.return_value = mock.Mock(returncode=rc, stdout=stdout)
+        self.assertEqual([os.path.join('KIT', 'tools', 'backlog.py'), '-C', 'ROOT', 'show', RECORD],
+                         run.call_args[0][0][1:])
+'''
+
+    def test_a_python_script_that_only_reads_the_tool_runs(self):
+        os.makedirs(os.path.join(self.w.wt, 'tools'))
+        for name, body in (('tools/live_rerun_gate.py', self.GATE), ('tools/test_live_rerun_gate.py', self.GATE_TEST)):
+            with self.subTest(name):
+                self.script(name, body)
+                self.allowed(self.cmd('python %s --script "x"' % name))
+                self.script(name, body.replace("'show', R", "'close', R").replace("'show', r", "'close', r"))
+                self.refused(self.cmd('python %s --script "x"' % name), 'backlog-raw-write')
+        for k, body in enumerate(("import os\nos.system('python tools/backlog.py next')\n",
+                                  "import subprocess\nsubprocess.run(['python', 'tools/backlog.py', 'list'])\n",
+                                  "import subprocess\nsubprocess.run(['kit', 'backlog', 'show', 'X-1'])\n",
+                                  "breakpoint()  # then: python tools/backlog.py close X-1\n",
+                                  '"""Then run: python tools/backlog.py close X-1"""\nimport os\nos.system("git status")\n')):
+            with self.subTest(body):
+                self.allowed(self.cmd('python "%s"' % self.script('n%d.py' % k, body)))
+        self.allowed(self.cmd('python -c "import os; os.system(\'python tools/backlog.py show X-1\')"'))
+        d = self.cmd('python -c "import subprocess; subprocess.run([\'kit\', \'backlog\', \'close\', \'X-1\'])"')
+        self.refused(d, 'backlog-raw-write')
 
     def test_a_python_script_that_only_imports_the_backlog_runs(self):
         # an import counts only when the code uses it (backlogrole._tree_reach); used: REACHES

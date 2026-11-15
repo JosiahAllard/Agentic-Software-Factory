@@ -568,13 +568,29 @@ class CliTest(WriteBase):
         self.assertIn('Q: Drop rule landing.alone from kit.md?', entry)
         self.assertIn('Decides: dropped landing.alone: it is obsolete [rule kit.md landing.alone dropped]', entry)
         self.assertNotIn('landing.alone', self.read(self.kit_path()))
+        r = self.run_tool('conflicts', '--repo', 'all', '--topic', 'Landing', '--key', 'landing.fast',
+                          '--text', 'Fast.')
+        checked = r.stdout.splitlines()[-1].split('checked: ', 1)[1]
+        r = self.run_tool('add', '--repo', 'kit', '--prov', 'selected', '--q', 'q', '--a', 'a',
+                          '--decides', 'Fast.', '--source', 's', '--rule', 'landing.fast', '--topic',
+                          'Landing', '--checked', checked, '--book', 'all')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        kit = self.read(self.kit_path())
+        r = self.run_tool('rule-drop', 'landing.fast', '--repo', 'kit', '--book', 'all', '--prov', 'selected',
+                          '--why', 'moved to docs', '--source', 's')
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn('Q: Drop rule landing.fast from all.md?', write.show(self.read(self.log), rid(6)))
+        self.assertIn('Decides: dropped landing.fast: moved to docs [rule all.md landing.fast dropped]',
+                      write.show(self.read(self.log), rid(6)))
+        self.assertNotIn('landing.fast', self.read(os.path.join(self.rules, 'all.md')))
+        self.assertEqual(self.read(self.kit_path()), kit)
         r = self.run_tool('rule-set', '--repo', 'kit', '--book-title', 'Kit book', '--prov', 'selected',
                           '--why', 'rename', '--source', 's')
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn('# Kit book\n', self.read(self.kit_path()))
         kit = rulebook.parse(self.read(self.kit_path()), 'kit')[0]
         self.assertIn('[rulebook kit.md header %s]' % rulebook.header_digest(kit),
-                      write.show(self.read(self.log), rid(5)))
+                      write.show(self.read(self.log), rid(7)))
         self.assertEqual(self.run_tool('rule-set', '--repo', 'kit', '--prov', 'selected', '--why', 'x',
                                        '--source', 's').returncode, 2)
         r = self.run_tool('rule-set', '--repo', 'kit', '--budget', '12', '--prov', 'selected', '--why', 'x',

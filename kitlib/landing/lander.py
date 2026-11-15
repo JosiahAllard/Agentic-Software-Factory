@@ -90,14 +90,14 @@
                  passed in the branch gate
                  of exactly this tree may count without running (kitlib.gate.reuse; never with
                  --fresh; a batch reuses per step like one branch; one branch also
-                 from its tip's --full record of this tree, reuse.same_tree). A merge that is docs-only under the base's config
+                 from its tip's --full or select record of this tree, reuse.same_tree). A merge that is docs-only under the base's config
                  (not --full) runs only the "gate".docs_only steps (docs/gate-run.md "Docs-only
                  changes"). A merge whose diff changes a gate config file (reuse.config_hits)
                  runs --full once (Lander.config_escalate: every step that is not manual, each
                  its full_cmd, no reuse). Red, or a gate where nothing ran: NOT LANDED, the
                  merge dropped (it is only in the landing tree; the landing never moves main),
                  the lock released: FAILED / REFUSED.
-                 Routed to a node (2b): main gates it instead when the tip's --full record has
+                 Routed to a node (2b): main gates it instead when the tip's --full or select record has
                  the merge's tree (landroute.same_tree_why), when no node qualifies at the turn
                  (landroute.recheck; another that does takes it), or when nothing ran on the node
                  (landroute.Fallback): `gating here: <why>`, the 1-slot run released, then a

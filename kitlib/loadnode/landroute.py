@@ -7,7 +7,7 @@ tool reaches is a lock path, kitlib.lock.release.LOCK_PATHS).
               repository in, asked now, against main's own lock (route.choose with the land verb)
   route_line  the line to say for a plan: `gating here: <why>` or `gating on load node <n>: ...`
   recheck     at the landing's turn: the nodes asked again, the best that qualifies now, or main
-  same_tree_why  why a one-branch landing gates on main: the tip's --full record has the merge's
+  same_tree_why  why a one-branch landing gates on main: the tip's --full or select record has the merge's
               tree, so main's merged gate reuses its steps (kitlib.gate.reuse.same_tree) and a
               node's never does
   run_on_node the land job on one node: a gate Outcome land.py reads as it reads
@@ -133,7 +133,7 @@ def recheck(nodes, repo, need, runner=None):
 
 def same_tree_why(root, cfg, branch, tip, base, merge, batch=1, fresh=False, full=False):
     """Why the merged gate of `merge` gates on main, or None: a one-branch landing (batch 1, not
-    --fresh or --full) whose tip's --full record has the merge's tree, so main's merged gate
+    --fresh or --full) whose tip's --full or select record has the merge's tree, so main's merged gate
     serves its steps from that record (kitlib.gate.reuse.same_tree) and a node's never does.
     None when git cannot tell: main's gate then runs every step as well."""
     if batch != 1 or fresh or full:

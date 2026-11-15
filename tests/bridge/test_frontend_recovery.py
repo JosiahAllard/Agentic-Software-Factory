@@ -16,11 +16,17 @@ import uuid
 
 from optional.bridge.hosts.codex.context import CodexObserver
 from optional.bridge.hosts.codex.runtime import CodexSources
-from optional.bridge.win.frontend import serve_frontend,service_target
+from optional.bridge.win.frontend import TOOL_CALL_SECONDS,serve_frontend,service_target
 from optional.bridge.win.lifecycle import Supervisor
 from kitlib.proc.job import Job
 from kitlib.proc.process import own_ctime
 from tests.bridge.registered import no_refused_pairs
+
+# How long a test waits for the frontend's reply to one frame: its longest chain, a queued
+# notification's replayed initialize and own forward, then the call's initialized and tool
+# frame, at rpc's 5 s handshake budget each plus TOOL_CALL_SECONDS, and slack. The frontend's
+# budgets decide the outcome; a helper's start on a loaded machine must not. A reply ends it.
+REPLY_SECONDS=3*5+TOOL_CALL_SECONDS+5
 
 
 def retry_refused(call):
@@ -115,7 +121,7 @@ class FrontendRecoveryTests(unittest.TestCase):
         self.frontend.stdin.write(json.dumps(message).encode()+b'\n')
         self.frontend.stdin.flush()
 
-    def call(self,method,params=None, *, wait=8):
+    def call(self,method,params=None, *, wait=REPLY_SECONDS):
         self.next_id+=1
         message={'jsonrpc':'2.0','id':self.next_id,'method':method}
         if params is not None:message['params']=params
@@ -136,7 +142,7 @@ class FrontendRecoveryTests(unittest.TestCase):
         self.assertIn('result',response,response)
         return response['result']
 
-    def connections(self,meta=None, *, wait=8):
+    def connections(self,meta=None, *, wait=REPLY_SECONDS):
         return self.call('tools/call',{'name':'bridge_connections','arguments':{},
             '_meta':self.meta if meta is None else meta},wait=wait)
 
@@ -149,7 +155,7 @@ class FrontendRecoveryTests(unittest.TestCase):
             return read(observer,path)
         self.initialize()
         with patch.object(CodexObserver,'_read_whole',cold):
-            response=self.connections(wait=14)
+            response=self.connections()
         self.assertFalse(self.result(response)['isError'],response)
         self.assertEqual(len(self.supervisor.controller.pairs.registered()),1)
 

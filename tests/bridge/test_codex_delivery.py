@@ -185,8 +185,13 @@ class CodexDeliveryTests(unittest.TestCase):
                 creationflags=0x08000000)
             wrong = NativeEndpoint(self.name, other.pid, proc_ctime(other.pid), str(Path(sys.executable).resolve()))
             try:
-                with self.assertRaises(BeforeWriteError):
-                    NativeToolsPipe(timeout=2).call(wrong, {'id': 'fixture-id'}, before_write=self.check)
+                # start_timeout 10 (the most allowed): a slow helper start under load must reach
+                # the helper's own server-pid check, not the start-phase refusal, and the code
+                # proves which refusal it was.
+                with self.assertRaises(BeforeWriteError) as caught:
+                    NativeToolsPipe(timeout=2, start_timeout=10).call(wrong, {'id': 'fixture-id'},
+                        before_write=self.check)
+                self.assertEqual(caught.exception.code, 'codex-native-peer-unavailable-before-write')
             finally:
                 job.terminate(1)
                 other.wait(timeout=2)

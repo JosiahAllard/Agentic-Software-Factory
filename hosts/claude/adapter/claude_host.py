@@ -6,7 +6,9 @@ projects/<folder>/<id>.jsonl transcripts with subagent transcripts under <id>/, 
 Remote Control link), the CLI's usage-limit API error entry, and the machine-lock alerts folder
 under ~/.claude.
 Moved here from kitlib/pmwatch by the host split (step 1); step 2 puts it behind SessionHost.
-Nothing in kitlib.pmwatch reads these paths or formats.
+Nothing in kitlib.pmwatch reads these paths or formats. The launcher's account reads take the
+login in .credentials.json (login_of) and the sign-in command (LOGIN) from here too, through
+kitlib.host.registry.host_module.
 """
 import functools
 import glob
@@ -207,3 +209,22 @@ def newest_finder(roots=None):
     if roots is None:
         return lambda name: newest_transcript(name, project_roots())
     return lambda name: newest_transcript(name, roots)
+
+
+# The launcher's credentials reads (kitlib.launcher.accounts, docs/launcher.md "Accounts"): the
+# command that signs a config folder in, run with its config-folder variable set to that folder.
+LOGIN = "claude auth login"
+
+
+def login_of(data):
+    """The login in a config folder's parsed .credentials.json: None when it holds no claudeAiOauth
+    object (no login made, or not this host's file), else (held, end): held False once the login
+    has ended as the file records it (an empty refreshToken, expiresAt 0, which Claude Code writes
+    when a refresh is refused at the login's time limit, or loginEnded set; a past expiresAt alone is
+    the access token's, which Claude Code refreshes), end its refreshTokenExpiresAt as stored
+    (epoch ms) or None. kitlib.launcher.accounts compares end with the clock."""
+    oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
+    if not isinstance(oauth, dict):
+        return None
+    held = bool(oauth.get("refreshToken")) and oauth.get("expiresAt") != 0 and not oauth.get("loginEnded")
+    return held, oauth.get("refreshTokenExpiresAt")

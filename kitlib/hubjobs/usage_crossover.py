@@ -18,11 +18,22 @@ push `would-cross`; nothing is stopped or started. `normal`: crossings that ask 
 those and the stop-first path for a stalled session.
 
 Every key is decided on each run, and every acting step it gives runs in that run, in ACTS order:
-stop-stalled, stop-old, finish, start, ask, would-cross, the PM's first among steps of one kind
-(_Run.act). Each start is decided again just before it runs, on the state the run's earlier steps
-left, so the caps count this run's starts and no second start goes to an account until its reading
-is newer than the last start there: a start no longer due waits for a later run. A failed step
-leaves the others to run, and the run then fails.
+stop-stalled, stop-old, stop-new, restore, finish, start, ask, would-cross, the PM's first among
+steps of one kind (_Run.act). Each start is decided again just before it runs, on the state the run's
+earlier steps left, so the caps count this run's starts and no second start goes to an account until
+its reading is newer than the last start there: a start no longer due waits for a later run. A
+successor's stop (stop-new) is decided again the same way, on the hand-off records and its transcript
+read again, so a check-in or a write since the run began keeps it. A failed step leaves the others to
+run, and the run then fails.
+
+Sign-ins (docs/launcher.md "Accounts"): each account's login is read at each run
+(accounts.account_login). A `no-checkin` marks the crossing's target as possibly needing a sign-in
+(signed_out, once per start: the crossing keeps the start it marked as `marked`, so neither a
+repeated hold nor a sign-in during one marks it again); the mark is dropped when the account's
+credentials file changes, and while it stands the account is no target. An account whose
+login ended, ends within D.LOGIN_LEAD_S, or is marked gets one urgent hub to-do per login end or
+mark (`hub.py todos add --command <its login command>`), in notify mode too; a failed post is logged
+and tried again next run (one that timed out may post twice).
 
 Pushes (ctx.event, push.JOB_EACH: owed once per detail, each with its own text): crossing,
 would-cross, crossed, cross-cleared, cross-failed, stalled, no-ready, no-checkin, no-room, pm-limit,
@@ -31,8 +42,10 @@ unmanaged. A word goes out once per change, kept in the state file as `told`.
 State in <launcher.state_dir>/usage-crossover.json: {crossings: {key: {phase, phase_at, ...}},
 starts: {key: [epoch]}, asks: {key: [epoch]}, landed: {account: epoch of the last start there},
 told: {key: mark}, windows: {name: reset of the window already told}, readings: {account: text},
-cleared: {key: {account, reset}}, weeks: {account: [[updated epoch, week %]] of the last
-BURN_SPAN_S}, pm_old: {name, pid, created} of the PM's old process}. The same file is the
+cleared: {key: {account, reset, login: {account, end}}} (a week's and a login's, kept apart, each
+dropped once past), weeks: {account: [[updated epoch, week %]] of the last BURN_SPAN_S}, pm_old:
+{name, pid, created} of the PM's old process, signed_out: {account: {start_at, mtime}} of the
+no-checkin marks, signin_todos: {account: what its to-do was for}}. The same file is the
 claim: coord-restart holds a key whose crossing moved phase less than CLAIM_TTL_S ago. A bad file
 is a failure, here and in coord-restart, never read as empty.
 
@@ -116,14 +129,24 @@ CONSULTANT_CHECKPOINT = ("The hub's usage crossover: this session's account is n
 RESUME = ("The hub's usage crossover was dropped: this session stays on its account. Resume your normal work.")
 
 
-def checkpoint_text(key, target):
-    return CHECKPOINT % (target, key)
+NEAR = 'account is near its weekly limit'      # each checkpoint text's reason; a login crossing's: LOGIN_NEAR
+LOGIN_NEAR = "account's login ends %s"
+
+
+def _reason(text, login_end):
+    """A checkpoint text with a login crossing's reason (login_end a number) for the week's."""
+    return text.replace(NEAR, LOGIN_NEAR % D.when(login_end)) if D._number(login_end) else text
+
+
+def checkpoint_text(key, target, login_end=None):
+    return _reason(CHECKPOINT % (target, key), login_end)
 
 
 def unlisted_checkpoint_text(c, target):
     """The checkpoint message of the unlisted crossing `c` (DEEP_CHECKPOINT, CONSULTANT_CHECKPOINT)."""
     text = CONSULTANT_CHECKPOINT if c.get('kind') == UL.CONSULTANT else DEEP_CHECKPOINT
-    return text % {'target': target, 'name': c.get('old_name'), 'state': c.get('state_path'), 'ready': c.get('ready')}
+    return _reason(text % {'target': target, 'name': c.get('old_name'), 'state': c.get('state_path'),
+                           'ready': c.get('ready')}, c.get('login_end'))
 
 
 def unlisted_argv(kit, c, target, plan=False):
@@ -149,8 +172,8 @@ def unlisted_argv(kit, c, target, plan=False):
     return launch_argv(kit, *args)
 
 
-def pm_checkpoint_text(target):
-    return PM_CHECKPOINT % target
+def pm_checkpoint_text(target, login_end=None):
+    return _reason(PM_CHECKPOINT % target, login_end)
 
 
 def launch_argv(kit, verb, *args):
@@ -239,25 +262,27 @@ class CrossoverJob(object):
         pm_old = _old_pm(doc, lives)
         pm = {n for n, p in rows if n and _pm_row(n, p, coordinators)} | ({pm_old.name} if pm_old else set())
         pms = _pm_processes(rows, coordinators, pm_old)
-        accounts = self._accounts(settings)
         run = _Run(self, ctx, settings, doc, now)
         run.dirty = had_old and pm_old is None
+        accounts = self._accounts(settings, run)
         run.log_readings(accounts)
+        run.sign_in_todos(accounts)
         stalls = self._stalls(settings, lives)
-        olds = [c.get('old_name') for c in doc['crossings'].values() if isinstance(c, dict)]
+        olds = [c.get(f) for c in doc['crossings'].values() if isinstance(c, dict) for f in ('old_name', 'new_name')]
         quiet = self._quiet(set(stalls) | {n for n in olds if n}, now)
+        run.newest, run.quiet = newest, quiet      # refreshed in place before a successor's stop (_Run.act)
         running = _running(lives, coordinators)
         entries = dict(state.entries(sessions))
 
         def step(key, entry, live):
             crossing = doc['crossings'].get(key)
             name = (crossing or {}).get('old_name') or (live[0].name if live else None)
-            return D.decide(key, entry, crossing, live, stalls.get(name), quiet.get(name), accounts,
+            return D.decide(key, entry, crossing, live, stalls.get(name), _seconds(quiet, name), accounts,
                           newest.get(key), doc['starts'], running, doc['landed'],
                           settings.usage_crossover, now,
                           note_at=_mtime((crossing or {}).get('state_path')),
                           cleared=doc['cleared'].get(key), asks=doc['asks'].get(key),
-                          weeks=doc['weeks'])
+                          weeks=doc['weeks'], quiet_new=quiet.get((crossing or {}).get('new_name')))
 
         steps, known = [], set()
         for key in sorted(set(entries) | set(doc['crossings'])):
@@ -287,7 +312,7 @@ class CrossoverJob(object):
                 c = doc['crossings'].get(D.PM_DOC)
                 name = (c or {}).get('old_name') or (pms[0].name if len(pms) == 1 else None)
                 acct = (c or {}).get('account') or (pms[0].account if pms else None)
-                return D.decide_pm(pms, c, stalls.get(name), quiet.get(name), accounts, newest.get(PM_FROM),
+                return D.decide_pm(pms, c, stalls.get(name), _seconds(quiet, name), accounts, newest.get(PM_FROM),
                                  doc['starts'], running, doc['landed'], settings.usage_crossover, now,
                                  note_at=_mtime((c or {}).get('state_path')), cleared=doc['cleared'].get(D.PM_DOC),
                                  asks=doc['asks'].get(D.PM_DOC), points=doc['weeks'].get(str(acct)),
@@ -327,10 +352,11 @@ class CrossoverJob(object):
             def step(key=key, sess=sess, live=live):     # bound now: act may call it again
                 cur = doc['crossings'].get(key)
                 name = (cur or {}).get('old_name') or (sess.name if sess else None)
-                return D.decide_unlisted(key, sess, cur, live, stalls.get(name), quiet.get(name), accounts,
+                return D.decide_unlisted(key, sess, cur, live, stalls.get(name), _seconds(quiet, name), accounts,
                                        doc['starts'], running, doc['landed'], settings.usage_crossover, now,
                                        files=_files(cur), cleared=doc['cleared'].get(key),
-                                       asks=doc['asks'].get(key), weeks=doc['weeks'])
+                                       asks=doc['asks'].get(key), weeks=doc['weeks'],
+                                       quiet_new=quiet.get((cur or {}).get('new_name')))
             d = step()
             for _ in range(2):          # asked -> ready -> stop-first: state changes, no acting step
                 if d.action != D.ADVANCE:
@@ -365,23 +391,55 @@ class CrossoverJob(object):
 
     def _read(self, settings, now):
         """The state file, each part an object; missing is empty, a bad file a failure. A cleared
-        mark whose week has reset is dropped."""
+        mark's week part is dropped once its week has reset, its login part once that login's end
+        has passed; an entry with neither left is dropped."""
         data = state.read_json(state.path(settings, STATE_FILE)) or {}
         for part in ('crossings', 'starts', 'landed', 'told', 'windows', 'readings', 'cleared',
-                     'asks', 'weeks'):
+                     'asks', 'weeks', 'signed_out', 'signin_todos'):
             if not isinstance(data.get(part), dict):
                 data[part] = {}
         if not isinstance(data.get('pm_old'), dict):
             data.pop('pm_old', None)
-        data['cleared'] = {k: v for k, v in data['cleared'].items()
-                           if isinstance(v, dict) and D._number(v.get('reset')) and v['reset'] > now}
+        cleared = {}
+        for k, v in data['cleared'].items():
+            if not isinstance(v, dict):
+                continue
+            keep = {}
+            if D._number(v.get('reset')) and v['reset'] > now:
+                keep.update(account=v.get('account'), reset=v['reset'])
+            login = v.get('login')
+            if isinstance(login, dict) and D._number(login.get('end')) and login['end'] > now:
+                keep['login'] = login
+            if keep:
+                cleared[k] = keep
+        data['cleared'] = cleared
         return data
 
-    def _accounts(self, settings):
-        out = {}
+    def _accounts(self, settings, run):
+        """{account: AccountState} of this run, its logins kept as run.logins. A no-checkin mark
+        (signed_out) stands while the account's credentials file is unchanged since it was set;
+        signin: 'login ended', the mark's text, or 'login ends <when>' within D.LOGIN_LEAD_S."""
+        out, run.logins = {}, {}
+        marks = run.doc['signed_out']
         for n in settings.account_numbers():
+            acct = str(n)
             _, data = A.newest_usage(settings, n, by='updated')
-            out[str(n)] = C.AccountState(A.account_signed_in(settings, n), data)
+            login = run.logins[acct] = A.account_login(settings, n, run.now)
+            mark = marks.get(acct)
+            if mark is not None and (not isinstance(mark, dict) or mark.get('mtime') != login.mtime):
+                marks.pop(acct)
+                run.dirty = True
+                run.log('account %s: its credentials changed: the no-checkin mark dropped' % acct)
+                mark = None
+            if login.ended:
+                why = 'login ended'
+            elif mark is not None:
+                why = D.SIGNIN_MARK
+            elif login.signed_in and login.end is not None and login.end - run.now < D.LOGIN_LEAD_S:
+                why = 'login ends %s' % D.when(login.end)
+            else:
+                why = None
+            out[acct] = C.AccountState(login.signed_in and mark is None, data, login.end, why)
         return out
 
     def _stalls(self, settings, lives):
@@ -401,17 +459,27 @@ class CrossoverJob(object):
 
     def _quiet(self, names, now):
         """{name: seconds since its transcript was written} of these sessions (the stalled ones
-        and those of open crossings). An unreadable one is left out: unknown is not quiet."""
+        and those of open crossings): D.UNREADABLE for one that could not be read, none for one with
+        no transcript found. An old session reads both as not quiet (_seconds); a successor in
+        succ-stop is stopped on none found but held on UNREADABLE."""
         finder = self.host.newest_finder()
         out = {}
         for name in sorted(names):
             try:
                 t = finder(name)
             except OSError:
+                out[name] = D.UNREADABLE
                 continue
             if t is not None:
                 out[name] = now - t
         return out
+
+
+def _seconds(quiet, name):
+    """An old session's quiet seconds from _quiet's map, or None (unknown: never quiet): an
+    unreadable transcript counts as no reading."""
+    q = quiet.get(name)
+    return None if q == D.UNREADABLE else q
 
 
 def _mtime(path):
@@ -525,6 +593,8 @@ class _Run(object):
         self.dirty = False
         self.names = set()              # the names a new PM may not take (the live and the entries')
         self.unlisted = set()           # the keys of unlisted sessions (decide_unlisted)
+        self.logins = {}                # {account: accounts.Login} of this run (CrossoverJob._accounts)
+        self.newest, self.quiet = {}, {}    # the run's hand-off records and transcript times (refresh)
 
     def save(self):
         state.write_json(state.path(self.settings, STATE_FILE), self.doc)
@@ -560,7 +630,10 @@ class _Run(object):
             self.dirty = True
 
     def tell(self, key, d):
-        """Push d.word once per change of its mark: told[key] keeps the last one."""
+        """Push d.word once per change of its mark: told[key] keeps the last one. A `no-checkin`
+        marks its target first (mark_signed_out), told or not."""
+        if d.word == 'no-checkin':
+            self.mark_signed_out(key)
         if not d.word:
             if self.doc['told'].pop(key, None) is not None:
                 self.dirty = True
@@ -580,9 +653,67 @@ class _Run(object):
             self.dirty = True
             self.ctx.event(word, detail)
 
+    def mark_signed_out(self, key):
+        """Mark the target of key's crossing as possibly needing a sign-in: signed_out[target] =
+        {start_at, mtime of its credentials}, once per start: the crossing keeps the start it
+        marked (`marked`), so a hold repeated over runs never marks again, nor after a sign-in
+        (its credentials changed) dropped the mark while this start's successor still holds. The
+        target's landed stamp goes (no reading is waited for on an account that is no target)."""
+        c = self.doc['crossings'].get(key)
+        if not isinstance(c, dict) or c.get('target') in (None, ''):
+            return
+        if 'marked' in c and c['marked'] == c.get('start_at'):
+            return
+        target = str(c['target'])
+        c['marked'] = c.get('start_at')
+        login = getattr(self, 'logins', {}).get(target)
+        self.doc['signed_out'][target] = {'start_at': c.get('start_at'), 'mtime': login.mtime if login else None}
+        self.doc['landed'].pop(target, None)
+        self.dirty = True
+        self.log('account %s: marked as needing a sign-in: no check-in from %s' % (target, c.get('new_name')))
+
+    def sign_in_todos(self, accounts):
+        """One urgent hub to-do per account with a sign-in reason (AccountState signin) and per
+        login end or mark, through job.child: `hub.py todos add` with the account's login command
+        (accounts.login_command; no --command for a host without one).
+        signin_todos keeps what each was for; an account with no reason now is dropped from it. A
+        failed post is logged and tried again next run."""
+        done = self.doc['signin_todos']
+        for acct, st in sorted(accounts.items(), key=lambda t: int(t[0])):
+            why = getattr(st, 'signin', None)
+            if not why:
+                if done.pop(acct, None) is not None:
+                    self.dirty = True
+                continue
+            mark = self.doc['signed_out'].get(acct)
+            todo = ('ended' if why == 'login ended'
+                    else 'mark:%s' % mark.get('start_at') if why == D.SIGNIN_MARK and isinstance(mark, dict)
+                    else 'ends:%s' % st.login_end)
+            if done.get(acct) == todo:
+                continue
+            dirs = self.settings.account_dirs(acct)
+            command = A.login_command(dirs[0], self.settings.home) if dirs else None
+            detail = ('Account %s: %s. The usage crossover moves no session there until it is signed in '
+                      'again: %s' % (acct, why, 'run the command in a terminal and sign in.' if command
+                                     else "sign it in with its host's own sign-in."))
+            argv = [sys.executable, os.path.join(self.job.kit, 'tools', 'hub.py'), 'todos', 'add', '--urgent',
+                    '--title', 'Sign in account %s' % acct, '--detail', detail]
+            argv += ['--command', command] if command else []
+            argv += ['--from', NAME]
+            try:
+                code, lines = self.job.child(argv, self.job.kit)
+            except (subprocess.TimeoutExpired, OSError) as e:
+                code, lines = -1, [type(e).__name__]
+            self.log('account %s: sign-in to-do (%s): exit %s: %s' % (acct, why, code, (lines or ['no output'])[-1]))
+            if code == 0:
+                done[acct] = todo
+                self.dirty = True
+
     def advance(self, key, d):
+        """The next state; d.fields after the phase, so a field may keep phase_at (_resigned)."""
         c = self.doc['crossings'][key]
-        c.update(d.fields, phase=d.phase, phase_at=self.now)
+        c.update(phase=d.phase, phase_at=self.now)
+        c.update(d.fields)
         self.dirty = True
         self.log('%s: %s: now %s' % (key, d.note, d.phase))
 
@@ -594,8 +725,8 @@ class _Run(object):
             self.log('%s: %s' % (key, d.note))
         if d.action == D.CLEAR:
             self.doc['crossings'].pop(key, None)
-            if d.fields.get('reset') is not None:
-                self.doc['cleared'][key] = d.fields
+            if d.fields.get('reset') is not None or d.fields.get('login') is not None:
+                self.doc['cleared'].setdefault(key, {}).update(d.fields)    # a week's and a login's kept apart
             self.dirty = True
             self.tell(key, d)
         elif d.action == D.HOLD:
@@ -633,10 +764,13 @@ class _Run(object):
             if self.ctx.stop.is_set():
                 self.notes.append('%s: left for the next run (the hub is closing)' % key)
                 continue
-            if d.action == D.START:
+            if d.action in (D.START, D.STOP_NEW):
+                was = d.action
+                if was == D.STOP_NEW:
+                    self.refresh()
                 d = again()
-                if d.action != D.START:
-                    self.notes.append('%s: start left for the next run: %s' % (key, d.note))
+                if d.action != was:
+                    self.notes.append('%s: %s left for the next run: %s' % (key, was, d.note))
                     continue
             self.acted = True
             try:
@@ -647,6 +781,20 @@ class _Run(object):
             if self.dirty:
                 self.save()
             raise StepFailed('; '.join(failed))
+
+    def refresh(self):
+        """Before a successor's stop: the hand-off records and the transcript times of the
+        successors in succ-stop read again, in place (run.newest, run.quiet), so its decision sees a
+        check-in or a write made since the run began."""
+        fresh = self.job.handoffs()
+        if fresh is not None:
+            self.newest.clear()
+            self.newest.update(fresh)
+        names = {c.get('new_name') for c in self.doc['crossings'].values()
+                 if isinstance(c, dict) and c.get('phase') == D.SUCC_STOP and c.get('new_name')}
+        for n in names:
+            self.quiet.pop(n, None)
+        self.quiet.update(self.job._quiet(names, self.job.clock()))
 
     def _act_one(self, key, entry, live, d, newest, sessions, coordinators):
         if key == D.PM_DOC:
@@ -671,11 +819,12 @@ class _Run(object):
         c = self.doc['crossings'].get(key)
         if c is None:
             c = self._new_crossing(key, entry, live, d.target, D.c_number(newest), D.ASKED)
+            c.update(d.fields)          # a login crossing's login_end
             kept = {k: D.recent(v, self.now) for k, v in self.doc['asks'].items()}
             self.doc['asks'] = {k: v for k, v in kept.items() if v}
             self.doc['asks'].setdefault(key, []).append(self.now)
         self.save()
-        c['delivered'] = bool(self.job.deliver(c['old_name'], checkpoint_text(key, d.target)))
+        c['delivered'] = bool(self.job.deliver(c['old_name'], checkpoint_text(key, d.target, c.get('login_end'))))
         self.dirty = True
         if d.word:
             self.tell(key, d)
@@ -684,7 +833,7 @@ class _Run(object):
     def _start(self, key, entry, live, d, newest, sessions, coordinators):
         c = self.doc['crossings'][key]
         at = self.job.clock()           # the step's own time: earlier steps of the run took some
-        c.update(phase=D.STARTING, phase_at=at, target=d.target, high_c=D.c_number(newest),
+        c.update(phase=D.STARTING, phase_at=at, start_at=at, target=d.target, high_c=D.c_number(newest),
                  new_name=handoff.successor_name(entry, d.target, False))
         kept = {k: D.recent(v, at) for k, v in self.doc['starts'].items()}
         self.doc['starts'] = {k: v for k, v in kept.items() if v}
@@ -710,6 +859,34 @@ class _Run(object):
         c.update(phase=D.STARTED, phase_at=self.now)
         self.dirty = True
         self.notes.insert(0, '%s: sessions.json moved to %s' % (key, c['new_name']))
+
+    def _restore(self, key, entry, live, d, newest, sessions, coordinators):
+        """succ-stop, its successor gone: sessions.json (and coordinators.json) moved back to the
+        old session, read again here as in _finish, and only while the entry still names the
+        successor, so a second run writes nothing; then ready, retarget."""
+        c = self.doc['crossings'][key]
+        sessions = state.read_sessions(self.settings)
+        entry = dict(state.entries(sessions)).get(key)
+        if entry is None:
+            self.notes.insert(0, '%s: restore left for the next run: no sessions.json entry now' % key)
+            return
+        back = c.get('entry_name') or c['old_name']
+        if entry.get('name') == c.get('new_name'):
+            handoff.record_move(self.settings, sessions, state.read_coordinators(self.settings) or None, key, entry,
+                                c['account'], back)
+            self.notes.insert(0, '%s: sessions.json moved back to %s' % (key, back))
+        c.update(phase=D.READY, phase_at=self.now, retarget=True, stop_tries=0, stop_retry_at=None)
+        self.dirty = True
+
+    def _stop_new(self, key, entry, live, d, newest, sessions, coordinators):
+        """succ-stop: the successor that never checked in, by its name and pid (stop.py checks
+        both); counted first, as a stop of the old session is."""
+        c = self.doc['crossings'][key]
+        self._count_stop(c)
+        self.tell(key, d)
+        self.save()
+        self.notes.insert(0, '%s: stopping its successor %s' % (key, c['new_name']))
+        self._child(stop_argv(self.job.kit, c['new_name'], c['new_pid']))
 
     def _count_stop(self, c):
         """A stop is counted, and its backoff set, before the child: a refusal waits it out."""
@@ -799,6 +976,7 @@ class _Run(object):
         c = self.doc['crossings'].get(key)
         if c is None:
             c = self._u_open(key, sess, d.target, D.ASKED)
+            c.update(d.fields)          # a login crossing's login_end
             kept = {k: D.recent(v, self.now) for k, v in self.doc['asks'].items()}
             self.doc['asks'] = {k: v for k, v in kept.items() if v}
             self.doc['asks'].setdefault(key, []).append(self.now)
@@ -818,6 +996,7 @@ class _Run(object):
         new = key if c.get('kind') == UL.CONSULTANT else '%s-a%s' % (key, d.target)
         at = self.job.clock()           # the step's own time (_start)
         c.update(phase=D.STARTING, phase_at=at, start_at=at, target=d.target, new_name=new)
+        c.update(d.fields)              # back_home: a stopped consultant on its own account
         kept = {k: D.recent(v, at) for k, v in self.doc['starts'].items()}
         self.doc['starts'] = {k: v for k, v in kept.items() if v}
         self.doc['starts'].setdefault(key, []).append(at)
@@ -835,6 +1014,9 @@ class _Run(object):
         self.notes.insert(0, '%s: stopping %s' % (key, c['old_name']))
         self._child(stop_argv(self.job.kit, c['old_name'], c['old_pid'],
                               c.get('new_name') if c.get('phase') == D.STOPPING else None))
+
+    def _u_stop_new(self, key, sess, live, d):
+        self._stop_new(key, None, live, d, None, None, None)
 
     def _u_stop_stalled(self, key, sess, live, d):
         c = self.doc['crossings'].get(key)
@@ -874,11 +1056,12 @@ class _Run(object):
         c = self.doc['crossings'].get(D.PM_DOC)
         if c is None:
             c = self._pm_crossing(pms[0], d.target, D.c_number(newest), D.ASKED, coordinators)
+            c.update(d.fields)          # a login crossing's login_end
             kept = {k: D.recent(v, self.now) for k, v in self.doc['asks'].items()}
             self.doc['asks'] = {k: v for k, v in kept.items() if v}
             self.doc['asks'].setdefault(D.PM_DOC, []).append(self.now)
         self.save()
-        c['delivered'] = bool(self.job.deliver(PM_FROM, pm_checkpoint_text(d.target)))
+        c['delivered'] = bool(self.job.deliver(PM_FROM, pm_checkpoint_text(d.target, c.get('login_end'))))
         self.dirty = True
         if d.word:
             self.tell(D.PM_DOC, d)

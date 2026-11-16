@@ -124,7 +124,10 @@ _FIRST = ('restarted', 'restarted-unchecked', 'gave-up', 'over-limit', 'not-sign
 
 WAKE_IDS_SHOWN = 5             # record ids a wake's reason names before "+N more"
 
-AccountState = collections.namedtuple('AccountState', 'signed_in usage')
+# signed_in: a live login (accounts.signed_in); usage: its usage-status data or None; login_end: the
+# epoch its login ends (None: not known); signin: the crossover's to-do reason or None
+AccountState = collections.namedtuple('AccountState', 'signed_in usage login_end signin',
+                                      defaults=(None, None))
 # why a deliberate stop is started again; `then`: what the start's prompt says to do first
 Wake = collections.namedtuple('Wake', 'reason ids then', defaults=('run backlog next',))
 OWNER_KINDS = ('question', 'approval')    # the pending items that are an answer or a decision

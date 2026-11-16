@@ -1,7 +1,12 @@
 """Accounts: the launch folder, the headroom refusal, pick-account, and the usage report kitlib.pmwatch parses."""
 import datetime
+import json
 import os
+import shutil
+import sys
+import tempfile
 import unittest
+from unittest import mock
 
 from kitlib import pmwatch
 from kitlib.hubsite import derived
@@ -10,7 +15,7 @@ from kitlib.launcher import accounts as A
 from kitlib.launcher import settings as lsettings
 from kitlib.launcher import usage
 from tests.home import fence_decoy
-from tests.launcher.fakes import NOW, Home
+from tests.launcher.fakes import NOW, Home, credentials, sign_in
 
 DAY = datetime.timedelta(days=1)
 
@@ -29,6 +34,74 @@ class LaunchDir(unittest.TestCase):
         with self.assertRaisesRegex(A.LaunchError, 'Account 2 is not signed in'):
             A.launch_dir(h.settings, '2')
 
+    def test_an_ended_login_is_refused_with_its_login_command(self):
+        h = Home(self, accounts=('1',))
+        sign_in(h.accounts['1'][0], signed=False, ends_ms=1000)
+        with self.assertRaisesRegex(A.LaunchError, 'its login has ended.*claude auth login'):
+            A.launch_dir(h.settings, '1')
+
+
+class SignedIn(unittest.TestCase):
+    """The login read from .credentials.json, never the file's presence alone."""
+    NOW = 2000000000.0
+    LATER_MS = int((NOW + 86400) * 1000)
+
+    def folder(self, text=None):
+        d = tempfile.mkdtemp(prefix='kit-cred-')
+        self.addCleanup(shutil.rmtree, d, True)
+        if text is not None:
+            with open(os.path.join(d, A.CREDENTIALS), 'w') as f:
+                f.write(text)
+        return d
+
+    def oauth(self, **fields):
+        data = json.loads(credentials(ends_ms=self.LATER_MS))
+        data['claudeAiOauth'].update(fields)
+        return self.folder(json.dumps(data))
+
+    def test_a_live_login_is_signed_in_even_with_its_access_token_expired(self):
+        self.assertTrue(A.signed_in(self.oauth(expiresAt=1), self.NOW))
+
+    def test_the_file_claude_writes_at_the_time_limit_is_signed_out(self):
+        self.assertFalse(A.signed_in(self.folder(credentials(signed=False, ends_ms=self.LATER_MS)), self.NOW))
+
+    def test_expires_at_0_or_an_empty_refresh_token_is_signed_out(self):
+        self.assertFalse(A.signed_in(self.oauth(expiresAt=0), self.NOW))
+        self.assertFalse(A.signed_in(self.oauth(refreshToken=''), self.NOW))
+
+    def test_a_past_login_end_is_signed_out_before_claude_marks_it(self):
+        self.assertFalse(A.signed_in(self.oauth(refreshTokenExpiresAt=int(self.NOW * 1000)), self.NOW))
+
+    def test_no_login_end_stays_signed_in(self):
+        self.assertTrue(A.signed_in(self.folder(credentials()), self.NOW))
+
+    def test_an_empty_unreadable_or_missing_file_is_signed_out(self):
+        for text in (None, '', '{}', '[]', '{"mcpOAuth": {}}'):
+            self.assertFalse(A.signed_in(self.folder(text), self.NOW), text)
+
+    def test_account_login_gives_the_end_the_ended_state_and_the_newest_mtime(self):
+        h = Home(self, accounts=('1', '2', '3'), signed_out=('3',))
+        sign_in(h.accounts['1'][0], ends_ms=self.LATER_MS)
+        sign_in(h.accounts['2'][0], signed=False, ends_ms=1000)
+        os.utime(os.path.join(h.accounts['1'][0], A.CREDENTIALS), (self.NOW, self.NOW))
+        self.assertEqual(A.account_login(h.settings, '1', self.NOW),
+                         A.Login(True, False, self.NOW + 86400, self.NOW))
+        self.assertEqual(A.account_login(h.settings, '2', self.NOW)[:3], (False, True, None))
+        self.assertEqual(A.account_login(h.settings, '3', self.NOW), A.Login(False, False, None, None))
+
+    def test_the_login_command_leaves_the_shell_as_it_was(self):
+        with mock.patch('kitlib.platform.NAME', 'windows'):
+            cmd = A.login_command(r'C:\h\.claude-2', home=r'C:\h')
+            self.assertEqual(cmd, "$p = $env:CLAUDE_CONFIG_DIR; try { $env:CLAUDE_CONFIG_DIR = "
+                                  "'C:\\h\\.claude-2'; claude auth login } finally { $env:CLAUDE_CONFIG_DIR = $p }")
+            self.assertIn('Remove-Item Env:CLAUDE_CONFIG_DIR', A.login_command(r'C:\h\.claude', home=r'C:\h'))
+        home = os.path.abspath('/h')
+        with mock.patch('kitlib.platform.NAME', 'linux'):
+            other = os.path.join(home, '.claude-2')
+            self.assertEqual(A.login_command(other, home=home), "CLAUDE_CONFIG_DIR='%s' claude auth login" % other)
+            self.assertEqual(A.login_command(os.path.join(home, '.claude'), home=home),
+                             'env -u CLAUDE_CONFIG_DIR claude auth login')
+
     def test_an_org_needs_an_oauth_account_in_its_claude_json(self):
         h = Home(self)
         org = os.path.join(h.root, 'org1')
@@ -40,6 +113,63 @@ class LaunchDir(unittest.TestCase):
         with open(os.path.join(org, '.claude.json'), 'w') as f:
             f.write('{"oauthAccount": {"x": 1}}')
         self.assertEqual(A.org_launch_dir(s, '1'), org)
+
+
+class HostReads(unittest.TestCase):
+    """The host's own file readers, imported by their computed name (kitlib.host.registry.host_module):
+    a host without that module reads the file's presence; an error inside one propagates."""
+    NOW = 2000000000.0
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix='kit-hostreads-')
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.pkg = 'kit_hostreads_%d' % id(self)
+        os.makedirs(os.path.join(self.root, self.pkg))
+        open(os.path.join(self.root, self.pkg, '__init__.py'), 'w').close()
+        self.name = self.pkg + '.claude_host'
+        for p in (mock.patch.object(sys, 'path', [self.root] + sys.path),
+                  mock.patch.object(A.registry, 'host_module_name', return_value=self.name)):
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(lambda: [sys.modules.pop(m) for m in list(sys.modules)
+                                 if m.split('.')[0] == self.pkg])
+
+    def module(self, text):
+        with open(os.path.join(self.root, self.pkg, 'claude_host.py'), 'w') as f:
+            f.write(text)
+
+    def assert_presence_reads(self):
+        h = Home(self, accounts=('1', '2'), signed_out=('2',))
+        sign_in(h.accounts['1'][0], signed=False, ends_ms=1000)
+        self.assertTrue(A.signed_in(h.accounts['1'][0], self.NOW))
+        self.assertFalse(A.signed_in(h.accounts['2'][0], self.NOW))
+        self.assertEqual(A.account_login(h.settings, '1', self.NOW)[:3], (True, False, None))
+        self.assertIsNone(A.login_command(h.accounts['1'][0], h.root))
+        with self.assertRaisesRegex(A.LaunchError, r"Sign it in with its host's own sign-in\.$"):
+            A.launch_dir(h.settings, '2')
+
+    def test_a_host_without_the_module_reads_the_files_presence(self):
+        self.assert_presence_reads()
+
+    def test_a_module_without_login_of_or_login_reads_the_files_presence(self):
+        self.module('X = 1\n')
+        self.assert_presence_reads()
+
+    def test_an_error_inside_the_module_propagates(self):
+        for text, error in (('import kit_no_such_module_xyz\n', ModuleNotFoundError),
+                            ('raise ImportError("inside")\n', ImportError),
+                            ('raise ValueError("inside")\n', ValueError)):
+            self.module(text)
+            sys.modules.pop(self.name, None)
+            with self.assertRaises(error, msg=text):
+                A.signed_in(self.root, self.NOW)
+            with self.assertRaises(error, msg=text):
+                A.login_command(self.root)
+
+    def test_a_missing_package_is_not_the_hosts_missing_module(self):
+        A.registry.host_module_name.return_value = self.pkg + '_gone.claude_host'
+        with self.assertRaises(ModuleNotFoundError):
+            A.signed_in(self.root, self.NOW)
 
 
 class Headroom(unittest.TestCase):

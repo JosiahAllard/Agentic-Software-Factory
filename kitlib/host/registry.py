@@ -16,10 +16,14 @@
                               or a tree or registry that cannot be read), else None
   host_folders(path)          the repo folder each host keeps its own files in (".claude")
   state_path(home, *parts)    a path in the kit's per-user state folder (~/.claude)
+  host_module_name(path)      the default host's file readers' module: <adapter>.<name>_host
+  host_module(path)           that module, imported by its computed name (ImportError for a host
+                              without one)
 
-kitlib never imports a host's adapter. The registry hands out the adapter's module NAME, and the
-entry point that wants the adapter imports it (tools/_host.py); hosts.json is data, so reading it
-here keeps the layer rule. `path` defaults to PATH, the hosts.json at the kit root; tests pass
+kitlib never imports a host's adapter statically. The registry hands out the adapter's module NAME,
+and the entry point that wants the adapter imports it (tools/_host.py); hosts.json is data, so
+reading it here keeps the layer rule. host_module is the one import by computed name kitlib makes
+of a host's file readers (the session watch's transcripts, the launcher's credentials). `path` defaults to PATH, the hosts.json at the kit root; tests pass
 their own. Each call reads the file again: it is small, and a cache would outlive a test's file.
 
 An entry: {"adapter": "<module>", "shell": "<repo path>", "platforms": ["windows", ...],
@@ -371,6 +375,22 @@ def host(name, path=None):
 
 def default(path=None):
     return next(h.name for h in load(path).values() if h.default)
+
+
+HOST_MODULE = '%s_host'             # a host's file readers' module in its adapter package, by host name
+
+
+def host_module_name(path=None):
+    """<the default host's adapter package>.<its name>_host."""
+    name = default(path)
+    return host(name, path).adapter + '.' + HOST_MODULE % name
+
+
+def host_module(path=None):
+    """The default host's file readers (host_module_name), imported by that computed name. A host
+    without one gives ModuleNotFoundError naming it; an error inside the module propagates."""
+    import importlib
+    return importlib.import_module(host_module_name(path))
 
 
 def selected(environ=None, path=None):

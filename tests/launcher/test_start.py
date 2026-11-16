@@ -11,6 +11,7 @@ from unittest import mock
 from kitlib.launcher import start, window
 from kitlib.launcher import settings as S
 from kitlib.host.registry import PLUGIN_NAME
+from tests.launcher import fakes
 from tests.launcher.fakes import EXE, NOW, FakeHost, Home, role_of, session, windows_text
 
 DAY = datetime.timedelta(days=1)
@@ -508,7 +509,7 @@ class Start(Base):
     def test_the_default_account_folder_removes_config_dir(self):
         default = os.path.join(self.h.root, '.claude')
         os.makedirs(default)
-        open(os.path.join(default, '.credentials.json'), 'w').close()
+        fakes.sign_in(default)
         s = S.Settings(dict(self.h.obj, accounts={'1': ['~/.claude']}), self.h.root)
         out = '\n'.join(start.start(s, self.host, repo='alpha', account='1', whatif=True))
         self.assertIn('Remove-Item Env:CLAUDE_CONFIG_DIR', out)

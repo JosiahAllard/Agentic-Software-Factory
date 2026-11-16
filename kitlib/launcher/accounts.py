@@ -3,6 +3,13 @@ usage windows is left, which account to pick (docs/launcher.md "Accounts"; resta
 hub's coordinator restart, docs/launcher.md "Hub restart"), and which account
 this session runs on (current_account, for the Action Hub's one copy per account).
 
+Signed in means a login that has not ended, read from .credentials.json (signed_in), never the
+file's presence alone; account_login gives an account's login end and its credentials mtime (the
+usage crossover's sign-in rule), and login_command the command that signs a folder in again. The
+host's own file format and sign-in command come from its file readers (login_of, LOGIN; on Claude
+hosts/claude/adapter/claude_host.py, through kitlib.host.registry.host_module); a host with none
+reads the file's presence as signed in, with no end and no command.
+
 Every Claude session's status line writes usage-status.json into its account's config folder:
 {"updated_at": iso, "five_hour": {"used_percentage": n, "resets_at": iso} | null,
  "seven_day": {...} | null}. Only the week counts (week_state): the plan gives no five-hour
@@ -18,6 +25,7 @@ removed for Claude Code's own ~/.claude, since setting it, even to that folder, 
 keeps its .claude.json; is_default). With no `home`, each reads the user's home through
 kitlib.config.user.home_dir(), which the kit's tests fence (docs/test-tools.md "Home fence").
 """
+import collections
 import datetime
 import json
 import math
@@ -25,6 +33,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 
 from kitlib.config import user as kuser
 from kitlib.host import registry
@@ -67,8 +76,95 @@ def short(dt):
     return dt.astimezone().strftime('%a %H:%M')
 
 
-def signed_in(folder):
-    return os.path.isfile(os.path.join(folder, CREDENTIALS))
+Login = collections.namedtuple('Login', 'signed_in ended end mtime')
+
+
+def _host_reads():
+    """The default host's file readers (kitlib.host.registry.host_module), or None for a host with
+    no such module. Imported here, at the call, never when this module loads (the Claude module's
+    PRELOAD names this one). Only that module missing falls back; an error inside it propagates."""
+    name = registry.host_module_name()
+    try:
+        return registry.host_module()
+    except ModuleNotFoundError as e:
+        if e.name != name:
+            raise
+        return None
+
+
+def _login(folder):
+    """The login in the folder's credentials file: (held, end) as the host reads it (end epoch
+    seconds or None), or None for no login. A host with no login reads (no module, or one without
+    login_of): (True, None) while the file is there, as before logins were read."""
+    path = os.path.join(folder, CREDENTIALS)
+    reads = getattr(_host_reads(), 'login_of', None)
+    if reads is None:
+        return (True, None) if os.path.isfile(path) else None
+    login = reads(_read(path))
+    return None if login is None else (bool(login[0]), _ms(login[1]))
+
+
+def _ms(value):
+    return value / 1000.0 if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _live(login, now):
+    """True when a login (_login) has not ended: held, and its end, if known, after `now`."""
+    held, end = login
+    return held and (end is None or end > now)
+
+
+def signed_in(folder, now=None):
+    """True when the folder's credentials hold a login that has not ended (docs/launcher.md
+    "Accounts"). Signed out: no file, or one that cannot be read; no login in it; one the host
+    reads as ended (on Claude: an empty refreshToken, expiresAt 0 or loginEnded,
+    hosts/claude/adapter/claude_host.login_of); or its end at or before `now` (epoch seconds,
+    default the clock). An unknown end stays signed in."""
+    login = _login(folder)
+    return login is not None and _live(login, time.time() if now is None else now)
+
+
+def account_login(settings, n, now=None):
+    """Login(signed_in, ended, end, mtime) of account n over its folders: signed_in any folder's
+    (signed_in); ended, not signed in while a folder holds a login (a login that ended, not one
+    never made); end the latest end of a signed-in folder, as epoch seconds, or None; mtime the
+    newest credentials file mtime, or None."""
+    now = time.time() if now is None else now
+    signed, held, ends, mtimes = False, False, [], []
+    for d in settings.account_dirs(n):
+        try:
+            mtimes.append(os.path.getmtime(os.path.join(d, CREDENTIALS)))
+        except OSError:
+            continue
+        login = _login(d)
+        if login is None:
+            continue
+        held = True
+        if _live(login, now):
+            signed = True
+            if login[1] is not None:
+                ends.append(login[1])
+    return Login(signed, held and not signed, max(ends) if ends else None, max(mtimes) if mtimes else None)
+
+
+def login_command(folder, home=None):
+    """The command the owner runs to sign `folder` in again: the host's sign-in command (LOGIN of
+    its file readers) with CONFIG_DIR_ENV set to the folder (removed for the default folder,
+    is_default), which leaves the owner's shell as it was. PowerShell on Windows, bash on Linux
+    (kitlib.platform.NAME). None for a host with no sign-in command."""
+    login = getattr(_host_reads(), 'LOGIN', None)
+    if not login:
+        return None
+    from kitlib import platform
+    from kitlib.launcher import window
+    default = is_default(folder, home)
+    if platform.NAME == 'linux':
+        return ('env -u %s %s' % (CONFIG_DIR_ENV, login) if default
+                else '%s=%s %s' % (CONFIG_DIR_ENV, window.q(folder), login))
+    env = '$env:%s' % CONFIG_DIR_ENV
+    inner = ('Remove-Item Env:%s -ErrorAction SilentlyContinue' % CONFIG_DIR_ENV if default
+             else '%s = %s' % (env, window.q(folder)))
+    return '$p = %s; try { %s; %s } finally { %s = $p }' % (env, inner, login, env)
 
 
 def org_signed_in(folder):
@@ -91,7 +187,11 @@ def launch_dir(settings, n):
     for d in dirs:
         if signed_in(d):
             return d
-    raise LaunchError('Account %s is not signed in: no %s under %s.' % (n, CREDENTIALS, ' or '.join(dirs)))
+    why = ('its login has ended' if account_login(settings, n).ended
+           else 'no %s with a login under %s' % (CREDENTIALS, ' or '.join(dirs)))
+    command = login_command(dirs[0], settings.home) if dirs else None
+    raise LaunchError('Account %s is not signed in: %s. Sign it in%s'
+                      % (n, why, (': ' + command) if command else " with its host's own sign-in."))
 
 
 def org_launch_dir(settings, n):
@@ -226,12 +326,13 @@ def _restart_reset(data, now, stale_minutes, limit):
 
 def restart_pick(states, now, last, stale_minutes, limit=HEADROOM_LIMIT):
     """The account the hub's coordinator restart starts on (docs/launcher.md "Hub restart"): of
-    `states` {account: (signed_in, usage data or None)}, the signed-in one whose week has reset or
+    `states` {account: (signed_in, usage data or None, ...)}, the signed-in one whose week has reset or
     whose fresh reading is under `limit`% of its week (_restart_reset), the week that resets
     soonest; a tie goes to `last`, then the lowest number. None when no account qualifies: a
     missing or unknown reading never does, nor a stale one whose week has not reset."""
     rows = []
-    for n, (signed, data) in states.items():
+    for n, st in states.items():
+        signed, data = st[0], st[1]
         reset = _restart_reset(data, now, stale_minutes, limit) if signed else None
         if reset is not None:
             rows.append((reset, str(n) != str(last), int(n) if str(n).isdigit() else float('inf'), str(n)))

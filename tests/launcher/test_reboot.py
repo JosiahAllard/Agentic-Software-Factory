@@ -8,6 +8,7 @@ from unittest import mock
 
 from kitlib.launcher import reboot, start, window
 from kitlib.launcher import settings as S
+from tests.launcher import fakes
 from tests.launcher.fakes import NOW, FakeHost, Home, role_of, session, windows_text
 
 # plain sessions (agent false): the ones after-reboot starts
@@ -251,7 +252,7 @@ class ResumePm(unittest.TestCase):
     def test_the_default_account_folder_leaves_config_dir_unset(self):
         default = os.path.join(self.h.root, '.claude')
         os.makedirs(default)
-        open(os.path.join(default, '.credentials.json'), 'w').close()
+        fakes.sign_in(default)
         s = S.Settings(dict(self.h.obj, accounts={'2': ['~/.claude']}), self.h.root)
         text, = self.resume(self.cfg(), settings=s).opened
         self.assertIn('Remove-Item Env:CLAUDE_CONFIG_DIR', text)

@@ -24,6 +24,28 @@ ROLE = re.compile(r"(?:\$env:PM_KIT_ROLE = |^export PM_KIT_ROLE=)'([^']*)'", re.
 EXE = r'C:\bin\claude.exe'
 
 
+def credentials(signed=True, ends_ms=None, token='fixture-token'):
+    """The text of a .credentials.json in Claude Code's shape: the field names and types of a real
+    file, none of its values. signed: a live login (refreshTokenExpiresAt `ends_ms`, absent when
+    None); else what Claude Code writes when a refresh is refused at the login's time limit
+    (tokens emptied, expiresAt 0, loginEnded), the end kept. An mcpOAuth entry, which never
+    counts, either way."""
+    oauth = {'accessToken': token, 'refreshToken': token, 'expiresAt': 1, 'scopes': ['user:inference'],
+             'subscriptionType': 'max', 'subscriptionTypeSource': 'profile', 'rateLimitTier': 'tier'}
+    if ends_ms is not None:
+        oauth['refreshTokenExpiresAt'] = ends_ms
+    if not signed:
+        oauth.update(accessToken='', refreshToken='', expiresAt=0, loginEnded='time_limit')
+    mcp = {'server|0': {'serverName': 'x', 'accessToken': token, 'refreshToken': token, 'expiresAt': 1}}
+    return json.dumps({'claudeAiOauth': oauth, 'mcpOAuth': mcp})
+
+
+def sign_in(folder, signed=True, ends_ms=None):
+    """Write `folder`'s .credentials.json (credentials)."""
+    with open(os.path.join(folder, '.credentials.json'), 'w') as f:
+        f.write(credentials(signed, ends_ms))
+
+
 def role_of(text):
     m = ROLE.search(text)
     return m.group(1) if m else None
@@ -117,8 +139,7 @@ class Home(object):
             d = os.path.join(self.root, 'acct%s' % n)
             os.makedirs(d)
             if n not in signed_out:
-                with open(os.path.join(d, '.credentials.json'), 'w') as f:
-                    f.write('{}')
+                sign_in(d)
             self.accounts[n] = [d]
         obj = {'state_dir': self.state, 'repos': self.repos, 'accounts': self.accounts}
         obj.update(extra or {})

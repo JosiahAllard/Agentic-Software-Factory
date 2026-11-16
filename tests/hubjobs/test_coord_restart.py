@@ -14,6 +14,7 @@ from kitlib.hubjobs import coord_restart as C
 from kitlib.hubsite import jobs
 from kitlib.launcher import settings as lsettings
 from kitlib.launcher.settings import LaunchError
+from tests.launcher import fakes
 
 NOW = 1_800_000_000.0
 ENTRY = {'repo': 'kit', 'agent': True, 'stem': 'kit-coord', 'state': 'x.md', 'account': 1,
@@ -257,7 +258,7 @@ class JobBase(unittest.TestCase):
         for d in [self.state] + list(self.acct.values()):
             os.makedirs(d)
         for d in self.acct.values():
-            open(os.path.join(d, '.credentials.json'), 'w').close()
+            fakes.sign_in(d)
         self.sessions = {'_note': 'x', 'kit': dict(ENTRY),
                          'plain': {'repo': 'kit', 'agent': False, 'stem': 'plain', 'account': 1,
                                    'name': 'plain-a1'}}

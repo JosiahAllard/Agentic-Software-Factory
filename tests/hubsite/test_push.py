@@ -1817,6 +1817,17 @@ class UnblockedPushTest(PushCase):
         self.assertIn('When detail is pm or starts pm: (you, the PM)', sent[0])
         self.assertIn('resume your normal work', sent[0])
 
+    def test_a_no_room_names_its_sign_in_and_login_tails_and_a_no_checkin_its_stop(self):
+        self.worker.job_event('usage-crossover', 'no-room', 'kit:signin:a2:login:a1')
+        self.worker.job_event('usage-crossover', 'no-checkin', 'griff')
+        self.worker.send_jobs()
+        room, checkin = sorted(self.jobs_sent(), key=lambda t: 'no-checkin' in t.splitlines()[0])
+        for part in (':signin:a3', ':login:a1', 'urgent to-do'):
+            self.assertIn(part, room)
+        for part in ('stuck at a sign-in prompt', 'stops it and moves sessions.json back', 'left running'):
+            self.assertIn(part, checkin)
+        self.assertNotIn('stops watching', checkin)
+
 
 if __name__ == '__main__':
     unittest.main()

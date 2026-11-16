@@ -31,7 +31,6 @@ config, the Watcher's build or start, the state write) is the job's failure (kit
 swallows the run's events.
 """
 import collections
-import importlib
 import re
 import time
 
@@ -42,7 +41,6 @@ NAME = 'session-watch'
 EVERY_S = 60                        # the Watcher's own timers pace each check
 RECENT_MAX = 20                     # pushed event lines kept in the note
 STATE_SUFFIX = '.hub.json'
-HOST_MODULE = '%s_host'             # the watcher readers' module in the adapter package, by host name
 _SUBJECT_SKIP = ('account', 'run')
 # kitlib.pmwatch usage_events' lines: account, window, percentage now
 _USAGE = re.compile(r'USAGE account (\w+) (five_hour|seven_day) \d+% \(now (\d+)%\)$')
@@ -52,11 +50,11 @@ _RESET = re.compile(r'RESET account (\w+) \(weekly \d+% -> (\d+)%\)$')
 def host_module():
     """The default host's watcher readers (newest_finder, rc_records, default_alerts_dir, PRELOAD):
     <its adapter package>.<its name>_host. A host without
-    one gives ImportError. kitlib never imports a host statically: the names come from the
-    registry, as kitlib/machinesetup/extras.py managed_path imports the adapter."""
+    one gives ImportError. kitlib never imports a host statically: kitlib.host.registry.host_module
+    imports it by the name the registry gives, as kitlib/machinesetup/extras.py managed_path
+    imports the adapter."""
     from kitlib.host import registry
-    name = registry.default()
-    return importlib.import_module(registry.host(name).adapter + '.' + HOST_MODULE % name)
+    return registry.host_module()
 
 
 def make(sources):

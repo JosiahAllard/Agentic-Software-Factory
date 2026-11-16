@@ -523,7 +523,7 @@ def follow_up_why(entry, follow_ups):
         return ('--verdict LAND WITH FOLLOW-UP names no --follow-up; nothing was queued\n%s'
                 % FOLLOW_UP_INSTEAD)
     parts = []
-    for rid, (state, is_open) in sorted(follow_ups.items()):
+    for rid, (state, is_open, _) in sorted(follow_ups.items()):
         if rid in entry['records']:
             parts.append('--follow-up %s is a record this branch carries, which its landing closes'
                          % rid)

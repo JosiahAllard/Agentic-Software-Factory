@@ -187,17 +187,18 @@ def verdict_reader(environ=None):
     return _adapter_reader('agent_verdict', environ)
 
 
-def follow_up_states(root, ids):
-    """`{id: (state, open)}` for each --follow-up id (verdicts.follow_up_why), read from the live
-    store (kitlib.backlog.opener.follow_up_states). VerdictError (NOT DONE) when it cannot be
-    read."""
+def follow_up_states(root, ids, branch, tip, main):
+    """`{id: (state, open, closes)}` for each --follow-up id (verdicts.follow_up_why), read from
+    the live store, `closes` whether the landing of `branch` at the reviewed `tip` onto `main` (main
+    as fetched, None when unread) would close it (kitlib.backlog.opener.follow_up_states).
+    VerdictError (NOT DONE) when that cannot be read or told."""
     if not ids:
         return {}
     from kitlib.backlog import opener
-    got, why = opener.follow_up_states(root, [i.strip() for i in ids])
+    got, why = opener.follow_up_states(root, [i.strip() for i in ids], branch, tip, main)
     if why:
-        raise verdict_entry.VerdictError('the backlog store cannot be read for --follow-up: %s; nothing '
-                                    'was queued' % why)
+        raise verdict_entry.VerdictError('the --follow-up records cannot be checked: %s; nothing '
+                                         'was queued' % why)
     return got
 
 
@@ -277,12 +278,13 @@ def run(a, common_dir):
         except kconfig.ConfigError as e:
             return fail('NOT DONE', 'the kit configuration cannot be read: %s; nothing was queued'
                         % e, NOT_DONE)
-        main, main_why = main_as_fetched(a.root) if cap is not None else (None, None)
+        main, main_why = (main_as_fetched(a.root) if cap is not None or a.follow_up
+                          else (None, None))
         well = not verdict_entry.check(entry, stored=False)
         seen = verdicts.seen_models(entry, transcript_reader()) if well else {}
         reader = verdict_reader()
         said = verdicts.seen_verdicts(entry, reader) if well else {}
-        follow_ups = follow_up_states(a.root, a.follow_up) if well else None
+        follow_ups = follow_up_states(a.root, a.follow_up, a.branch, a.tip, main) if well else None
         new = new_sources(a.root, a.range) if well else None
         approval = verdicts.read_design(a.root, a.branch) if new else None
         _, stored = verdicts.add(common_dir, entry, self_review_max_lines=cap, main=main,

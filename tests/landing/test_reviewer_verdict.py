@@ -270,8 +270,7 @@ class ReviewerVerdict(GateRepoCase):
                                          '--follow-up': 'EX-9'})
         self.assertIn('--follow-up EX-9 is a record this branch holds pulled, and its landing '
                       'closes it', out)
-        self.assertIn('
-Instead: if the branch lands one part of EX-9', out)
+        self.assertIn('\nInstead: if the branch lands one part of EX-9', out)
         self.assertEqual(got.call_args[0][1:],
                          (['EX-9'], 'kit/a', self.tip, self.tool.main_as_fetched(self.repo.root)[0]))
 

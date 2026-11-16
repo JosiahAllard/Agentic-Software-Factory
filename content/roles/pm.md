@@ -123,10 +123,11 @@ and settled items (the backlog records, the ledger and git hold that history). A
 is a stale read: check a listed item against its record before you act on or ask about it.
 
 When the hub's usage crossover sends you its checkpoint message (your account nears its weekly
-limit), update HANDOFF.md as above, then post it with `hub_handoff_ready`: kind `handoff`, from
-pm, `state_path` its absolute path. After that send nothing, dispatch nothing and land nothing:
-the hub starts a fresh PM on another account from that file. If the hub instead pushes
-cross-cleared, cross-failed, no-room or stalled with detail pm or pm:... (as no-room pm:unknown:a2), the crossing is off: resume your
+limit, or its login ends within hours), update HANDOFF.md as above, then post it with
+`hub_handoff_ready`: kind `handoff`, from pm, `state_path` its absolute path. After that send
+nothing, dispatch nothing and land nothing: the hub starts a fresh PM on another account from that
+file. If the hub instead pushes cross-cleared, cross-failed, no-room or stalled with detail pm or
+pm:... (as no-room pm:unknown:a2, pm:signin:a3 or pm:login:a1), the crossing is off: resume your
 normal work. When you are told to stand down,
 delete your crons, stop your monitors and loops, and stay idle; the owner closes your window. If
 you are the new PM, act only once coordinators.json names your session, as your first message says.

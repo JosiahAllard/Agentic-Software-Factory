@@ -3,6 +3,10 @@ usage windows is left, which account to pick (docs/launcher.md "Accounts"; resta
 hub's coordinator restart, docs/launcher.md "Hub restart"), and which account
 this session runs on (current_account, for the Action Hub's one copy per account).
 
+Signed in means a login that has not ended, read from .credentials.json (signed_in), never the
+file's presence alone; account_login gives an account's login end and its credentials mtime (the
+usage crossover's sign-in rule), and login_command the command that signs a folder in again.
+
 Every Claude session's status line writes usage-status.json into its account's config folder:
 {"updated_at": iso, "five_hour": {"used_percentage": n, "resets_at": iso} | null,
  "seven_day": {...} | null}. Only the week counts (week_state): the plan gives no five-hour
@@ -18,6 +22,7 @@ removed for Claude Code's own ~/.claude, since setting it, even to that folder, 
 keeps its .claude.json; is_default). With no `home`, each reads the user's home through
 kitlib.config.user.home_dir(), which the kit's tests fence (docs/test-tools.md "Home fence").
 """
+import collections
 import datetime
 import json
 import math
@@ -25,6 +30,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 
 from kitlib.config import user as kuser
 from kitlib.host import registry
@@ -67,8 +73,77 @@ def short(dt):
     return dt.astimezone().strftime('%a %H:%M')
 
 
-def signed_in(folder):
-    return os.path.isfile(os.path.join(folder, CREDENTIALS))
+Login = collections.namedtuple('Login', 'signed_in ended end mtime')
+
+
+def _oauth(folder):
+    """The claudeAiOauth object of the folder's credentials file; None for no file, an unreadable
+    one or no such object."""
+    data = _read(os.path.join(folder, CREDENTIALS))
+    oauth = data.get('claudeAiOauth') if data else None
+    return oauth if isinstance(oauth, dict) else None
+
+
+def _ms(value):
+    return value / 1000.0 if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _live(oauth, now):
+    """True when a claudeAiOauth object holds a login that has not ended (signed_in)."""
+    end = _ms(oauth.get('refreshTokenExpiresAt'))
+    return bool(oauth.get('refreshToken')) and oauth.get('expiresAt') != 0 and not oauth.get('loginEnded') \
+        and (end is None or end > now)
+
+
+def signed_in(folder, now=None):
+    """True when the folder's credentials hold a login that has not ended (docs/launcher.md
+    "Accounts"). Signed out: no file, or one that cannot be read; no claudeAiOauth object; an empty
+    refreshToken (what Claude Code writes when a refresh is refused, with expiresAt 0); expiresAt
+    0; loginEnded set; or refreshTokenExpiresAt (ms) at or before `now` (epoch seconds, default
+    the clock). A past expiresAt alone is the access token's and stays signed in; an absent
+    refreshTokenExpiresAt stays signed in."""
+    oauth = _oauth(folder)
+    return oauth is not None and _live(oauth, time.time() if now is None else now)
+
+
+def account_login(settings, n, now=None):
+    """Login(signed_in, ended, end, mtime) of account n over its folders: signed_in any folder's
+    (signed_in); ended, not signed in while a folder holds a claudeAiOauth object (a login that
+    ended, not one never made); end the latest refreshTokenExpiresAt of a signed-in folder, as
+    epoch seconds, or None; mtime the newest credentials file mtime, or None."""
+    now = time.time() if now is None else now
+    signed, held, ends, mtimes = False, False, [], []
+    for d in settings.account_dirs(n):
+        try:
+            mtimes.append(os.path.getmtime(os.path.join(d, CREDENTIALS)))
+        except OSError:
+            continue
+        oauth = _oauth(d)
+        if oauth is None:
+            continue
+        held = True
+        if _live(oauth, now):
+            signed = True
+            end = _ms(oauth.get('refreshTokenExpiresAt'))
+            if end is not None:
+                ends.append(end)
+    return Login(signed, held and not signed, max(ends) if ends else None, max(mtimes) if mtimes else None)
+
+
+def login_command(folder, home=None):
+    """The command the owner runs to sign `folder` in again: `claude auth login` with
+    CLAUDE_CONFIG_DIR set to the folder (removed for ~/.claude, is_default), which leaves the
+    owner's shell as it was. PowerShell on Windows, bash on Linux (kitlib.platform.NAME)."""
+    from kitlib import platform
+    from kitlib.launcher import window
+    default = is_default(folder, home)
+    if platform.NAME == 'linux':
+        return ('env -u %s claude auth login' % CONFIG_DIR_ENV if default
+                else '%s=%s claude auth login' % (CONFIG_DIR_ENV, window.q(folder)))
+    env = '$env:%s' % CONFIG_DIR_ENV
+    inner = ('Remove-Item Env:%s -ErrorAction SilentlyContinue' % CONFIG_DIR_ENV if default
+             else '%s = %s' % (env, window.q(folder)))
+    return '$p = %s; try { %s; claude auth login } finally { %s = $p }' % (env, inner, env)
 
 
 def org_signed_in(folder):
@@ -91,7 +166,10 @@ def launch_dir(settings, n):
     for d in dirs:
         if signed_in(d):
             return d
-    raise LaunchError('Account %s is not signed in: no %s under %s.' % (n, CREDENTIALS, ' or '.join(dirs)))
+    why = ('its login has ended' if account_login(settings, n).ended
+           else 'no %s with a login under %s' % (CREDENTIALS, ' or '.join(dirs)))
+    raise LaunchError('Account %s is not signed in: %s. Sign it in: %s'
+                      % (n, why, login_command(dirs[0], settings.home) if dirs else 'claude auth login'))
 
 
 def org_launch_dir(settings, n):
@@ -226,12 +304,13 @@ def _restart_reset(data, now, stale_minutes, limit):
 
 def restart_pick(states, now, last, stale_minutes, limit=HEADROOM_LIMIT):
     """The account the hub's coordinator restart starts on (docs/launcher.md "Hub restart"): of
-    `states` {account: (signed_in, usage data or None)}, the signed-in one whose week has reset or
+    `states` {account: (signed_in, usage data or None, ...)}, the signed-in one whose week has reset or
     whose fresh reading is under `limit`% of its week (_restart_reset), the week that resets
     soonest; a tie goes to `last`, then the lowest number. None when no account qualifies: a
     missing or unknown reading never does, nor a stale one whose week has not reset."""
     rows = []
-    for n, (signed, data) in states.items():
+    for n, st in states.items():
+        signed, data = st[0], st[1]
         reset = _restart_reset(data, now, stale_minutes, limit) if signed else None
         if reset is not None:
             rows.append((reset, str(n) != str(last), int(n) if str(n).isdigit() else float('inf'), str(n)))

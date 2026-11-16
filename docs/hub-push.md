@@ -196,7 +196,10 @@ store's git push (the `push` setting).
   `launcher.usage_crossover`. Its words are all in `push.JOB_EACH`: `crossing`, `would-cross`,
   `crossed`, `cross-cleared`, `cross-failed`, `stalled`, `no-ready`, `no-checkin`, `no-room`,
   `pm-limit`, `unmanaged`. It reads the hub's own hand-off records through `Sources.handoffs`, which
-  `serve.build` sets to the newest of each session.
+  `serve.build` sets to the newest of each session. A `no-room` detail may end in `:signin:aN`
+  (accounts left out for a sign-in) and `:login:aN` (a login crossing: that account's login ends
+  soon). An account whose login ended or ends within 3 days, or that a `no-checkin` marked, gets one
+  urgent hub to-do with its login command (`hub.py todos add --command`, from `usage-crossover`).
   `plugin-refresh` (`kitlib.hubsite.plugin_job`, docs/plugin-source.md "Hub refresh") pushes
   `behind`, a word in `push.JOB_EACH`, once for each kit main when the export is not at it and the job
   will not refresh it: detail `<main sha12>:<why>`, `why` one of `no-export` (no export yet) and

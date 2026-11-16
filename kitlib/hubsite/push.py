@@ -252,9 +252,14 @@ JOB_EACH = {'stale-code': 'The hub server (serve.py, job name hub) will not rest
                         'written its ready file), or has not gone quiet on a state note written '
                         'since, in 30 minutes; the hub still waits. Check on it.',
             'no-checkin': _CROSSOVER + 'the successor of detail has not recorded its check-in (or '
-                          'written its check-in file) in 30 minutes; its old session stays idle (a '
-                          'consultant was stopped first, and the hub stops watching it). Check on '
-                          'the successor.',
+                          'written its check-in file) in 30 minutes, so it is taken for one stuck at '
+                          'a sign-in prompt: its target account is marked as needing a sign-in (no '
+                          'target until its credentials change; the owner gets an urgent to-do with '
+                          'the login command) and, once its transcript has been quiet a minute, the '
+                          'hub stops it and moves sessions.json back. A successor that still writes '
+                          'is left running. Detail then goes to another account, or, with none, '
+                          'clears with no-room and its old session stays (a consultant stopped first '
+                          'starts again on its own account). No reply is needed.',
             'no-room': _CROSSOVER + 'detail needs moving and no account has room: nothing was '
                        'stopped or started. A stalled session wakes at its reset. Detail '
                        '<session> alone: every account it could read is full. Detail '
@@ -264,7 +269,11 @@ JOB_EACH = {'stale-code': 'The hub server (serve.py, job name hub) will not rest
                        'have room; the log says why for each. A stale reading whose week reset '
                        'has passed counts as reset (0%) once past a 5-minute grace, so it is '
                        'never left out as stale (it still waits for a reading after the hub\'s '
-                       'last start there).'
+                       'last start there). A :signin:a3 tail: those accounts were left out for a '
+                       'sign-in (a login that ended, ends soon for a login crossing, or a successor '
+                       'there that never checked in); each has an urgent to-do. A :login:a1 tail: '
+                       'detail crosses because its own account\'s login ends soon (the note says '
+                       'when); sign that account in again and the crossing clears.'
                        + _PM_RESUMES,
             'pm-limit': _CROSSOVER + 'the PM session is at the weekly limit and this job cannot '
                         'move it: it is not a launched session (the desktop app), or '

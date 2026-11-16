@@ -18,6 +18,7 @@ from kitlib.hubsite import push as P
 from kitlib.launcher import settings as lsettings
 from tests import gitfixture
 from tests.backlog import helpers as _bh
+from tests.launcher import fakes
 
 def ctx():
     return jobs.Ctx(threading.Event(), lambda word, detail=None: None)
@@ -1709,7 +1710,7 @@ class HoldFile(unittest.TestCase):
         for n in ('1', '2'):
             d = os.path.join(self.tmp, 'acct' + n)
             os.makedirs(d)
-            open(os.path.join(d, '.credentials.json'), 'w').close()
+            fakes.sign_in(d)
             dirs[n] = [d]
         s = lsettings.Settings({'state_dir': self.tmp, 'repos': {'game': self.tmp},
                                 'accounts': dirs}, home=self.tmp)

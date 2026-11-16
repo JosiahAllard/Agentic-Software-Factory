@@ -12,6 +12,7 @@ import unittest
 from kitlib.machinesetup import inventory
 from tests import gitfixture
 from tests.home import TempHomeCase, machine_config
+from tests.launcher import fakes
 from tests.platforms import windows_only
 
 SECRET = 'fixture-credential-text'
@@ -71,7 +72,7 @@ class Fixture(TempHomeCase):
                                                              for k, n in self.names.items()}}}, case=self)
         self.dirs = {k: os.path.join(self.home, '.claude-' + k) for k in self.names}
         for d in self.dirs.values():
-            write(os.path.join(d, '.credentials.json'), SECRET)
+            write(os.path.join(d, '.credentials.json'), fakes.credentials(token=SECRET))
         self.state = {'sha': 'a' * 40, 'folders': {}}
         for d in self.dirs.values():
             self.migrate(d)
@@ -136,7 +137,7 @@ class Reports(Planted):
         self.assertIn('leftover link', b['links'][0])
         self.assertIn('remove it with: cmd /c rmdir', b['links'][0])
 
-    def test_labels_and_sign_in_without_reading_credentials(self):
+    def test_labels_and_sign_in_without_printing_credentials(self):
         a = self.entry(self.res, 'a')
         self.assertEqual('1', a['label'])
         self.assertTrue(a['signed_in'])

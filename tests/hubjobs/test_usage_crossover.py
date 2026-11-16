@@ -1986,6 +1986,25 @@ class SuccStopJob(JobBase):
         self.assertEqual(self.calls[-1], ['handoff', '--session', 'kit', '--account', '3', '--state',
                                           rec['state_path']])
         self.assertEqual(len(self.todos()), 1)
+        # the new start on account 3 never checks in either: account 3 is marked too, its own to-do
+        new3 = D.Live('kit-coord-a3', 33, CREATED)
+        self.live = [OLD, new3]
+        self.write('sessions.json', {'kit': dict(ENTRY, account=3, name=new3.name)})
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.crossing()['phase'], D.STARTED)
+        start3 = self.crossing()['start_at']
+        self.now += D.WAIT_CHECKIN_S + 60
+        self.host.written[new3.name] = self.now - 600
+        self.run_job()
+        self.assertEqual(self.calls[-1], ['stop', '--name', new3.name, '--pid', str(new3.pid)])
+        signed = self.doc()['signed_out']
+        self.assertEqual(set(signed), {'2', '3'})
+        self.assertEqual((signed['3']['start_at'], self.crossing()['marked']), (start3, start3))
+        self.now += 300
+        self.run_job()
+        todos = self.todos()
+        self.assertEqual([t[t.index('--title') + 1] for t in todos], ['Sign in account 2', 'Sign in account 3'])
 
     def test_a_successor_that_ends_on_its_own_moves_sessions_json_back_from_a_fresh_read(self):
         self.succ_stop()

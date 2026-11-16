@@ -140,7 +140,7 @@ class MergedGate(object):
                      "landing's %s run and booking a %s run for the merged gate, waiting with no "
                      'limit' % (self.expect_main[:10], kind, booked, held, want))
         else:
-            why = ('--full: the merge changes the gate\'s config' if self.full else
+            why = ('--full, as the GATE CONFIG line says' if self.full else
                    'fresh: a strict branch' if self.strict_hits else 'fresh')
             self.say('the merged gate runs every selected step (%s), not a staging landing\'s '
                      "compile-only run: releasing the landing's %s run and booking a %s run for "

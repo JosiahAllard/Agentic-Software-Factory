@@ -176,7 +176,7 @@ class ConfigStagingSteps(StagingBase):
         self.assertEqual((self.results(rec), rec['staging_skipped'], gate_ok.mode_of(rec)),
                          (ALL_RAN, None, 'full'))
         self.assert_no_staging_line()
-        self.assert_rebooked("--full: the merge changes the gate's config")
+        self.assert_rebooked('--full, as the GATE CONFIG line says')
 
 
 class StrictStagingSteps(StagingBase):

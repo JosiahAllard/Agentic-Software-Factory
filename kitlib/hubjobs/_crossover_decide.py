@@ -47,8 +47,8 @@ restart resolves each from live facts:
   succ-stop   the successor is taken for one stuck at a sign-in prompt: `no-checkin` once, and the
               job marks its account as needing a sign-in. A newer `checkin` record: stopping. Its
               transcript quiet QUIET_S, or none under its name: STOP_NEW, `launch.py stop --name
-              new --pid P`, decided again just before it runs; a successor still writing is left
-              running. The successor gone (by its pid and creation time): with the entry naming
+              new --pid P`, decided again just before it runs; a successor still writing, or whose
+              transcript could not be read (UNREADABLE), is left running. The successor gone (by its pid and creation time): with the entry naming
               it, sessions.json is moved back to the old session first (RESTORE); then ready with
               `retarget`, where no target clears with `no-room`. The old session is never stopped
               here.
@@ -180,6 +180,7 @@ TARGET_LIMIT = A.HEADROOM_LIMIT
 TIER2_WEEK = 98
 RESET_NEAR_S = 60 * 60         # a reset this close is waited for
 QUIET_S = 60                   # no transcript write this long: a stall read is a stall
+UNREADABLE = 'unreadable'      # a successor's quiet_new when its transcript could not be read
 WAIT_READY_S = 30 * 60         # after asking: `no-ready`
 WAIT_CHECKIN_S = 30 * 60       # after the start: `no-checkin`
 START_WAIT_S = 5 * 60          # no successor this long after a start: failed
@@ -776,26 +777,35 @@ def _started(args, stalled, newest, now):
     return _hold('waiting for its check-in')
 
 
-def _no_checkin(d, key):
+def _no_checkin(d, key, stopped_first=False):
     """A succ-stop step: its stop and every hold carry `no-checkin` (told once; the job marks the
-    target, usage_crossover _Run.mark_signed_out); STOP_TRIES refused stops: given up."""
+    target, usage_crossover _Run.mark_signed_out); STOP_TRIES refused stops: given up, its
+    successor left running and the crossing remembered (`stopped_first`: a consultant stopped
+    before its start, which has no old session to stay)."""
     if d.action == CLEAR:
-        d.note = "its successor's stop was refused %d times; the old session stays" % STOP_TRIES
+        d.note = ("its successor's stop was refused %d times; the successor is left running in its place"
+                  if stopped_first else
+                  "its successor's stop was refused %d times; the successor is left running and the old "
+                  "session stays") % STOP_TRIES
     elif not d.word:
         d.word, d.detail, d.mark = 'no-checkin', key, 'no-checkin'
     return d
 
 
-def _succ_stop_step(key, c, live, quiet_new, now):
-    """The successor's step in succ-stop: (decision, None) while it runs, else (None, gone): STOP_NEW
-    once its transcript has been quiet QUIET_S or none is found under its name (a successor at a
-    sign-in prompt writes one error line and then nothing), else left running."""
+def _succ_stop_step(key, c, live, quiet_new, now, stopped_first=False):
+    """The successor's step in succ-stop: None once it has gone, else its decision: STOP_NEW once
+    its transcript has been quiet QUIET_S or none is found under its name (quiet_new None: a
+    successor at a sign-in prompt writes one error line and then nothing); left running while it
+    still writes or its transcript could not be read (UNREADABLE: unknown is not quiet)."""
     succ = [l for l in live if (l.pid, l.created) == (c.get('new_pid'), c.get('new_created'))]
     if not succ:
         return None
+    if quiet_new == UNREADABLE:
+        return _hold('no check-in in %d min; its successor\'s transcript could not be read: left running'
+                     % (WAIT_CHECKIN_S // 60), 'no-checkin', key)
     if quiet_new is None or quiet_new >= QUIET_S:
         return _no_checkin(_stop_or_wait(key, c, now, STOP_NEW, 'no check-in: stop its successor %s'
-                                         % c.get('new_name')), key)
+                                         % c.get('new_name')), key, stopped_first)
     return _hold('no check-in in %d min; its successor still writes: left running' % (WAIT_CHECKIN_S // 60),
                  'no-checkin', key)
 
@@ -1059,7 +1069,7 @@ def _u_succ_stop(key, c, live, old, quiet_new, now, files):
         if consultant:
             return _gone('its successor checked in after all: done', 'crossed', c.get('new_name'))
         return _advance(STOPPING, 'its check-in file after all', stop_tries=0, stop_retry_at=None)
-    running = _succ_stop_step(key, c, live, quiet_new, now)
+    running = _succ_stop_step(key, c, live, quiet_new, now, stopped_first=consultant)
     if not consultant and not old:
         if running is not None:
             return _gone('its old session has gone: done', 'crossed', c.get('new_name'))

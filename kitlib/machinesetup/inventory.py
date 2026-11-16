@@ -4,8 +4,9 @@ folder, the export or the machine config, and removes nothing. The owner runs th
 names by hand.
 
 inventory(home, kit, export_dir=None) -> a dict: for each account folder (kitlib.pluginsource
-account_folders), its launcher label, whether it is signed in (a credentials file exists, or an org folder's account
-record: kitlib.launcher.accounts, never read for its value),
+account_folders), its launcher label, whether it is signed in (a credentials file whose login has not
+ended, or an org folder's account record: kitlib.launcher.accounts signed_in and org_signed_in; no
+token or account value is ever shown),
 the pm-kit plugin's state (migrated to the export, refreshed: kitlib.pluginsource state.json),
 the settings.json hooks that the managed settings template also carries (they run twice), and the
 leftover links (kitlib.machinesetup.links, each with the command that removes the link only). A

@@ -28,8 +28,9 @@ run, and the run then fails.
 
 Sign-ins (docs/launcher.md "Accounts"): each account's login is read at each run
 (accounts.account_login). A `no-checkin` marks the crossing's target as possibly needing a sign-in
-(signed_out, once per start: a repeated hold does not refresh it); the mark is dropped when the
-account's credentials file changes, and while it stands the account is no target. An account whose
+(signed_out, once per start: the crossing keeps the start it marked as `marked`, so neither a
+repeated hold nor a sign-in during one marks it again); the mark is dropped when the account's
+credentials file changes, and while it stands the account is no target. An account whose
 login ended, ends within D.LOGIN_LEAD_S, or is marked gets one urgent hub to-do per login end or
 mark (`hub.py todos add --command <its login command>`), in notify mode too; a failed post is logged
 and tried again next run (one that timed out may post twice).
@@ -276,7 +277,7 @@ class CrossoverJob(object):
         def step(key, entry, live):
             crossing = doc['crossings'].get(key)
             name = (crossing or {}).get('old_name') or (live[0].name if live else None)
-            return D.decide(key, entry, crossing, live, stalls.get(name), quiet.get(name), accounts,
+            return D.decide(key, entry, crossing, live, stalls.get(name), _seconds(quiet, name), accounts,
                           newest.get(key), doc['starts'], running, doc['landed'],
                           settings.usage_crossover, now,
                           note_at=_mtime((crossing or {}).get('state_path')),
@@ -311,7 +312,7 @@ class CrossoverJob(object):
                 c = doc['crossings'].get(D.PM_DOC)
                 name = (c or {}).get('old_name') or (pms[0].name if len(pms) == 1 else None)
                 acct = (c or {}).get('account') or (pms[0].account if pms else None)
-                return D.decide_pm(pms, c, stalls.get(name), quiet.get(name), accounts, newest.get(PM_FROM),
+                return D.decide_pm(pms, c, stalls.get(name), _seconds(quiet, name), accounts, newest.get(PM_FROM),
                                  doc['starts'], running, doc['landed'], settings.usage_crossover, now,
                                  note_at=_mtime((c or {}).get('state_path')), cleared=doc['cleared'].get(D.PM_DOC),
                                  asks=doc['asks'].get(D.PM_DOC), points=doc['weeks'].get(str(acct)),
@@ -351,7 +352,7 @@ class CrossoverJob(object):
             def step(key=key, sess=sess, live=live):     # bound now: act may call it again
                 cur = doc['crossings'].get(key)
                 name = (cur or {}).get('old_name') or (sess.name if sess else None)
-                return D.decide_unlisted(key, sess, cur, live, stalls.get(name), quiet.get(name), accounts,
+                return D.decide_unlisted(key, sess, cur, live, stalls.get(name), _seconds(quiet, name), accounts,
                                        doc['starts'], running, doc['landed'], settings.usage_crossover, now,
                                        files=_files(cur), cleared=doc['cleared'].get(key),
                                        asks=doc['asks'].get(key), weeks=doc['weeks'],
@@ -458,17 +459,27 @@ class CrossoverJob(object):
 
     def _quiet(self, names, now):
         """{name: seconds since its transcript was written} of these sessions (the stalled ones
-        and those of open crossings). An unreadable one is left out: unknown is not quiet."""
+        and those of open crossings): D.UNREADABLE for one that could not be read, none for one with
+        no transcript found. An old session reads both as not quiet (_seconds); a successor in
+        succ-stop is stopped on none found but held on UNREADABLE."""
         finder = self.host.newest_finder()
         out = {}
         for name in sorted(names):
             try:
                 t = finder(name)
             except OSError:
+                out[name] = D.UNREADABLE
                 continue
             if t is not None:
                 out[name] = now - t
         return out
+
+
+def _seconds(quiet, name):
+    """An old session's quiet seconds from _quiet's map, or None (unknown: never quiet): an
+    unreadable transcript counts as no reading."""
+    q = quiet.get(name)
+    return None if q == D.UNREADABLE else q
 
 
 def _mtime(path):
@@ -644,16 +655,17 @@ class _Run(object):
 
     def mark_signed_out(self, key):
         """Mark the target of key's crossing as possibly needing a sign-in: signed_out[target] =
-        {start_at, mtime of its credentials}, written only for a start not marked yet, so a hold
-        repeated over runs never refreshes it; the target's landed stamp goes (no reading is waited
-        for on an account that is no target)."""
+        {start_at, mtime of its credentials}, once per start: the crossing keeps the start it
+        marked (`marked`), so a hold repeated over runs never marks again, nor after a sign-in
+        (its credentials changed) dropped the mark while this start's successor still holds. The
+        target's landed stamp goes (no reading is waited for on an account that is no target)."""
         c = self.doc['crossings'].get(key)
         if not isinstance(c, dict) or c.get('target') in (None, ''):
             return
-        target = str(c['target'])
-        mark = self.doc['signed_out'].get(target)
-        if isinstance(mark, dict) and mark.get('start_at') == c.get('start_at'):
+        if 'marked' in c and c['marked'] == c.get('start_at'):
             return
+        target = str(c['target'])
+        c['marked'] = c.get('start_at')
         login = getattr(self, 'logins', {}).get(target)
         self.doc['signed_out'][target] = {'start_at': c.get('start_at'), 'mtime': login.mtime if login else None}
         self.doc['landed'].pop(target, None)

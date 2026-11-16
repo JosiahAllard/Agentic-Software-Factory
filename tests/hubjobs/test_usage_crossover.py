@@ -903,6 +903,13 @@ class SuccStop(unittest.TestCase):
         d = self.step(stop_tries=D.STOP_TRIES, stop_retry_at=NOW - 1)
         self.assertEqual((d.action, d.word, d.remember), (D.CLEAR, 'cross-failed', True))
         self.assertIn("its successor's stop was refused", d.note)
+        self.assertIn('the successor is left running and the old session stays', d.note)
+
+    def test_an_unreadable_transcript_holds_where_none_found_stops(self):
+        d = self.step(quiet_new=D.UNREADABLE)
+        self.assertEqual((d.action, d.word, d.detail), (D.HOLD, 'no-checkin', 'kit'))
+        self.assertIn('could not be read: left running', d.note)
+        self.assertEqual(self.step(quiet_new=None).action, D.STOP_NEW)
 
     def test_its_successor_gone_moves_sessions_json_back_first_then_is_ready_again(self):
         other = D.Live(NEW.name, 99, CREATED)       # a new process under its name is never stopped
@@ -2046,6 +2053,50 @@ class SuccStopJob(JobBase):
         self.assertEqual((self.doc()['signed_out'], self.doc()['signin_todos']), ({}, {}))
         self.assertIn('account 2: its credentials changed: the no-checkin mark dropped', self.log_text())
 
+    def test_a_sign_in_while_the_crossing_still_holds_drops_the_mark_for_good(self):
+        path = os.path.join(self.acct['2'], '.credentials.json')
+        for hold in ('writes', 'backoff'):
+            self.calls[:] = []
+            if hold == 'writes':
+                self.succ_stop()
+                self.host.written[NEW.name] = self.now - 10
+            else:
+                self.succ_stop(stop_tries=1, stop_retry_at=self.now + 7200)
+                self.host.written[NEW.name] = self.now - 600
+            self.run_job()
+            self.now += 300
+            self.host.written[NEW.name] = self.now - (10 if hold == 'writes' else 600)
+            self.run_job()
+            self.assertEqual((len(self.todos()), self.crossing()['marked']), (1, self.START), hold)
+            os.utime(path, (os.path.getmtime(path) + 100,) * 2)
+            for _ in range(2):
+                self.now += 300
+                self.host.written[NEW.name] = self.now - (10 if hold == 'writes' else 600)
+                self.run_job()
+                self.assertEqual((self.doc()['signed_out'], self.doc()['signin_todos']), ({}, {}), hold)
+                self.assertEqual(len(self.todos()), 1, hold)
+                self.assertEqual(self.crossing()['phase'], D.SUCC_STOP, hold)
+            self.assertNotIn(['stop', '--name', NEW.name, '--pid', str(NEW.pid)], self.calls, hold)
+
+    def test_an_unreadable_successor_transcript_holds_and_none_found_stops(self):
+        written = self.host.written
+
+        def finder(name):
+            if name == NEW.name:
+                raise OSError('locked')
+            return written.get(name)
+        self.succ_stop()
+        self.host.newest_finder = lambda: finder
+        self.run_job()
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.ctx.events, [('no-checkin', 'kit')])
+        self.assertEqual(self.crossing()['phase'], D.SUCC_STOP)
+        self.assertIn("its successor's transcript could not be read", self.log_text())
+        del self.host.newest_finder         # readable, none found under its name: stopped
+        self.now += 300
+        self.run_job()
+        self.assertEqual(self.calls[-1], ['stop', '--name', NEW.name, '--pid', str(NEW.pid)])
+
 
 class SignIns(JobBase):
     def todos(self):
@@ -2327,6 +2378,11 @@ class DecideUnlisted(unittest.TestCase):
         c = ucrossing(D.SUCC_STOP, UL.CONSULTANT, CONS, stopped=True, new_name=CONS.name, new_pid=CONS_NEW.pid,
                       new_created=CONS_NEW.created, start_at=NOW - D.WAIT_CHECKIN_S - 60)
         self.assertEqual(udecide(c, live=(CONS_NEW,), key=CONS.name).action, D.STOP_NEW)
+        self.assertEqual(udecide(c, live=(CONS_NEW,), key=CONS.name, quiet_new=D.UNREADABLE).action, D.HOLD)
+        d = udecide(dict(c, stop_tries=D.STOP_TRIES), live=(CONS_NEW,), key=CONS.name)
+        self.assertEqual((d.action, d.word, d.remember), (D.CLEAR, 'cross-failed', True))
+        self.assertIn('the successor is left running in its place', d.note)
+        self.assertNotIn('old session stays', d.note)
         d = udecide(c, live=(), key=CONS.name)
         self.assertEqual((d.action, d.phase), (D.ADVANCE, D.READY))
         d = udecide(dict(c, phase=D.READY, retarget=True), live=(), key=CONS.name,

@@ -214,8 +214,8 @@ class ReviewerVerdict(GateRepoCase):
     def backlog(self, states):
         """verdict.py's backlog store read, as `states` ({id: state}; an id missing: no record)."""
         return mock.patch.object(self.tool, 'follow_up_states',
-                                 side_effect=lambda root, ids: {
-                                     i: (states.get(i), states.get(i) in RECORD.STATES)
+                                 side_effect=lambda root, ids, branch, tip, main: {
+                                     i: (states.get(i), states.get(i) in RECORD.STATES, False)
                                      for i in ids})
 
     def test_a_report_with_no_full_checks_line_is_refused(self):
@@ -255,10 +255,25 @@ class ReviewerVerdict(GateRepoCase):
             code, out, err = self.add(**{'--verdict': 'LAND WITH FOLLOW-UP', '--follow-up': 'EX-9'})
         self.assertEqual(code, 1, (out, err))
         self.assertIn('NOT DONE', out + err)
-        self.assertIn('the backlog store cannot be read for --follow-up: the PM data worktree '
-                      'cannot be read', out + err)
+        self.assertIn('the --follow-up records cannot be checked: the PM data worktree cannot be '
+                      'read; nothing was queued', out + err)
         self.assertEqual(got.call_args[0][1], ['EX-9'])
-        self.assertEqual(self.tool.follow_up_states('/r', []), {})
+        self.assertEqual(self.tool.follow_up_states('/r', [], 'kit/a', self.tip, None), {})
+
+    def test_a_follow_up_the_landing_closes_is_refused(self):
+        """The CLI wiring: the read gets --branch, the reviewed --tip and main as fetched;
+        verdicts.follow_up_why's cases are test_verdicts', the read's test_follow_up_states'."""
+        self.plant(RID, handback_turn(report('LAND WITH FOLLOW-UP', tip=self.tip)))
+        with mock.patch('kitlib.backlog.opener.follow_up_states',
+                        return_value=({'EX-9': ('pulled', True, True)}, None)) as got:
+            out = self.assert_refused(**{'--verdict': 'LAND WITH FOLLOW-UP',
+                                         '--follow-up': 'EX-9'})
+        self.assertIn('--follow-up EX-9 is a record this branch holds pulled, and its landing '
+                      'closes it', out)
+        self.assertIn('
+Instead: if the branch lands one part of EX-9', out)
+        self.assertEqual(got.call_args[0][1:],
+                         (['EX-9'], 'kit/a', self.tip, self.tool.main_as_fetched(self.repo.root)[0]))
 
     def new_class_branch(self):
         wt, tip = self.branch('b', {'pkg/mod.py': 'class Fresh:\n    pass\n',

@@ -30,6 +30,23 @@ from tests.platforms import windows_only
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def add_land_kinds(kinds_path, kind):
+    """The scratch kinds table at `kinds_path` with land-<kind> (4 cores) and land-<kind>-staging
+    (2): the two kinds a landing of "gate".kind `kind` books by its merged gate's mode
+    (Lander.land_kind)."""
+    with open(kinds_path, encoding='utf-8') as f:
+        table = json.load(f)
+    for land, cpu in (('land-' + kind, 4), ('land-%s-staging' % kind, 2)):
+        table['kinds'][land] = {'cpu': cpu, 'gpu': 0, 'warn_min': 30}
+    with open(kinds_path, 'w', encoding='utf-8') as f:
+        json.dump(table, f)
+
+
+def land_runs(store):
+    """The ended machine-lock runs a landing booked (priority "land"), oldest first."""
+    return [h for h in store.history_records(1) if h.get('priority') == 'land']
+
+
 def no_sleep(slept):
     """land's clock with a sleep that only records: a landing that never waits for the landing
     lock file leaves `slept` empty, however long its looks took on a loaded machine."""
@@ -142,21 +159,12 @@ class OneBooking(QueueCase):
         self.assertEqual(len(self.store.history_records(1)), 1)    # one run, ended
         self.assertEqual(self.entries(), [])
 
-    def with_land_kind(self):
-        """The scratch kinds table with a land-<"gate".kind> entry beside the gate kind's."""
+    def test_a_landing_without_staging_books_the_full_land_kind_once(self):
+        # The owner's calls: a landing's merged gate books land-<kind> (its real size:
+        # tests/lock/test_kinds.py IntegerSizes), once; a repository without staging never
+        # books the compile-only land-<kind>-staging the table also has (11-16).
         kind = kconfig.load(self.repo.root).section('gate')['kind']
-        with open(self.kinds_path, encoding='utf-8') as f:
-            table = json.load(f)
-        table['kinds']['land-' + kind] = {'cpu': 4, 'gpu': 0, 'warn_min': 30}
-        with open(self.kinds_path, 'w', encoding='utf-8') as f:
-            json.dump(table, f)
-        return kind
-
-    def test_a_landing_books_the_land_kind_when_the_kinds_table_has_it(self):
-        # The owner's call: a landing's merged gate books land-<kind> (4
-        # cores in kitlib/lock/kinds.json), once, with no second booking for a kind it did not
-        # take from the config (rebook_kind compares the "gate".kind, not the land kind).
-        kind = self.with_land_kind()
+        add_land_kinds(self.kinds_path, kind)
         _, tip = self.branch('feature', {'a.py': 'a\n'})
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)

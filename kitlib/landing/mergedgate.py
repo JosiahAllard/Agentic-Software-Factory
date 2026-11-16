@@ -94,7 +94,9 @@ class MergedGate(object):
         included) nor fresh (a strict branch's, strict_escalate), so those run every selected step.
         Read when the merged gate starts, after both escalations; main's gate and a load node's
         land job get the same answer (docs/gate-landing.md "What a landing re-runs and what it
-        reuses")."""
+        reuses"). Also read at each booking (Lander.land_kind), where it is the mode as known so
+        far: a booking before an escalation may say True, and rebook_kind corrects it, since
+        both escalations only ever turn it False."""
         return bool(self.staging and not self.full and not self.fresh)
 
     def gate(self):
@@ -115,28 +117,40 @@ class MergedGate(object):
         return self.main_gate()
 
     def rebook_kind(self):
-        """Step 7 on main, just before main's merged gate: None when the slot held is of the
-        base config's "gate".kind. Main moved on before the turn to a base whose config (read
-        again by follow, step 4) names another kind than book_turn booked (the config read at
-        preconditions): it says so, releases the slot first, then books the base's kind at its
-        own size with no wait limit, as rebook_here does and for the same reason (booked while
-        the old run is held, a kind of every slot, an owner whole hold or a gpu pool would wait
-        on itself). The landing lock file stays held, so no other landing merges meanwhile.
-        None once booked; the machine lock not giving it: a FAILED Outcome (NOT LANDED, the
-        merge undone). After a node-routed fallback rebook_here booked the base's kind already:
-        nothing to do."""
+        """Step 7 on main, just before main's merged gate: None when the slot held is of the land
+        kind the merged gate needs now (Lander.land_kind of the base config's "gate".kind, read
+        after both escalations). Else it says why, releases the slot first, then books that land
+        kind at its own size with no wait limit, as rebook_here does and for the same reason
+        (booked while the old run is held, a kind of every slot, an owner whole hold or a gpu
+        pool would wait on itself). Why is one of two: main moved on before the turn to a base
+        whose config (read again by follow, step 4) names another "gate".kind than book_turn
+        booked (the config read at preconditions), said as `the base <b> books "gate".kind ...`;
+        or a staging landing that booked its compile-only land kind was made strict (fresh) or
+        --full since, said as `the merged gate runs every selected step ...` (the owner's call,
+        11-16: a full landing books the full land kind). The landing lock file stays held, so
+        no other landing merges meanwhile. None once booked; the machine lock not giving it: a
+        FAILED Outcome (NOT LANDED, the merge undone). After a node-routed fallback rebook_here
+        booked the land kind already: nothing to do."""
         kind, booked = self.cfg.section('gate')['kind'], self.booked_kind
-        if booked is None or self.same_kind(booked, kind):
+        want, held = self.land_kind(kind), self.booked_land
+        if held is None or self.same_kind(held, want):
             return None
-        self.say('the base %s books "gate".kind %s, not %s as this landing did: releasing the '
-                 "landing's %s run and booking a %s run for the merged gate, waiting with no "
-                 'limit' % (self.expect_main[:10], kind, booked, booked, kind))
+        if booked is not None and not self.same_kind(booked, kind):
+            self.say('the base %s books "gate".kind %s, not %s as this landing did: releasing the '
+                     "landing's %s run and booking a %s run for the merged gate, waiting with no "
+                     'limit' % (self.expect_main[:10], kind, booked, held, want))
+        else:
+            why = ('--full, as the GATE CONFIG line says' if self.full else
+                   'fresh: a strict branch' if self.strict_hits else 'fresh')
+            self.say('the merged gate runs every selected step (%s), not a staging landing\'s '
+                     "compile-only run: releasing the landing's %s run and booking a %s run for "
+                     'it, waiting with no limit' % (why, held, want))
         self.drop_slot(0, 'done')
         try:
             self.book_slot(None)
         except LockError as e:
             line = ('the machine lock did not give the merged gate its %s run: %s'
-                    % (kind, e.message))
+                    % (want, e.message))
             return G.Outcome(G.FAILED, [line], verdict=line, results=[])
         return None
 

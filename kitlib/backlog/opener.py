@@ -9,7 +9,8 @@ docs/backlog.md).
                        store's repository (NO_PROBES: none), its `cap` repo_cap's; from a linked
                        worktree naming no store, the PM data worktree's live store
                        (store_live.worktree_live_store)
-  follow_up_states(root, ids) -> ({id: (state, open)}, why) from the live store (no fetch)
+  follow_up_states(root, ids, branch, tip, base) -> ({id: (state, open, closes)}, why) from the
+                       live store (no fetch); `closes`: the landing of `branch` closes it
   repo_cap(top)     -> the main checkout's `.kit.json` backlog.cap `next` and `pull` share
   repo_resources(top) -> the main checkout's `.kit.json` backlog.resources, {name: capacity}
   repo_shared_paths(top) -> the main checkout's `.kit.json` backlog.shared_paths, [(path, why)]
@@ -28,6 +29,7 @@ import kitlib.config as kconfig
 from kitlib.config.types import is_note
 from kitlib.git import repo as gitrepo
 
+from . import landable
 from . import plan as pmod
 from . import plan_citations, plan_claim, plan_edit, plan_end, plan_hold
 from . import policy
@@ -91,25 +93,33 @@ def open_store(root, fetch=True, session=None, branch=None, *, probes):
     return ctx
 
 
-def follow_up_states(root, ids):
-    """`({id: (state, open)}, None)` for each of `ids` in the live store of `root`'s records
-    (store_live.live_store_root: from a main checkout naming no store, its PM data worktree's), as
-    last fetched: `state` the record's `state:`, None when the store holds none of that id (a closed
-    or retired one), `unreadable` when it cannot be parsed; `open` True when the state is one of
-    record.STATES. `(None, why)` when the live store cannot be found or opened. A read, so it opens
-    the store with NO_PROBES."""
+def follow_up_states(root, ids, branch, tip, base):
+    """`({id: (state, open, closes)}, None)` for each of `ids` in the live store of `root`'s
+    records (store_live.live_store_root: from a main checkout naming no store, its PM data
+    worktree's), as last fetched: `state` the record's `state:`, None when the store holds none of
+    that id (a closed or retired one), `unreadable` when it cannot be parsed; `open` True when the
+    state is one of record.STATES; `closes` True when the landing of `branch` at `tip` onto `base`
+    (main as fetched, or None when it cannot be read) would close it (landable.follow_up_closes,
+    git read in `root`). `(None, why)` when the live store cannot be found or opened, or whether
+    the landing closes one cannot be told. A read, so it opens the store with NO_PROBES."""
     try:
         path, why = store_live.live_store_root(root)
         if why:
             return None, why
-        snap = open_store(path, fetch=False, probes=NO_PROBES).store.load()
+        store = open_store(path, fetch=False, probes=NO_PROBES).store
+        snap = store.load()
     except (Failure, Refusal, Usage, kconfig.ConfigError, OSError) as e:
         return None, str(e)
+    recs = {rid: snap.get(rid) for rid in ids}
+    closes, why = landable.follow_up_closes(
+        store.backend, [r for r in recs.values() if r is not None and r.readable], root, branch,
+        tip, base)
+    if why:
+        return None, why
     out = {}
-    for rid in ids:
-        rec = snap.get(rid)
+    for rid, rec in recs.items():
         state = None if rec is None else rec.get('state') if rec.readable else 'unreadable'
-        out[rid] = (state, state in rmod.STATES)
+        out[rid] = (state, state in rmod.STATES, rid in closes)
     return out, None
 
 

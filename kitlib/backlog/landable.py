@@ -69,6 +69,34 @@ def _landing_acts(root, tip, base, held, proof=()):
             tuple(sorted(unproven))), None
 
 
+def held(records, branch):
+    """The ids of `records` that `branch` holds pulled (`state: pulled`, `pulled_by: <branch>`)."""
+    return [x.id for x in records if x.get('state') == 'pulled' and x.get('pulled_by') == branch]
+
+
+def follow_up_closes(backend, records, root, branch, tip, base):
+    """`(ids, None)`: the ids of `records` (read from `backend`'s store) that the landing of
+    `branch` at `tip` onto `base` would close, as close_landed decides it: those the branch holds
+    pulled (held), in a store a landing closes in (_closing_store; never the implicit default
+    store), when its commits in `tip --not base` have no Part-of line or a Closes line names the
+    id, and a live-proof id only when a Live-pass line cites it (_landing_acts). `()` with no git
+    read when nothing is held or the store closes nothing. `(None, why)` when that cannot be told:
+    the store's kind, `base` None (main as fetched unread) while one is held, or lines git cannot
+    read; never `()` then. tools/verdict.py add refuses a --follow-up in `ids` (verdicts.follow_up_why)."""
+    closing, why = _closing_store(backend)
+    if why:
+        return None, why
+    ids = held(records, branch) if closing else []
+    if not ids:
+        return (), None
+    if not base:
+        return None, ('main as fetched cannot be read, so the Closes and Part-of lines of %s '
+                      'cannot be read' % branch)
+    acts, why = _landing_acts(root, tip, base, ids,
+                              [x.id for x in records if at_landing.is_live_proof(x)])
+    return (None, why) if acts is None else (acts[0], None)
+
+
 def code_base(ctx):
     """The code main a landing of a branch merges onto, as plan.Context `ctx` names it (the main
     checkout's in the PM data worktree): `<code_remote>/<code_main>` as last fetched, else the
@@ -113,21 +141,21 @@ def check(backend, snap, root, branches, base=None):
             out.append(Verdict(branch, CANNOT_TELL, (), 'unreadable record(s): %s'
                                % ', '.join(unread)))
             continue
-        held = [x.id for x in records if x.get('state') == 'pulled' and x.get('pulled_by') == branch]
+        mine = held(records, branch)
         detail = '%d records read' % len(records)
-        if not held or not closing:
-            out.append(Verdict(branch, NOT_LANDABLE if held else LANDABLE, tuple(held), detail))
+        if not mine or not closing:
+            out.append(Verdict(branch, NOT_LANDABLE if mine else LANDABLE, tuple(mine), detail))
             continue
         if not base:
-            out.append(Verdict(branch, CANNOT_TELL, tuple(held), 'no code main to read the Closes '
+            out.append(Verdict(branch, CANNOT_TELL, tuple(mine), 'no code main to read the Closes '
                                'and Part-of lines of its commits above'))
             continue
         proof = [x.id for x in records if at_landing.is_live_proof(x)]
-        acts, why = _landing_acts(root, tip, base, held, proof)
+        acts, why = _landing_acts(root, tip, base, mine, proof)
         if acts is None:
-            out.append(Verdict(branch, CANNOT_TELL, tuple(held), why))
+            out.append(Verdict(branch, CANNOT_TELL, tuple(mine), why))
             continue
-        out.append(Verdict(branch, LANDABLE, tuple(held),
+        out.append(Verdict(branch, LANDABLE, tuple(mine),
                            '%s; its commits above %s read' % (detail, base), *acts))
     return out
 

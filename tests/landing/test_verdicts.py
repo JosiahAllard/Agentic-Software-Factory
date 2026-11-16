@@ -165,14 +165,14 @@ class ReportLines(unittest.TestCase):
 
     def test_follow_up_why_needs_an_open_record(self):
         fu = given('kit/a', 'a' * 40, verdict='LAND WITH FOLLOW-UP', records=['EX-1'])
-        self.assertIsNone(V.follow_up_why(fu, {'EX-9': ('parked', True)}))
+        self.assertIsNone(V.follow_up_why(fu, {'EX-9': ('parked', True, False)}))
         cases = [
             ({}, 'names no --follow-up'),
-            ({'EX-9': (None, False)},
+            ({'EX-9': (None, False, False)},
              '--follow-up EX-9 is no open record in the store (none of that id)'),
-            ({'EX-9': ('closed', False)},
+            ({'EX-9': ('closed', False, False)},
              '--follow-up EX-9 is no open record in the store (state: closed)'),
-            ({'EX-1': ('open', True)}, '--follow-up EX-1 is a record this branch carries'),
+            ({'EX-1': ('open', True, False)}, '--follow-up EX-1 is a record this branch carries'),
         ]
         for follow_ups, want in cases:
             why = V.follow_up_why(fu, follow_ups) or ''
@@ -181,7 +181,24 @@ class ReportLines(unittest.TestCase):
         land = given('kit/a', 'a' * 40, verdict='LAND')
         self.assertIsNone(V.follow_up_why(land, {}))
         self.assertIn('--follow-up goes with --verdict "LAND WITH FOLLOW-UP"',
-                      V.follow_up_why(land, {'EX-9': ('open', True)}) or '')
+                      V.follow_up_why(land, {'EX-9': ('open', True, False)}) or '')
+
+    def test_follow_up_why_refuses_a_record_the_landing_closes(self):
+        """The observed failure: the follow-up named the branch's own pulled record, and with no
+        Part-of line its landing closed it. A pulled record the landing releases, or another
+        branch's, is a follow-up as before."""
+        fu = given('kit/a', 'a' * 40, verdict='LAND WITH FOLLOW-UP')
+        why = V.follow_up_why(fu, {'EX-9': ('pulled', True, True)}) or ''
+        self.assertIn('--follow-up EX-9 is a record this branch holds pulled, and its landing '
+                      'closes it (no Part-of line in its commits above main, or a Closes: EX-9 '
+                      'line); nothing was queued', why)
+        self.assertIn('\nInstead: if the branch lands one part of EX-9, have its builder commit a '
+                      'line Part-of: EX-9 on it, review the new tip and queue that; else file the '
+                      'rest as a new record (backlog.py add) and queue again with --follow-up '
+                      '<its ID>', why)
+        self.assertIsNone(V.follow_up_why(fu, {'EX-9': ('pulled', True, False)}))
+        self.assertIsNone(V.follow_up_why(fu, {'EX-9': ('pulled', True, False),
+                                               'EX-8': ('open', True, False)}))
 
     def test_design_why_needs_an_approved_design_review(self):
         approve = ALL_DESIGN + '\nDesign: APPROVE'

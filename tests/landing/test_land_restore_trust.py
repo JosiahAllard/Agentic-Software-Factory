@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+from unittest import mock
 
 from kitlib import gate as G
 from kitlib.gate import result
@@ -97,6 +98,23 @@ class TrustCase(SubmitCase):
         with open(payload, encoding='utf-8') as f:
             return json.load(f)['runs']
 
+    def refuse(self, wt, branches, tips, payload, token=None, expect_main=None):
+        """What a tool's `--submitted` run prints and exits with, in this process: the call
+        tools/land.py and tools/gate.py both make (submit.restore_landing), with the token in
+        the environment as the detached landing gets it, and what emit() prints. A CompletedProcess
+        of that, so assert_refused reads it as it reads a tool's. A payload it restores is a
+        failure of the test: the landing would go on."""
+        with mock.patch.dict(os.environ):
+            os.environ.pop(TOKEN_ENV, None)
+            if token is not None:
+                os.environ[TOKEN_ENV] = token
+            sub, said = submit.restore_landing(wt, payload, branches, tips, expect_main=expect_main)
+        self.assertIsNone(sub, said.lines)
+        text = ''.join(line + '\n' for line in said.lines)
+        stderr = bool(said.facts.get('stderr'))
+        return subprocess.CompletedProcess([], said.code, '' if stderr else text,
+                                           text if stderr else '')
+
 
 class AgentWrittenPayloads(TrustCase):
 
@@ -107,16 +125,13 @@ class AgentWrittenPayloads(TrustCase):
         runs = self.runs_of(out.facts['payload'])
         rid = runs[0]['run_id']
         stolen = os.path.join(self.tmp, 'forged', 'stolen.log')
-        for tool in TOOLS:
-            with self.subTest(tool=tool[-1]):
-                payload = self.forge(os.path.join(self.tmp, 'forged', 'x.%s.land.submit' % rid),
-                                     runs, stolen)
-                before = self.snapshot(self.record_path(), out.facts['output'],
-                                       out.facts['payload'], stolen)
-                r = self.run_tool(tool, wt, [BRANCH], [tip], payload, token='agent',
-                                  expect_main=self.main)
-                self.assert_refused(r, payload, before)
-                self.assertFalse(os.path.exists(stolen))
+        payload = self.forge(os.path.join(self.tmp, 'forged', 'x.%s.land.submit' % rid),
+                             runs, stolen)
+        before = self.snapshot(self.record_path(), out.facts['output'],
+                               out.facts['payload'], stolen)
+        r = self.refuse(wt, [BRANCH], [tip], payload, token='agent', expect_main=self.main)
+        self.assert_refused(r, payload, before)
+        self.assertFalse(os.path.exists(stolen))
 
     def test_an_unreadable_payload_outside_the_result_folder_abandons_nothing(self):
         """2: a corrupt file named for a live submission's run_id finishes none of its records."""
@@ -125,14 +140,10 @@ class AgentWrittenPayloads(TrustCase):
         payload = os.path.join(self.tmp, 'x.%s.land.submit' % rid)
         with open(payload, 'w', encoding='utf-8') as f:
             f.write('not json')
-        for tool in TOOLS:
-            with self.subTest(tool=tool[-1]):
-                before = self.snapshot(self.record_path(), out.facts['output'],
-                                       out.facts['payload'])
-                r = self.run_tool(tool, wt, [BRANCH], [tip], payload, token=token,
-                                  expect_main=self.main)
-                self.assert_refused(r, payload, before)
-                self.assertEqual(self.record(BRANCH)['verdict'], result.RUNNING)
+        before = self.snapshot(self.record_path(), out.facts['output'], out.facts['payload'])
+        r = self.refuse(wt, [BRANCH], [tip], payload, token=token, expect_main=self.main)
+        self.assert_refused(r, payload, before)
+        self.assertEqual(self.record(BRANCH)['verdict'], result.RUNNING)
 
     def test_the_genuine_payload_with_no_token_is_refused(self):
         """3: the payload the submission wrote, run by anything but its detached landing."""
@@ -150,13 +161,11 @@ class AgentWrittenPayloads(TrustCase):
         """4"""
         wt, [tip], out, token = self.genuine()
         payload = out.facts['payload']
-        for tool in TOOLS:
-            for wrong in ('0' * 32, 'agent', (token or 'x')[:-1]):
-                with self.subTest(tool=tool[-1], wrong=wrong):
-                    before = self.snapshot(self.record_path(), out.facts['output'], payload)
-                    r = self.run_tool(tool, wt, [BRANCH], [tip], payload, token=wrong,
-                                      expect_main=self.main)
-                    self.assert_refused(r, payload, before, logged=out.facts['output'])
+        for wrong in ('0' * 32, 'agent', (token or 'x')[:-1]):
+            with self.subTest(wrong=wrong):
+                before = self.snapshot(self.record_path(), out.facts['output'], payload)
+                r = self.refuse(wt, [BRANCH], [tip], payload, token=wrong, expect_main=self.main)
+                self.assert_refused(r, payload, before, logged=out.facts['output'])
 
     def test_the_right_token_with_another_landings_arguments_is_refused(self):
         """5: the payload's branches, tips and main are the landing's own arguments."""
@@ -171,8 +180,7 @@ class AgentWrittenPayloads(TrustCase):
             with self.subTest(branches=branches, tips=tips, main=main):
                 before = self.snapshot(self.record_path(), self.record_path('kit/two'),
                                        out.facts['output'], payload)
-                r = self.run_tool([LAND_PY], wt, branches, tips, payload, token=token,
-                                  expect_main=main)
+                r = self.refuse(wt, branches, tips, payload, token=token, expect_main=main)
                 # kit/two alone names another payload path: refused before its log is known
                 self.assert_refused(r, payload, before, logged=(
                     out.facts['output'] if branches[0] == BRANCH else None))
@@ -191,8 +199,7 @@ class AgentWrittenPayloads(TrustCase):
                     json.dump(dict(data, **change), f)
                 before = self.snapshot(self.record_path(), out.facts['output'], payload,
                                        elsewhere)
-                r = self.run_tool([LAND_PY], wt, [BRANCH], [tip], payload, token=token,
-                                  expect_main=self.main)
+                r = self.refuse(wt, [BRANCH], [tip], payload, token=token, expect_main=self.main)
                 self.assert_refused(r, payload, before, logged=out.facts['output'])
                 self.assertFalse(os.path.exists(elsewhere))
 
@@ -207,8 +214,7 @@ class AgentWrittenPayloads(TrustCase):
         rr.start(log=rec['log'])
         payload = out.facts['payload']
         before = self.snapshot(self.record_path(), out.facts['output'], payload)
-        r = self.run_tool([LAND_PY], wt, [BRANCH], [tip], payload, token=token,
-                          expect_main=self.main)
+        r = self.refuse(wt, [BRANCH], [tip], payload, token=token, expect_main=self.main)
         self.assert_refused(r, payload, before, logged=out.facts['output'])
 
     def test_a_record_of_another_run_or_finished_is_refused(self):
@@ -217,8 +223,7 @@ class AgentWrittenPayloads(TrustCase):
         newer = result.Run(self.repo.root, 'land', BRANCH, tip, base=self.main)
         newer.finish(G.Outcome(G.FAILED, ['NOT LANDED: red']))
         before = self.snapshot(self.record_path(), out.facts['output'], payload)
-        r = self.run_tool([LAND_PY], wt, [BRANCH], [tip], payload, token=token,
-                          expect_main=self.main)
+        r = self.refuse(wt, [BRANCH], [tip], payload, token=token, expect_main=self.main)
         self.assert_refused(r, payload, before, logged=out.facts['output'])
 
     def test_a_land_record_in_the_old_folder_is_never_trusted(self):
@@ -232,8 +237,7 @@ class AgentWrittenPayloads(TrustCase):
         os.replace(new, old)
         self.assertEqual(result.read(self.repo.root, BRANCH, 'land')[0]['verdict'], result.RUNNING)
         before = self.snapshot(new, old, out.facts['output'], payload)
-        r = self.run_tool([LAND_PY], wt, [BRANCH], [tip], payload, token=token,
-                          expect_main=self.main)
+        r = self.refuse(wt, [BRANCH], [tip], payload, token=token, expect_main=self.main)
         self.assert_refused(r, payload, before, logged=out.facts['output'])
         self.assertIn('the land record of kit/feature cannot be read: none', r.stderr)
 
@@ -255,18 +259,16 @@ class AgentWrittenPayloads(TrustCase):
             else:
                 with open(payload, 'w', encoding='utf-8') as f:
                     f.write(text)
-            for tool in TOOLS:
-                with self.subTest(payload=name, tool=tool[-1]):
-                    before = self.snapshot(self.record_path(), out.facts['output'], payload)
-                    with self.assertRaises(submit.Untrusted) as e:
-                        submit.restore(self.repo.root, payload, [BRANCH], [tip],
-                                       expect_main=self.main, environ={})
-                    self.assertEqual(e.exception.log, out.facts['output'])
-                    r = self.run_tool(tool, wt, [BRANCH], [tip], payload, token=None,
-                                      expect_main=self.main)
-                    self.assert_refused(r, payload, before, logged=out.facts['output'])
-                    self.assertIn('no submission token', r.stderr)
-                    self.assertEqual(self.record(BRANCH)['verdict'], result.RUNNING)
+            with self.subTest(payload=name):
+                before = self.snapshot(self.record_path(), out.facts['output'], payload)
+                with self.assertRaises(submit.Untrusted) as e:
+                    submit.restore(self.repo.root, payload, [BRANCH], [tip],
+                                   expect_main=self.main, environ={})
+                self.assertEqual(e.exception.log, out.facts['output'])
+                r = self.refuse(wt, [BRANCH], [tip], payload, token=None, expect_main=self.main)
+                self.assert_refused(r, payload, before, logged=out.facts['output'])
+                self.assertIn('no submission token', r.stderr)
+                self.assertEqual(self.record(BRANCH)['verdict'], result.RUNNING)
 
 
 class InProcess(TrustCase):

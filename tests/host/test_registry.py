@@ -297,6 +297,19 @@ class Profiles(Case):
                          os.path.join(home, '.claude', 'tools', 'x.py'))
         self.assertEqual(registry.default_profile().skills_directory, '.claude/skills')
 
+    def test_the_host_module_is_the_default_hosts_by_its_name_and_one_it_lacks_is_named(self):
+        from hosts.claude.adapter import claude_host
+        self.assertEqual(registry.host_module_name(), 'hosts.claude.adapter.claude_host')
+        self.assertIs(registry.host_module(), claude_host)
+        data = second(kit_hosts())
+        data['claude'].pop('default')
+        data['other']['default'] = True
+        path = self.put(data)
+        self.assertEqual(registry.host_module_name(path), 'hosts.claude.adapter.other_host')
+        with self.assertRaises(ModuleNotFoundError) as e:
+            registry.host_module(path)
+        self.assertEqual(e.exception.name, 'hosts.claude.adapter.other_host')
+
 
 class ProcessNames(Case):
     """process_names is per platform: each host's profile carries the whole map, and

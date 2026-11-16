@@ -674,7 +674,8 @@ class _Run(object):
 
     def sign_in_todos(self, accounts):
         """One urgent hub to-do per account with a sign-in reason (AccountState signin) and per
-        login end or mark, through job.child: `hub.py todos add` with the account's login command.
+        login end or mark, through job.child: `hub.py todos add` with the account's login command
+        (accounts.login_command; no --command for a host without one).
         signin_todos keeps what each was for; an account with no reason now is dropped from it. A
         failed post is logged and tried again next run."""
         done = self.doc['signin_todos']
@@ -690,12 +691,15 @@ class _Run(object):
                     else 'ends:%s' % st.login_end)
             if done.get(acct) == todo:
                 continue
+            dirs = self.settings.account_dirs(acct)
+            command = A.login_command(dirs[0], self.settings.home) if dirs else None
             detail = ('Account %s: %s. The usage crossover moves no session there until it is signed in '
-                      'again: run the command in a terminal and sign in.' % (acct, why))
+                      'again: %s' % (acct, why, 'run the command in a terminal and sign in.' if command
+                                     else "sign it in with its host's own sign-in."))
             argv = [sys.executable, os.path.join(self.job.kit, 'tools', 'hub.py'), 'todos', 'add', '--urgent',
-                    '--title', 'Sign in account %s' % acct, '--detail', detail,
-                    '--command', A.login_command(self.settings.account_dirs(acct)[0], self.settings.home),
-                    '--from', NAME]
+                    '--title', 'Sign in account %s' % acct, '--detail', detail]
+            argv += ['--command', command] if command else []
+            argv += ['--from', NAME]
             try:
                 code, lines = self.job.child(argv, self.job.kit)
             except (subprocess.TimeoutExpired, OSError) as e:

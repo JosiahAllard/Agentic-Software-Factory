@@ -3,6 +3,7 @@ import datetime
 import json
 import os
 import shutil
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -112,6 +113,63 @@ class SignedIn(unittest.TestCase):
         with open(os.path.join(org, '.claude.json'), 'w') as f:
             f.write('{"oauthAccount": {"x": 1}}')
         self.assertEqual(A.org_launch_dir(s, '1'), org)
+
+
+class HostReads(unittest.TestCase):
+    """The host's own file readers, imported by their computed name (kitlib.host.registry.host_module):
+    a host without that module reads the file's presence; an error inside one propagates."""
+    NOW = 2000000000.0
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix='kit-hostreads-')
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.pkg = 'kit_hostreads_%d' % id(self)
+        os.makedirs(os.path.join(self.root, self.pkg))
+        open(os.path.join(self.root, self.pkg, '__init__.py'), 'w').close()
+        self.name = self.pkg + '.claude_host'
+        for p in (mock.patch.object(sys, 'path', [self.root] + sys.path),
+                  mock.patch.object(A.registry, 'host_module_name', return_value=self.name)):
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(lambda: [sys.modules.pop(m) for m in list(sys.modules)
+                                 if m.split('.')[0] == self.pkg])
+
+    def module(self, text):
+        with open(os.path.join(self.root, self.pkg, 'claude_host.py'), 'w') as f:
+            f.write(text)
+
+    def assert_presence_reads(self):
+        h = Home(self, accounts=('1', '2'), signed_out=('2',))
+        sign_in(h.accounts['1'][0], signed=False, ends_ms=1000)
+        self.assertTrue(A.signed_in(h.accounts['1'][0], self.NOW))
+        self.assertFalse(A.signed_in(h.accounts['2'][0], self.NOW))
+        self.assertEqual(A.account_login(h.settings, '1', self.NOW)[:3], (True, False, None))
+        self.assertIsNone(A.login_command(h.accounts['1'][0], h.root))
+        with self.assertRaisesRegex(A.LaunchError, r"Sign it in with its host's own sign-in\.$"):
+            A.launch_dir(h.settings, '2')
+
+    def test_a_host_without_the_module_reads_the_files_presence(self):
+        self.assert_presence_reads()
+
+    def test_a_module_without_login_of_or_login_reads_the_files_presence(self):
+        self.module('X = 1\n')
+        self.assert_presence_reads()
+
+    def test_an_error_inside_the_module_propagates(self):
+        for text, error in (('import kit_no_such_module_xyz\n', ModuleNotFoundError),
+                            ('raise ImportError("inside")\n', ImportError),
+                            ('raise ValueError("inside")\n', ValueError)):
+            self.module(text)
+            sys.modules.pop(self.name, None)
+            with self.assertRaises(error, msg=text):
+                A.signed_in(self.root, self.NOW)
+            with self.assertRaises(error, msg=text):
+                A.login_command(self.root)
+
+    def test_a_missing_package_is_not_the_hosts_missing_module(self):
+        A.registry.host_module_name.return_value = self.pkg + '_gone.claude_host'
+        with self.assertRaises(ModuleNotFoundError):
+            A.signed_in(self.root, self.NOW)
 
 
 class Headroom(unittest.TestCase):

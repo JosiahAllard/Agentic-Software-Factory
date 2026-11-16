@@ -2135,6 +2135,16 @@ class SignIns(JobBase):
         self.assertEqual(self.crossing()['target'], '3')
         self.assertEqual(self.doc()['signin_todos'], {'2': 'ended'})
 
+    def test_a_host_with_no_login_command_gets_its_to_do_without_one(self):
+        fakes.sign_in(self.acct['2'], signed=False)
+        with mock.patch.object(U.A, 'login_command', return_value=None):
+            self.run_job()
+        (todo,) = self.todos()
+        self.assertNotIn('--command', todo)
+        self.assertIn("host's own sign-in", todo[todo.index('--detail') + 1])
+        self.assertEqual(todo[todo.index('--from') + 1], U.NAME)
+        self.assertEqual(self.doc()['signin_todos'], {'2': 'ended'})
+
     def test_a_login_ending_within_the_lead_gets_one_and_a_failed_post_is_tried_again(self):
         fakes.sign_in(self.acct['3'], ends_ms=(NOW + D.LOGIN_LEAD_S + 60) * 1000)
         self.run_job()

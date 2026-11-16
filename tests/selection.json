@@ -34,7 +34,7 @@
     ["boot/hook.py", ["codex", "pmstart", "coordinatorstart", "plugin", "machinesetup"]],
     ["kit.json", ["content", "host"]],
     [".claude-plugin/marketplace.json", ["content"]],
-    ["hosts/claude/adapter/claude_host.py", ["pmwatch"]],
+    ["hosts/claude/adapter/claude_host.py", ["pmwatch", "tests.launcher.test_accounts"]],
     ["hosts/claude/adapter/guard_selftest.py", ["guard"]],
     ["hosts/claude/adapter/host.py", ["guard", "pmstart", "coordinatorstart"]],
     ["hosts/claude/shell/hooks/hooks.json", ["plugin"]],

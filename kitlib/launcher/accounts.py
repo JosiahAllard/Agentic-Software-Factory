@@ -5,7 +5,10 @@ this session runs on (current_account, for the Action Hub's one copy per account
 
 Signed in means a login that has not ended, read from .credentials.json (signed_in), never the
 file's presence alone; account_login gives an account's login end and its credentials mtime (the
-usage crossover's sign-in rule), and login_command the command that signs a folder in again.
+usage crossover's sign-in rule), and login_command the command that signs a folder in again. The
+host's own file format and sign-in command come from its file readers (login_of, LOGIN; on Claude
+hosts/claude/adapter/claude_host.py, through kitlib.host.registry.host_module); a host with none
+reads the file's presence as signed in, with no end and no command.
 
 Every Claude session's status line writes usage-status.json into its account's config folder:
 {"updated_at": iso, "five_hour": {"used_percentage": n, "resets_at": iso} | null,
@@ -76,41 +79,56 @@ def short(dt):
 Login = collections.namedtuple('Login', 'signed_in ended end mtime')
 
 
-def _oauth(folder):
-    """The claudeAiOauth object of the folder's credentials file; None for no file, an unreadable
-    one or no such object."""
-    data = _read(os.path.join(folder, CREDENTIALS))
-    oauth = data.get('claudeAiOauth') if data else None
-    return oauth if isinstance(oauth, dict) else None
+def _host_reads():
+    """The default host's file readers (kitlib.host.registry.host_module), or None for a host with
+    no such module. Imported here, at the call, never when this module loads (the Claude module's
+    PRELOAD names this one). Only that module missing falls back; an error inside it propagates."""
+    name = registry.host_module_name()
+    try:
+        return registry.host_module()
+    except ModuleNotFoundError as e:
+        if e.name != name:
+            raise
+        return None
+
+
+def _login(folder):
+    """The login in the folder's credentials file: (held, end) as the host reads it (end epoch
+    seconds or None), or None for no login. A host with no login reads (no module, or one without
+    login_of): (True, None) while the file is there, as before logins were read."""
+    path = os.path.join(folder, CREDENTIALS)
+    reads = getattr(_host_reads(), 'login_of', None)
+    if reads is None:
+        return (True, None) if os.path.isfile(path) else None
+    login = reads(_read(path))
+    return None if login is None else (bool(login[0]), _ms(login[1]))
 
 
 def _ms(value):
     return value / 1000.0 if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
-def _live(oauth, now):
-    """True when a claudeAiOauth object holds a login that has not ended (signed_in)."""
-    end = _ms(oauth.get('refreshTokenExpiresAt'))
-    return bool(oauth.get('refreshToken')) and oauth.get('expiresAt') != 0 and not oauth.get('loginEnded') \
-        and (end is None or end > now)
+def _live(login, now):
+    """True when a login (_login) has not ended: held, and its end, if known, after `now`."""
+    held, end = login
+    return held and (end is None or end > now)
 
 
 def signed_in(folder, now=None):
     """True when the folder's credentials hold a login that has not ended (docs/launcher.md
-    "Accounts"). Signed out: no file, or one that cannot be read; no claudeAiOauth object; an empty
-    refreshToken (what Claude Code writes when a refresh is refused, with expiresAt 0); expiresAt
-    0; loginEnded set; or refreshTokenExpiresAt (ms) at or before `now` (epoch seconds, default
-    the clock). A past expiresAt alone is the access token's and stays signed in; an absent
-    refreshTokenExpiresAt stays signed in."""
-    oauth = _oauth(folder)
-    return oauth is not None and _live(oauth, time.time() if now is None else now)
+    "Accounts"). Signed out: no file, or one that cannot be read; no login in it; one the host
+    reads as ended (on Claude: an empty refreshToken, expiresAt 0 or loginEnded,
+    hosts/claude/adapter/claude_host.login_of); or its end at or before `now` (epoch seconds,
+    default the clock). An unknown end stays signed in."""
+    login = _login(folder)
+    return login is not None and _live(login, time.time() if now is None else now)
 
 
 def account_login(settings, n, now=None):
     """Login(signed_in, ended, end, mtime) of account n over its folders: signed_in any folder's
-    (signed_in); ended, not signed in while a folder holds a claudeAiOauth object (a login that
-    ended, not one never made); end the latest refreshTokenExpiresAt of a signed-in folder, as
-    epoch seconds, or None; mtime the newest credentials file mtime, or None."""
+    (signed_in); ended, not signed in while a folder holds a login (a login that ended, not one
+    never made); end the latest end of a signed-in folder, as epoch seconds, or None; mtime the
+    newest credentials file mtime, or None."""
     now = time.time() if now is None else now
     signed, held, ends, mtimes = False, False, [], []
     for d in settings.account_dirs(n):
@@ -118,32 +136,35 @@ def account_login(settings, n, now=None):
             mtimes.append(os.path.getmtime(os.path.join(d, CREDENTIALS)))
         except OSError:
             continue
-        oauth = _oauth(d)
-        if oauth is None:
+        login = _login(d)
+        if login is None:
             continue
         held = True
-        if _live(oauth, now):
+        if _live(login, now):
             signed = True
-            end = _ms(oauth.get('refreshTokenExpiresAt'))
-            if end is not None:
-                ends.append(end)
+            if login[1] is not None:
+                ends.append(login[1])
     return Login(signed, held and not signed, max(ends) if ends else None, max(mtimes) if mtimes else None)
 
 
 def login_command(folder, home=None):
-    """The command the owner runs to sign `folder` in again: `claude auth login` with
-    CLAUDE_CONFIG_DIR set to the folder (removed for ~/.claude, is_default), which leaves the
-    owner's shell as it was. PowerShell on Windows, bash on Linux (kitlib.platform.NAME)."""
+    """The command the owner runs to sign `folder` in again: the host's sign-in command (LOGIN of
+    its file readers) with CONFIG_DIR_ENV set to the folder (removed for the default folder,
+    is_default), which leaves the owner's shell as it was. PowerShell on Windows, bash on Linux
+    (kitlib.platform.NAME). None for a host with no sign-in command."""
+    login = getattr(_host_reads(), 'LOGIN', None)
+    if not login:
+        return None
     from kitlib import platform
     from kitlib.launcher import window
     default = is_default(folder, home)
     if platform.NAME == 'linux':
-        return ('env -u %s claude auth login' % CONFIG_DIR_ENV if default
-                else '%s=%s claude auth login' % (CONFIG_DIR_ENV, window.q(folder)))
+        return ('env -u %s %s' % (CONFIG_DIR_ENV, login) if default
+                else '%s=%s %s' % (CONFIG_DIR_ENV, window.q(folder), login))
     env = '$env:%s' % CONFIG_DIR_ENV
     inner = ('Remove-Item Env:%s -ErrorAction SilentlyContinue' % CONFIG_DIR_ENV if default
              else '%s = %s' % (env, window.q(folder)))
-    return '$p = %s; try { %s; claude auth login } finally { %s = $p }' % (env, inner, env)
+    return '$p = %s; try { %s; %s } finally { %s = $p }' % (env, inner, login, env)
 
 
 def org_signed_in(folder):
@@ -168,8 +189,9 @@ def launch_dir(settings, n):
             return d
     why = ('its login has ended' if account_login(settings, n).ended
            else 'no %s with a login under %s' % (CREDENTIALS, ' or '.join(dirs)))
-    raise LaunchError('Account %s is not signed in: %s. Sign it in: %s'
-                      % (n, why, login_command(dirs[0], settings.home) if dirs else 'claude auth login'))
+    command = login_command(dirs[0], settings.home) if dirs else None
+    raise LaunchError('Account %s is not signed in: %s. Sign it in%s'
+                      % (n, why, (': ' + command) if command else " with its host's own sign-in."))
 
 
 def org_launch_dir(settings, n):

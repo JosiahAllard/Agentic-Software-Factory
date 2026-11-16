@@ -508,12 +508,14 @@ FOLLOW_UP_INSTEAD = ('Instead: file the follow-up (backlog.py add) and queue aga
 
 
 def follow_up_why(entry, follow_ups):
-    """Why add() refuses `entry`'s follow-ups, or None. `follow_ups`: `{id: (state, open)}` for
-    each --follow-up given, `state` the record's `state:` in the store, or None when the store holds
-    no record of that id (a closed or retired record has none), and `open` True when that state is
-    one of kitlib.backlog.record.STATES (open, blocked, parked, pulled; the caller reads the store).
-    Refused: LAND WITH FOLLOW-UP naming none; a plain LAND naming one; an id with no open record, or
-    one of the records the branch carries (its landing closes them). Pure."""
+    """Why add() refuses `entry`'s follow-ups, or None. `follow_ups`: `{id: (state, open, closes)}`
+    for each --follow-up given, `state` the record's `state:` in the store, or None when the store
+    holds no record of that id (a closed or retired record has none), `open` True when that state
+    is one of kitlib.backlog.record.STATES (open, blocked, parked, pulled), and `closes` True when
+    the branch's landing would close it (kitlib.backlog.landable.follow_up_closes: the branch holds
+    it pulled, with no Part-of line in its commits above main or a Closes line naming it; the
+    caller reads the store). Refused: LAND WITH FOLLOW-UP naming none; a plain LAND naming one; an
+    id with no open record, one of the records the branch carries, or one its landing closes. Pure."""
     if entry['verdict'] == 'LAND':
         if not follow_ups:
             return None
@@ -522,17 +524,26 @@ def follow_up_why(entry, follow_ups):
     if not follow_ups:
         return ('--verdict LAND WITH FOLLOW-UP names no --follow-up; nothing was queued\n%s'
                 % FOLLOW_UP_INSTEAD)
-    parts = []
-    for rid, (state, is_open, _) in sorted(follow_ups.items()):
+    parts, closed = [], []
+    for rid, (state, is_open, closes) in sorted(follow_ups.items()):
         if rid in entry['records']:
             parts.append('--follow-up %s is a record this branch carries, which its landing closes'
                          % rid)
         elif not is_open:
             parts.append('--follow-up %s is no open record in the store (%s)'
                          % (rid, 'none of that id' if state is None else 'state: %s' % state))
+        elif closes:
+            closed.append(rid)
+            parts.append('--follow-up %s is a record this branch holds pulled, and its landing '
+                         'closes it (no Part-of line in its commits above main, or a Closes: %s '
+                         'line)' % (rid, rid))
     if not parts:
         return None
-    return '%s; nothing was queued\n%s' % ('; '.join(parts), FOLLOW_UP_INSTEAD)
+    instead = FOLLOW_UP_INSTEAD if not closed else (
+        'Instead: if the branch lands one part of %s, have its builder commit a line Part-of: %s '
+        'on it, review the new tip and queue that; else file the rest as a new record (backlog.py '
+        'add) and queue again with --follow-up <its ID>' % ((', '.join(closed),) * 2))
+    return '%s; nothing was queued\n%s' % ('; '.join(parts), instead)
 
 
 DESIGN_INSTEAD = ('Instead: run the design review: dispatch a fresh analyst with skill '
@@ -948,8 +959,9 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
     (model_mismatch_why). `said`: seen_verdicts() for the entry; a reviewer whose final report
     says SEND BACK, or has no `Verdict:` line, is ReviewerSaid (reviewer_verdict_why); so is one
     that does not name the tip (tip_why), one with no `Checks:` line or one lacking a CODE_CHECKS id (checks_why), and a plain LAND over a
-    Done-when item it reports UNMET (done_when_why). `follow_ups`: `{id: state}` of each
-    --follow-up (follow_up_why), None not checked. `new`: new_sources() of the range, None not
+    Done-when item it reports UNMET (done_when_why). `follow_ups`: `{id: (state, open, closes)}` of
+    each --follow-up, `closes` whether the branch's landing would close it (follow_up_why), None
+    not checked. `new`: new_sources() of the range, None not
     checked; when it lists any, `approval` (read_design() of the branch) must be a design review
     other than the coordinator's own (approval_why). Each refusal is ReviewerSaid. A High-risk
     verdict whose reviewer_model is not a strong-tier model is

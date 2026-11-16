@@ -33,8 +33,13 @@
       refused when it reports a Done-when item UNMET, with an `Instead:` line naming
       `--verdict "LAND WITH FOLLOW-UP" --follow-up <ID>` (verdicts.done_when_why). LAND WITH
       FOLLOW-UP needs --follow-up naming a record whose state in the backlog store as last fetched
-      is open, blocked, parked or pulled, not one the branch carries (verdicts.follow_up_why; a
-      store that cannot be read is NOT DONE). When --range adds a new non-test source file or
+      is open, blocked, parked or pulled, not one the branch carries, and not one the landing of
+      --tip onto main as fetched would close: held pulled by --branch in a store a landing closes
+      in, with no Part-of line in its commits above main or a Closes line naming it (a `Part-of:`
+      line naming any record releases it, so it stays; with a Closes line too it closes; a
+      live-proof record no Live-pass line cites is released; landable.follow_up_closes,
+      verdicts.follow_up_why). A store that cannot be read, or a held one while main as fetched
+      or its commits' lines cannot be read, is NOT DONE. When --range adds a new non-test source file or
       class (verdicts.new_sources), the branch's design approval (verdict.py design) must be
       stored and name a reviewer other than the session that recorded it (verdicts.approval_why).
       Each refusal prints `REFUSED: ...` and an `Instead:` line (exit 2, nothing written).

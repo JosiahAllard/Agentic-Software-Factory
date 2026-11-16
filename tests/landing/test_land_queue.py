@@ -32,20 +32,20 @@ REAL_KINDS = os.path.join(KIT_ROOT, 'kitlib', 'lock', 'kinds.json')
 
 
 def real_cpu(kind):
-    """The cpu size of `kind` in the kit's own kinds table (kitlib/lock/kinds.json)."""
+    """The cpu size of `kind` in the kit's own kinds table (kitlib/lock/kinds.json), or None
+    when it has no such kind."""
     with open(REAL_KINDS, encoding='utf-8') as f:
-        return json.load(f)['kinds'][kind]['cpu']
+        return json.load(f)['kinds'].get(kind, {}).get('cpu')
 
 
 def add_land_kinds(kinds_path, kind):
-    """The scratch kinds table at `kinds_path` with land-<kind> and land-<kind>-staging, sized as
-    the kit's land-test and land-test-staging: the two kinds a landing of "gate".kind `kind` books
-    by its merged gate's mode (Lander.land_kind)."""
+    """The scratch kinds table at `kinds_path` with land-<kind> (4 cores) and land-<kind>-staging
+    (2): the two kinds a landing of "gate".kind `kind` books by its merged gate's mode
+    (Lander.land_kind)."""
     with open(kinds_path, encoding='utf-8') as f:
         table = json.load(f)
-    for land, real in (('land-' + kind, 'land-test'),
-                       ('land-%s-staging' % kind, 'land-test-staging')):
-        table['kinds'][land] = {'cpu': real_cpu(real), 'gpu': 0, 'warn_min': 30}
+    for land, cpu in (('land-' + kind, 4), ('land-%s-staging' % kind, 2)):
+        table['kinds'][land] = {'cpu': cpu, 'gpu': 0, 'warn_min': 30}
     with open(kinds_path, 'w', encoding='utf-8') as f:
         json.dump(table, f)
 

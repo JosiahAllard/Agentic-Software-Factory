@@ -187,10 +187,10 @@ class IntegerSizes(KindsTest):
         # a kind of its own so the lock's stats rows (by kind) tell the two apart.
         table = kinds.load()
         self.assertEqual((table['land-test']['cpu'], table['land-test']['gpu']), (4, 0))
-        self.assertEqual((table['land-test-staging']['cpu'], table['land-test-staging']['gpu']),
-                         (2, 0))
-        for land in ('land-test', 'land-test-staging'):
-            self.assertEqual(table[land]['warn_min'], table['test']['warn_min'])
+        staging = table.get('land-test-staging', {})
+        self.assertEqual((staging.get('cpu'), staging.get('gpu'), staging.get('warn_min')),
+                         (2, 0, table['test']['warn_min']))
+        self.assertEqual(table['land-test']['warn_min'], table['test']['warn_min'])
         self.assertEqual(table['test']['cpu'], 'medium')
         kinds.check_cap(table, 4)
 

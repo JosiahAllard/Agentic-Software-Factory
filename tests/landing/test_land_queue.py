@@ -28,14 +28,6 @@ from tests.landing.test_land import BRANCH, HANG_S, LandCase
 from tests.platforms import windows_only
 
 KIT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-REAL_KINDS = os.path.join(KIT_ROOT, 'kitlib', 'lock', 'kinds.json')
-
-
-def real_cpu(kind):
-    """The cpu size of `kind` in the kit's own kinds table (kitlib/lock/kinds.json), or None
-    when it has no such kind."""
-    with open(REAL_KINDS, encoding='utf-8') as f:
-        return json.load(f)['kinds'].get(kind, {}).get('cpu')
 
 
 def add_land_kinds(kinds_path, kind):
@@ -168,16 +160,15 @@ class OneBooking(QueueCase):
         self.assertEqual(self.entries(), [])
 
     def test_a_landing_without_staging_books_the_full_land_kind_once(self):
-        # The owner's calls: a landing's merged gate books land-<kind> (4 cores in
-        # kitlib/lock/kinds.json), once; a repository without staging never books the
-        # compile-only land-<kind>-staging the table also has (11-16).
+        # The owner's calls: a landing's merged gate books land-<kind> (its real size:
+        # tests/lock/test_kinds.py IntegerSizes), once; a repository without staging never
+        # books the compile-only land-<kind>-staging the table also has (11-16).
         kind = kconfig.load(self.repo.root).section('gate')['kind']
         add_land_kinds(self.kinds_path, kind)
         _, tip = self.branch('feature', {'a.py': 'a\n'})
         out = self.lander(BRANCH, self.main, tip).run()
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual([c['kind'] for c in self.book_calls], ['land-' + kind], self.book_calls)
-        self.assertEqual(real_cpu('land-test'), 4)
 
     def test_a_landing_books_the_gate_kind_when_the_kinds_table_has_no_land_kind(self):
         kind = kconfig.load(self.repo.root).section('gate')['kind']

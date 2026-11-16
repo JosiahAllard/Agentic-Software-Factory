@@ -21,7 +21,7 @@ from kitlib.records import gate_ok
 from tests.gate import fixtures, test_reuse
 from tests.gate.test_merged_steps import COMPILES
 from tests.landing import test_land_strict
-from tests.landing.test_land_queue import add_land_kinds, land_runs, real_cpu
+from tests.landing.test_land_queue import add_land_kinds, land_runs
 
 BRANCH = test_reuse.BRANCH
 STAGING = 'staging'
@@ -115,7 +115,6 @@ class StagingSteps(StagingBase):
         self.assert_not_ran(lander.gate_logs, 'unit', 'lint')
         self.assertFalse([l for l in self.lines('STORED') if 'build' in l], self.said)
         self.assertEqual(self.land_kinds(), [self.staging_land], self.book_calls)
-        self.assertEqual(real_cpu('land-test-staging'), 2)      # the owner's call, 11-16
 
     def test_a_fresh_staging_landing_runs_every_selected_step(self):
         _, tip = self.full_tip()

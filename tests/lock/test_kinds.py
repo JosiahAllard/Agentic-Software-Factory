@@ -183,9 +183,14 @@ class IntegerSizes(KindsTest):
     def test_a_landing_of_test_books_four_cores_and_a_branch_gate_stays_medium(self):
         # The owner's call: a landing's merged gate books land-test
         # (kitlib.landing.lander.Lander.land_kind), 4 cores; a branch gate's test stays medium.
+        # 11-16: a staging landing's compile-only merged gate books land-test-staging, 2 cores,
+        # a kind of its own so the lock's stats rows (by kind) tell the two apart.
         table = kinds.load()
         self.assertEqual((table['land-test']['cpu'], table['land-test']['gpu']), (4, 0))
-        self.assertEqual(table['land-test']['warn_min'], table['test']['warn_min'])
+        self.assertEqual((table['land-test-staging']['cpu'], table['land-test-staging']['gpu']),
+                         (2, 0))
+        for land in ('land-test', 'land-test-staging'):
+            self.assertEqual(table[land]['warn_min'], table['test']['warn_min'])
         self.assertEqual(table['test']['cpu'], 'medium')
         kinds.check_cap(table, 4)
 

@@ -2,13 +2,17 @@
 it reuses"): a step with "staging_landing": false is left out and named in the merge's gate-OK
 record (staging_skipped), a step with staging_args runs them and is never REUSED, and every other
 step reuses as at any landing; a strict branch's landing (fresh) and a --full one (a gate config
-change) run every selected step. Kept out of test_land_staging so each module's real-git run stays
-well under the test pool's unit timeout."""
+change) run every selected step. What each books (docs/gate-landing.md "The landing queue"): the
+compile-only one land-test-staging (2 cores), a fresh one land-test (4), and one made strict or
+--full after its booking releases land-test-staging, then books land-test before its merged gate.
+Kept out of test_land_staging so each module's real-git run stays well under the test pool's
+unit timeout."""
 import os
 import unittest
 from unittest import mock
 
 from kitlib import gate as G
+import kitlib.config as kconfig
 from kitlib.gate import reuse, runner
 from kitlib.landing import lander as land
 from kitlib.landing import verdicts
@@ -17,6 +21,7 @@ from kitlib.records import gate_ok
 from tests.gate import fixtures, test_reuse
 from tests.gate.test_merged_steps import COMPILES
 from tests.landing import test_land_strict
+from tests.landing.test_land_queue import add_land_kinds, land_runs, real_cpu
 
 BRANCH = test_reuse.BRANCH
 STAGING = 'staging'
@@ -44,6 +49,25 @@ class StagingBase(test_reuse.ReuseCase):
             p = mock.patch.object(reuse, 'record_keys', return_value=(None, None))
             p.start()
             self.addCleanup(p.stop)
+        self.kind = kconfig.load(self.repo.root).section('gate')['kind']
+        add_land_kinds(self.kinds_path, self.kind)
+        self.full_land, self.staging_land = 'land-' + self.kind, 'land-%s-staging' % self.kind
+
+    def land_kinds(self):
+        """The kinds the landing booked, in order (its bookings have priority "land")."""
+        return [c['kind'] for c in self.book_calls if c.get('priority') == 'land']
+
+    def assert_rebooked(self, why):
+        """The landing booked the compile-only land kind, then, made `why` after it, said so,
+        released that run and only then booked the full land kind for its merged gate."""
+        self.assertEqual(self.land_kinds(), [self.staging_land, self.full_land], self.book_calls)
+        self.assertIn("the merged gate runs every selected step (%s), not a staging landing's "
+                      "compile-only run: releasing the landing's %s run and booking a %s run for "
+                      'it, waiting with no limit' % (why, self.staging_land, self.full_land),
+                      self.said)
+        first, second = land_runs(self.store)
+        self.assertEqual((first['kind'], second['kind']), (self.staging_land, self.full_land))
+        self.assertLessEqual(first['ended'], second['held_since'])
 
     def on_main(self):
         """Main's own commits before the staging branch is made from it: none here."""
@@ -90,6 +114,8 @@ class StagingSteps(StagingBase):
         self.assertEqual(self.build_args(lander), ["args ['--compile']"])
         self.assert_not_ran(lander.gate_logs, 'unit', 'lint')
         self.assertFalse([l for l in self.lines('STORED') if 'build' in l], self.said)
+        self.assertEqual(self.land_kinds(), [self.staging_land], self.book_calls)
+        self.assertEqual(real_cpu('land-test-staging'), 2)      # the owner's call, 11-16
 
     def test_a_fresh_staging_landing_runs_every_selected_step(self):
         _, tip = self.full_tip()
@@ -98,6 +124,7 @@ class StagingSteps(StagingBase):
         self.assertEqual((self.results(rec), rec['staging_skipped']), (ALL_RAN, None))
         self.assert_no_staging_line()
         self.assertEqual(self.build_args(lander), ['args []'])
+        self.assertEqual(self.land_kinds(), [self.full_land], self.book_calls)  # known at booking
 
 
 class InputTreeStagingSteps(StagingBase):
@@ -149,6 +176,7 @@ class ConfigStagingSteps(StagingBase):
         self.assertEqual((self.results(rec), rec['staging_skipped'], gate_ok.mode_of(rec)),
                          (ALL_RAN, None, 'full'))
         self.assert_no_staging_line()
+        self.assert_rebooked("--full: the merge changes the gate's config")
 
 
 class StrictStagingSteps(StagingBase):
@@ -173,6 +201,7 @@ class StrictStagingSteps(StagingBase):
         self.assertTrue(lander.fresh and not lander.full)
         self.assertEqual((self.results(rec), rec['staging_skipped']), (ALL_RAN, None))
         self.assert_no_staging_line()
+        self.assert_rebooked('fresh: a strict branch')
 
 
 if __name__ == '__main__':

@@ -18,6 +18,7 @@ from kitlib.lock import run as lockrun
 from kitlib.loadnode import landroute, route
 from kitlib.records import gate_ok, place
 from tests.landing.test_land import BRANCH, HANG_S, LandCase
+from tests.landing.test_land_queue import add_land_kinds
 
 Node = collections.namedtuple('Node', 'name')
 N1, N2 = Node('n1'), Node('n2')
@@ -242,13 +243,19 @@ class OnANode(NodeCase):
 
 class OnANodeOntoStaging(NodeCase):
     """A landing onto a staging branch routed to a node: the land job runs a staging landing's
-    merged gate (staging True) and the record main writes names what the node's left out."""
+    merged gate (staging True) and the record main writes names what the node's left out. Its
+    1-slot run is booked as the land kind of its mode (land_kind), always with cores=1."""
     KIT = {'staging': {'branch': 'staging'}}
 
     def setUp(self):
         NodeCase.setUp(self)
         self.repo.git('push', '-q', 'origin', 'main:refs/heads/staging')
         self.repo.git('fetch', '-q', 'origin')
+        add_land_kinds(self.kinds_path, 'test')
+
+    def assert_one_slot(self, kind):
+        [b] = self.landing_books()              # the node gates: the 1-slot run stays
+        self.assertEqual((b['kind'], b['cores']), (kind, 1))
 
     def test_the_land_job_is_a_staging_one_and_main_records_its_skipped_steps(self):
         _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
@@ -267,6 +274,7 @@ class OnANodeOntoStaging(NodeCase):
         rec, why = gate_ok.verify(self.repo.root, out.merge)
         self.assertIsNone(why)
         self.assertEqual((rec['ran_on'], rec['staging_skipped']), (RAN_ON, ['slow']))
+        self.assert_one_slot('land-test-staging')
 
     def test_a_fresh_landing_onto_staging_is_no_staging_land_job(self):
         _, tip = self.branch('feature', {'a.py': 'x = 1\n'})
@@ -276,6 +284,7 @@ class OnANodeOntoStaging(NodeCase):
         self.assertEqual(out.code, G.OK, out.lines)
         [run] = [c for c in routes.calls if c[0] == 'run']
         self.assertIs(run[-1]['staging'], False)
+        self.assert_one_slot('land-test')
 
 
 class RefreshesTheMirrors(NodeCase):

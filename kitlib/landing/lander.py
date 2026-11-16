@@ -12,8 +12,10 @@
                  gate on a node"), its `gating here: ...` or `gating on load node ...` line said
                  unless it is quiet (a kit checkout, no registry, no node opted in)
   3  turn        ONE booking in the machine lock (kitlib.lock.run.book): a gate run of the
-                 config's "gate".kind, as land-<kind> when the kinds table has one (land-test:
-                 4 cores), for <repo>/<branch[+branch...]>, holding the resource
+                 config's "gate".kind, as its land kind when the kinds table has one
+                 (Lander.land_kind: land-<kind>-staging for a staging landing's compile-only
+                 merged gate, land-test-staging 2 cores; else land-<kind>, land-test 4 cores),
+                 for <repo>/<branch[+branch...]>, holding the resource
                  `landing:<git common dir>` at priority "land" ("The queue" below); routed to a
                  node, with cores=1 (the landing's own work; the node runs the gate). At once, or
                  waited for up to --wait seconds (default "landing".wait_s); not given: the lock's
@@ -109,6 +111,9 @@
                  booked: on main, `the base <b> books "gate".kind <k>, not <k0> ...`, the slot
                  released first, then the base's kind booked at its own size with no wait limit
                  (rebook_kind), the lock file still held; the lock refusing it is NOT LANDED.
+                 A staging landing that booked its compile-only land kind and was made strict
+                 (fresh) or --full after step 3 is rebooked the same way, at land-<kind>
+                 (`the merged gate runs every selected step ...`).
                  Routed to a node, recheck asks for the base's kind's slots (route_need; a kind
                  that cannot be sized gates here as above), and the 1-slot run stays
   7b unchanged   green: the landing tree's HEAD still the merge, no tracked change, no untracked
@@ -252,6 +257,8 @@ from kitlib.landing.after import After
 
 
 POLL_S = 5.0
+# land-<kind> + this: the lock kind a staging landing's compile-only merged gate books (land_kind)
+STAGING_SUFFIX = '-staging'
 
 
 def submitmod():
@@ -305,6 +312,7 @@ class Lander(Checks, Merge, MergedGate, Push, After):
         self.holder = None          # the landing lock file's record when another holds it
         self.yielded_to = None      # the holder yield_turn last gave the turn back to
         self.booked_kind = None     # the "gate".kind of the last booking (book_slot)
+        self.booked_land = None     # the lock kind of the last booking (book_slot: land_kind)
         self.tree_given = tree      # Lander(tree=), or None: the default place (tree_path)
         self.tree = None            # the landing tree's path, once prepare_tree placed it
         self.branches, self.tips = _as_list(branch), _as_list(expect_tip)
@@ -509,10 +517,14 @@ class Lander(Checks, Merge, MergedGate, Push, After):
         self.book_slot(wait_s, cores=1 if self.on_node() else None)
 
     def land_kind(self, kind):
-        """The lock kind a landing of "gate".kind `kind` books: `land-<kind>` (its retired name
-        read as the kind it names now) when the lock's kinds table (book_kw's kinds_table, else
-        the store's kinds file) has it, else `kind`. A table that cannot be read: `kind`, whose
-        booking then fails closed as any run's does."""
+        """The lock kind a landing of "gate".kind `kind` books, by the mode its merged gate runs
+        as known now (staging_gate; the owner's call, 11-16): a staging landing's compile-only
+        gate books `land-<kind>-staging` when the lock's kinds table (book_kw's kinds_table, else
+        the store's kinds file) has it; any other landing, or a table without it, books
+        `land-<kind>` when the table has that (`kind` read as the kind a retired name names now),
+        else `kind`. A table that cannot be read: `kind`, whose booking then fails closed as any
+        run's does. Read at every booking, so one made after a strict or --full escalation
+        (rebook_here, rebook_kind) gets the full land kind."""
         path = self.queue_store().kinds_path
         table = (self.book_kw or {}).get('kinds_table')
         if table is None:
@@ -521,14 +533,17 @@ class Lander(Checks, Merge, MergedGate, Push, After):
             except ConfigError:
                 return kind
         land = 'land-%s' % lockkinds.canonical(kind, path)
+        if self.staging_gate() and land + STAGING_SUFFIX in table:
+            return land + STAGING_SUFFIX
         return land if land in table else kind
 
     def book_slot(self, wait_s, cores=None):
         """Book the landing's run into self.slot: the land kind of the gate kind (land_kind), the
         landing resource, priority "land", waiting up to `wait_s` (None: no limit; 0: now or
         never), with `cores` cpu slots (None: the kind's size, or book_kw's). self.booked_kind
-        keeps the "gate".kind, which rebook_kind and route_need compare with the base's. Says its
-        held line. Raises LockError."""
+        keeps the "gate".kind, which route_need compares with the base's; self.booked_land the
+        lock kind booked, which rebook_kind compares with the land kind the merged gate needs.
+        Says its held line. Raises LockError."""
         kw = dict(self.book_kw or {}, store=self.queue_store(), gate=True,
                   resource=queue_key(self.lock.common), priority='land', wait_s=wait_s,
                   no_wait=wait_s == 0, note='landing: %s' % self.branch)
@@ -538,9 +553,10 @@ class Lander(Checks, Merge, MergedGate, Push, After):
             kw['detached'] = True   # its launcher's ancestry is in ORIGIN_ENV (kitlib.landing.submit)
         book = self.book_fn or lockrun.book
         kind = self.cfg.section('gate')['kind']
-        self.slot = book(self.land_kind(kind), place.repo_name(self.cfg, self.root),
+        land = self.land_kind(kind)
+        self.slot = book(land, place.repo_name(self.cfg, self.root),
                          place.slug_of('+'.join(self.branches)), **kw)
-        self.booked_kind = kind
+        self.booked_kind, self.booked_land = kind, land
         self.say(self.slot.held_text())
 
     def rebook_here(self, why):

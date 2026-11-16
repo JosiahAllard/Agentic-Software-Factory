@@ -27,6 +27,10 @@ from kitlib.proc.job import Job
 from kitlib.proc.process import own_ctime, proc_ctime
 
 SERVE_GUARD = 30
+# The start phase of a real helper whose start is not under test: the most NativeToolsPipe
+# allows. A helper start on a loaded machine must reach the phase the test asserts, not
+# refuse first with codex-native-start-timeout-before-write.
+START_SECONDS = 10
 
 
 class CodexDeliveryTests(unittest.TestCase):
@@ -147,7 +151,7 @@ class CodexDeliveryTests(unittest.TestCase):
 
     def test_native_shaped_frame_targets_original_chat_with_exact_reply_correlation(self):
         self.serve()
-        result = CodexDesktopAdapter(lease=self.lease, timeout=2).send(self.message)
+        result = CodexDesktopAdapter(lease=self.lease, timeout=2, start_timeout=START_SECONDS).send(self.message)
         self.threads[0].join(3)
         self.assertEqual(result.state, 'recipient-accepted')
         self.assertEqual(result.operation_id, self.message.operation_id)
@@ -185,11 +189,9 @@ class CodexDeliveryTests(unittest.TestCase):
                 creationflags=0x08000000)
             wrong = NativeEndpoint(self.name, other.pid, proc_ctime(other.pid), str(Path(sys.executable).resolve()))
             try:
-                # start_timeout 10 (the most allowed): a slow helper start under load must reach
-                # the helper's own server-pid check, not the start-phase refusal, and the code
-                # proves which refusal it was.
+                # The code proves the refusal was the helper's own server-pid check.
                 with self.assertRaises(BeforeWriteError) as caught:
-                    NativeToolsPipe(timeout=2, start_timeout=10).call(wrong, {'id': 'fixture-id'},
+                    NativeToolsPipe(timeout=2, start_timeout=START_SECONDS).call(wrong, {'id': 'fixture-id'},
                         before_write=self.check)
                 self.assertEqual(caught.exception.code, 'codex-native-peer-unavailable-before-write')
             finally:
@@ -202,8 +204,11 @@ class CodexDeliveryTests(unittest.TestCase):
         for endpoint in (
                 NativeEndpoint(self.name, os.getpid(), own_ctime()+1, str(Path(sys.executable).resolve())),
                 NativeEndpoint(self.name, os.getpid(), own_ctime(), str(Path.cwd() / 'wrong.exe'))):
-            with self.assertRaises(BeforeWriteError):
-                NativeToolsPipe(timeout=1).call(endpoint, {'id': 'fixture-id'}, before_write=self.check)
+            # The code proves the helper's own identity check refused, not the start phase.
+            with self.assertRaises(BeforeWriteError) as caught:
+                NativeToolsPipe(timeout=1, start_timeout=START_SECONDS).call(endpoint, {'id': 'fixture-id'},
+                    before_write=self.check)
+            self.assertEqual(caught.exception.code, 'codex-native-peer-unavailable-before-write')
         self.assertEqual(self.requests, [])
 
     def test_lease_revocation_after_connect_prevents_native_write(self):
@@ -213,7 +218,7 @@ class CodexDeliveryTests(unittest.TestCase):
         def lease(message):
             yield DesktopLease(self.recipient, self.context, self.endpoint, lambda: next(checks), writer=self.writer)
         with self.assertRaises(BeforeWriteError):
-            CodexDesktopAdapter(lease=lease, timeout=2).send(self.message)
+            CodexDesktopAdapter(lease=lease, timeout=2, start_timeout=START_SECONDS).send(self.message)
         self.threads[0].join(3)
         self.assertEqual(self.requests, [])
 
@@ -232,7 +237,7 @@ class CodexDeliveryTests(unittest.TestCase):
     def test_wrong_rpc_id_error_and_ambiguous_success_stay_uncertain(self):
         self.serve(wrong_id=True)
         with self.assertRaises(DeliveryError) as caught:
-            CodexDesktopAdapter(lease=self.lease, timeout=2).send(self.message)
+            CodexDesktopAdapter(lease=self.lease, timeout=2, start_timeout=START_SECONDS).send(self.message)
         self.assertNotIsInstance(caught.exception, BeforeWriteError)
         self.assertEqual(len(self.requests), 1)
         self.assertNotIn('private-content', str(caught.exception))
@@ -257,7 +262,7 @@ class CodexDeliveryTests(unittest.TestCase):
             return child
         with patch('optional.bridge.hosts.codex.delivery_transport.Job.start', start):
             with self.assertRaises(DeliveryError) as caught:
-                CodexDesktopAdapter(lease=self.lease, timeout=.7).send(self.message)
+                CodexDesktopAdapter(lease=self.lease, timeout=.7, start_timeout=START_SECONDS).send(self.message)
         self.assertNotIsInstance(caught.exception, BeforeWriteError)
         self.assertLess(self.response_elapsed(), 4)
         self.assertTrue(children)
@@ -422,7 +427,7 @@ class CodexDeliveryTests(unittest.TestCase):
     def test_native_oversize_frame_is_uncertain_and_bounded(self):
         self.serve(raw=struct.pack('<I', MAX_FRAME+1))
         with self.assertRaises(DeliveryError) as caught:
-            CodexDesktopAdapter(lease=self.lease, timeout=2).send(self.message)
+            CodexDesktopAdapter(lease=self.lease, timeout=2, start_timeout=START_SECONDS).send(self.message)
         self.assertNotIsInstance(caught.exception, BeforeWriteError)
         self.assertLess(self.response_elapsed(), 4)
         self.assertEqual(len(self.requests), 1)
@@ -431,7 +436,7 @@ class CodexDeliveryTests(unittest.TestCase):
         payload = b'{"jsonrpc":"2.0","id":"first","id":"second","result":{"success":true}}'
         self.serve(raw=struct.pack('<I', len(payload))+payload)
         with self.assertRaises(DeliveryError) as caught:
-            CodexDesktopAdapter(lease=self.lease, timeout=2).send(self.message)
+            CodexDesktopAdapter(lease=self.lease, timeout=2, start_timeout=START_SECONDS).send(self.message)
         self.assertNotIsInstance(caught.exception, BeforeWriteError)
 
     def test_structured_native_tool_error_in_text_cannot_be_success(self):
@@ -480,12 +485,12 @@ class CodexDeliveryTests(unittest.TestCase):
         original = Job.start
         # The injected 3.2 s start exceeds both the 2 s response budget and the 3 s accept
         # window the serve fixture once had, so a fixed fixture window fails here every run;
-        # start_timeout 6.7 keeps the 3.5 s left for the real helper start that 2.5/6 gave.
+        # START_SECONDS leaves the real helper start 6.8 s after it.
         def start(job, command, **options):
             time.sleep(3.2)
             return original(job, command, **options)
         with patch('optional.bridge.hosts.codex.delivery_transport.Job.start', start):
-            result = CodexDesktopAdapter(lease=self.lease, timeout=2, start_timeout=6.7).send(self.message)
+            result = CodexDesktopAdapter(lease=self.lease, timeout=2, start_timeout=START_SECONDS).send(self.message)
         self.threads[0].join(3)
         self.assertEqual(result.state, 'recipient-accepted')
         self.assertEqual(len(self.requests), 1)
@@ -498,7 +503,7 @@ class CodexDeliveryTests(unittest.TestCase):
             return child
         with patch('optional.bridge.hosts.codex.delivery_transport.Job.start', start):
             with self.assertRaises(DeliveryError) as caught:
-                CodexDesktopAdapter(lease=self.lease, timeout=.7).send(self.message)
+                CodexDesktopAdapter(lease=self.lease, timeout=.7, start_timeout=START_SECONDS).send(self.message)
         self.assertNotIsInstance(caught.exception, BeforeWriteError)
         self.assertLess(self.response_elapsed(), 4)
         self.assertTrue(all(child.poll() is not None for child in children))
@@ -536,8 +541,9 @@ class CodexDeliveryTests(unittest.TestCase):
         try:
             with patch('optional.bridge.hosts.codex.delivery_transport.Job.start', start), patch(
                     'optional.bridge.hosts.codex.delivery_transport.threading.Thread.start', thread_start):
-                with self.assertRaises(BeforeWriteError):
+                with self.assertRaises(BeforeWriteError) as caught:
                     CodexDesktopAdapter(lease=self.lease, timeout=1).send(self.message)
+            self.assertEqual(caught.exception.code, 'codex-native-unavailable-before-write')
             self.assertTrue(children)
             self.assertTrue(all(child.poll() is not None for child in children))
             self.assertTrue(all(job.h is None for job in jobs))
@@ -570,7 +576,7 @@ class CodexDeliveryTests(unittest.TestCase):
             with patch('optional.bridge.hosts.codex.delivery_transport.Job.start', start), patch(
                     'optional.bridge.hosts.codex.delivery_transport.Job.terminate', return_value=False):
                 with self.assertRaises(DeliveryError):
-                    CodexDesktopAdapter(lease=self.lease, timeout=.7).send(self.message)
+                    CodexDesktopAdapter(lease=self.lease, timeout=.7, start_timeout=START_SECONDS).send(self.message)
             self.assertEqual(closed_while_live, [])
             self.assertLess(self.response_elapsed(), 4)
             self.assertTrue(all(child.poll() is not None for child in children))
@@ -628,6 +634,6 @@ class CodexDeliveryTests(unittest.TestCase):
             yield DesktopLease(self.recipient, self.context, self.endpoint, self.check, writer=self.writer)
             raise BeforeWriteError('lease-exit-denial')
         with self.assertRaises(DeliveryError) as caught:
-            CodexDesktopAdapter(lease=lease, timeout=2).send(self.message)
+            CodexDesktopAdapter(lease=lease, timeout=2, start_timeout=START_SECONDS).send(self.message)
         self.assertNotIsInstance(caught.exception, BeforeWriteError)
         self.assertEqual(len(self.requests), 1)

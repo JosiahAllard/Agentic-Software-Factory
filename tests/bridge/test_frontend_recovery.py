@@ -149,9 +149,11 @@ class FrontendRecoveryTests(unittest.TestCase):
     def test_a_cold_observe_slower_than_five_seconds_returns_its_result(self):
         # A cold read of a large rollout (README "Service", tool-call budget) outlasts the
         # handshake's 5 s; the tool frame's own budget must still carry its result back.
+        # 5.1 s: a sleep only overshoots, so the read stays past the handshake's 5 s, and the
+        # rest of the 10 s tool budget is left to the helper's start on a loaded machine.
         read=CodexObserver._read_whole
         def cold(observer,path):
-            if path not in observer._folds: time.sleep(5.5)
+            if path not in observer._folds: time.sleep(5.1)
             return read(observer,path)
         self.initialize()
         with patch.object(CodexObserver,'_read_whole',cold):

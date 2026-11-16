@@ -22,6 +22,12 @@ from kitlib.platform.windows.pipe import connect,write
 from kitlib.proc.process import own_ctime
 
 
+# The budget of a real-helper request() here: the most run_worker allows. The helper's start
+# on a loaded machine must not decide an outcome; the budget arithmetic is the fake-clock
+# tests' job (busy_request_with_slow_helper_start).
+REQUEST_SECONDS=10
+
+
 class PipeRpcTests(unittest.TestCase):
     def setUp(self):
         self.leader=ServiceLeader(uuid.uuid4().hex)
@@ -64,7 +70,7 @@ class PipeRpcTests(unittest.TestCase):
             return {'id':message['id'],'result':message['text']}
         failures=self.serve(handler)
         text='private \U0001f30e\n' * 5000
-        reply=request(self.target,{'id':'roundtrip','text':text},timeout=3)
+        reply=request(self.target,{'id':'roundtrip','text':text},timeout=REQUEST_SECONDS)
         self.threads[-1].join(timeout=3)
         self.assertEqual(reply,{'id':'roundtrip','result':text})
         self.assertEqual(failures,[])
@@ -74,13 +80,13 @@ class PipeRpcTests(unittest.TestCase):
 
     def test_default_handler_cannot_turn_self_claimed_sender_or_owner_into_authority(self):
         self.serve()
-        result=request(self.target,{'id':'claim','owner_approved':True,'sender':'fake-owner'})
+        result=request(self.target,{'id':'claim','owner_approved':True,'sender':'fake-owner'},timeout=REQUEST_SECONDS)
         self.assertEqual(result['error']['code'],'private-client-unverified')
 
     def test_wrong_server_identity_is_rejected_before_request_bytes(self):
         self.serve(lambda peer,message:{'ok':True})
         with self.assertRaises(BeforeWriteError):
-            request(PipeTarget(self.target.name,os.getpid(),own_ctime()+1),{'id':'private'},timeout=3)
+            request(PipeTarget(self.target.name,os.getpid(),own_ctime()+1),{'id':'private'},timeout=REQUEST_SECONDS)
 
     def test_blocked_response_is_uncertain_without_controller_hang(self):
         # request() leaves half its timeout for starting the helper before the pipe is
@@ -128,7 +134,7 @@ class PipeRpcTests(unittest.TestCase):
         # arithmetic is the fake-clock tests' job.
         with patch('optional.bridge.win.rpc.busy_wait',return_value=300),\
                 self.assertRaises(BeforeWriteError) as caught:
-            request(self.target,{'id':'busy'},timeout=10)
+            request(self.target,{'id':'busy'},timeout=REQUEST_SECONDS)
         self.assertEqual(caught.exception.code,'native-peer-unavailable-before-write')
 
     def busy_request_with_slow_helper_start(self,start_seconds):
@@ -194,7 +200,7 @@ class PipeRpcTests(unittest.TestCase):
         # when the server, which never reads it, disconnects.
         with self.early_reject():
             self.serve()
-            result=request(self.target,{'id':'large','text':'x'*16384},timeout=5)
+            result=request(self.target,{'id':'large','text':'x'*16384},timeout=REQUEST_SECONDS)
             self.threads[-1].join(timeout=5)
         self.assertEqual(result,{'error':{'code':'private-client-unavailable'}})
 
@@ -210,15 +216,13 @@ class PipeRpcTests(unittest.TestCase):
         # The drain bound (3 s) plus slack; never the client's own lifetime.
         self.assertLess(time.monotonic()-start,5)
         self.serve(lambda peer,message:{'ok':True})
-        self.assertEqual(request(self.target,{'id':'next'}),{'ok':True})
+        self.assertEqual(request(self.target,{'id':'next'},timeout=REQUEST_SECONDS),{'ok':True})
 
     def test_bad_handler_is_content_free_and_next_connection_still_works(self):
         def fail(peer,message): raise RuntimeError('private message must not enter logs')
-        # The most run_worker allows (10 s): the helper's start under load must not decide
-        # the outcome; the budget is the fake-clock tests' job.
         self.serve(fail)
-        result=request(self.target,{'id':'bad'},timeout=10)
+        result=request(self.target,{'id':'bad'},timeout=REQUEST_SECONDS)
         self.assertEqual(result['error']['code'],'private-request-unavailable')
         self.threads[-1].join(timeout=3)
         self.serve(lambda peer,message:{'ok':True})
-        self.assertEqual(request(self.target,{'id':'good'},timeout=10),{'ok':True})
+        self.assertEqual(request(self.target,{'id':'good'},timeout=REQUEST_SECONDS),{'ok':True})

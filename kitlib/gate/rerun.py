@@ -566,14 +566,15 @@ def input_claim(top, res):
     return paths, None
 
 
-def mark(top, key, tree, commit, branch, results, log_dir):
+def mark(top, key, tree, commit, branch, results, log_dir, cmd_steps=()):
     """Write the mark of a branch gate of the clean `tree` (the runner has checked the tree was
     clean at start and end, HEAD unmoved and the stash empty): `fail` when a step FAILed, else
     `pass`, which supersedes a `fail` of the same tree and mode. A FAIL the machine caused
     (machine_failure) says nothing about the tree: it is not in `failed`, and when every FAIL is
-    one no mark is written ((None, []); a mark already there stays). A FAIL step whose
-    missing-inputs file input_claim takes has its paths in `inputs` ({step: paths}); it stays in
-    `failed`. `(its path, [(step, its file, why the file is not used)])`; RerunError."""
+    one no mark is written ((None, []); a mark already there stays). A FAIL cmd step (named in
+    `cmd_steps`; a check step's file is never read) whose missing-inputs file input_claim takes
+    has its paths in `inputs` ({step: paths}); it stays in `failed`.
+    `(its path, [(step, its file, why the file is not used)])`; RerunError."""
     fails = [r for r in results if r.get('status') == 'FAIL']
     tree_fails = [r for r in fails if not machine_failure(r)]
     if fails and not tree_fails:
@@ -581,6 +582,8 @@ def mark(top, key, tree, commit, branch, results, log_dir):
     failed, inputs, unused = [], {}, []
     for r in tree_fails:
         failed.append(r['name'])
+        if r['name'] not in cmd_steps:
+            continue
         paths, why = input_claim(top, r)
         if paths:
             inputs[r['name']] = paths

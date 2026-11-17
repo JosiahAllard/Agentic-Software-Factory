@@ -472,6 +472,43 @@ class InputMisses(Case):
             self.assertIn('could not remove the missing-inputs file', f.read())
 
 
+# A check that writes a missing-inputs file at its own step's path, as a cmd step would, and fails:
+# a check is no part of the contract (docs/gate-run.md "Missing stored inputs").
+CLAIMING_CHECK = (
+    'import json, os\n'
+    'def claim(ctx):\n'
+    '    path = os.path.splitext(ctx["log"].name)[0] + ".inputs.json"\n'
+    '    with open(path, "w", encoding="utf-8") as f:\n'
+    '        json.dump([%r], f)\n'
+    '    return 1\n'
+    'GATE_CHECKS = {"claim": claim}\n')
+
+
+class CheckClaims(Case):
+    """A check step's missing-inputs file is never read: its FAIL is the tree's."""
+    KIT = {'hook': {'module': 'kit_hooks'}}
+    GATE = {'steps': [{'name': 'chk', 'always': True, 'check': 'claim'}]}
+
+    def setUp(self):
+        Case.setUp(self)
+        self.input = os.path.join(self.tmp, 'built', 'graph.bin')
+        self.repo.write('tools/kit_hooks.py', CLAIMING_CHECK % self.input, root=self.wt)
+        self.tip = self.repo.commit('a check', 'tools/kit_hooks.py', cwd=self.wt)
+
+    def test_a_check_step_s_file_is_not_read_and_its_fail_is_the_tree_s(self):
+        out = self.gate()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        log = os.path.join(out.facts['log_dir'], 'chk.inputs.json')
+        self.assertTrue(os.path.exists(log), 'the check wrote its file')
+        rec = self.mark_of('select')
+        self.assertEqual(rec['failed'], ['chk'])
+        self.assertNotIn('inputs', rec)
+        os.makedirs(os.path.dirname(self.input))
+        with open(self.input, 'w', encoding='utf-8') as f:
+            f.write('graph\n')
+        self.assert_refused(self.gate(), 1)
+
+
 class TargetedRerun(test_targeted_rerun.RerunCase):
     def test_a_red_full_then_its_targeted_rerun_runs_and_the_full_again_is_refused(self):
         wt, _ = self.work('once')

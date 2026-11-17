@@ -977,6 +977,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
         return ended[0]
 
     marked = []
+    cmd_steps = [s.name for s in chosen if not s.check]  # whose missing-inputs file is read
 
     def ran(got):
         # A red run's fail mark, written before the slot is released (gated's `ran`): a gate of
@@ -986,7 +987,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
         got = _with_reused(got, chosen, reused)
         if key is not None and not nothing_ran(got) and not verdict(got, empty)[0]:
             marked.append(True)
-            _mark(top, key, head, branch, got, logs, unclean(), say)
+            _mark(top, key, head, branch, got, logs, unclean(), say, cmd_steps)
     if run:
         # capped and budget_branch: the session gate cap (kitlib.gate.gatecap) and the branch
         # gate budget (kitlib.gate.budget) are a branch gate's only; a landing and the daily full
@@ -1013,7 +1014,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     _keep(plan, results, logs, say)
     ok, line = verdict(results, empty)
     if key is not None and not marked and not nothing_ran(results):
-        _mark(top, key, head, branch, results, logs, unclean(), say)
+        _mark(top, key, head, branch, results, logs, unclean(), say, cmd_steps)
     lines = [line, 'logs: %s' % logs]
     facts = dict(verdict=line, results=results, record=None, no_record=None, head=head, base=mb,
                  log_dir=logs, changed=changed, windows=watched.get('windows'))
@@ -1124,12 +1125,13 @@ def _unchanged(top, key, tree, steps, branch, head, flags, say):
             'Instead: fix it and commit%s; or, %s' % (rerun_way, again)]
 
 
-def _mark(top, key, head, branch, results, logs, unclean, say):
+def _mark(top, key, head, branch, results, logs, unclean, say, cmd_steps=()):
     """The red-tree mark of a branch gate that ran (rerun.mark), on the gate-OK record's own
     terms (`unclean`, _unclean's answer): a gate of no one commit's tree writes none, nor does
     one whose every FAIL is the machine's (rerun.machine_failure; said). Nothing here changes the
     gate's verdict; a mark that cannot be written is one WARNING, and so is each step's
-    missing-inputs file the mark does not take (rerun.input_claim)."""
+    missing-inputs file the mark does not take (rerun.input_claim). `cmd_steps`: the names of
+    the gate's cmd steps, the only ones whose missing-inputs file is read."""
     from kitlib.gate import rerun   # rerun imports this module
     if unclean:
         return
@@ -1137,7 +1139,8 @@ def _mark(top, key, head, branch, results, logs, unclean, say):
     if not tree:
         return
     try:
-        path, unused = rerun.mark(top, key, tree, head, branch or None, results, logs)
+        path, unused = rerun.mark(top, key, tree, head, branch or None, results, logs,
+                                  cmd_steps=cmd_steps)
     except rerun.NoMarkFolder:
         return
     except rerun.RerunError as e:

@@ -47,9 +47,11 @@ coord_restart.read_offer (the reader coord-restart's wake shares):
              coord_restart.wake_sessions (no `session:` counts for the repo's main coordinator).
              Inference: one live pull is about one slot. The hub cannot see a host's running
              agents, so a pull waiting to land counts as busy and a reviewer is not seen.
-  offered    `next --all` for the same sessions (plan_narrow.offer_for, cap None, no fetch), so
-             every collision, hold, other session's record and unmet `requires:` is already
-             passed over.
+  offered    what `next --session <key>` offers the same sessions (plan_narrow.offer_for with
+             that cap and narrowing on, no fetch), so every collision, hold, other session's
+             record and unmet `requires:` is already passed over, a record waiting on a live pull
+             reserves its scope, and a record a narrowing clears is offered (an auto-pull of it
+             writes the narrowing, as `pull` does).
 The offer judges session liveness as `next` does (coord_restart.session_liveness, from the run's
 own sessions.json and process listing; FillWatch.liveness).
 free = cap - in_flight (at least 0). Free and something offered: one deliver to the coordinator's
@@ -271,7 +273,8 @@ def read_waits(settings, key, entry, session_live=None):
 def read_slots(settings, key, entry, session_live=None):
     """(cap, in_flight, ids) of the coordinator of sessions.json entry `key` (module docstring),
     read through coord_restart.read_offer with `session_live` (session liveness, as `next`
-    judges it): BacklogUnread when it cannot be read."""
+    judges it): `ids` is what `next --session <key>` offers. BacklogUnread when it cannot be
+    read."""
     ids, holding, cap = coord_restart.read_offer(settings, key, entry, with_cap=True,
                                                  session_live=session_live)
     sessions = coord_restart.wake_sessions(key, entry)

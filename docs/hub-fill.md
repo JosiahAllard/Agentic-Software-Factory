@@ -27,9 +27,14 @@ reader `coord-restart`'s backlog wake shares:
   sessions.json key. A record with no `session:` counts for the repository's main coordinator,
   the entry whose key is the repository's name. Inference: one live pull is about one slot
   (Known limits).
-- **Startable**: the offer `backlog.py next --all` gives the same sessions (`plan_narrow.offer_for`, no
-  cap, no fetch), in offer order. A collision, a hold, another session's record and an unmet
-  `requires:` are already passed over. It judges session liveness as `next` does: another
+- **Startable**: exactly the offer `backlog.py next --session <key>` prints for the same sessions
+  (`plan_narrow.offer_for` as `next` calls it: the cap above, narrowing on; no fetch), in offer
+  order. A collision, a hold, another session's record and an unmet `requires:` are already
+  passed over, and a record waiting on a live pull reserves its scope, so a lower record it
+  overlaps is not startable. A record held only by a live pull's protected set is offered with
+  the narrowing that clears it, as `next` offers it: an auto-pull of it writes that narrowing
+  (as `pull` does), and `coord-restart`'s backlog wake, which reads the same offer, can start a
+  coordinator for such a record. It judges session liveness as `next` does: another
   session's record whose session is not running reserves no scope, so it holds back nothing of
   this coordinator's. The run builds that liveness from its own sessions.json and process listing
   (`coord_restart.session_liveness`).

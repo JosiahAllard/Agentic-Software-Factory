@@ -36,10 +36,16 @@
   access lines. At 1 MiB (`hublog.LOG_MAX`) it moves to `hub.log.1`, replacing an older
   one; push's `push-undelivered.jsonl` rotates the same way (`hublog.append`). A `--store` run writes no
   hub log.
-- **Stale code.** A running `hub serve` compares the `.py` files of `kitlib/hubsite`, of the timed
-  jobs it was handed (`kitlib/hubjobs`: each maker's folder) and of the package it reads its machine settings through,
-  `kitlib/config` (name, modified time, size; `serve.code_stamp`,
-  `serve.code_folders`), with what they were at its start, at most every 30 seconds (`CODE_LOOK_S`).
+- **Stale code.** A running `hub serve` compares every `.py` file under `kitlib` (nested packages
+  and top-level modules alike, `__pycache__` aside) and under the folder of each timed job it was
+  handed (each maker's folder, which can lie outside `kitlib`) (path, modified time, size;
+  `serve.code_stamp`, `serve.stamp_folders`), with what they were at its start, at most every 30
+  seconds (`CODE_LOOK_S`). All of `kitlib` counts because the jobs run far past their own
+  packages: the fill watch's offer is `kitlib/backlog`'s, and a hub that stamped only its own
+  packages kept offering by an older rank after a landing changed it. Other files (the pages of
+  `kitlib/hubsite/web`) are no code change. The cost: about 13 landings a day touch `kitlib`
+  against about 4.5 that touched the old folders, so a hub restarts about 3 times as often, and
+  is that much more exposed to the known limit below (a restarter that leaves no hub).
   When they differ, a server run by its autostart task restarts itself
   (`kitlib.hubsite.selfrestart`):
   1. It logs a note that the code changed and asks, once per new code, whether it is the task's

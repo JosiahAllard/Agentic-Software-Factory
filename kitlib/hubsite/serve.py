@@ -479,7 +479,7 @@ def build(settings, sources, log=None):
             api.jobs_status = timed.status   # GET health `jobs` (Api.jobs_seen)
         hub = Hub(settings, store, api, views, creds, listeners, sync, views_b, notes, log,
                   tunnel=said, stopping=stopping, push=pusher, jobs=timed,
-                  tokens=sources.tokens, code=code_folders(sources.jobs))
+                  tokens=sources.tokens, code=stamp_folders(sources.jobs))
         api.code_status = hub.code_state     # GET health and GET snapshot `code` (Api.code_seen)
         return hub
     except BaseException:
@@ -490,7 +490,8 @@ def build(settings, sources, log=None):
 
 
 def code_folders(jobs=()):
-    """The folders whose .py files are the hub's code: this package, the folder of each of the
+    """The hub's own packages (selfrestart's self-check imports them; stamp_folders adds the rest
+    of kitlib for the code stamp): this package, the folder of each of the
     timed jobs' makers `jobs` (each one's `folder`: Sources.jobs), so a job added or changed
     on disk is stale code too, and the package the server reads its machine settings through
     (kitlib.config). Each folder once, in that order."""
@@ -502,17 +503,41 @@ def code_folders(jobs=()):
     return out + [os.path.dirname(os.path.abspath(user.__file__))]
 
 
+def stamp_folders(jobs=()):
+    """The folders the hub's code stamp reads: all of kitlib (what the hub's jobs run reaches far
+    past their own packages: the fill watch's offer is kitlib/backlog's), then code_folders(jobs),
+    so a job folder outside kitlib counts too."""
+    return [os.path.dirname(os.path.dirname(os.path.abspath(__file__)))] + code_folders(jobs)
+
+
 def code_stamp(folders=None):
-    """What the hub's code is now: the folder, name, modified time and size of each .py file in
-    `folders` (default code_folders()), sorted. A server that started on a different stamp runs
-    older code (watch)."""
+    """What the hub's code is now: the folder's name, the path under it ('/'-separated),
+    modified time and size of each .py file anywhere under `folders` (default code_folders()),
+    `__pycache__` aside, sorted; a folder inside another one listed is read once, as part of
+    it. Only .py files count: a page or other file the hub serves is no code change. A server
+    that started on a different stamp runs older code (watch)."""
+    tops = [os.path.abspath(f) for f in (folders or code_folders())]
     out = []
-    for folder in folders or code_folders():
-        for name in sorted(os.listdir(folder)):
-            if name.endswith('.py'):
-                st = os.stat(os.path.join(folder, name))
-                out.append((os.path.basename(folder), name, st.st_mtime_ns, st.st_size))
+    for i, top in enumerate(tops):
+        if top in tops[:i] or any(t != top and _inside(top, t) for t in tops):
+            continue
+        for here, dirs, files in os.walk(top):
+            dirs[:] = sorted(d for d in dirs if d != '__pycache__')
+            for name in sorted(files):
+                if name.endswith('.py'):
+                    path = os.path.join(here, name)
+                    st = os.stat(path)
+                    rel = os.path.relpath(path, top).replace(os.sep, '/')
+                    out.append((os.path.basename(top), rel, st.st_mtime_ns, st.st_size))
     return tuple(out)
+
+
+def _inside(path, folder):
+    """True when `path` lies under `folder` (both absolute)."""
+    try:
+        return os.path.commonpath([path, folder]) == folder
+    except ValueError:              # another drive
+        return False
 
 
 class Hub(object):
@@ -527,7 +552,7 @@ class Hub(object):
     the push-notification worker (kitlib.hubsite.push.PushWorker: start, stop) or None; `jobs`
     the timed jobs (kitlib.hubsite.jobs.Jobs: start, stop) or None. `tokens` is the token
     folder (selfrestart.LOG_NAME goes there) or None; `code` the folders the code stamp reads
-    (build: code_folders of its Sources.jobs); `self_restart` the selfrestart.Watcher, made at
+    (build: stamp_folders of its Sources.jobs); `self_restart` the selfrestart.Watcher, made at
     the first look that finds the code changed unless one was set before."""
 
     def __init__(self, settings, store, api, views, creds, listeners, sync, backlog_views, notes,

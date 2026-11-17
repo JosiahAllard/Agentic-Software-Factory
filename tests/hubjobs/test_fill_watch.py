@@ -248,6 +248,7 @@ class Slots(unittest.TestCase):
     def slots(self, key, entry, cap=4):
         from kitlib.backlog import offer as omod
         from kitlib.backlog import opener, plan_narrow
+        want = cap
 
         class Store(object):
             def load(s):
@@ -263,8 +264,10 @@ class Slots(unittest.TestCase):
             self.opened.append((root, fetch, session))
             return Ctx(root, session)
 
-        def offer_for(snap, ctx, branch=None, cap=5, seeds=(), holding=None):
-            self.assertEqual((snap, cap, holding), ('snap', None, self.holding))
+        def offer_for(snap, ctx, branch=None, cap=5, seeds=(), holding=None, narrow=False):
+            # as `next --session <key>` asks: the repo's cap, narrowing on
+            self.assertEqual((snap, holding, narrow), ('snap', self.holding, True))
+            self.assertEqual(cap, want)
             return ([mock.Mock(rec=Rec(r)) for r in self.by_session.get(ctx.session, ())], [],
                     holding, None)
 
@@ -1471,10 +1474,9 @@ class PullOnAStore(unittest.TestCase):
         self.assertNotIn('kit/fill-bar', self.trees())
 
 
-class WaitsOnAStore(_bh.StoreCase):
-    """read_waits on a real store and branch: HOLD (p2) is pulled on kit/holder, whose tree
-    changed kitlib/x/a.py; FOO (p1, kitlib/**) overlaps it, but `next`'s narrowing clears it,
-    so it waits on nothing."""
+class OnAStore(_bh.StoreCase):
+    """A real store and branch: HOLD is pulled on kit/holder, whose tree changed kitlib/x/a.py;
+    `records` is the seed."""
 
     def setUp(self):
         super().setUp()
@@ -1485,19 +1487,68 @@ class WaitsOnAStore(_bh.StoreCase):
         wt = self.repo.worktree('holder', 'kit/holder')
         self.repo.write('kitlib/x/a.py', 'changed\n', root=wt)
         self.repo.commit('work', 'kitlib/x/a.py', cwd=wt)
-        self.seed(_bh.priced('HOLD', state='pulled', pulled_at=_bh.TODAY,
-                             pulled_by='kit/holder', scope='kitlib/x/**'),
-                  _bh.priced('FOO', priority='1', scope='kitlib/**'))
+        self.seed(*self.records())
+
+    def records(self):
+        return (_bh.priced('HOLD', state='pulled', pulled_at=_bh.TODAY,
+                           pulled_by='kit/holder', scope='kitlib/x/**'),
+                _bh.priced('FOO', priority='1', scope='kitlib/**'))
+
+    def read(self, reader):
+        """`reader(None, 'game', COORD)` (read_slots or read_waits) on this store, the repo's
+        cap 5."""
+        from kitlib.backlog import opener
+        with mock.patch.object(C, 'store_root', lambda settings, repo: self.repo.root), \
+                mock.patch.object(opener, 'repo_cap', lambda top: 5), \
+                mock.patch.object(opener, 'open_store',
+                                  lambda root, fetch=True, session=None, *, probes: self.ctx):
+            return reader(mock.Mock(repo_path=lambda repo: self.repo.root), 'game', dict(COORD))
+
+    def next_ids(self):
+        """The ids `next --session <key>` offers here: plan_narrow.offer_for as tools/backlog.py
+        do_next calls it (the repo's cap, narrowing on)."""
+        from kitlib.backlog import plan_narrow
+        offers, _p, _h, _w = plan_narrow.offer_for(self.store.load(), self.ctx, cap=5,
+                                                   narrow=True)
+        return [o.rec.id for o in offers]
+
+
+class WaitsOnAStore(OnAStore):
+    """HOLD (p2) is pulled on kit/holder; FOO (p1, kitlib/**) overlaps it, but `next`'s
+    narrowing clears it, so it waits on nothing and is offered."""
 
     def test_a_record_the_narrowing_clears_is_not_a_waits_pair(self):
-        from kitlib.backlog import opener, plan_narrow
+        from kitlib.backlog import plan_narrow
         _o, passed, _h, _w = plan_narrow.offer_for(self.store.load(), self.ctx)      # unnarrowed
         self.assertEqual([(p.rec.id, [w.id for w in p.waits]) for p in passed],
                          [('FOO', ['HOLD'])])
-        with mock.patch.object(C, 'store_root', lambda settings, repo: self.repo.root), \
-                mock.patch.object(opener, 'open_store',
-                                  lambda root, fetch=True, session=None, *, probes: self.ctx):
-            self.assertEqual(W.read_waits(None, 'game', dict(COORD)), [])
+        self.assertEqual(self.read(W.read_waits), [])
+
+    def test_the_slots_offer_a_record_the_narrowing_clears_as_next_does(self):
+        self.assertEqual(self.next_ids(), ['FOO'])
+        self.assertEqual(self.read(W.read_slots)[2], ['FOO'])
+
+
+class ReservedOnAStore(OnAStore):
+    """WAIT (p1, kitlib/**) waits on HOLD's live pull, and HOLD's `## Files` cannot be read, so no
+    narrowing clears it: it reserves its scope, and LOW (p3, kitlib/y/**, clear of HOLD) is passed
+    over in `next`. The fill watch offers what `next` offers: not LOW."""
+
+    def records(self):
+        return (_bh.priced('HOLD', state='pulled', pulled_at=_bh.TODAY, pulled_by='kit/holder',
+                           scope='kitlib/x/**', body='## Files\n\n+ kitlib/x/a.py'),
+                _bh.priced('WAIT', priority='1', scope='kitlib/**'),
+                _bh.priced('LOW', priority='3', scope='kitlib/y/**'))
+
+    def test_the_slots_offer_what_next_offers_with_a_waiting_record_reserving(self):
+        from kitlib.backlog import plan_narrow
+        _o, passed, _h, _w = plan_narrow.offer_for(self.store.load(), self.ctx, cap=5,
+                                                   narrow=True)
+        low = [p for p in passed if p.rec.id == 'LOW']
+        self.assertEqual(len(low), 1)
+        self.assertIn('WAIT (waiting on HOLD on kit/holder)', repr(vars(low[0])))
+        self.assertEqual(self.next_ids(), [])
+        self.assertEqual(self.read(W.read_slots)[2], self.next_ids())
 
 
 class Keys(unittest.TestCase):

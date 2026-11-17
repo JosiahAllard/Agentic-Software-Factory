@@ -79,10 +79,7 @@ def validate_store(records, rules):
                 out.append(rmod.Finding(rmod.ID_FILENAME, r.path, 1, '`%s` differs from `%s` only '
                                         'in case - one file on Windows' % (r.stem, group[0].stem)))
     live = [r for r in records if r.readable]
-    edges = {}
-    for r in live:
-        edges[r.stem] = [m[len('item:'):] for m in r.all('blocked_on') if m.startswith('item:')]
-    cycle = _find_cycle(edges)
+    cycle = find_cycle(item_edges(live))
     if cycle:
         first = next(r for r in live if r.stem == cycle[0])
         out.append(rmod.Finding(rmod.ITEM_TARGETS, first.path, first.line_of('blocked_on'),
@@ -101,8 +98,17 @@ def validate_store(records, rules):
     return out
 
 
-def _find_cycle(edges):
-    """One `item:` cycle as a list of ids, or None."""
+def item_edges(records):
+    """`{stem: [ids its `item:` blockers name]}` over the readable `records`: the one edge rule
+    of the `item:` graph (the cycle check here, unblocks.Unblocks). Every readable record counts,
+    whatever its state: a record not `state: blocked` that carries a blocker is already a
+    `blocked_on` finding (record.py `validate`)."""
+    return {r.stem: [m[len('item:'):] for m in r.all('blocked_on') if m.startswith('item:')]
+            for r in records if r.readable}
+
+
+def find_cycle(edges):
+    """One `item:` cycle (item_edges) as a list of ids, or None."""
     WHITE, GREY, BLACK = 0, 1, 2
     colour = {k: WHITE for k in edges}
     for start in sorted(edges):

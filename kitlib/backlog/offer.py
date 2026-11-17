@@ -10,6 +10,7 @@ from kitlib.git import cmd, refs
 
 from . import record as rmod
 from . import scope as smod
+from . import unblocks as umod
 
 PULLABLE = 'pullable'
 HELD = 'held'
@@ -182,9 +183,11 @@ def is_ranked(rec):
     return rec.readable and rmod.is_band(rec.get('priority'))
 
 
-def rank_key(rec):
-    """Preempt, pin, then `resume` (an unparked record: above priority, never a pin),
-    priority, effort, id."""
+def rank_key(rec, held):
+    """Preempt, pin, then `resume` (an unparked record: above priority, never a pin), the
+    effective priority (the best of its own and its dependents', `held` an unblocks.Unblocks),
+    then more dependents first, its own priority, effort, id (docs/backlog.md "next: the
+    rank"). `rec` is banded (is_ranked)."""
     pin = rec.get('pin')
     pinned = pin is not None and rmod._pin(pin) is None
     resume = rec.get('resume')
@@ -193,12 +196,15 @@ def rank_key(rec):
     if effort not in EFFORT_ORDER:
         effort = '-'
     return (0 if rec.has('preempt') else 1, 0 if pinned else 1, int(pin) if pinned else 0,
-            0 if resumed else 1, int(rec.get('priority')), EFFORT_ORDER[effort], rec.id)
+            0 if resumed else 1, held.effective(rec), -held.count.get(rec.stem, 0),
+            int(rec.get('priority')), EFFORT_ORDER[effort], rec.id)
 
 
 def ranked(snap):
-    """`{id: rank}` over every banded record, 1-based. Blocked and pulled records rank too."""
-    order = sorted((r for r in snap.readable if is_ranked(r)), key=rank_key)
+    """`{id: rank}` over every banded record, 1-based. Blocked and pulled records rank too. The
+    dependents graph is built once a call (unblocks.Unblocks)."""
+    held = umod.Unblocks(snap)
+    order = sorted((r for r in snap.readable if is_ranked(r)), key=lambda r: rank_key(r, held))
     return {r.id: i for i, r in enumerate(order, 1)}
 
 
@@ -488,7 +494,9 @@ def next_offer(snap, holding, cap=DEFAULT_CAP, seeds=(), session=None, unmet=Non
             return False
         return not (unmet is not None and unmet(r))
 
-    candidates = sorted((r for r in snap.readable if classify(r)[0] == PULLABLE), key=rank_key)
+    # Every pullable record is banded, so `ranks` holds it: no second rank_key pass.
+    candidates = sorted((r for r in snap.readable if classify(r)[0] == PULLABLE),
+                        key=lambda r: ranks[r.id])
     mine_by_id = {r.id: r for r in candidates if own(r)}
     ordered = []
     for sid in seeds:

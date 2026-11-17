@@ -53,6 +53,7 @@ from kitlib.backlog import record as rmod                           # noqa: E402
 from kitlib.backlog import stale as stalemod                        # noqa: E402
 from kitlib.backlog import store_folder
 from kitlib.backlog import store_live
+from kitlib.backlog import unblocks as umod                         # noqa: E402
 from kitlib.backlog.errors import Failure, IndexStale, Refusal, Usage  # noqa: E402
 from kitlib.backlog.opener import (FIELD_FLAGS, WRITES, open_store, planner,  # noqa: E402
                                    retarget_dry, uncite_dry)
@@ -288,14 +289,19 @@ def do_next(args, ctx, snap):
         say('as branch %s: its own pulls (%s) take no scope here, so a record overlapping only '
             'them is offered to bundle onto it' % (own, ', '.join(mine)))
     ranks = omod.ranked(snap)
+    held = umod.Unblocks(snap)
     say('')
     say('NEXT (%d offered%s%s)' % (len(offers), ', session %s' % ctx.session if ctx.session else '',
                                    ', --all: no cap' if cap is None else ''))
     for o in offers:
-        say(row(o.rec, ranks) + ('  (--with)' if o.seeded else '')
+        why = held.why(o.rec)
+        say(row(o.rec, ranks) + ('  (%s)' % why if why else '')
+            + ('  (--with)' if o.seeded else '')
             + ('  (narrows, below)' if o.split is not None else ''))
         for path, rid in o.shares:
             say('    ' + omod.shares_line(path, rid))
+    if held.cycle_line():
+        say(held.cycle_line())
     for p in passed:
         say('  passed over %s (rank %s): %s' % (p.rec.id, p.rank, p.why))
     if cap is None or len(offers) < cap:
@@ -409,9 +415,14 @@ def do_list(args, ctx, snap):
         recs = [r for r in recs if r.get('state') == args.status]
     else:
         recs = sorted(recs, key=lambda r: (str(ranks.get(r.id, 10 ** 6)).zfill(7), r.id))
+    held = umod.Unblocks(snap) if args.needs_priority else None
     say('')
     for r in recs:
         line = row(r, ranks)
+        if held is not None and r.stem in held.best:
+            # An unpriced record that holds priced work: price it (docs/backlog.md "next: the rank").
+            line += '  [blocks priced work: %d, best p%d: %s]' % (
+                (held.count[r.stem],) + held.best[r.stem])
         if args.blocked:
             line += '  [%s]' % ', '.join(r.all('blocked_on'))
         if r.get('state') == 'parked':

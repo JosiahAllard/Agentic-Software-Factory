@@ -199,7 +199,8 @@ def batch_members(snap, branch):
             raise Refusal('`%s` is batched for %s but is `priority: %s`, and `pull` takes a priced '
                           'record (`1`-`5`). Price it first: `set %s --priority N --priority-by '
                           'agent`' % (r.id, branch, r.get('priority'), r.id))
-    return [r.id for r in sorted(mine, key=omod.rank_key)]
+    ranks = omod.ranked(snap)
+    return [r.id for r in sorted(mine, key=lambda r: ranks[r.id])]
 
 
 def current_offer(snap, ctx, branch=None, seeds=(), whys=None, diffs=None):

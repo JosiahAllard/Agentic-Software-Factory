@@ -3,6 +3,7 @@ makes the landing close only what its `Closes:` lines name and release every oth
 branch holds pulled (kitlib.backlog.at_landing.close_landed; docs/backlog-store.md "Closing at
 landing"). Without such a line the branch's pulls close as before. Scratch repositories with a
 ref store and with the PM data branch's folder store, landed by kitlib.landing.lander.Lander."""
+import itertools
 import os
 import unittest
 from unittest import mock
@@ -19,6 +20,9 @@ from tests.landing import test_land_store as tls
 from tests.landing.test_land_store import BRANCH, StoreLandCase, pulled
 
 TRAILERS = 'Co-Authored-By: Test Model <noreply@anthropic.com>'
+# The NOTE on an id a standing Closes line and a Part-of line both name (close_landed).
+BOTH = ('both a Closes line and a Part-of line of its commits, and no later Part-of line takes '
+        'the Closes line back')
 
 
 def release_reason(merge, branch=BRANCH):
@@ -141,14 +145,14 @@ class PartLanding(StoreLandCase):
         notes = self.notes(out)
         self.assertEqual(len(notes), 1, out.lines)
         self.assertIn('FOO', notes[0])
-        self.assertIn('both a Closes line and a Part-of line', notes[0])
+        self.assertIn(BOTH, notes[0])
         self.assertIn('was closed, not released', notes[0])
 
     def test_an_id_in_closes_and_part_of_that_no_store_holds_is_not_said_closed(self):
         self.seed(pulled('FOO'))
         out = self.land(self.branch_with('fix\n\nPart-of: NOPE\nCloses: NOPE\n%s\n' % TRAILERS))
         self.assert_open('FOO')
-        both = [n for n in self.notes(out) if 'both a Closes line and a Part-of line' in n]
+        both = [n for n in self.notes(out) if BOTH in n]
         self.assertEqual(len(both), 1, out.lines)
         self.assertIn('NOPE', both[0])
         self.assertIn('was not closed', both[0])
@@ -163,10 +167,37 @@ class PartLanding(StoreLandCase):
             lines = at_landing.close_landed(self.repo.root, cfg, BRANCH, 'f' * 40, tip=tip,
                                             base=self.main)
         self.assertEqual(self.get('FOO').get('state'), 'pulled')
-        both = [l for l in lines if 'both a Closes line and a Part-of line' in l]
+        both = [l for l in lines if BOTH in l]
         self.assertEqual(len(both), 1, lines)
         self.assertIn('was not closed', both[0])
         self.assertNotIn('closed, not released', both[0])
+
+    def test_a_later_part_of_line_takes_back_an_earlier_closes_line(self):
+        # Closes: FOO, then main merged into the branch, then commit.py's remedy: an empty commit
+        # whose only line is Part-of: FOO. No history rewrite, and FOO is released, not closed.
+        self.seed(pulled('FOO'), priced('BAZ'))
+        wt = self.repo.worktree('feature')
+        self.repo.write('a.py', 'x = 1\n', root=wt)
+        self.repo.commit('too soon\n\nCloses: FOO\n%s\n' % TRAILERS, 'a.py', cwd=wt)
+        self.repo.write('b.py', 'y = 1\n')
+        self.main = self.repo.commit('main moves\n\n%s\n' % TRAILERS, 'b.py')
+        self.repo.git('push', '-q', 'origin', 'main')
+        self.repo.git('merge', '-q', '--no-edit', 'main', cwd=wt)
+        self.repo.git('commit', '-q', '--allow-empty', '-m',
+                      'not done yet\n\nPart-of: FOO\n%s\n' % TRAILERS, cwd=wt)
+        tip = self.repo.head(wt)
+        self.assertEqual(at_landing.standing_closes_trailers(self.repo.root, tip, self.main),
+                         ([], None))
+        self.assertEqual(at_landing.closes_trailers(self.repo.root, tip, self.main),
+                         (['FOO'], None))       # the raw list, which reopen reads
+        out = self.land(tip)
+        self.assertEqual(self.stems(), ['BAZ', 'FOO'])
+        self.assert_open('FOO')
+        self.assertEqual(self.started(out, 'closed'), [], out.lines)
+        self.assertEqual([l.split()[1] for l in self.started(out, 'released')], ['FOO'],
+                         out.lines)
+        self.assertEqual(self.warnings(out), [])
+        self.assertEqual(self.notes(out), [])
 
     def test_a_stacked_batch_reads_part_of_only_from_the_branch_that_carries_it(self):
         # kit/other starts at a1, kit/feature's `Part-of: ONE` commit, and lands after it: its
@@ -248,7 +279,8 @@ class PartLanding(StoreLandCase):
         # still close; the WARNING says its Part-of lines were not read either.
         self.seed(pulled('FOO'))
         tip = self.branch_with('fix\n\nPart-of: FOO\n%s\n' % TRAILERS)
-        with mock.patch.object(at_landing, 'closes_trailers', return_value=(None, 'boom')):
+        with mock.patch.object(at_landing, 'standing_closes_trailers',
+                               return_value=(None, 'boom')):
             out = self.land(tip)
         self.assertEqual(self.stems(), [])
         warn = self.warnings(out)
@@ -360,6 +392,51 @@ class PartOfValues(unittest.TestCase):
                          ['EX-1 and more', 'EX-2'])
         self.assertEqual(at_landing.trailer_values(message, at_landing.CLOSES_KEY), ['EX-3'])
         self.assertEqual(at_landing.closes_values(message), ['EX-3'])
+
+
+def _c(sha, parents, *lines):
+    """One (sha, parents, message) of at_landing.standing_closes, its message `lines`."""
+    return (sha, list(parents), 'subject\n\n%s\n%s\n' % ('\n'.join(lines), TRAILERS))
+
+
+class StandingCloses(unittest.TestCase):
+    """at_landing.standing_closes: a later Part-of line takes back an earlier Closes line, by the
+    parent links alone. Each graph is fed in every order (child first, parent first, shuffled),
+    so neither the list's order nor any date can decide it."""
+
+    def standing(self, commits):
+        got = set(tuple(sorted(at_landing.standing_closes(list(p))))
+                  for p in itertools.permutations(commits))
+        self.assertEqual(len(got), 1, got)
+        return list(got.pop())
+
+    def test_the_latest_line_naming_an_id_decides_it(self):
+        cases = [
+            ('closes then part-of', [], [
+                _c('a', ['m'], 'Closes: X'), _c('b', ['a'], 'Part-of: X')]),
+            ('part-of then closes', ['X'], [
+                _c('a', ['m'], 'Part-of: X'), _c('b', ['a'], 'Closes: X')]),
+            ('closes only', ['X'], [_c('a', ['m'], 'Closes: X'), _c('b', ['a'])]),
+            ('one commit names both', ['X'], [
+                _c('a', ['m'], 'Part-of: X', 'Closes: X'), _c('b', ['a'])]),
+            ('closes, part-of, closes', ['X'], [
+                _c('a', ['m'], 'Closes: X'), _c('b', ['a'], 'Part-of: X'),
+                _c('c', ['b'], 'Closes: X')]),
+            ('two closes, then part-of one id', ['Y'], [
+                _c('a', ['m'], 'Closes: X'), _c('b', ['a'], 'Closes: X, Y'),
+                _c('c', ['b'], 'Part-of: X')]),
+            ('parallel lines stay closes', ['X'], [
+                _c('a', ['m'], 'Closes: X'), _c('b', ['m'], 'Part-of: X'),
+                _c('j', ['b', 'a'])]),
+            ('through a merge', [], [
+                _c('a', ['m'], 'Closes: X'), _c('b', ['m']), _c('j', ['b', 'a']),
+                _c('c', ['j'], 'Part-of: X')]),
+            ('part-of another id', ['X'], [
+                _c('a', ['m'], 'Closes: X'), _c('b', ['a'], 'Part-of: Y')]),
+        ]
+        for name, want, commits in cases:
+            with self.subTest(name):
+                self.assertEqual(self.standing(commits), want)
 
 
 if __name__ == '__main__':

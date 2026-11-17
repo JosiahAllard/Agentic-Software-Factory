@@ -11,12 +11,13 @@ recorded data branch checked out) takes part too: the PM's records of this repos
                     pulled, in the configured store (one commit each, "closes <ID>: landed <merge
                     sha>") and in the PM data store (the record file deleted in that worktree and
                     the deletion committed on the PM data branch); and every record a `Closes:
-                    <ID>[, <ID>]` line in the messages of the branch's commits names
-                    (closes_trailers), while pulled, whoever pulled it (a holder that is a live
-                    branch other than main and outside the batch is a WARNING: tell its builder).
-                    A branch with a `Part-of: <ID>` line (part_trailers) lands one part of a
-                    record: its pulls no Closes line names are released ("releases <ID>: part
-                    landed <merge sha> ..."), not closed. A live-proof record (a `requires:
+                    <ID>[, <ID>]` line in the messages of the branch's commits names and no
+                    later Part-of line takes back (standing_closes_trailers), while pulled,
+                    whoever pulled it (a holder that is a live branch other than main and outside
+                    the batch is a WARNING: tell its builder). A branch with a `Part-of: <ID>`
+                    line (part_trailers) lands one part of a record: its pulls no standing Closes
+                    line names are released ("releases <ID>: part landed <merge sha> ..."), not
+                    closed. A live-proof record (a `requires:
                     live-run` line, is_live_proof) closes only when a `Live-pass: <ID> <evidence>`
                     line of the branch cites a passing live run (live_pass_trailers): else it is
                     released when the branch holds it, left pulled when another branch does, and
@@ -224,24 +225,84 @@ def closes_values(message):
     return trailer_values(message, CLOSES_KEY)
 
 
-def _branch_values(root, tip, base, key):
-    """`(values, None)`: the `key` line values in the messages of the commits `tip` has and
-    `base` does not, merges included; or `(None, why)`."""
-    out, why = cmd.run_text(['log', '--format=%B%x00', tip, '--not', base, '--'], root,
+def _branch_commits(root, tip, base):
+    """`([(sha, parents, message)], None)`: the commits `tip` has and `base` does not, merges
+    included, as git log lists them; `parents` the shas of each one's parents, some of them
+    outside that range; or `(None, why)`. No pathspec, --first-parent or --no-merges: each would
+    rewrite %P. The format's separators are %x1f and %x00 (a NUL cannot go into an argument);
+    its newline terminator starts each chunk after the first, and the last chunk is only that."""
+    out, why = cmd.run_text(['log', '--format=%H %P%x1f%B%x00', tip, '--not', base, '--'], root,
                             strip=False)
     if out is None:
         return None, why
+    commits = []
+    for chunk in out.split('\0'):
+        head, sep, message = chunk.partition('\x1f')
+        words = head.split()
+        if sep and words:
+            commits.append((words[0], words[1:], message))
+    return commits, None
+
+
+def _branch_values(root, tip, base, key):
+    """`(values, None)`: the `key` line values in the messages of the commits `tip` has and
+    `base` does not, merges included; or `(None, why)`."""
+    commits, why = _branch_commits(root, tip, base)
+    if commits is None:
+        return None, why
     values = []
-    for message in out.split('\0'):
+    for _sha, _parents, message in commits:
         values.extend(trailer_values(message, key))
     return values, None
 
 
 def closes_trailers(root, tip, base):
     """`(ids, None)`: the ids the `Closes:` lines name (closes_values, closes_ids) in the messages
-    of the commits `tip` has and `base` does not, merges included; or `(None, why)`."""
+    of the commits `tip` has and `base` does not, merges included, whether or not a later Part-of
+    line takes one back (kitlib.backlog.reopen reads what a landing's lines named); or
+    `(None, why)`. What a landing closes is standing_closes_trailers."""
     values, why = _branch_values(root, tip, base, CLOSES_KEY)
     return (None, why) if values is None else (closes_ids(values), None)
+
+
+def standing_closes(commits):
+    """The ids the `Closes:` lines of `commits` ((sha, parents, message), one branch's commits
+    above its base, in any order) name that no later `Part-of:` line takes back: a Closes line
+    naming X in commit C is taken back when a commit that descends from C, by the parent links
+    among `commits`, has a Part-of line naming X and no Closes line naming X. A commit whose
+    Closes and Part-of lines both name X, and a Part-of line on a line of history parallel to C,
+    take back nothing. The order of `commits` and the commits' dates play no part; each id once,
+    in the order of `commits`. Pure."""
+    parents = dict((sha, ps) for sha, ps, _ in commits)
+    closes, taken = {}, {}          # sha -> its Closes ids; id -> the shas whose Closes it lost
+    for sha, _, message in commits:
+        closes[sha] = closes_ids(trailer_values(message, CLOSES_KEY))
+    for sha, _, message in commits:
+        back = [r for r in closes_ids(trailer_values(message, PART_KEY)) if r not in closes[sha]]
+        if not back:
+            continue
+        above, todo = set(), list(parents[sha])
+        while todo:                 # its ancestors in the range: one past base is in base
+            p = todo.pop()
+            if p in parents and p not in above:
+                above.add(p)
+                todo.extend(parents[p])
+        for rid in back:
+            taken.setdefault(rid, set()).update(above)
+    out = []
+    for sha, _, _ in commits:
+        for rid in closes[sha]:
+            if sha not in taken.get(rid, ()) and rid not in out:
+                out.append(rid)
+    return out
+
+
+def standing_closes_trailers(root, tip, base):
+    """`(ids, None)`: the ids the `Closes:` lines of the commits `tip` has and `base` does not
+    name that no later Part-of line takes back (standing_closes): what a landing closes by its
+    Closes lines (close_landed, kitlib.backlog.landable). Or `(None, why)`."""
+    commits, why = _branch_commits(root, tip, base)
+    return (None, why) if commits is None else (standing_closes(commits), None)
 
 
 def part_trailers(root, tip, base):
@@ -454,7 +515,8 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
     """Close every record `branch`, which landed as `merge`, holds pulled: in the configured store
     when it is a `ref` or `branch` store, and in the PM data branch's store (pm_data_store). With
     `tip` and `base` (the branch tip merged and the main it was merged onto), every record a
-    `Closes:` trailer in `tip --not base` names (closes_trailers) is closed too while it is
+    `Closes:` trailer in `tip --not base` names and no later `Part-of:` line takes back
+    (standing_closes_trailers) is closed too while it is
     pulled, whoever pulled it: a pull made in the main checkout records the main branch, which no
     landing matches. The lines to print (`closed ...`, and a `WARNING: ...` naming the command for
     each record or store that could not be closed, or trailers that could not be read; one
@@ -463,12 +525,16 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
     The code repository's mains (`cfg`'s guarded_mains) are main in the PM data store too, whose
     own configured main is its data branch.
     A `Part-of: <ID>` line in those messages (part_trailers) makes the landing one part of a
-    record: then only the records a Closes line names are closed, and every other record the
-    branch holds pulled is released (`state: open`, its pull cleared, so `next` offers it again;
-    `released ...` lines, and the WARNINGs name the release command). Without one the branch's
-    pulls close. NOTE lines name a Part-of id the branch holds pulled in no store read (a typo,
-    or another branch's record: left as it is) with what was released, and an id both a Closes and
-    a Part-of line name (closed, never released); each says only what this landing did. When the lines cannot be read, the branch's pulls close (the WARNING says so).
+    record: then only the records a standing Closes line names are closed, and every other record
+    the branch holds pulled is released (`state: open`, its pull cleared, so `next` offers it
+    again; `released ...` lines, and the WARNINGs name the release command). A Part-of line
+    naming an id takes back the Closes lines naming it in the commits it descends from
+    (standing_closes). Without a Part-of line the branch's pulls close. NOTE lines name a Part-of
+    id the branch holds pulled in no store read (a typo, or another branch's record: left as it
+    is) with what was released, and an id a standing Closes line and a Part-of line both name (in
+    one commit, on parallel lines, or the Part-of line earlier: closed, never released); each says
+    only what this landing did. When the lines cannot be read, the branch's pulls close (the
+    WARNING says so).
     A live-proof record (is_live_proof) that would close is closed only when a `Live-pass:` line
     of those messages cites a passing live run of it (live_pass_trailers); else one NOTE says why
     and how to close it, and the record is released when the branch holds it, left pulled when
@@ -477,7 +543,7 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
     lines, named, seen, part, passed = [], [], _Seen(), _Part(), []
     quiet = tuple(cfg.guarded_mains()) + tuple(batch)    # holders nobody needs to tell
     if tip and base:
-        named, why = closes_trailers(root, tip, base)
+        named, why = standing_closes_trailers(root, tip, base)
         if named is None:
             named = []
         else:
@@ -530,7 +596,7 @@ def close_landed(root, cfg, branch, merge, session=SESSION, tip=None, base=None,
                      % (branch, ', '.join(unknown), 'it' if len(unknown) == 1 else 'them'))
     for rid in (r for r in part.ids if r in named):
         lines.append('NOTE: %s landed, and %s is named by both a Closes line and a Part-of line '
-                     'of its commits; the Closes line wins, so %s'
+                     'of its commits, and no later Part-of line takes the Closes line back, so %s'
                      % (branch, rid, 'it was closed, not released' if rid in seen.closed else
                         'it was released, not closed, as a live-proof record (see the NOTE '
                         'above)' if rid in seen.held_back else

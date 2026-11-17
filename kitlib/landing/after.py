@@ -99,7 +99,8 @@ class After(object):
         A batch not merged as a stack (fewer merges than branches) reads every branch's lines down
         to the base, which takes in an earlier batch branch's lines when the tip carries them: a
         WARNING says so for each branch after the first (its Part-of line can release what this
-        branch would close), and nothing else changes."""
+        branch would close, or take back a Closes line in a commit it descends from:
+        at_landing.standing_closes), and nothing else changes."""
         self.phase = 'landed'
         lines = []
         stacked = len(self.merges) == len(self.pairs)
@@ -111,7 +112,8 @@ class After(object):
                     'so %s\'s Closes and Part-of lines are read from its tip down to the base %s, '
                     'which takes in the lines of a batch branch before it that its tip carries: a '
                     'Part-of line of that branch can release records %s holds instead of closing '
-                    'them; see the lines read with: git log --format=%%B %s --not %s'
+                    'them, or take back a Closes line in a commit that line descends from; see the '
+                    'lines read with: git log --format=%%B %s --not %s'
                     % (len(self.merges), len(self.pairs), b, str(base)[:10], b, t, base))
             merge = self.merges[i] if stacked else self.merge
             try:

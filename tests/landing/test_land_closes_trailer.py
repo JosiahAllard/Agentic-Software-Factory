@@ -248,7 +248,8 @@ class ClosesByTrailer(StoreLandCase):
     def test_unreadable_trailers_are_a_warning_and_the_branchs_own_pulls_still_close(self):
         self.seed(pulled('FOO'), pulled('D2', by='main'))
         tip = self.branch_with('fix\n\nCloses: D2\n%s\n' % TRAILERS)
-        with mock.patch.object(at_landing, 'closes_trailers', return_value=(None, 'boom')):
+        with mock.patch.object(at_landing, 'standing_closes_trailers',
+                               return_value=(None, 'boom')):
             out = self.land(tip)
         self.assertEqual(self.stems(), ['D2'])
         warn = self.warnings(out)

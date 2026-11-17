@@ -2,8 +2,9 @@
 that holds a pull in a store its landing closes records in (a named `ref` or `branch` store, the
 PM data branch's folder store) is LANDABLE, and the verdict names what the landing does to each
 record: closes it, or releases it when the branch has a `Part-of:` line and no `Closes:` line
-names it (kitlib.backlog.at_landing.close_landed). A folder store in the code repository and the
-implicit default store still say NOT LANDABLE; lines that cannot be read say CANNOT TELL.
+names it or a later `Part-of:` line does (kitlib.backlog.at_landing.close_landed). A folder
+store in the code repository and the implicit default store still say NOT LANDABLE; lines that
+cannot be read say CANNOT TELL.
 Scratch repositories with a bare remote, as tests/backlog/test_at_landing_part.py builds them."""
 import os
 import subprocess
@@ -25,6 +26,8 @@ TOOL = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.absp
                     'tools', 'backlog.py')
 COMMAND = 'python backlog.py'
 SLICE = '(a slice branch needs a `Part-of: %s` line)'
+RELEASE = ('(the branch has a Part-of line, and no Closes line names it or a later Part-of line '
+           'does)')
 
 
 class RefStore(StoreLandCase):
@@ -54,8 +57,7 @@ class RefStore(StoreLandCase):
         self.assertEqual((v.verdict, v.closes, v.releases, v.partial),
                          (L.LANDABLE, (), ('BAR', 'FOO'), True))
         lines = L.lines(v, COMMAND)
-        self.assertEqual(lines[1:], ['  releases %s, which it holds pulled (the branch has a '
-                                     'Part-of line and no Closes line names it)' % rid
+        self.assertEqual(lines[1:], ['  releases %s, which it holds pulled %s' % (rid, RELEASE)
                                      for rid in ('BAR', 'FOO')])
         self.assertNotIn('slice', '\n'.join(lines))
         self.assertEqual(L.exit_code([v]), 0)
@@ -67,9 +69,22 @@ class RefStore(StoreLandCase):
         lines = L.lines(v, COMMAND)
         self.assertEqual(lines[1:], [
             '  closes FOO, which it holds pulled (a Closes line names it)',
-            '  releases BAR, which it holds pulled (the branch has a Part-of line and no Closes '
-            'line names it)'])
+            '  releases BAR, which it holds pulled ' + RELEASE])
         self.assertNotIn('slice', '\n'.join(lines))
+
+    def test_a_later_part_of_line_takes_back_an_earlier_closes_line(self):
+        self.seed(pulled('FOO'))
+        self.branch_with('too soon\n\nCloses: FOO\n%s\n' % part.TRAILERS)
+        wt = os.path.join(self.repo.root, '.claude', 'worktrees', 'feature')
+        self.repo.git('commit', '-q', '--allow-empty', '-m',
+                      'not done yet\n\nPart-of: FOO\n%s\n' % part.TRAILERS, cwd=wt)
+        backend = self.backend()
+        v, = L.check(backend, backend.load(rmod.Rules()), self.repo.root, [BRANCH],
+                     base=self.main)
+        self.assertEqual((v.verdict, v.closes, v.releases, v.partial),
+                         (L.LANDABLE, (), ('FOO',), True))
+        self.assertEqual(L.lines(v, COMMAND)[1:],
+                         ['  releases FOO, which it holds pulled ' + RELEASE])
 
     def test_a_branch_holding_nothing_is_landable_as_before(self):
         self.seed(pulled('QUX', by='kit/other'))
@@ -80,7 +95,8 @@ class RefStore(StoreLandCase):
 
     def test_lines_that_cannot_be_read_cannot_tell(self):
         self.seed(pulled('FOO'))
-        with mock.patch.object(at_landing, 'closes_trailers', return_value=(None, 'boom')):
+        with mock.patch.object(at_landing, 'standing_closes_trailers',
+                               return_value=(None, 'boom')):
             v = self.verdict()
         self.assertEqual(v.verdict, L.CANNOT_TELL)
         self.assertIn('boom', v.detail)

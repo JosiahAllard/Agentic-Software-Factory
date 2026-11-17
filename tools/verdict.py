@@ -36,7 +36,8 @@
       is open, blocked, parked or pulled, not one the branch carries, and not one the landing of
       --tip onto main as fetched would close: held pulled by --branch in a store a landing closes
       in, with no Part-of line in its commits above main or a Closes line naming it (a `Part-of:`
-      line naming any record releases it, so it stays; with a Closes line too it closes; a
+      line naming any record releases it, so it stays; with a Closes line too it closes, unless a
+      later Part-of line naming it takes that Closes line back; a
       live-proof record no Live-pass line cites is released; landable.follow_up_closes,
       verdicts.follow_up_why). A store that cannot be read, or a held one while main as fetched
       or its commits' lines cannot be read, is NOT DONE. When --range adds a new non-test source file or

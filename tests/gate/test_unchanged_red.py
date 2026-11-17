@@ -327,6 +327,188 @@ class MachineFailures(Case):
              'reasons': ['requires a, b, which are missing']}))
 
 
+# A step whose stored input is the file UNCHANGED_INPUT names: it passes once that exists; else,
+# or whenever UNCHANGED_CLAIM is set, it writes UNCHANGED_CLAIM (default: that path as a JSON
+# list) to its missing-inputs file and exits 1 (docs/gate-run.md "Missing stored inputs").
+INPUTS_ENV = 'KIT_GATE_MISSING_INPUTS'     # a fixed contract: repositories' steps write to it
+INPUT = ['{python}', '-c', 'import json, os, sys; print("ok"); p = os.environ["UNCHANGED_INPUT"]; '
+         'c = os.environ.get("UNCHANGED_CLAIM"); ok = os.path.exists(p) and not c; '
+         'ok or open(os.environ["%s"], "w").write(c or json.dumps([p])); '
+         'sys.exit(0 if ok else 1)' % INPUTS_ENV]
+
+
+class InputMisses(Case):
+    """A step that failed only for stored inputs outside the tree, absent when the mark was
+    written (rerun.input_claim): the same tree is refused while one is still absent and runs once
+    every one exists, with no --again. Anything else in the claim makes the FAIL the tree's."""
+    GATE = {'steps': [
+        {'name': 'input', 'always': True, 'cmd': INPUT, 'pass': '^ok$', 'continue': True},
+        {'name': 'loud', 'globs': ['nothing/**'], 'cmd': INPUT, 'pass': '^ok$', 'fail': '^ok$',
+         'continue': True},
+        {'name': 'unit', 'always': True, 'cmd': STATE, 'pass': '^ok$'}]}
+
+    def setUp(self):
+        Case.setUp(self)
+        self.red(False)
+        self.env.pop(INPUTS_ENV, None)      # an outer gate's, when the suite runs in one
+        self.input = os.path.join(self.tmp, 'store', 'graph.bin')
+        self.env['UNCHANGED_INPUT'] = self.input
+
+    def make_input(self):
+        os.makedirs(os.path.dirname(self.input), exist_ok=True)
+        with open(self.input, 'w', encoding='utf-8') as f:
+            f.write('graph\n')
+
+    def claim(self, value):
+        self.env['UNCHANGED_CLAIM'] = json.dumps(value)
+
+    def assert_still_missing(self, out, booked, step='input'):
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertEqual(len(self.book_calls), booked, 'it booked')
+        self.assertIn('only for a stored input outside the tree that is still missing (%s: %s; '
+                      'logs: ' % (step, self.input), out.lines[0])
+        self.assertTrue(out.lines[0].endswith('; nothing queued'), out.lines[0])
+        self.assertTrue(out.lines[1].startswith("Instead: make that input (the step's log says "
+                                                'how), then gate again'), out.lines[1])
+
+    def assert_tree_s(self, out, why):
+        """The gate that wrote the mark: the claim was not taken, and said why."""
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        rec = self.mark_of('select')
+        self.assertNotIn('inputs', rec)
+        self.assertTrue(any(s.startswith('WARNING: ') and "counts as the tree's: " + why in s
+                            for s in out.said), out.said)
+
+    def test_refused_while_the_input_is_absent_and_runs_once_it_exists(self):
+        out = self.gate()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        rec = self.mark_of('select')
+        self.assertEqual((rec['failed'], rec.get('inputs')), (['input'], {'input': [self.input]}))
+        self.assert_still_missing(self.gate(), 1)
+        self.make_input()
+        out = self.gate()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(len(self.book_calls), 2)
+
+    def test_beside_a_real_failure_it_is_still_refused(self):
+        self.red(True)
+        self.gate()
+        self.assertEqual(self.mark_of('select')['failed'], ['input', 'unit'])
+        self.make_input()
+        self.assert_refused(self.gate(), 1)
+
+    def test_a_reason_beyond_the_exit_status_is_the_tree_s(self):
+        out = self.gate(only=['loud'])
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertNotIn('inputs', self.mark_of('select'))
+        self.make_input()
+        self.assert_refused(self.gate(only=['loud']), 1)
+
+    def test_a_malformed_file_is_the_tree_s(self):
+        self.claim('not a list')
+        self.assert_tree_s(self.gate(), 'not a JSON list of absolute paths')
+        self.make_input()
+        self.assert_refused(self.gate(), 1)
+
+    def test_a_listed_path_that_existed_at_mark_time_is_the_tree_s(self):
+        self.make_input()
+        self.claim([self.input])
+        self.assert_tree_s(self.gate(), '%s exists' % self.input)
+        self.assert_refused(self.gate(), 1)
+
+    def test_a_path_inside_the_tree_or_the_git_common_dir_is_the_tree_s(self):
+        """Through a junction (Windows, its spelling case-swapped too) or a symlink to the
+        checkout, so only the realpath fold finds it inside."""
+        link = os.path.join(self.tmp, 'via')
+        if os.name == 'nt':
+            import _winapi
+            _winapi.CreateJunction(self.wt, link)
+            link = link.swapcase()
+        else:
+            os.symlink(self.wt, link)
+        common = self.repo.git('rev-parse', '--path-format=absolute', '--git-common-dir',
+                               cwd=self.wt)
+        for path, why in ((os.path.join(link, 'store', 'graph.bin'), 'inside the gated tree'),
+                          (os.path.join(common, 'graph.bin'), 'inside the git common dir')):
+            with self.subTest(why):
+                self.claim([path])
+                self.assert_tree_s(self.gate(again=True), '%s is %s' % (path, why))
+
+    def test_an_excused_select_mark_still_meets_a_real_failure_in_the_full_mark(self):
+        self.red(True)
+        self.gate(full=True)                    # unit's failure is real
+        self.assertIn('unit', self.mark_of('full')['failed'])
+        self.red(False)
+        self.gate(again=True)                   # the select mark: input only
+        self.assertEqual(self.mark_of('select')['failed'], ['input'])
+        self.make_input()
+        out = self.gate()
+        self.assert_refused(out, 2)
+        self.assertIn('failed its last full gate', out.lines[0])
+
+    def test_a_red_full_of_input_only_is_excused_for_a_select_gate_once_it_exists(self):
+        self.gate(full=True)
+        self.assertEqual(self.mark_of('full').get('inputs'), {'input': [self.input]})
+        self.assert_still_missing(self.gate(), 1)
+        self.make_input()
+        self.assertEqual(self.gate().code, G.OK)
+        self.assertEqual(len(self.book_calls), 2)
+
+    def test_a_step_gets_its_own_file_and_nothing_else_inherits_an_outer_one(self):
+        launcher = mock.Mock(env={INPUTS_ENV: 'outer', 'X': '1'})
+        self.assertNotIn(INPUTS_ENV, runner.child_env(launcher))
+        self.assertEqual(getattr(runner, 'INPUTS_ENV', None), INPUTS_ENV)
+        self.assertEqual(getattr(runner, 'inputs_file', str)(os.path.join('logs', 'gradle.log')),
+                         os.path.join('logs', 'gradle.inputs.json'))
+
+    def test_an_earlier_run_s_file_that_cannot_be_removed_starts_no_step(self):
+        log = os.path.join(self.tmp, 'unit.log')
+        os.makedirs(os.path.join(self.tmp, 'unit.inputs.json'))    # a folder: os.remove refuses it
+        launcher = mock.Mock(env={})
+        got = runner._run_cmd(mock.Mock(cmd=['x'], cwd=self.tmp), launcher, log)
+        self.assertIsNone(got)                      # did not start: the machine's, never the tree's
+        launcher.start.assert_not_called()
+        with open(log, encoding='utf-8') as f:
+            self.assertIn('could not remove the missing-inputs file', f.read())
+
+
+# A check that writes a missing-inputs file at its own step's path, as a cmd step would, and fails:
+# a check is no part of the contract (docs/gate-run.md "Missing stored inputs").
+CLAIMING_CHECK = (
+    'import json, os\n'
+    'def claim(ctx):\n'
+    '    path = os.path.splitext(ctx["log"].name)[0] + ".inputs.json"\n'
+    '    with open(path, "w", encoding="utf-8") as f:\n'
+    '        json.dump([%r], f)\n'
+    '    return 1\n'
+    'GATE_CHECKS = {"claim": claim}\n')
+
+
+class CheckClaims(Case):
+    """A check step's missing-inputs file is never read: its FAIL is the tree's."""
+    KIT = {'hook': {'module': 'kit_hooks'}}
+    GATE = {'steps': [{'name': 'chk', 'always': True, 'check': 'claim'}]}
+
+    def setUp(self):
+        Case.setUp(self)
+        self.input = os.path.join(self.tmp, 'built', 'graph.bin')
+        self.repo.write('tools/kit_hooks.py', CLAIMING_CHECK % self.input, root=self.wt)
+        self.tip = self.repo.commit('a check', 'tools/kit_hooks.py', cwd=self.wt)
+
+    def test_a_check_step_s_file_is_not_read_and_its_fail_is_the_tree_s(self):
+        out = self.gate()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        log = os.path.join(out.facts['log_dir'], 'chk.inputs.json')
+        self.assertTrue(os.path.exists(log), 'the check wrote its file')
+        rec = self.mark_of('select')
+        self.assertEqual(rec['failed'], ['chk'])
+        self.assertNotIn('inputs', rec)
+        os.makedirs(os.path.dirname(self.input))
+        with open(self.input, 'w', encoding='utf-8') as f:
+            f.write('graph\n')
+        self.assert_refused(self.gate(), 1)
+
+
 class TargetedRerun(test_targeted_rerun.RerunCase):
     def test_a_red_full_then_its_targeted_rerun_runs_and_the_full_again_is_refused(self):
         wt, _ = self.work('once')

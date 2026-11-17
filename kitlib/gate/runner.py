@@ -84,6 +84,9 @@ STAGING_ARGS = ('STAGING: run with their staging_args (compile only, judged by s
 NO_CHECKS = ('GATE OK (auto-detected: no stack found, so NO checks ran; give the gate steps with a '
              '"gate" section in .kit.json or tools/gate.json)')
 PROBE_TIMEOUT = 60      # seconds a `requires` probe argv or a reuse.py toolchain probe may take
+# The one variable a cmd step gets naming its missing-inputs file (inputs_file; docs/gate-run.md
+# "Missing stored inputs"). A fixed contract: repositories' steps write to it.
+INPUTS_ENV = 'KIT_GATE_MISSING_INPUTS'
 CANCELLED_WAITING = 'was cancelled by stop while it waited'  # kitlib.lock.run_wait's LockError text
 # A console window the gate's run opened (window_results): False, it warns; True, it fails the
 # gate as a `windows` result. The one switch.
@@ -209,7 +212,15 @@ def child_env(launcher):
     base = getattr(launcher, 'env', None)
     env = dict(os.environ if base is None else base)
     env['PYTHONDONTWRITEBYTECODE'] = '1'
+    env.pop(INPUTS_ENV, None)       # an outer gate's: only _run_cmd sets it, for its one step
     return env
+
+
+def inputs_file(log_path):
+    """The missing-inputs file of the step whose log is `log_path`: `<its log
+    folder>/<step>.inputs.json` (docs/gate-run.md "Missing stored inputs"; read by
+    kitlib.gate.rerun.input_claim)."""
+    return os.path.splitext(log_path)[0] + '.inputs.json'
 
 
 def unmet(step, launcher):
@@ -245,10 +256,20 @@ def _run_cmd(step, launcher, log_path, give_back=False):
     """give_back: the gate's last step may give back cpu slots it no longer needs while it runs
     (kitlib.lock.giveback); no step runs after it that could need them."""
     more = {'give_back': True} if give_back else {}
+    inputs = inputs_file(log_path)
+    env = dict(child_env(launcher), **{INPUTS_ENV: inputs})
     with open(log_path, 'wb') as log:
         try:
+            os.remove(inputs)       # a reused --log-dir's, from an earlier run
+        except FileNotFoundError:
+            pass
+        except OSError as e:        # never judge this run by an earlier run's claim
+            log.write(('gate: could not remove the missing-inputs file %s of an earlier run: %s\n'
+                       % (inputs, e)).encode('utf-8'))
+            return None
+        try:
             p = launcher.start(step.cmd, cwd=step.cwd, stdin=subprocess.DEVNULL, stdout=log,
-                               stderr=subprocess.STDOUT, env=child_env(launcher), **more)
+                               stderr=subprocess.STDOUT, env=env, **more)
         except (OSError, JobError, LockError) as e:
             log.write(('gate: could not start %s: %s\n' % (step.cmd, e)).encode('utf-8'))
             return None
@@ -956,6 +977,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
         return ended[0]
 
     marked = []
+    cmd_steps = [s.name for s in chosen if not s.check]  # whose missing-inputs file is read
 
     def ran(got):
         # A red run's fail mark, written before the slot is released (gated's `ran`): a gate of
@@ -965,7 +987,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
         got = _with_reused(got, chosen, reused)
         if key is not None and not nothing_ran(got) and not verdict(got, empty)[0]:
             marked.append(True)
-            _mark(top, key, head, branch, got, logs, unclean(), say)
+            _mark(top, key, head, branch, got, logs, unclean(), say, cmd_steps)
     if run:
         # capped and budget_branch: the session gate cap (kitlib.gate.gatecap) and the branch
         # gate budget (kitlib.gate.budget) are a branch gate's only; a landing and the daily full
@@ -992,7 +1014,7 @@ def _gate_checkout(top, cfg, seen, base=None, full=False, only=None, plan=False,
     _keep(plan, results, logs, say)
     ok, line = verdict(results, empty)
     if key is not None and not marked and not nothing_ran(results):
-        _mark(top, key, head, branch, results, logs, unclean(), say)
+        _mark(top, key, head, branch, results, logs, unclean(), say, cmd_steps)
     lines = [line, 'logs: %s' % logs]
     facts = dict(verdict=line, results=results, record=None, no_record=None, head=head, base=mb,
                  log_dir=logs, changed=changed, windows=watched.get('windows'))
@@ -1083,22 +1105,33 @@ def _unchanged(top, key, tree, steps, branch, head, flags, say):
         return None
     if rec is None:
         return None
+    again = ('to repeat it on purpose (docs/gate-records.md "An unchanged red tree"): gate.py -C '
+             '%s%s --again' % (top, ' ' + flags if flags else ''))
+    head_of = 'REFUSED: the tree of %s at %s (tree %s) failed its last %s gate with this gate ' \
+              'config and kit at %s' % (branch or '(detached)', head[:10], tree[:10],
+                                        rec.get('mode'), rec.get('ended'))
+    missing = rec.get('still_missing')
+    if missing:
+        return [head_of + ' only for a stored input outside the tree that is still missing '
+                '(%s; logs: %s)' % ('; '.join('%s: %s' % (n, ', '.join(ps))
+                                             for n, ps in sorted(missing.items())),
+                                   rec.get('log_dir')),
+                "Instead: make that input (the step's log says how), then gate again: the same "
+                'tree then runs with no --again; or, ' + again]
     rerun_way = ('; or, for this red --full, a targeted rerun: gate.py -C %s --rerun' % top
                  if rec.get('mode') == 'full' else '')
-    return ['REFUSED: the tree of %s at %s (tree %s) failed its last %s gate with this gate '
-            'config and kit at %s (%s; logs: %s)' % (
-                branch or '(detached)', head[:10], tree[:10], rec.get('mode'), rec.get('ended'),
-                ', '.join(rec.get('failed') or []) or 'failed', rec.get('log_dir')),
-            'Instead: fix it and commit%s; or, to repeat it on purpose (docs/gate-records.md "An '
-            'unchanged red tree"): gate.py -C %s%s --again' % (
-                rerun_way, top, ' ' + flags if flags else '')]
+    return [head_of + ' (%s; logs: %s)' % (', '.join(rec.get('failed') or []) or 'failed',
+                                          rec.get('log_dir')),
+            'Instead: fix it and commit%s; or, %s' % (rerun_way, again)]
 
 
-def _mark(top, key, head, branch, results, logs, unclean, say):
+def _mark(top, key, head, branch, results, logs, unclean, say, cmd_steps=()):
     """The red-tree mark of a branch gate that ran (rerun.mark), on the gate-OK record's own
     terms (`unclean`, _unclean's answer): a gate of no one commit's tree writes none, nor does
     one whose every FAIL is the machine's (rerun.machine_failure; said). Nothing here changes the
-    gate's verdict; a mark that cannot be written is one WARNING."""
+    gate's verdict; a mark that cannot be written is one WARNING, and so is each step's
+    missing-inputs file the mark does not take (rerun.input_claim). `cmd_steps`: the names of
+    the gate's cmd steps, the only ones whose missing-inputs file is read."""
     from kitlib.gate import rerun   # rerun imports this module
     if unclean:
         return
@@ -1106,12 +1139,16 @@ def _mark(top, key, head, branch, results, logs, unclean, say):
     if not tree:
         return
     try:
-        path = rerun.mark(top, key, tree, head, branch or None, results, logs)
+        path, unused = rerun.mark(top, key, tree, head, branch or None, results, logs,
+                                  cmd_steps=cmd_steps)
     except rerun.NoMarkFolder:
         return
     except rerun.RerunError as e:
         say('WARNING: no red-tree mark: %s' % e)
         return
+    for name, path_of, why in unused:
+        say("WARNING: %s: its missing-inputs file (%s) is not used, so its FAIL counts as the "
+            "tree's: %s" % (name, path_of, why))
     if path is None:
         say('no red-tree mark: every FAIL is the machine\'s (a step that did not start, a tool it '
             'requires missing, or kit_tests units that timed out)')

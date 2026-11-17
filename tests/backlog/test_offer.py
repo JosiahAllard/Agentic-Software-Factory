@@ -11,6 +11,7 @@ from kitlib.backlog import plan_narrow
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog import store_read, store_ref
+from kitlib.backlog import unblocks
 
 from tests.backlog import test_cli
 from tests.backlog.helpers import TODAY, StoreCase, priced, rec, record_text
@@ -77,6 +78,77 @@ class Rank(unittest.TestCase):
         s = snap(rec('AAA'), priced('BBB'))
         self.assertEqual(omod.ranked(s), {'BBB': 1})
         self.assertEqual(omod.rank_label(s.get('AAA'), omod.ranked(s)), '-')
+
+
+def held_on(rid, *on, **over):
+    """A held record blocked on each `item:` id of `on`."""
+    return priced(rid, state='blocked', blocked_on=['item:%s' % o for o in on], **over)
+
+
+class BlockerRank(unittest.TestCase):
+    """The rank inherits the best price of the work a record holds (unblocks.py)."""
+
+    def test_a_p4_blocking_a_p1_ranks_with_the_p1s(self):
+        s = snap(priced('LOW', priority='4'), held_on('TOP', 'LOW', priority='1'),
+                 priced('ONE', priority='1', effort='s'), priced('TWO', priority='2'))
+        ranks = omod.ranked(s)
+        self.assertLess(ranks['LOW'], ranks['TWO'])
+        self.assertLess(ranks['ONE'], ranks['TWO'])
+
+    def test_more_transitive_dependents_rank_first_in_a_band(self):
+        # AAA holds one p2; ZZZ holds a p3 that holds a p2: ZZZ unblocks two, through the chain.
+        s = snap(priced('AAA', priority='3'), held_on('A1', 'AAA', priority='2'),
+                 priced('ZZZ', priority='3'), held_on('Z1', 'ZZZ', priority='3'),
+                 held_on('Z2', 'Z1', priority='2'))
+        u = unblocks.Unblocks(s)
+        self.assertEqual((u.count['AAA'], u.count['ZZZ']), (1, 2))
+        ranks = omod.ranked(s)
+        self.assertLess(ranks['ZZZ'], ranks['AAA'])
+
+    def test_the_tie_rules_give_this_exact_order(self):
+        s = snap(
+            # (a) R holds two p2s: best names the lower id.
+            priced('R', priority='5'), held_on('A1', 'R'), held_on('A2', 'R'),
+            # (b) X and Y: both effective p2 holding one record; own p2 beats effort `s`.
+            priced('X', priority='3', effort='s'), held_on('X1', 'X'),
+            priced('Y', priority='2', effort='l'), held_on('Y1', 'Y'),
+            # (c) LOW (p4 holding a p1) above ONE (p1 holding nothing).
+            priced('LOW', priority='4'), held_on('TOP', 'LOW', priority='1'),
+            priced('ONE', priority='1'))
+        self.assertEqual(unblocks.Unblocks(s).best['R'], (2, 'A1'))
+        self.assertEqual(omod.ranked(s), {'LOW': 1, 'ONE': 2, 'TOP': 3, 'R': 4, 'Y': 5, 'X': 6,
+                                          'A1': 7, 'A2': 8, 'X1': 9, 'Y1': 10})
+
+    def test_a_pin_outranks_an_inherited_priority(self):
+        s = snap(priced('LOW', priority='4'), held_on('TOP', 'LOW', priority='1'),
+                 priced('PIN', priority='5', pin='1'))
+        ranks = omod.ranked(s)
+        self.assertLess(ranks['PIN'], ranks['LOW'])
+
+    def test_a_cycle_terminates_and_is_reported(self):
+        s = snap(held_on('AAA', 'BBB', priority='3'), held_on('BBB', 'AAA', priority='1'))
+        u = unblocks.Unblocks(s)
+        self.assertEqual((u.count['AAA'], u.count['BBB']), (1, 1))
+        self.assertEqual(u.best['AAA'], (1, 'BBB'))
+        self.assertEqual(u.cycle_line(),
+                         'CYCLE: item: blockers AAA -> BBB -> AAA; nothing in it can be pulled '
+                         '(check fails on it)')
+        self.assertIsNone(unblocks.Unblocks(snap(priced('AAA'))).cycle_line())
+
+    def test_why_names_the_count_and_the_inherited_source(self):
+        s = snap(priced('LOW', priority='4'), held_on('TOP', 'LOW', priority='1'),
+                 rec('UNP', state='blocked', blocked_on='item:LONE'), priced('LONE'))
+        u = unblocks.Unblocks(s)
+        self.assertEqual(u.why(s.get('LOW')), 'unblocks 1, best p1: TOP')
+        self.assertEqual(u.why(s.get('LONE')), 'unblocks 1')
+        self.assertIsNone(u.why(s.get('TOP')))
+
+    def test_an_unpriced_blocker_inherits_nothing_into_the_rank(self):
+        s = snap(rec('UNP'), held_on('TOP', 'UNP', priority='1'))
+        u = unblocks.Unblocks(s)
+        self.assertIsNone(u.effective(s.get('UNP')))
+        self.assertEqual(u.best['UNP'], (1, 'TOP'))
+        self.assertNotIn('UNP', omod.ranked(s))
 
 
 class NextOffer(unittest.TestCase):

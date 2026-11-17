@@ -25,6 +25,7 @@ Low-level design of `kitlib/backlog`. The high-level design is ARCHITECTURE.md (
 | `store*.py`, `removed_cache.py` | Where records live and how a write reaches them, split by backend (ref, branch, folder) and by read and write |
 | `plan*.py` | The write verbs as plans, split by family: add and set, pull and release, block, close, the narrowing rules |
 | `offer.py`, `landable.py`, `stale.py`, `find.py`, `check.py` | The offer and its rank; may a branch land; stale records; find; the named checks |
+| `unblocks.py` | What each record holds up through `item:` blockers (its transitive dependents, their count and best price), which the rank reads; the edge rule is `store_read.item_edges` |
 | `orphans.py` | `list --orphans`: each pulled record's branch, whether an agent works it, and the route that stops its pull |
 | `policy.py`, `roles.py` | Who may run what; the owner's map (owner-only) |
 | `opener.py` | Open the configured store and map a verb to its plan |

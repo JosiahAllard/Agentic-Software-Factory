@@ -1150,8 +1150,10 @@ def _mark(top, key, head, branch, results, logs, unclean, say, cmd_steps=()):
         say("WARNING: %s: its missing-inputs file (%s) is not used, so its FAIL counts as the "
             "tree's: %s" % (name, path_of, why))
     if path is None:
-        say('no red-tree mark: every FAIL is the machine\'s (a step that did not start, a tool it '
-            'requires missing, or kit_tests units that timed out)')
+        say('no red-tree mark: every FAIL is the machine\'s (a step that did not start, a strict '
+            'requirement unmet: a tool missing or a busy resource\'s probe, or kit_tests units '
+            'that timed out): the next gate of this tree '
+            'runs with %s' % rerun.NO_AGAIN)
 
 
 def _red_record(top, cfg, head, mb, started, results, chosen, logs, no, say, full):

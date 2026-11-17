@@ -255,6 +255,11 @@ KT = ['{python}', '-c', 'import os, sys; units = os.environ["UNCHANGED_KT"].spli
       'bad = ["tests.u.test_%d (%s)" % (i, s) for i, s in enumerate(units) if s != "OK"]; '
       'print("kit_tests: FAILED %d of 5 units; failed: %s" % (len(bad), ", ".join(bad))); '
       'sys.exit(1)']
+# A busy resource's strict `requires` probe (docs/gate-run.md "Steps"): it exits 1, busy, while
+# the file UNCHANGED_BUSY names exists.
+BUSY = ['{python}', '-c', 'import os, sys; '
+        'sys.exit(1 if os.path.exists(os.environ["UNCHANGED_BUSY"]) else 0)']
+NO_AGAIN = getattr(rerun, 'NO_AGAIN', 'rerun.NO_AGAIN')    # the token naming the plain re-gate
 
 
 class MachineFailures(Case):
@@ -265,6 +270,8 @@ class MachineFailures(Case):
          'continue': True},
         {'name': 'tool', 'always': True, 'cmd': OK, 'pass': '^ok$', 'continue': True,
          'requires': ['kit-no-such-tool-0f3c'], 'requires_strict': True},
+        {'name': 'busy', 'always': True, 'cmd': OK, 'pass': '^ok$', 'continue': True,
+         'requires': [BUSY], 'requires_strict': True},
         {'name': 'kt', 'always': True, 'cmd': KT, 'continue': True},
         {'name': 'unit', 'always': True, 'cmd': STATE, 'pass': '^ok$'}]}
 
@@ -272,6 +279,10 @@ class MachineFailures(Case):
         Case.setUp(self)
         self.red(False)
         self.env['UNCHANGED_KT'] = 'TIMEOUT'
+        self.busy = os.path.join(self.tmp, 'busy')
+        self.env['UNCHANGED_BUSY'] = self.busy
+        with open(self.busy, 'w', encoding='utf-8') as f:
+            f.write('held by another run\n')
 
     def assert_unmarked_and_runs_again(self, only):
         out = self.gate(only=only)
@@ -280,8 +291,8 @@ class MachineFailures(Case):
         self.assertEqual([r['name'] for r in failed], only, failed)
         self.assertIsNone(self.mark_of('select'))
         self.assertTrue(all(rerun.machine_failure(r) for r in failed), failed)
-        self.assertTrue(any(s.startswith("no red-tree mark: every FAIL is the machine's")
-                            for s in out.said), out.said)
+        self.assertTrue(any(s.startswith("no red-tree mark: every FAIL is the machine's") and
+                            NO_AGAIN in s for s in out.said), out.said)
         self.assertEqual(self.gate(only=only).code, G.FAILED)       # not refused: it ran
         self.assertEqual(len(self.book_calls), 2)
 
@@ -290,6 +301,18 @@ class MachineFailures(Case):
 
     def test_a_required_tool_missing(self):
         self.assert_unmarked_and_runs_again(['tool'])
+
+    def test_a_strict_probe_of_a_busy_resource(self):
+        """A busy resource held by another run: its probe fails, so the step is the machine's
+        FAIL and the same tree's next plain gate runs; once the resource is free it runs the
+        step."""
+        self.assert_unmarked_and_runs_again(['busy'])
+        os.remove(self.busy)
+        out = self.gate(only=['busy'])
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual([(r['name'], r['status']) for r in out.facts['results']],
+                         [('busy', 'PASS')])
+        self.assertEqual(len(self.book_calls), 3)
 
     def test_kit_tests_units_that_all_timed_out(self):
         self.env['UNCHANGED_KT'] = 'OK,TIMEOUT,TIMEOUT'
@@ -303,11 +326,16 @@ class MachineFailures(Case):
 
     def test_a_real_fail_beside_a_machine_one_marks_only_the_real_one(self):
         self.red(True)
-        out = self.gate(only=['unit', 'gone'])
-        self.assertEqual([r['name'] for r in out.facts['results'] if r['status'] == 'FAIL'],
-                         ['gone', 'unit'], out.facts['results'])
-        rec = self.mark_of('select')
-        self.assertEqual((rec['verdict'], rec['failed']), ('fail', ['unit']))
+        for machine in ('gone', 'busy'):
+            with self.subTest(machine):
+                out = self.gate(only=['unit', machine], again=True)
+                self.assertEqual([r['name'] for r in out.facts['results']
+                                  if r['status'] == 'FAIL'], [machine, 'unit'],
+                                 out.facts['results'])
+                rec = self.mark_of('select')
+                self.assertEqual((rec['verdict'], rec['failed']), ('fail', ['unit']))
+                booked = len(self.book_calls)
+                self.assert_refused(self.gate(only=['unit', machine]), booked)
 
     def test_a_machine_fail_leaves_an_earlier_mark_as_it_was(self):
         self.red(True)
@@ -325,6 +353,33 @@ class MachineFailures(Case):
         self.assertTrue(rerun.machine_failure(
             {'name': 'x', 'status': 'FAIL', 'log': None,
              'reasons': ['requires a, b, which are missing']}))
+
+    def test_rerun_after_a_machine_only_red_names_the_plain_gate(self):
+        """A red whole gate whose every FAIL is the machine's writes its red run but no mark:
+        gate.py --rerun refuses it, and each machine step's line names the plain re-gate."""
+        out = self.gate()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertIsNone(self.mark_of('select'))
+        reds, _ = rerun.load(self.wt, self.tip)
+        steps = {s['name']: s for s in reds[-1]['steps']}
+        got = rerun.rerun_gate(self.wt, log_dir=os.path.join(self.tmp, 'rerun'),
+                               say=[].append, book_kw=self.book_kw)
+        self.assertEqual(got.code, G.REFUSED, got.lines)
+        for name in ('gone', 'busy', 'kt'):
+            with self.subTest(name):
+                self.assertEqual(steps[name]['failures'], [])
+                mine = [ln.strip() for ln in got.lines if ln.strip().startswith(name + ': ')]
+                self.assertTrue(mine and NO_AGAIN in mine[0], got.lines)
+                self.assertFalse(any('covers kit_tests' in ln for ln in mine), mine)
+
+    def test_a_machine_step_keeps_its_reasons_beyond_the_exit_status(self):
+        log = os.path.join(self.tmp, 'kt.log')
+        with open(log, 'w', encoding='utf-8') as f:
+            f.write('==== tests.u.test_0 (3 tests, 600s, TIMEOUT) ====\n')
+        entry = rerun.cover_step({'name': 'kt', 'status': 'FAIL', 'log': log,
+                                  'reasons': ['exit 1', 'matched fail pattern']}, '', None, None)
+        self.assertIn(NO_AGAIN, entry['uncovered'][0])
+        self.assertEqual(entry['uncovered'][1:], ['kt: matched fail pattern'])
 
 
 # A step whose stored input is the file UNCHANGED_INPUT names: it passes once that exists; else,

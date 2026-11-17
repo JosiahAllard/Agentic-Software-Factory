@@ -42,7 +42,8 @@ kit_tests' report, unittest's, gradle's or dotnet's; a kit_tests unit that is no
 FAIL/ERROR lines that do not add up to the FAILED summary; an unexpected success; an
 interrupted or refused kit_tests run; a gradle or dotnet log that fails on more than its tests,
 or whose reports do not add up (kitlib.gate.reports); a step whose directory is outside the
-tree.
+tree; a FAIL the machine caused (machine_failure), whose line names the plain gate (NO_AGAIN):
+the red-tree mark leaves it out.
 
 Records: `<dev_drive>/pm-kit/kit-gate-rerun/<repo key>/<commit>/`, one file per run, written
 once (red-<ns>-<token>.json, rerun-<ns>-<token>.json), each carrying the sha256 of its own
@@ -115,6 +116,7 @@ ABSENT = re.compile(r'ModuleNotFoundError|ImportError|AttributeError: module .* 
 # A FAIL reason of the machine's (runner.run_steps): the step did not start, or a requires_strict
 # tool is missing. A mark leaves such a step out (machine_failure).
 MACHINE_REASON = re.compile(r'^(did not start \(see its log\)|requires .+, which (is|are) missing)$')
+NO_AGAIN = 'no --again'     # what a machine FAIL's lines say the tree's next plain gate needs
 
 
 class RerunError(Exception):
@@ -418,6 +420,14 @@ def cover_step(res, cwd_rel, top, since):
     or `since` None, as in the daily full run's bisect, leaves a gradle step uncovered)."""
     entry = {'name': res['name'], 'status': res['status']}
     if res['status'] != 'FAIL':
+        return entry
+    machine = machine_failure(res)
+    if machine:     # the red-tree mark leaves it out (mark): the way on is the plain gate
+        entry.update(failures=[], log=res.get('log'), uncovered=[
+            "%s: the machine's FAIL (%s), which the red-tree mark leaves out: gate.py again once "
+            'the machine is ready, with %s' % (res['name'], machine, NO_AGAIN)] + [
+            '%s: %s' % (res['name'], r) for r in res.get('reasons') or []
+            if not (COVERED_REASON.match(r) or MACHINE_REASON.match(r))])
         return entry
     uncovered = ['%s: %s' % (res['name'], r) for r in res.get('reasons') or []
                  if not COVERED_REASON.match(r)]

@@ -269,6 +269,23 @@ class Cli(unittest.TestCase):
         self.assertIn('BAR', out)
         self.assertNotIn('FOO', out)
 
+    def test_next_ranks_and_tags_a_blocker_by_the_work_it_holds(self):
+        # LOW (p4) holds TOP (p1): it ranks above MID (p2), and its row names what it unblocks.
+        for rid, path in (('LOW', 'tools/a.py'), ('MID', 'tools/b.py'), ('TOP', 'tools/c.py'),
+                          ('UNP', 'tools/d.py'), ('HELD', 'tools/e.py')):
+            self.ok('add', rid, '--summary', 'thing %s' % rid, '--scope', path, *ADD_FLAGS)
+        for rid, p in (('LOW', '4'), ('MID', '2'), ('TOP', '1'), ('HELD', '1')):
+            self.ok('set', rid, '--priority', p, '--priority-by', 'agent')
+        self.ok('block', 'TOP', '--on', 'item:LOW')
+        self.ok('block', 'HELD', '--on', 'item:UNP')
+        out = self.ok('next')
+        nxt = out[out.index('NEXT ('):]
+        self.assertLess(nxt.index('LOW'), nxt.index('MID'))
+        self.assertIn('thing LOW  (unblocks 1, best p1: TOP)', nxt)
+        self.assertNotIn('UNP', nxt.split('counts:')[0].split('passed over')[0])
+        out = self.ok('list', '--needs-priority')
+        self.assertIn('thing UNP  [blocks priced work: 1, best p1: HELD]', out)
+
     def test_list_orphans_states_and_routes(self):
         def rec(i, branch, session='x'):
             fields = {'pulled_by': branch, 'pulled_session': session}

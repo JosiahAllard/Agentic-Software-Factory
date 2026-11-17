@@ -105,6 +105,20 @@ class BlockerRank(unittest.TestCase):
         ranks = omod.ranked(s)
         self.assertLess(ranks['ZZZ'], ranks['AAA'])
 
+    def test_the_tie_rules_give_this_exact_order(self):
+        s = snap(
+            # (a) R holds two p2s: best names the lower id.
+            priced('R', priority='5'), held_on('A1', 'R'), held_on('A2', 'R'),
+            # (b) X and Y: both effective p2 holding one record; own p2 beats effort `s`.
+            priced('X', priority='3', effort='s'), held_on('X1', 'X'),
+            priced('Y', priority='2', effort='l'), held_on('Y1', 'Y'),
+            # (c) LOW (p4 holding a p1) above ONE (p1 holding nothing).
+            priced('LOW', priority='4'), held_on('TOP', 'LOW', priority='1'),
+            priced('ONE', priority='1'))
+        self.assertEqual(unblocks.Unblocks(s).best['R'], (2, 'A1'))
+        self.assertEqual(omod.ranked(s), {'LOW': 1, 'ONE': 2, 'TOP': 3, 'R': 4, 'Y': 5, 'X': 6,
+                                          'A1': 7, 'A2': 8, 'X1': 9, 'Y1': 10})
+
     def test_a_pin_outranks_an_inherited_priority(self):
         s = snap(priced('LOW', priority='4'), held_on('TOP', 'LOW', priority='1'),
                  priced('PIN', priority='5', pin='1'))

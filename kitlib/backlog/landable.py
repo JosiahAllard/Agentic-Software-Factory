@@ -6,8 +6,9 @@ it closes records in (at_landing.close_landed): a `ref` or `branch` store `.kit.
 the PM data branch's folder store, read here in its own worktree. There a pull the branch holds is
 LANDABLE, and the verdict says what the landing will do to each record, from the `Closes:` and
 `Part-of:` lines of the branch's commits above `base` (the code main, as the landing reads them):
-close it, or release it when the branch has a Part-of line and no Closes line names it, or when
-it is a live-proof record (`requires: live-run`) no `Live-pass:` line of those commits cites a
+close it, or release it when the branch has a Part-of line and no Closes line names it or a
+later Part-of line takes that Closes line back (at_landing.standing_closes), or when it is a
+live-proof record (`requires: live-run`) no `Live-pass:` line of those commits cites a
 passing live run for (at_landing.is_live_proof, live_pass_trailers). A folder
 store in the code repository (its records travel with the branch, so a landing closes none) and
 the implicit default store (a landing only reads it) still say NOT LANDABLE for a held pull; with
@@ -49,10 +50,10 @@ def _closing_store(backend):
 
 def _landing_acts(root, tip, base, held, proof=()):
     """`((closes, releases, partial, unproven), None)` for the ids in `held`, as close_landed
-    decides them from the branch's Closes, Part-of and Live-pass lines in `tip --not base`: a
-    live-proof id (in `proof`) it would close and no Live-pass line cites is released instead
-    (`unproven`); or `(None, why)`."""
-    named, why = at_landing.closes_trailers(root, tip, base)
+    decides them from the branch's Closes, Part-of and Live-pass lines in `tip --not base` (its
+    standing Closes lines: at_landing.standing_closes_trailers): a live-proof id (in `proof`) it
+    would close and no Live-pass line cites is released instead (`unproven`); or `(None, why)`."""
+    named, why = at_landing.standing_closes_trailers(root, tip, base)
     found = passed = None
     if named is not None:
         found, why = at_landing.part_trailers(root, tip, base)
@@ -79,8 +80,9 @@ def follow_up_closes(backend, records, root, branch, tip, base):
     `branch` at `tip` onto `base` would close, as close_landed decides it: those the branch holds
     pulled (held), in a store a landing closes in (_closing_store; never the implicit default
     store), when its commits in `tip --not base` have no Part-of line or a Closes line names the
-    id, and a live-proof id only when a Live-pass line cites it (_landing_acts). `()` with no git
-    read when nothing is held or the store closes nothing. `(None, why)` when that cannot be told:
+    id that no later Part-of line takes back, and a live-proof id only when a Live-pass line
+    cites it (_landing_acts). `()` with no git read when nothing is held or the store closes
+    nothing. `(None, why)` when that cannot be told:
     the store's kind, `base` None (main as fetched unread) while one is held, or lines git cannot
     read; never `()` then. tools/verdict.py add refuses a --follow-up in `ids` (verdicts.follow_up_why)."""
     closing, why = _closing_store(backend)
@@ -186,7 +188,8 @@ def lines(v, command):
         out.append('  releases %s, which it holds pulled (%s)' % (rid, (
             'a live-proof record: no `Live-pass: %s <run>` line in its commits cites a passing '
             'live run' % rid) if rid in v.unproven else
-            'the branch has a Part-of line and no Closes line names it'))
+            'the branch has a Part-of line, and no Closes line names it or a later Part-of line '
+            'does'))
     return out
 
 

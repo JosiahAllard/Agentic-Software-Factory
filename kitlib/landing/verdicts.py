@@ -513,9 +513,10 @@ def follow_up_why(entry, follow_ups):
     holds no record of that id (a closed or retired record has none), `open` True when that state
     is one of kitlib.backlog.record.STATES (open, blocked, parked, pulled), and `closes` True when
     the branch's landing would close it (kitlib.backlog.landable.follow_up_closes: the branch holds
-    it pulled, with no Part-of line in its commits above main or a Closes line naming it; the
-    caller reads the store). Refused: LAND WITH FOLLOW-UP naming none; a plain LAND naming one; an
-    id with no open record, one of the records the branch carries, or one its landing closes. Pure."""
+    it pulled, with no Part-of line in its commits above main or a Closes line naming it that no
+    later Part-of line takes back; the caller reads the store). Refused: LAND WITH FOLLOW-UP
+    naming none; a plain LAND naming one; an id with no open record, one of the records the
+    branch carries, or one its landing closes. Pure."""
     if entry['verdict'] == 'LAND':
         if not follow_ups:
             return None

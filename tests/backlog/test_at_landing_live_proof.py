@@ -114,7 +114,8 @@ class LiveProofLanding(StoreLandCase):
         # and the one WARNING says so beside "only the records it holds pulled are closed".
         self.seed(pulled('FOO', **LIVE), pulled('BAR'))
         tip = self.branch_with('fix\n\nCloses: FOO\nLive-pass: FOO run 412\n%s\n' % TRAILERS)
-        with mock.patch.object(at_landing, 'closes_trailers', return_value=(None, 'boom')):
+        with mock.patch.object(at_landing, 'standing_closes_trailers',
+                               return_value=(None, 'boom')):
             out = self.land(tip)
         self.assertEqual(self.stems(), ['FOO'])
         self.assertEqual(self.ids(out, 'released'), ['FOO'], out.lines)

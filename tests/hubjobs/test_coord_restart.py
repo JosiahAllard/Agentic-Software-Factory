@@ -896,11 +896,13 @@ class Offered(unittest.TestCase):
             self.opened.append((root, fetch, session))
             return Ctx(root, session)
 
-        def offer_for(snap, ctx, branch=None, cap=5, seeds=(), holding=None):
-            self.assertEqual((snap, cap, holding), ('snap', None, ['pull']))
+        def offer_for(snap, ctx, branch=None, cap=5, seeds=(), holding=None, narrow=False):
+            # as `next --session <key>` asks: the repo's cap, narrowing on
+            self.assertEqual((snap, cap, holding, narrow), ('snap', 3, ['pull'], True))
             self.lives.append(getattr(ctx, 'session_live', 'unset'))
             return [mock.Mock(rec=Rec(r)) for r in self.by_session.get(ctx.session, ())], [], holding, None
         with mock.patch.object(opener, 'open_store', open_store), \
+                mock.patch.object(opener, 'repo_cap', lambda top: 3), \
                 mock.patch.object(plan_narrow, 'offer_for', offer_for), \
                 mock.patch.object(omod, 'in_flight_split', lambda snap, root, remote: (['pull'], [], None)), \
                 mock.patch.object(store_live, 'pm_data_live_store',

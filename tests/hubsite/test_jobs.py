@@ -468,6 +468,49 @@ class CodeStampTest(unittest.TestCase):
         self.assertNotEqual(serve.code_stamp([a, b]), before)
         self.assertEqual(serve.code_stamp([a, b]), serve.code_stamp([a, b]))
 
+    def tree(self):
+        top = tempfile.mkdtemp(prefix='kit-stamp-tree-')
+        self.addCleanup(shutil.rmtree, top, True)
+        os.makedirs(os.path.join(top, 'pkg', 'sub'))
+        for rel, text in (('top.py', 'a = 1\n'), ('pkg/sub/m.py', 'b = 1\n'),
+                          ('pkg/sub/page.html', '<p>\n')):
+            with open(os.path.join(top, *rel.split('/')), 'w') as f:
+                f.write(text)
+        return top
+
+    def changed(self, top, rel, text):
+        before = serve.code_stamp([top])
+        with open(os.path.join(top, *rel.split('/')), 'w') as f:
+            f.write(text)                   # a new size: the stamp differs whatever the clock
+        return serve.code_stamp([top]) != before
+
+    def test_a_change_in_a_nested_package_changes_the_stamp(self):
+        top = self.tree()
+        self.assertTrue(self.changed(top, 'pkg/sub/m.py', 'b = 22\n'))
+
+    def test_a_change_to_a_top_level_module_changes_the_stamp(self):
+        top = self.tree()
+        self.assertTrue(self.changed(top, 'top.py', 'a = 22\n'))
+
+    def test_a_file_that_is_not_python_is_no_code(self):
+        top = self.tree()
+        self.assertFalse(self.changed(top, 'pkg/sub/page.html', '<p>changed</p>\n'))
+        os.makedirs(os.path.join(top, 'pkg', '__pycache__'))
+        self.assertFalse(self.changed(top, 'pkg/__pycache__/m.py', 'c = 1\n'))
+
+    def test_a_folder_inside_another_is_stamped_once(self):
+        top = self.tree()
+        self.assertEqual(serve.code_stamp([top, os.path.join(top, 'pkg')]),
+                         serve.code_stamp([top]))
+
+    def test_the_hub_stamps_all_of_kitlib_the_backlog_its_offers_run_too(self):
+        stamp = serve.code_stamp(serve.stamp_folders(hubjobs.makers()))
+        names = set(rel for _top, rel, _t, _s in stamp)
+        for rel in ('backlog/offer.py', 'backlog/unblocks.py', 'hubsite/serve.py',
+                    'hubjobs/fill_watch.py', 'config/user.py'):
+            self.assertIn(rel, names)
+        self.assertFalse([rel for rel in names if '__pycache__' in rel or not rel.endswith('.py')])
+
 
 if __name__ == '__main__':
     unittest.main()

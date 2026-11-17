@@ -10,8 +10,9 @@ resets first among those under the limit, else its last account (docs/launcher.m
                                      newer than `since` (owner_since: the stopped session's start,
                                      else its stop); owner_items reads them from Sources.pending
   offered_ids(settings, key, entry, session_live=None)
-                                     the record ids `backlog.py next --all` offers the entry's
-                                     coordinator (BacklogUnread when the store cannot be read)
+                                     the record ids `backlog.py next --session <key>` offers the
+                                     entry's coordinator (BacklogUnread when the store or the
+                                     repo's cap cannot be read)
   session_liveness(sessions, live)   the offer's session liveness from one run's own reads
   last_account(entry, record)        the account a coordinator last ran on, or None
   RestartJob(settings, ...)          its run(ctx): the boot one-shot, then read the state, decide
@@ -43,14 +44,14 @@ in a row (a hand-off gets time to start it first); START_CAP starts in
 CAP_WINDOW_S already; a start sooner than BACKOFF_S after the last.
 
 A wake lifts the deliberate-stop hold, and only it (every other hold still applies): the repo has
-gained startable records, meaning `backlog.py next --all` for the coordinator's session (its
-sessions.json key, and no session too when the key is its repo's name, the repo's main coordinator)
-offers a record id that it did not offer on the first run after that stop that read it (the
+gained startable records, meaning `backlog.py next --session` for the coordinator's session (its
+sessions.json key, and no session too when the key is its repo's name, the repo's main coordinator;
+up to the repo's cap, narrowing on, so a record offered only narrowed counts) offers a record id that it did not offer on the first run after that stop that read it (the
 baseline, kept as `held` {stop_at, ids}). So a coordinator woken for some records that stops again
 is not woken for them again. The offer is read only for an entry held on a deliberate stop whose
 autostart and pace_hold (DOWN_RUNS, the cap, the backoff) pass, through kitlib.backlog
 (opener.open_store with no fetch, plan_narrow.offer_for), from the store the repo's .kit.json names,
-else the PM data worktree's (store_live.pm_data_live_store). A store that cannot be read wakes
+else the PM data worktree's (store_live.pm_data_live_store). A store or a cap that cannot be read wakes
 nothing and is a note, not a failure. The wake judges session liveness as `next` does
 (session_liveness, from the run's own sessions.json and process listing): a record of a session that
 is not running takes no place in the offer, so the wake sees what `next` offers. An owner wake (an
@@ -198,7 +199,7 @@ def shown_ids(ids, most=WAKE_IDS_SHOWN):
 
 
 def backlog_wake(offered, baseline):
-    """A Wake when `offered` (the record ids next --all offers the coordinator now) holds one that
+    """A Wake when `offered` (the record ids `next --session` offers the coordinator now) holds one that
     `baseline` (those it offered when the stop was first seen) does not, else None."""
     new = sorted(set(offered) - set(baseline or ()))
     if not new:
@@ -465,10 +466,12 @@ def session_liveness(sessions, live):
 
 def read_offer(settings, key, entry, with_cap=False, session_live=None):
     """(ids, holding, cap) for the coordinator of sessions.json entry `key`: the record ids
-    `backlog.py next --all` offers it (every session of wake_sessions, the store of store_root),
-    in offer order, each once; the store's live pulls (offer.in_flight_split's holding); and,
-    with `with_cap`, `.kit.json` backlog.cap of the repo's main checkout (opener.repo_cap), else
-    None. No fetch: the hub's own backlog fetch keeps the local store fresh. `session_live` (an
+    `backlog.py next --session <key>` offers it (every session of wake_sessions, the store of
+    store_root), in offer order, each once: offered as `next` asks, up to `.kit.json`
+    backlog.cap of the repo's main checkout (opener.repo_cap) and narrowing on, so a record held
+    only by a live pull's protected set is offered (with the Split `pull` writes); the store's
+    live pulls (offer.in_flight_split's holding); and, with `with_cap`, that cap, else None. No
+    fetch: the hub's own backlog fetch keeps the local store fresh. `session_live` (an
     offer.SessionLiveness, session_liveness) judges whether another session's record reserves its
     scope; None: it always does. With it, the same offer `next` prints (plan_narrow.offer_for: live
     pulls, unmet `requires:`, the fold-in guard, session liveness). BacklogUnread when
@@ -482,22 +485,21 @@ def read_offer(settings, key, entry, with_cap=False, session_live=None):
     from kitlib.config import ConfigError
     repo = (entry or {}).get('repo')
     root = store_root(settings, repo)
-    ids, snap, holding, cap = [], None, None, None
+    ids, snap, holding = [], None, None
     try:
-        if with_cap:
-            cap = opener.repo_cap(settings.repo_path(repo))
+        cap = opener.repo_cap(settings.repo_path(repo))
         for session in wake_sessions(key, entry):
             ctx = opener.open_store(root, fetch=False, session=session, probes=opener.NO_PROBES)
             ctx.session_live = session_live
             if snap is None:            # one read of the store and its live pulls for both offers
                 snap = ctx.store.load()
                 holding, _dead, _why = omod.in_flight_split(snap, ctx.root, ctx.remote)
-            offers, _passed, _holding, _own = plan_narrow.offer_for(snap, ctx, cap=None,
-                                                                    holding=holding)
+            offers, _passed, _holding, _own = plan_narrow.offer_for(snap, ctx, cap=cap,
+                                                                    holding=holding, narrow=True)
             ids.extend(o.rec.id for o in offers if o.rec.id not in ids)
     except (Refusal, ConfigError, omod.PartitionError, OSError) as exc:
         raise BacklogUnread('the store could not be read (%s)' % type(exc).__name__)
-    return ids, list(holding or ()), cap
+    return ids, list(holding or ()), cap if with_cap else None
 
 
 def offered_ids(settings, key, entry, session_live=None):

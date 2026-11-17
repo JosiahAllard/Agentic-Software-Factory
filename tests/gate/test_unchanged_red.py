@@ -383,7 +383,7 @@ class InputMisses(Case):
         out = self.gate()
         self.assertEqual(out.code, G.FAILED, out.lines)
         rec = self.mark_of('select')
-        self.assertEqual((rec['failed'], rec['inputs']), (['input'], {'input': [self.input]}))
+        self.assertEqual((rec['failed'], rec.get('inputs')), (['input'], {'input': [self.input]}))
         self.assert_still_missing(self.gate(), 1)
         self.make_input()
         out = self.gate()
@@ -448,22 +448,22 @@ class InputMisses(Case):
 
     def test_a_red_full_of_input_only_is_excused_for_a_select_gate_once_it_exists(self):
         self.gate(full=True)
-        self.assertEqual(self.mark_of('full')['inputs'], {'input': [self.input]})
+        self.assertEqual(self.mark_of('full').get('inputs'), {'input': [self.input]})
         self.assert_still_missing(self.gate(), 1)
         self.make_input()
         self.assertEqual(self.gate().code, G.OK)
         self.assertEqual(len(self.book_calls), 2)
 
     def test_a_step_gets_its_own_file_and_nothing_else_inherits_an_outer_one(self):
-        self.assertEqual(runner.INPUTS_ENV, INPUTS_ENV)
         launcher = mock.Mock(env={INPUTS_ENV: 'outer', 'X': '1'})
         self.assertNotIn(INPUTS_ENV, runner.child_env(launcher))
-        self.assertEqual(runner.inputs_file(os.path.join('logs', 'gradle.log')),
+        self.assertEqual(getattr(runner, 'INPUTS_ENV', None), INPUTS_ENV)
+        self.assertEqual(getattr(runner, 'inputs_file', str)(os.path.join('logs', 'gradle.log')),
                          os.path.join('logs', 'gradle.inputs.json'))
 
     def test_an_earlier_run_s_file_that_cannot_be_removed_starts_no_step(self):
         log = os.path.join(self.tmp, 'unit.log')
-        os.makedirs(runner.inputs_file(log))        # a folder: os.remove refuses it
+        os.makedirs(os.path.join(self.tmp, 'unit.inputs.json'))    # a folder: os.remove refuses it
         launcher = mock.Mock(env={})
         got = runner._run_cmd(mock.Mock(cmd=['x'], cwd=self.tmp), launcher, log)
         self.assertIsNone(got)                      # did not start: the machine's, never the tree's

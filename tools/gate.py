@@ -5,7 +5,9 @@
       gate the checkout under the machine lock; on a pass of a clean tree, the gate-OK record.
       Refused (4) before it books when it would only repeat a failed gate of the same clean
       tree, gate config and kit, unless --again (kitlib.gate.rerun.unchanged_red; docs/gate-records.md
-      "An unchanged red tree").
+      "An unchanged red tree"). A gate that failed only for stored inputs outside the tree, absent
+      then (its step's missing-inputs file, docs/gate-run.md "Missing stored inputs"), is refused
+      only while one is still absent: once every one exists the same tree runs with no --again.
       With no -C or a relative one, refused (4) when this gate.py is in another checkout of the
       gated tree's repository; a relative --log-dir outside the gated checkout is USAGE (2)
       (kitlib.gate.caller). From another directory:
@@ -130,7 +132,8 @@ def gate_parser():
                      'red run; counts toward the gate budget; docs/gate-rerun-checkout.md "Targeted rerun")')
     p.add_argument('--plan', action='store_true', help='print what would run; run nothing')
     p.add_argument('--again', action='store_true',
-                   help='run a gate that would only repeat a failed gate of this same tree '
+                   help='run a gate that would only repeat a failed gate of this same tree; not '
+                   'needed once the stored inputs a gate failed only for exist '
                    '(docs/gate-records.md "An unchanged red tree")')
     p.add_argument('--slug', help='the machine-lock slug (default: the branch)')
     p.add_argument('--log-dir', help='where this run\'s logs go')

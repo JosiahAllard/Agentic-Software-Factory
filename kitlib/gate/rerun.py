@@ -52,7 +52,9 @@ history is the history of the tip and of every commit `git rev-list <tip> ^<merg
 Red-tree marks (mark, unchanged_red; docs/gate-records.md "An unchanged red tree"): every branch gate of
 a clean tree writes `<dev_drive>/pm-kit/kit-gate-red/<repo key>/<tree>.<mode>.json`, its
 verdict, the gate config's hash, the kit and the steps that failed; a later gate of the same
-tree that would only repeat a failed one is refused before it books.
+tree that would only repeat a failed one is refused before it books. A step that failed only
+for stored inputs outside the tree that were absent (its missing-inputs file, input_claim) has
+them in the mark's `inputs`; once every one exists the mark no longer refuses (excused).
 """
 import calendar
 import contextlib
@@ -516,25 +518,85 @@ def machine_failure(res):
     return None
 
 
+def _claimed(res):
+    """The list a FAIL step `res` wrote to its missing-inputs file (runner.inputs_file), or
+    None when it wrote none; ValueError when the file is there and cannot be read."""
+    if not res.get('log'):
+        return None
+    path = runner.inputs_file(res['log'])
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        raise ValueError('%s cannot be read: %s' % (path, e))
+
+
+def input_claim(top, res):
+    """`(paths, why)` for the FAIL step `res` of a gate of the tree at `top`: `([], None)` when
+    it wrote no missing-inputs file; `(paths, None)` when it failed only for these stored inputs
+    outside the tree (every reason its exit status or a missing pass pattern, COVERED_REASON;
+    a list of absolute paths, each outside the tree and the git common dir, both compared as
+    realpaths, and each absent now, at mark time); else `([], why the file is not used)`, and
+    the FAIL is the tree's."""
+    try:
+        paths = _claimed(res)
+    except ValueError as e:
+        return [], str(e)
+    if paths is None:
+        return [], None
+    if not (isinstance(paths, list) and paths and
+            all(isinstance(p, str) and os.path.isabs(p) for p in paths)):
+        return [], 'not a JSON list of absolute paths'
+    if not all(COVERED_REASON.match(r) for r in res.get('reasons') or []):
+        return [], 'its FAIL has reasons besides its exit status and pass patterns'
+    common, _ = repo.common_dir(top)
+    if not common:
+        return [], 'the git common dir cannot be read'
+    tree_top = repo.real(top)
+    for p in paths:
+        where = repo.real(p)
+        if repo.inside(where, tree_top):
+            return [], '%s is inside the gated tree' % p
+        if repo.inside(where, common):
+            return [], '%s is inside the git common dir' % p
+        if os.path.exists(p):
+            return [], '%s exists' % p
+    return paths, None
+
+
 def mark(top, key, tree, commit, branch, results, log_dir):
     """Write the mark of a branch gate of the clean `tree` (the runner has checked the tree was
     clean at start and end, HEAD unmoved and the stash empty): `fail` when a step FAILed, else
     `pass`, which supersedes a `fail` of the same tree and mode. A FAIL the machine caused
     (machine_failure) says nothing about the tree: it is not in `failed`, and when every FAIL is
-    one no mark is written (None; a mark already there stays). Its path; RerunError."""
+    one no mark is written ((None, []); a mark already there stays). A FAIL step whose
+    missing-inputs file input_claim takes has its paths in `inputs` ({step: paths}); it stays in
+    `failed`. `(its path, [(step, its file, why the file is not used)])`; RerunError."""
     fails = [r for r in results if r.get('status') == 'FAIL']
-    failed = [r['name'] for r in fails if not machine_failure(r)]
-    if fails and not failed:
-        return None
+    tree_fails = [r for r in fails if not machine_failure(r)]
+    if fails and not tree_fails:
+        return None, []
+    failed, inputs, unused = [], {}, []
+    for r in tree_fails:
+        failed.append(r['name'])
+        paths, why = input_claim(top, r)
+        if paths:
+            inputs[r['name']] = paths
+        elif why:
+            unused.append((r['name'], runner.inputs_file(r['log']), why))
     rec = dict(key, schema=SCHEMA, tree=tree, commit=commit, branch=branch,
                verdict='fail' if failed else 'pass', failed=failed, ended=gate_ok.utc(),
                log_dir=log_dir)
+    if inputs:
+        rec['inputs'] = inputs
     path = mark_path(top, tree, key['mode'])
     try:
         atomic.write_text(path, json.dumps(rec, sort_keys=True, indent=1) + '\n', makedirs=True)
     except OSError as e:
         raise RerunError('cannot write %s: %s' % (path, e))
-    return path
+    return path, unused
 
 
 def _red_mark(top, tree, mode):
@@ -553,24 +615,57 @@ def _red_mark(top, tree, mode):
     return rec if rec.get('verdict') == 'fail' else None
 
 
+def _still_missing(rec, names):
+    """For the `fail` mark `rec` and the failed steps `names` that count: None when one of them
+    failed for more than stored inputs (no `inputs` entry in the mark); else {step: [its inputs
+    that are absent now]}, empty when every one exists (the mark is excused: an absent input the
+    mark saw is there now)."""
+    inputs = rec.get('inputs') or {}
+    if not names or not all(isinstance(inputs.get(n), list) and inputs[n] for n in names):
+        return None
+    out = {}
+    for n in names:
+        absent = [p for p in inputs[n] if not (isinstance(p, str) and os.path.exists(p))]
+        if absent:
+            out[n] = absent
+    return out
+
+
+def _refusing(rec, names):
+    """`rec` when the mark refuses for its failed steps `names`, with `still_missing` set (not
+    written) when every one failed only for inputs and some are still absent; None when it is
+    excused."""
+    missing = _still_missing(rec, names)
+    if missing == {}:
+        return None
+    if missing:
+        rec = dict(rec, still_missing=missing)
+    return rec
+
+
 def unchanged_red(top, key, tree, steps):
     """The `fail` mark that makes a branch gate of `tree` with `key` (mark_key) running `steps`
     (names) a repeat, or None. A repeat: the same tree, gate config and kit, and the latest gate
     of that tree in the same mode, --only steps and --base failed; or, for a select or docs gate,
     the latest --full of that tree failed in a step it would run. A --full after a red select or
-    docs gate is no repeat (the way on, and its red run gets a targeted rerun). RerunError when
-    a mark cannot be read."""
+    docs gate is no repeat (the way on, and its red run gets a targeted rerun). Each mark is
+    excused on its own when every failed step that counts failed only for stored inputs that all
+    exist now (_refusing); a mark that refuses for such inputs still absent carries
+    `still_missing`. RerunError when a mark cannot be read."""
     if not refs.is_sha(tree or ''):
         return None
     same = ('gate_config', 'kit')
     rec = _red_mark(top, tree, key['mode'])
     if rec and all(rec.get(k) == key[k] for k in same + ('only', 'base')):
-        return rec
+        rec = _refusing(rec, list(rec.get('failed') or []))
+        if rec is not None:
+            return rec
     if key['mode'] != 'full':
         rec = _red_mark(top, tree, 'full')
-        if rec and all(rec.get(k) == key[k] for k in same) and \
-                set(rec.get('failed') or []) & set(steps):
-            return rec
+        if rec and all(rec.get(k) == key[k] for k in same):
+            names = [n for n in rec.get('failed') or [] if n in set(steps)]
+            if names:
+                return _refusing(rec, names)
     return None
 
 

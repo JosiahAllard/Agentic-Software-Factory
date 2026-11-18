@@ -29,7 +29,7 @@ Low-level design of `kitlib/lock`, `kitlib/lockui` and `kitlib/lockmcp`. The hig
 
 ## State
 
-The lock store, in the machine's lock folder: runs, holds, the queue, history. Every read and write happens under the store's named mutex; a run's liveness mutex is held by the run's process and dropped by the kernel when it dies. `slot()` takes its mutex on the thread that releases it.
+The lock store, in the machine's lock folder: runs, holds, the queue, history. Every record is fsynced before its rename; a queue.json or active/ record a crash left all NUL bytes is read as empty or gone and set aside in `_corrupt/` (docs/lock-api.md "Damaged files"). Every read and write happens under the store's named mutex; a run's liveness mutex is held by the run's process and dropped by the kernel when it dies. `slot()` takes its mutex on the thread that releases it.
 
 ## Errors
 

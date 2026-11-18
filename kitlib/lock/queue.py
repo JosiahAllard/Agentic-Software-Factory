@@ -36,6 +36,7 @@ import math
 import os
 import time
 
+from kitlib.fs import quarantine
 from kitlib.lock import layout as lay
 from kitlib.lock.store import local_text, memory_now, write_json
 
@@ -53,7 +54,13 @@ def load(store):
     """{'ticket', 'entries'}; entries in any other shape dropped. No queue.json is an empty
     queue. One that exists but cannot be read (another process has it open, or it is not a
     queue) is read again for settings.queue_read_s, then QueueUnreadable: never taken for an
-    empty queue, which the next save would write over every entry and the ticket."""
+    empty queue, which the next save would write over every entry and the ticket.
+
+    But for a queue.json of only NUL bytes (zeroed): a crash's zero-fill (kitlib.fs.quarantine),
+    read at once as an empty queue, never moved here (save sets it aside, under the queue mutex).
+    Every entry it held was a run the crash ended: any booking since would have saved over it.
+    An emptied queue gives tickets from 1 again, which is safe for that reason; a run still
+    waiting joins again, at the back (kitlib.lock.run_wait.acquire)."""
     path = store.path("queue.json")
     end = time.monotonic() + store.settings.queue_read_s
     while True:
@@ -67,6 +74,9 @@ def load(store):
             d = {}
             break
         except (OSError, ValueError) as err:
+            if isinstance(err, ValueError) and quarantine.all_nul(path):
+                d = {}
+                break
             if time.monotonic() >= end:
                 raise QueueUnreadable("queue unreadable: %s could not be read (%s); nothing is "
                                       "planned on it or written over it" % (path, err)) from err
@@ -80,9 +90,23 @@ def load(store):
 
 def save(store, q):
     """Under the queue mutex. A reader with queue.json open is waited out for
-    settings.queue_write_s, so an instant's read never fails a join."""
-    write_json(store.path("queue.json"), q, store.settings.queue_write_s)
+    settings.queue_write_s, so an instant's read never fails a join. A zeroed queue.json (load)
+    is first moved to `_corrupt/` for the owner to read (kitlib.fs.quarantine); when that move
+    fails the queue is written all the same, and only the damaged copy is lost."""
+    path = store.path("queue.json")
+    if quarantine.all_nul(path):
+        with contextlib.suppress(OSError):
+            quarantine.quarantine(path, store.path())
+    write_json(path, q, store.settings.queue_write_s)
     store.bump()
+
+
+ZEROED_TEXT = "queue.json (all NUL; set aside at the next queue write)"    # api.snapshot damaged
+
+
+def zeroed(store):
+    """True while queue.json holds only NUL bytes (load): not yet set aside by a save."""
+    return quarantine.all_nul(store.path("queue.json"))
 
 
 def live(store):

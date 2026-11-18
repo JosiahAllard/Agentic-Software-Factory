@@ -12,6 +12,13 @@ named Win32 mutexes (flocks on Linux), plus each run's liveness mutex.
     games.json             game mode's list (kitlib.lock.game)
     background/<run>.d     a background run's control folder
     revision               a counter every write bumps (kitlib.lock.api.wait_change)
+    _corrupt/<path>        a file of only NUL bytes set aside (kitlib.fs.quarantine): an active/
+                           record (live_runs' prune) or queue.json (kitlib.lock.queue.save); kept
+                           until the owner removes it, shown by status (api.snapshot `damaged`)
+
+Every record is written through a temp file that is fsynced before its rename (write_json,
+create_json, bump): without the fsync a power loss or an OS crash can leave a renamed file at its
+full length holding only NUL bytes, which no writer ever leaves at a final path while it runs.
 
 On Linux the mutexes are flocks (kitlib.platform.linux.locks), on files in the store:
 
@@ -42,6 +49,7 @@ import time
 from ctypes import wintypes
 
 import kitlib.platform
+from kitlib.fs import atomic, quarantine
 from kitlib.fs import replace as fsreplace
 from kitlib.host import registry
 from kitlib.platform import PlatformUnsupported
@@ -410,34 +418,25 @@ def owns(actor, rec):
 
 # ------------------------------------------------------------------ files
 def write_json(path, data, replace_s=2.0):
-    """Writes a temp file and replaces `path` with it, retrying os.replace for replace_s while a
-    reader has `path` open, then PermissionError."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = "%s.%d.tmp" % (path, os.getpid())
-    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        json.dump(data, f, indent=1)
-    end = time.monotonic() + replace_s
-    while True:
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            if time.monotonic() >= end:
-                with contextlib.suppress(OSError):
-                    os.remove(tmp)
-                raise
-            time.sleep(0.05)
+    """Writes a temp file beside `path` (`.<name>.<random>.tmp`), fsyncs it and replaces `path`
+    with it, retrying os.replace for replace_s while a reader has `path` open, then
+    PermissionError (kitlib.fs.atomic). The fsync keeps a power loss or an OS crash from leaving
+    `path` holding only NUL bytes. The text is json.dumps(data, indent=1), the bytes the lock has
+    always written. On Linux the file is mode 0600 (the temp file's, tempfile.mkstemp)."""
+    atomic.write_text(path, json.dumps(data, indent=1), makedirs=True, fsync=True, wait=replace_s)
 
 
 def create_json(path, data):
-    """Writes path only when nothing is there: a temp file moved into place by a move that fails
-    when path exists (kitlib.fs.replace.place_new), so a reader never sees it half
+    """Writes path only when nothing is there: a temp file, fsynced, moved into place by a move
+    that fails when path exists (kitlib.fs.replace.place_new), so a reader never sees it half
     written and a file another process wrote first is never replaced. True when written, False
     when path was already there."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = "%s.%d.new.tmp" % (path, os.getpid())
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
     try:
         return fsreplace.place_new(tmp, path)
     finally:
@@ -765,11 +764,8 @@ class Store:
         try:
             with self.lock("revision", 2):
                 n = self.revision() + 1
-                os.makedirs(self.root, exist_ok=True)
-                tmp = self.path("revision.%d.tmp" % os.getpid())
-                with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(str(n))
-                os.replace(tmp, self.path("revision"))
+                # wait 0: a reader holding the file skips this bump, as an os.replace always did
+                atomic.write_text(self.path("revision"), str(n), makedirs=True, fsync=True, wait=0)
         except PlatformUnsupported:
             raise
         except OSError:
@@ -782,7 +778,9 @@ class Store:
         record it wrote; one whose wrapper died without settling gets one with how "reaped", code
         None, ended now and `reaped` saying what showed it gone (wrapper_state, else the run mutex),
         and no history line (it has no measured use, and the gate budget would count it now). A
-        record leaves active/ only once its ended record is there."""
+        record leaves active/ only once its ended record is there. A record that cannot be read is
+        never live; prune moves one of only NUL bytes (a crash's zero-fill) to `_corrupt/active/`
+        (kitlib.fs.quarantine) and leaves any other where it is."""
         out, folder, moved = [], self.path("active"), False
         try:
             names = sorted(os.listdir(folder))
@@ -802,6 +800,11 @@ class Store:
                 continue
             d = read_json(p)
             if d is None:
+                # all NUL bytes: a crash's zero-fill, so its writer died; set aside for the owner
+                if prune and quarantine.all_nul(p):
+                    with contextlib.suppress(OSError):
+                        quarantine.quarantine(p, self.root)
+                        moved = True
                 continue
             if self.run_live(d):
                 out.append(d)
@@ -822,6 +825,11 @@ class Store:
         if moved:
             self.bump()
         return out
+
+    def corrupt(self):
+        """The files set aside in `<root>/_corrupt/` (kitlib.fs.quarantine), as sorted paths
+        inside it with '/' ('active/r-1.json', 'queue.json'); [] when there are none."""
+        return quarantine.listed(self.path())
 
     def prune_files(self, live_ids):
         """Ended records and logs past ENDED_KEEP_S, history months past history_keep_days,

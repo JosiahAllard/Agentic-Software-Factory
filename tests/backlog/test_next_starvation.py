@@ -277,6 +277,18 @@ class StaleHolds(unittest.TestCase):
         self.assertEqual(note, rmod.DeliberateNote('2026-11-16', 'deliberate, item:FOO',
                                                    'Q-2289 first', ['Q-2289']))
 
+    def test_an_end_time_the_platform_cannot_place_flags_nothing(self):
+        # fromtimestamp raises on a time out of range (before 1970 on Windows): fail closed
+        found, notes = self.judge(deliberate('NODE', 'Q-2289 first'),
+                                  hub={'Q-2289': ('answered', 1e20)})
+        self.assertEqual((found, notes), ({}, []))
+
+    def test_under_a_session_only_its_held_records_are_judged(self):
+        s = snap(deliberate('MINE', 'Q-2289', session='kit'),
+                 deliberate('THEIRS', 'Q-2289', session='other'), deliberate('NONE', 'Q-2289'))
+        self.assertEqual([r.id for r in omod.held_records(s, 'kit')], ['MINE'])
+        self.assertEqual([r.id for r in omod.held_records(s)], ['MINE', 'NONE', 'THEIRS'])
+
 
 class Broad(unittest.TestCase):
 
@@ -522,6 +534,20 @@ class NextCli(unittest.TestCase):
         self.assertTrue(rows['CMB'].endswith('[deliberate]  [stale hold: R-1997 ended '
                                              '(superseded by R-2104)]'), rows['CMB'])
         self.assertTrue(rows['OPEN'].endswith('[deliberate]'), rows['OPEN'])
+
+    def test_next_under_a_session_judges_only_its_held_records(self):
+        def held(rid, session):
+            return record_text(id=rid, priority='2', priority_by='agent', state='blocked',
+                               blocked_on='deliberate', scope='a/%s.py' % rid.lower(),
+                               session=session,
+                               body='Blocked on deliberate (2026-11-10): Q-2289 first')
+        self.publish({'MINE': held('MINE', 'kit'), 'THEIRS': held('THEIRS', 'other')})
+        self.hub(_Hub({'questions': [
+            {'id': 'Q-2289', 'status': 'done', 'done_at': '2026-11-12T10:06:00+00:00'}]}))
+        out = self.ok('--session', 'kit', 'next')
+        self.assertIn('STALE HOLD MINE ', out)
+        self.assertNotIn('STALE HOLD THEIRS', out)
+        self.assertIn(' | 1 stale', out.splitlines()[-1])
 
     def test_on_the_hold_day_the_block_commit_decides(self):
         # the store's own block commit is the hold time: an answer after it ends the hold, one

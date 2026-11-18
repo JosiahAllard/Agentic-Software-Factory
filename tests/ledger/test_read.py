@@ -150,6 +150,18 @@ class SupersedesTest(unittest.TestCase):
             got, why = backlog_ledger.read_all(lambda: {})
             self.assertEqual((got, why), (None, 'no ledger_path or ledger_dir'))
 
+    def test_read_all_needs_the_frozen_or_one_file_ledger_read_with_a_header(self):
+        with tempfile.TemporaryDirectory() as d:
+            frozen = os.path.join(d, 'rulings.md')
+            with open(frozen, 'w', encoding='utf-8') as f:
+                f.write('# a ledger with no entry header\n')
+            got, why = backlog_ledger.read_all(lambda: {'ledger_path': frozen})
+            self.assertEqual((got, why), (None, '%s holds no `## R-nnnn` header' % frozen))
+            got, why = backlog_ledger.read_all(
+                lambda: {'ledger_path': os.path.join(d, 'absent.md')})
+            self.assertIsNone(got)
+            self.assertIn('cannot read', why)
+
 
 if __name__ == '__main__':
     unittest.main()

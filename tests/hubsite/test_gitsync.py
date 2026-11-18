@@ -913,8 +913,12 @@ class PrepareTest(Case):
     def test_what_is_never_committed(self):
         self.assertTrue(gitsync.skipped('hub/' + LOCK_NAME))
         self.assertTrue(gitsync.skipped('hub/pages/.home.json.4242.tmp'))
+        self.assertTrue(gitsync.skipped('hub/pages/.home.json.k3j_x9q1.tmp'))
+        for aside in ('hub/_corrupt/_meta.json', 'hub/_corrupt/landings/L-0005.json',
+                      'hub/_corrupt/landings/L-0005.json.1'):
+            self.assertTrue(gitsync.skipped(aside), aside)
         for kept in ('hub/_meta.json', 'hub/pages/home.json', 'hub/pages/a.tmp',
-                     'hub/pages/.hidden.json'):
+                     'hub/pages/.hidden.json', 'hub/pages/_corrupt', 'hub/pages/_corrupt.json'):
             self.assertFalse(gitsync.skipped(kept), kept)
 
 

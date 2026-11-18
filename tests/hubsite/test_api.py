@@ -1343,6 +1343,21 @@ class FixTest(ApiCase):
                 self.assertEqual((obj['ok'], obj['version'], obj['revision']),
                                  (True, 'v1', self.store.revision))
 
+    def test_health_lists_the_damaged_files_the_store_set_aside_for_every_role(self):
+        self.assertEqual(self.ok('GET', '/health', AGENT)['corrupt'], [])
+        root = tempfile.mkdtemp(prefix='kit-hubapi-')
+        self.addCleanup(shutil.rmtree, root, True)
+        os.makedirs(os.path.join(root, 'landings'))
+        with open(os.path.join(root, 'landings', 'L-0005.json'), 'wb') as f:
+            f.write(b'\0' * 700)            # a crash's zero-fill
+        self.store = Store.open(root, clock=CLOCK)
+        self.addCleanup(self.store.close)
+        self.api = api.Api(self.store, clock=CLOCK)
+        for role in (OWNER, AGENT):
+            with self.subTest(role=role):
+                self.assertEqual(self.ok('GET', '/health', role)['corrupt'],
+                                 ['landings/L-0005.json'])
+
     def test_health_with_a_view_that_raises_says_so_briefly(self):
         class Gone(object):
             def health(self):

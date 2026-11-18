@@ -41,7 +41,7 @@ class WriteTextTests(unittest.TestCase):
     def test_each_write_uses_its_own_temp_name(self):
         seen = []
 
-        def spy(src, dst):
+        def spy(src, dst, **kw):
             seen.append(src)
             os.replace(src, dst)
         with mock.patch('kitlib.fs.replace.replace', side_effect=spy):
@@ -71,7 +71,7 @@ class WriteTextTests(unittest.TestCase):
         order = []
         real_replace = os.replace
 
-        def replace(src, dst):
+        def replace(src, dst, **kw):
             order.append('replace')
             real_replace(src, dst)
         with mock.patch('os.fsync', side_effect=lambda fd: order.append('fsync')):
@@ -97,12 +97,24 @@ class WriteTextTests(unittest.TestCase):
     def test_prefix_names_the_temp_file(self):
         seen = []
 
-        def replace(src, dst):
+        def replace(src, dst, **kw):
             seen.append(os.path.basename(src))
             os.replace(src, dst)
         with mock.patch('kitlib.fs.replace.replace', side_effect=replace):
             atomic.write_text(self.path, 'x', prefix='.ledger-')
         self.assertTrue(seen[0].startswith('.ledger-'))
+
+    def test_wait_bounds_the_replace_and_defaults_to_its_own(self):
+        seen = []
+
+        def replace(src, dst, wait=None, pause=None):
+            seen.append(wait)
+            os.replace(src, dst)
+        with mock.patch('kitlib.fs.replace.replace', side_effect=replace):
+            atomic.write_text(self.path, 'x', wait=0.25)
+            atomic.write_bytes(self.path, b'x', wait=1.5)
+            atomic.write_text(self.path, 'x')
+        self.assertEqual(seen, [0.25, 1.5, None])
 
 
 if __name__ == '__main__':

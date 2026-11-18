@@ -48,6 +48,8 @@ import datetime
 import os
 import re
 
+from kitlib.ledger import fmt
+
 KINDS = ('todo', 'question', 'approval', 'record', 'path', 'plugin', 'resource')
 # the owner's own acts: the only end of an `owner` hold
 OWNER_KINDS = ('todo', 'question', 'approval')
@@ -268,7 +270,7 @@ def stale(note, hub, held_since, ruling):
                 local day than the note's date, or on that day after `held_since()` (the epoch of
                 the store commit that wrote the note, or None: not judged). An end before the hold
                 is the ground it rests on (a "Defer" answer), never its end.
-      R-n       `ruling(id)` -> why it ended (retired, superseded) or None (live, unknown, the
+      R-n, H-r-n  `ruling(id)` -> why it ended (retired, superseded) or None (live, unknown, the
                 ledger not read, or the note names a later id of its chain).
     """
     out, since = [], []
@@ -278,7 +280,7 @@ def stale(note, hub, held_since, ruling):
             since.append(held_since())
         return since[0]
     for cid in note.ids:
-        if cid.startswith('R-'):
+        if fmt.is_id(cid):
             why = ruling(cid)
             if why:
                 out.append((cid, why))

@@ -48,9 +48,9 @@ class HoldCitations(unittest.TestCase):
             with self.subTest(cite=cite):
                 self.assertEqual(hold_warnings(parse('FOO', id='FOO', body=body, **DELIBERATE)), [])
 
-    def test_an_r_q_or_t_id_in_the_reason_note_cites_it(self):
+    def test_a_ruling_q_or_t_id_in_the_reason_note_cites_it(self):
         # `block` takes no --ruling: the reason text carries the citation.
-        for cite in ('R-9647', 'Q-1027', 'T-104'):
+        for cite in ('R-9647', 'H-alpha-9647', 'Q-1027', 'T-104'):
             body = ('Blocked on deliberate (2026-10-10): %s: until no live session uses a '
                     '*-conductor stem' % cite)
             with self.subTest(cite=cite):
@@ -155,8 +155,11 @@ class BlockCli(unittest.TestCase):
         self.assertEqual(self.repo.git('rev-parse', smod.STORE_REF), before)
         self.ok('block', 'FOO', '--on', 'deliberate', '--reason',
                 'R-9647: until no live session uses a *-conductor stem')
+        self.ok('add', 'BAR', '--summary', 'another thing to hold for now', '--scope', 'a/bar.py',
+                *ADD_FLAGS)
+        self.ok('block', 'BAR', '--on', 'deliberate', '--reason', 'H-alpha-9647: until the pass')
         out = self.ok('check')
-        self.assertIn('hold citations   1 ok, 0 FAILED', out)
+        self.assertIn('hold citations   2 ok, 0 FAILED', out)
         self.assertNotIn('WARN', out)
 
 

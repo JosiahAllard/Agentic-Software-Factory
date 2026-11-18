@@ -120,6 +120,23 @@ class ZeroedStatus(ZeroedCase):
             "damaged, set aside in %s (remove once read): active/%s.json, queue.json%s"
             % (os.path.join(self.store.root, "_corrupt"), R_Z, st.QUEUE_LOST)])
 
+    def test_a_zeroed_queue_not_yet_moved_is_said_as_still_in_place(self):
+        # before the next queue write it is still queue.json: never "set aside" on that line
+        self.zero_queue()
+        corrupt = os.path.join(self.store.root, "_corrupt")
+        lines = [x for x in st.render(api.snapshot(self.store)) if x.startswith("damaged")]
+        self.assertEqual(lines, [
+            "damaged: queue.json%s; read as an empty queue, it moves to %s at the next queue "
+            "write" % (st.QUEUE_LOST, corrupt)])
+        # beside files already set aside, each is its own line
+        zero_fill(self.store.path("active", R_Z + ".json"))
+        self.store.live_runs(prune=True)
+        lines = [x for x in st.render(api.snapshot(self.store)) if x.startswith("damaged")]
+        self.assertEqual(lines, [
+            "damaged, set aside in %s (remove once read): active/%s.json" % (corrupt, R_Z),
+            "damaged: queue.json%s; read as an empty queue, it moves to %s at the next queue "
+            "write" % (st.QUEUE_LOST, corrupt)])
+
     def test_a_clean_store_shows_nothing_damaged(self):
         s = api.snapshot(self.store)
         self.assertEqual(s.get("damaged"), [])

@@ -266,6 +266,11 @@ class StaleHolds(unittest.TestCase):
         self.assertEqual((found, notes), ({'CMB': [('R-9197', 'superseded by R-9204')],
                                            'HOLD': [('H-alpha-9301', 'superseded by H-alpha-9302')],
                                            'OLD': [('R-9201', 'retired: spent')]}, []))
+        # H- holds alone still send the ledger read (no R- hold asks for it)
+        found, notes = self.judge(deliberate('HOLD', 'H-alpha-9301: per-repo wait'),
+                                  deliberate('HLIVE', 'H-alpha-9302'))
+        self.assertEqual((found, notes),
+                         ({'HOLD': [('H-alpha-9301', 'superseded by H-alpha-9302')]}, []))
 
     def test_a_ruling_re_cited_with_its_successor_is_not_stale(self):
         found, _ = self.judge(deliberate('CMB', 'R-9197, now R-9204: widget waits'))

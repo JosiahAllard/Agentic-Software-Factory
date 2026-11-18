@@ -1344,7 +1344,7 @@ class FixTest(ApiCase):
                                  (True, 'v1', self.store.revision))
 
     def test_health_lists_the_damaged_files_the_store_set_aside_for_every_role(self):
-        self.assertEqual(self.ok('GET', '/health', AGENT)['corrupt'], [])
+        self.assertEqual(self.ok('GET', '/health', AGENT).get('corrupt'), [])
         root = tempfile.mkdtemp(prefix='kit-hubapi-')
         self.addCleanup(shutil.rmtree, root, True)
         os.makedirs(os.path.join(root, 'landings'))

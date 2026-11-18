@@ -161,6 +161,12 @@ class DamagedFileTest(StoreCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def open(self, root=None):
+        try:
+            return StoreCase.open(self, root)
+        except HubError as e:
+            self.fail('the store refused to open: %s' % e)
+
     def test_a_zero_filled_document_is_set_aside_at_once_and_the_rest_open(self):
         root = tmpdir(self)
         write_file(os.path.join(root, 'landings', 'L-0004.json'), json.dumps(landing()))
@@ -243,7 +249,7 @@ class DamagedFileTest(StoreCase):
         root = tmpdir(self)
         for _ in range(2):
             zero_fill(os.path.join(root, store.META_NAME), 10)
-            Store.open(root).close()
+            self.open(root).close()
         s = self.open(root)
         self.assertEqual(s.corrupt(), ['_meta.json', '_meta.json.1'])
 

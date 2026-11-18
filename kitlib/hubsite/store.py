@@ -174,17 +174,6 @@ def _remove(path):
     fsreplace.remove(path, wait=REPLACE_S)
 
 
-def _read_json(path):
-    try:
-        with open(path, encoding='utf-8-sig') as f:
-            obj = json.load(f)
-    except (OSError, ValueError) as e:
-        raise HubError('store', 'cannot read %s: %s' % (path, e))
-    if not isinstance(obj, dict):
-        raise HubError('store', '%s is not a JSON object' % path)
-    return obj
-
-
 def _parse(path):
     """(object, '') for a file that parses to a JSON object, (None, why) for one that does not;
     HubError store when it cannot be opened or read."""

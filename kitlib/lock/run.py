@@ -31,7 +31,6 @@ import contextlib
 import datetime
 import os
 import re
-import subprocess
 
 import kitlib.platform
 from kitlib.lock import giveback as gbk
@@ -245,7 +244,7 @@ class Run:
     claim_id (book, run_background); one made here is not checked against the store."""
 
     def __init__(self, store, L, repo, slug, kind, note, cmd, state, rid=None, detached=False,
-                 env=None, log=None):
+                 env=None):
         env = os.environ if env is None else env
         self.store = store
         ancestors = run_ancestors(detached, env)
@@ -256,13 +255,11 @@ class Run:
                     "gpus": [], "shares": {}, "session": session_of(env),
                     "ancestors": ancestors, "hosts": booking_hosts(ancestors),
                     "role": run_role(detached, env),
-                    "layout": lay.slot_key(L),
-                    "log": getattr(log, "name", None) if log is not None else None}
+                    "layout": lay.slot_key(L)}
         if kitlib.platform.NAME == "linux":
             self.rec["pidns"] = procfs.pidns()  # its pid is this namespace's (store.record_state)
         self.id = self.rec["id"]
         self.rel = "active/%s.json" % self.id
-        self.log = log
         self.usage = Usage(L["cpu_slot_threads"], store.settings.usage_sample_s)
         self.ended = None
 
@@ -288,12 +285,6 @@ class Run:
         remove(gbk.request_path(self.store, self.id))
         self.store.bump()
         return self.ended
-
-    def popen_kw(self, env):
-        kw = {"env": env}
-        if self.log is not None:
-            kw.update(stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log)
-        return kw
 
 
 def _relayout(store, L):
@@ -386,7 +377,7 @@ def mem_need(store, repo, kind, mode, mem_mb, entry, records=None):
 
 def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, no_wait=False,
          expect_s=None, note=None, on_release_cmd=None, cmd=None, store=None, kinds_table=None,
-         env=None, rid=None, detached=False, log=None, gate=False, resource=None, priority=None,
+         env=None, rid=None, detached=False, gate=False, resource=None, priority=None,
          within=None, tree=None, branch=None, checkout=None, mem_mb=None, gate_mode=None):
     """Waits for a run of kind `kind` for repo/slug to hold its slots and returns its Slot.
     Raises LockError (the CLI's exit code) when it does not. cores: fewer cpu slots than the
@@ -396,8 +387,8 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
     hold or agent hold to run inside. gpu_share "training": one gpu slot on a shareable
     kind. wait_s: the longest wait (None: no limit); no_wait: now or never. expect_s: how long it
     expects to hold (default: its history's median, else its own hold's end, else warn_min).
-    env: the environment its commands get (default os.environ); rid, detached and log are the
-    CLI's (a detached run's id and log file). gate: a gate run (kitlib.gate.runner), recorded as
+    env: the environment its commands get (default os.environ); rid and detached are the
+    CLI's (a detached run's id). gate: a gate run (kitlib.gate.runner), recorded as
     `gate`; by default only a gate's leftover build daemons are stopped (Slot.stop_daemons).
     resource: an exclusive resource (a non-empty string, e.g. "landing:<git common dir>") the run
     holds for its whole life: it does not start while another run holding it is alive (the queue
@@ -494,7 +485,7 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
         wtext, wslots = within_of(L, within, kind, need, own, parent, machine)
     shares = hl.shares_for(k, gpu_share)
     if parent and not any(own.values()) and (resource is None or parent.get("resource") == resource):
-        return Slot(store, None, L, own, parent, None, env, on_release_cmd, k, shares, log, gate)
+        return Slot(store, None, L, own, parent, None, env, on_release_cmd, k, shares, gate)
     if own["gpu"] and bg_ancestor(env, store):
         raise LockError(EXIT_USAGE, "usage: a gpu lock inside a background run would pause that "
                                     "run; refused")
@@ -502,7 +493,7 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
     # over, and a refusal here writes nothing (claim_id).
     rid, mutex = claim_id(store, rid)
     try:
-        run = Run(store, L, repo, slug, kind, note, cmd, "waiting", rid, detached, env, log)
+        run = Run(store, L, repo, slug, kind, note, cmd, "waiting", rid, detached, env)
         mode = store.run_mode(priority, branch, gate)
         # History is read once, and only when a guess needs it: it is every line of the last
         # history_keep_days, and this mutex is held meanwhile.
@@ -572,7 +563,7 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
         if run.rec.get("hold_owner") == "agent":
             hl.claimed(store, run.id, hold)
         how = NOT_STARTED
-        slot = Slot(store, run, L, own, parent, mutex, env, on_release_cmd, k, shares, log, gate)
+        slot = Slot(store, run, L, own, parent, mutex, env, on_release_cmd, k, shares, gate)
         if parent is None:
             notice.started(store, run, kind, k, L)
         done = True

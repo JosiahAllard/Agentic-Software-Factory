@@ -207,16 +207,12 @@ class QueuedRunStarts(StoreCase):
         waiter = subprocess.Popen([sys.executable, "-c", WAITER, arg], cwd=REPO, env=clean_env(),
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         self.addCleanup(lambda: waiter.poll() is None and waiter.kill())
-        out = os.path.join(self.tmp, "holder.out")
-        with open(out, "w", encoding="utf-8") as log:
-            code = rm.run_command([sys.executable, "-c", HOLDER, arg], "engine-test", "kit",
-                                  "holder", cores=2, store=self.store, log=log,
-                                  env=clean_env(PYTHONPATH=REPO))
+        code = rm.run_command([sys.executable, "-c", HOLDER, arg], "engine-test", "kit",
+                              "holder", cores=2, store=self.store,
+                              env=clean_env(PYTHONPATH=REPO))
         t_end = time.time()
         w_out, w_err = waiter.communicate(timeout=120)
-        with open(out, encoding="utf-8") as f:
-            said = f.read()
-        self.assertEqual(code, 0, "the queued run did not start while the holder ran: %s" % said)
+        self.assertEqual(code, 0, "the queued run did not start while the holder ran")
         self.assertEqual(waiter.returncode, 0, w_err)
         w = json.loads(w_out)
         self.assertLess(w["t0"], t_end)

@@ -105,7 +105,7 @@ def end_child(job, p, store, run, wait_s=10):
 
 
 def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=None, rid=None,
-                   detached=False, log=None, mem_mb=None):
+                   detached=False, mem_mb=None):
     """Runs cmd as a background run until it exits other than PAUSE_EXIT, stop ends it, or it
     yields late. Returns its exit code (1 for yield-late or a failed start, 130 on Ctrl+C).
     A .bat or .cmd, named or found for a name with no extension (./gradlew), starts through the
@@ -133,7 +133,7 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
     # run id, exit 2) writes nothing, so another run's record and control.json are never touched.
     rid, mutex = claim_id(store, rid)
     try:
-        run = Run(store, L, repo, slug, None, note, cmd, "bg", rid, detached, env, log)
+        run = Run(store, L, repo, slug, None, note, cmd, "bg", rid, detached, env)
         ctl_dir = store.path("background", run.id + ".d")
         ctl = os.path.join(ctl_dir, "control.json")
         for k in (NEST_ENV, ORIGIN_ENV, BG_ROOT_ENV):   # bg_client would prefer BG_ROOT
@@ -291,7 +291,7 @@ def run_background(cmd, repo, slug, expect_s=None, note=None, store=None, env=No
                         env["MACHINE_LOCK_GPUS"] = ",".join(
                             str(c) for c in lay.gpu_cards_of(L, got["gpu"]))
                         p = job.start(docker_cpu_env(start, bool(got["gpu"])),
-                                      **run.popen_kw(env))
+                                      env=env)
                     except OSError as err:
                         say("could not start the command: %s" % err)
                         code, how = 1, "failed"

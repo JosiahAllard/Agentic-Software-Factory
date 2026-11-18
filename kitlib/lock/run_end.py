@@ -104,7 +104,7 @@ def on_release(store, cmdline, env, how, run=None):
     job = None
     try:
         job = Job(None)
-        p = job.start(cmdline, shell=True, **(run.popen_kw(e) if run else {"env": e}))
+        p = job.start(cmdline, shell=True, env=e)
         try:
             rc = p.wait(limit)
         except subprocess.TimeoutExpired:

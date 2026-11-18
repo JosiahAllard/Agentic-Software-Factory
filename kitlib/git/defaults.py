@@ -19,6 +19,8 @@ tree's own `config.worktree` from the git dir (repo_name below).
                              `<gitdir>/config.worktree` (git reads it after the common config);
                              else the main checkout's folder name (the folder holding the
                              common `.git`), else `root`'s own.
+  git_dir(root), git_dirs(root)  the git dir, and `(gitdir, common)`, read from those files
+                             (each pointer read up to 4096 bytes), or None.
 
 Anything that cannot be read is "not there": the answer falls to the next rule, never an error.
 So is a `<remote>/HEAD` naming a branch that starts with `-` or `/` or holds `..`.
@@ -43,21 +45,31 @@ def _read(path, limit=1 << 20):
         return None
 
 
-def _dirs(root):
-    """`(gitdir, common)` of the work tree at `root`, read from files, or None."""
+def git_dir(root):
+    """The git dir of the work tree at `root`, read from files, or None: `<root>/.git` when it is a
+    folder, else the folder its `gitdir: X` line names (resolved against `root`; read up to 4096
+    bytes). None when the file cannot be read or names nothing (all NUL bytes among them)."""
     if not root:
         return None
     dot = os.path.join(root, '.git')
     if os.path.isdir(dot):
-        gitdir = dot
-    else:
-        text = _read(dot, 4096)
-        if not text or not text.startswith('gitdir:'):
-            return None
-        target = text[len('gitdir:'):].strip()
-        if not target or '\n' in target:
-            return None
-        gitdir = os.path.normpath(os.path.join(root, target))
+        return dot
+    text = _read(dot, 4096)
+    if not text or not text.startswith('gitdir:'):
+        return None
+    target = text[len('gitdir:'):].strip()
+    if not target or '\n' in target:
+        return None
+    return os.path.normpath(os.path.join(root, target))
+
+
+def git_dirs(root):
+    """`(gitdir, common)` of the work tree at `root`, read from files, or None: git_dir, then the
+    folder its `commondir` names (read up to 4096 bytes) when it has one. None when either cannot
+    be read or names nothing, or the common dir is no folder."""
+    gitdir = git_dir(root)
+    if gitdir is None:
+        return None
     common = gitdir
     named = _read(os.path.join(gitdir, 'commondir'), 4096)
     if named is not None:
@@ -70,7 +82,7 @@ def _dirs(root):
 
 def common_dir(root):
     """The git common dir of the work tree at `root`, read from files, or None."""
-    dirs = _dirs(root)
+    dirs = git_dirs(root)
     return dirs[1] if dirs else None
 
 
@@ -206,7 +218,7 @@ def name_from_url(url):
 
 def repo_name(root, remote='origin'):
     """The repository's name (module docstring)."""
-    gitdir, common = _dirs(root) or (None, None)
+    gitdir, common = git_dirs(root) or (None, None)
     if common is not None and _name_ok(remote):
         name = name_from_url(remote_url(common, remote, gitdir))
         if name:

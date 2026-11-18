@@ -13,6 +13,8 @@
   site checks with the key's settings or the defaults; writing the key does not switch it.
 - `hub.py serve` raises itself to normal priority at start (`kitlib.proc.process.raise_to_normal`), never lowering it or going above normal: the autostart task runs at Task Scheduler's default priority 7, below normal, and the git calls it starts would inherit that and starve while runs keep every core busy. A raise that fails is one NOTE line.
 - `hub.py status` prints the running server's health, one line each: `revision N`, `store ...`,
+  `store: damaged files set aside in _corrupt/ (remove once read): ...` while the store's
+  `_corrupt/` holds any (GET health's `corrupt`, the paths inside it; Damaged files, below),
   `git: ...` (`running, branch B, nothing pending`, or what is pending, a failed pass, or `git sync is
   off on this server`), `backlog <repo>: fetched X ago`, `code: current` or `code: stale: ` and the
   restart ("Stale code" below), `jobs: ` with each timed job's `<name> runs R, failures F`, `, running`
@@ -36,6 +38,17 @@
   access lines. At 1 MiB (`hublog.LOG_MAX`) it moves to `hub.log.1`, replacing an older
   one; push's `push-undelivered.jsonl` rotates the same way (`hublog.append`). A `--store` run writes no
   hub log.
+- **Damaged files.** Every store write fsyncs its temp file before the rename
+  (`kitlib.hubsite.store`, `kitlib.fs.atomic`), so a power loss or an OS crash can no longer leave
+  a document at its full length holding only NUL bytes. One that is already there (written
+  before this change, or by another tool) is set aside when the store opens: a file of only NUL
+  bytes is moved at once to `<store>/_corrupt/<its path>` (`kitlib.fs.quarantine`, never over an
+  earlier copy: `.1`, `.2` added), any other that does not parse is read again after
+  `REPLACE_S` and moved only if it still fails. Its id still counts, so the next id never reuses
+  it. A file that cannot be opened at all, or that cannot be moved, refuses the open
+  (`HubError`), as before. GET health lists what `_corrupt/` holds as `corrupt` (every role; the
+  tunnel's fixed health carries none), `hub.py status` prints the line above, and git sync never
+  commits `_corrupt/`. The owner reads and removes those files; nothing removes them itself.
 - **Stale code.** A running `hub serve` compares every `.py` file under `kitlib` (nested packages
   and top-level modules alike, `__pycache__` aside) and under the folder of each timed job it was
   handed (each maker's folder, which can lie outside `kitlib`) (path, modified time, size;

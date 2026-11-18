@@ -10,6 +10,10 @@ Layout under the store folder `root` (the caller resolves it; nothing here reads
                                     document with no `version` (an old-hub file) is at version 0
     <root>/_meta.json               {revision, counters: {Q, M, T, P, S, A, E}}
     <root>/_store.lock              the single-writer lock (below); never a document
+    <root>/_corrupt/<collection>/<id>.json, <root>/_corrupt/_meta.json
+                                    a file open set aside because it would not parse (below);
+                                    kept for the owner to read and remove, never read as a
+                                    document, never committed (kitlib.hubsite.gitsync.skipped)
 
 Only schema.COLLECTIONS are read and written; any other folder (parked/ from the old hub) is left
 alone. A question whose `recommended` is text that stands for a number (the rule is in
@@ -41,16 +45,29 @@ A write, in this order (add, put, update, delete):
      findings come back as Result.warnings. Findings the document already had never block. A
      delete is not validated;
   3. write `_meta.json` with the revision bumped (and the id counter, for add);
-  4. write the document (a temp file, then os.replace, retried while a reader holds the file);
+  4. write the document (kitlib.fs.atomic: a temp file `.<name>.<random>.tmp`, fsynced, then
+     os.replace, retried for REPLACE_S while a reader holds the file);
   5. append the event to the in-memory ring and wake the waiters.
 _meta.json is written BEFORE the document: a crash between the two leaves a revision or an id
-skipped, never a document newer than the revision. Store.open also raises each id counter to the
-highest id on disk, treating an unreadable or empty _meta.json as missing, and removes the temp
-files a crash left. An id is never given twice, unless _meta.json is lost or rolled back after the
-document holding the highest id was deleted: the counter is then rebuilt from the ids still on
-disk. A put of a server-style id (Q-005) raises its counter too, committed with the meta. A
-counter never starts below ID_FLOOR: the first question add gives is Q-1000, whatever the
-store holds below it.
+skipped, never a document newer than the revision. Both are fsynced before their rename: with no
+fsync, a power loss or an OS crash can leave a renamed file at its full length holding only NUL
+bytes.
+
+Damaged files. Store.open sets aside, under the store's own lock (no other writer exists), a
+document or _meta.json that will not parse (not JSON, not UTF-8, or not an object): it moves the
+file to `_corrupt/` at the same relative path (kitlib.fs.quarantine; `.1`, `.2` added when the name
+is taken) and opens without it, so one damaged item never stops the hub. A file of only NUL bytes
+is a crash's zero-fill and moves at once; any other is read once more after REPLACE_S first. A
+file that cannot be opened (an OSError), or that cannot be moved, still refuses the open, naming
+it. corrupt() lists what `_corrupt/` holds; the hub's health shows it until the owner removes it.
+A _meta.json set aside is read as missing.
+
+Store.open also raises each id counter to the highest id on disk or set aside in `_corrupt/`, and
+removes the temp files a crash left. An id is never given twice, unless _meta.json is lost or
+rolled back after the document holding the highest id was deleted: the counter is then rebuilt
+from the ids still on disk. A put of a server-style id (Q-005) raises its counter too, committed
+with the meta. A counter never starts below ID_FLOOR: the first question add gives is Q-1000,
+whatever the store holds below it.
 
 Ids are file names, and NTFS ignores case: a new id that differs only in case from an existing
 one (Alpha beside alpha) is refused, HubError invalid.
@@ -84,8 +101,10 @@ import json
 import os
 import re
 import threading
+import time
 
 from kitlib import hubvalidate
+from kitlib.fs import atomic, quarantine
 from kitlib.fs import replace as fsreplace
 from kitlib.fs.treelock import TreeBusy, TreeLock, TreeLockError, describe
 
@@ -146,36 +165,39 @@ def _now():
 
 
 def _replace(path, text):
-    """Write text to a temp file beside path, then os.replace path with it, retrying for
-    REPLACE_S (kitlib.fs.replace) while a reader (an indexer, an antivirus scan) holds path open."""
-    folder, name = os.path.split(path)
-    os.makedirs(folder, exist_ok=True)
-    tmp = os.path.join(folder, '.%s.%d%s' % (name, os.getpid(), TMP_SUFFIX))
-    with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
-        f.write(text)
-    try:
-        fsreplace.replace(tmp, path, wait=REPLACE_S)
-    except PermissionError:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise
+    """Write text to a temp file beside path, fsync it, then os.replace path with it, retrying for
+    REPLACE_S while a reader (an indexer, an antivirus scan) holds path open (kitlib.fs.atomic)."""
+    atomic.write_text(path, text, makedirs=True, fsync=True, wait=REPLACE_S)
 
 
 def _remove(path):
     fsreplace.remove(path, wait=REPLACE_S)
 
 
-def _read_json(path):
+def _parse(path):
+    """(object, '') for a file that parses to a JSON object, (None, why) for one that does not;
+    HubError store when it cannot be opened or read."""
     try:
-        with open(path, encoding='utf-8-sig') as f:
-            obj = json.load(f)
-    except (OSError, ValueError) as e:
+        with open(path, 'rb') as f:
+            data = f.read()
+    except OSError as e:
         raise HubError('store', 'cannot read %s: %s' % (path, e))
-    if not isinstance(obj, dict):
-        raise HubError('store', '%s is not a JSON object' % path)
-    return obj
+    try:
+        obj = json.loads(data.decode('utf-8-sig'))
+    except ValueError as e:
+        return None, str(e)
+    return (obj, '') if isinstance(obj, dict) else (None, 'not a JSON object')
+
+
+def _set_aside_ids(root):
+    """{collection: [id]} of the documents in `<root>/_corrupt/`: an id there is never given."""
+    out = {}
+    for rel in quarantine.listed(root):
+        coll, _, name = rel.partition('/')
+        m = re.match(r'^(.+)\.json(?:\.\d+)?$', name, re.I)
+        if m:
+            out.setdefault(coll, []).append(m.group(1))
+    return out
 
 
 def _sweep(folder):
@@ -264,22 +286,43 @@ class Store(object):
                 if n.lower().endswith('.json') and len(n) > 5 and os.path.isfile(path):
                     # a legacy question's text `recommended` is read as the number it stands for
                     # (migrate's rule), so schema.check does not refuse every later update of it
-                    docs[n[:-5]] = schema.whole_recommended(coll, _read_json(path))[0]
+                    doc = self._read_or_set_aside(path)
+                    if doc is not None:
+                        docs[n[:-5]] = schema.whole_recommended(coll, doc)[0]
             self._docs[coll] = docs
         meta_path = os.path.join(self.root, META_NAME)
-        try:
-            meta = _read_json(meta_path) if os.path.exists(meta_path) else {}
-        except HubError:
-            meta = {}       # unreadable or empty: rebuilt like a missing one (counters from ids)
+        meta = (self._read_or_set_aside(meta_path) if os.path.exists(meta_path) else None) or {}
         rev = meta.get('revision', 0)
         self._revision = rev if isinstance(rev, int) and not isinstance(rev, bool) else 0
         saved = meta.get('counters') if isinstance(meta.get('counters'), dict) else {}
+        set_aside = _set_aside_ids(self.root)
         for coll, prefix in schema.ID_PREFIX.items():
             n = saved.get(prefix, 0)
             n = n if isinstance(n, int) and not isinstance(n, bool) else 0
+            ids = list(self._docs[coll]) + set_aside.get(coll, [])
             self._counters[prefix] = max([n, ID_FLOOR.get(prefix, 1) - 1]
-                                         + [_id_number(prefix, d) for d in self._docs[coll]])
+                                         + [_id_number(prefix, d) for d in ids])
         self._known = self._revision
+
+    def _read_or_set_aside(self, path):
+        """The object at path, or None once a file that will not parse is moved to `_corrupt/`
+        (module docstring, "Damaged files"); HubError store when it cannot be read or moved."""
+        doc, why = _parse(path)
+        if doc is None and not quarantine.all_nul(path):
+            time.sleep(REPLACE_S)       # once: a file that still fails is not a write in flight
+            doc, why = _parse(path)
+        if doc is None:
+            try:
+                quarantine.quarantine(path, self.root)
+            except OSError as e:
+                raise HubError('store', 'cannot read %s (%s) nor set it aside in %s: %s'
+                               % (path, why, quarantine.FOLDER, e))
+        return doc
+
+    def corrupt(self):
+        """The files set aside in `<root>/_corrupt/`, as sorted paths inside it with '/'
+        ('landings/L-0005.json'); [] when there are none."""
+        return quarantine.listed(self.root)
 
     def close(self):
         """Drop the lock and wake every waiter; later calls raise HubError store."""

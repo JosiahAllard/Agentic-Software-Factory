@@ -35,7 +35,7 @@ Low-level design of `kitlib/hubvalidate`, `kitlib/hubclient`, `kitlib/hubsite`, 
 
 ## State
 
-The hub store, in the PM-data worktree: one writer (the server) under the store's tree lock. Each job keeps its own small state file in the store folder. The server's token and the tunnel's keys are secrets the guard closes to agents.
+The hub store, in the PM-data worktree: one writer (the server) under the store's tree lock. Every write fsyncs its temp file before the rename; a file a crash left all NUL bytes is set aside in `_corrupt/` at open (docs/hub-serving.md, its Damaged files bullet). Each job keeps its own small state file in the store folder. The server's token and the tunnel's keys are secrets the guard closes to agents.
 
 ## Errors
 

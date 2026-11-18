@@ -187,7 +187,8 @@ def _jobs_line(blocks):
 
 def status_lines(health, now=None):
     """The lines `hub status` prints for a GET health answer: the revision, the store (the
-    owner's answer has it), the git sync, each repository's backlog fetch age, `code: current`
+    owner's answer has it), the files the store set aside in `_corrupt/` (health's `corrupt`;
+    no line when none), the git sync, each repository's backlog fetch age, `code: current`
     or `code: stale: ` and the restart (from health's `code`, codestale.notice), `jobs: ` and
     each timed job's runs, failures and last note or error (_jobs_line; `jobs: none` when the
     server runs none) (neither line when the answer lacks the field, as an older server's), the
@@ -200,6 +201,10 @@ def status_lines(health, now=None):
     lines = ['revision %s' % health.get('revision')]
     if health.get('store'):
         lines.append('store %s' % health['store'])
+    corrupt = health.get('corrupt')
+    if isinstance(corrupt, list) and corrupt:
+        lines.append('store: damaged files set aside in _corrupt/ (remove once read): %s'
+                     % ', '.join(str(p) for p in corrupt))
     lines.append('git: %s' % _git_line(health.get('git')))
     repos = health.get('backlog')
     if not isinstance(repos, list):

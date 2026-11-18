@@ -4,11 +4,17 @@ render(snap) -> [line]; record_lines(d) -> [line] for one run or hold record. No
 the store or prints: the CLI prints these lines with its prefix, and `status --json` prints the
 snapshot itself.
 """
+import os
+import re
+
+from kitlib.fs import quarantine
 from kitlib.lock import layout as lay
 from kitlib.lock import queue as qm
 from kitlib.lock.store import local_text, parse_iso
 
 POOLS = lay.POOLS
+# what a queue.json set aside (snapshot damaged) cost: its entries were the crash's dead runs
+QUEUE_LOST = " (all NUL bytes: queued bookings dropped; waiting runs rejoin)"
 MEM_FROM = {"flag": "--mem", "kind": "its kind's floor",   # a run's mem_from, as status says it
             "default": "the lock's default"}
 
@@ -149,6 +155,14 @@ def render(snap):
         out.append("%s; the slots below are from the run records. Until it reads again no run "
                    "takes slots, waiting runs keep their places and a new run exits 10"
                    % snap["queue"]["error"])
+    corrupt = os.path.join(snap["store"], quarantine.FOLDER)
+    moved = [p for p in snap.get("damaged") or [] if p != qm.ZEROED_TEXT]
+    if moved:
+        out.append("damaged, set aside in %s (remove once read): %s" % (corrupt, ", ".join(
+            p + QUEUE_LOST if re.match(r"^queue\.json(\.\d+)?$", p) else p for p in moved)))
+    if qm.ZEROED_TEXT in (snap.get("damaged") or []):
+        out.append("damaged: queue.json%s; read as an empty queue, it moves to %s at the next "
+                   "queue write" % (QUEUE_LOST, corrupt))
     runs = {r["id"]: r for r in snap["runs"]}
     holds = {h["id"]: h for h in snap["holds"]}
     for p in POOLS:

@@ -499,6 +499,7 @@ None: no module is open to every other.
 | preflight | backlog | build | same layer (work): preflight's row names backlog |
 | preflight | config | build | work uses facts |
 | preflight | docs | build | work uses services |
+| preflight | fs | build | work uses base |
 | preflight | git | build | work uses facts |
 | preflight | proc | build | work uses base |
 | preflight | verdict | build | work uses base |

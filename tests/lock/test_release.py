@@ -215,6 +215,20 @@ class LiveRuns(RunCase):
         live, _, _ = release.live_runs(self.store)
         self.assertEqual(live, ["queue.json (unreadable)"])
 
+    def test_a_zeroed_record_or_queue_is_gone_at_once(self):
+        # A crash's zero-fill (only NUL bytes) means its writer died: gone, not unreadable.
+        os.makedirs(self.store.path("active"), exist_ok=True)
+        for p in (self.store.path("active", "r-20261008T120000Z-ffffff.json"),
+                  self.store.path("queue.json")):
+            with open(p, "wb") as f:
+                f.write(b"\0" * 200)
+        with mock.patch("time.sleep") as slept:
+            live, gone, _ = release.live_runs(self.store)
+        self.assertEqual(live, [])
+        self.assertEqual(gone, ["active/r-20261008T120000Z-ffffff.json (all NUL bytes)",
+                                "queue.json (all NUL bytes)"])
+        self.assertEqual(slept.call_count, 0)
+
     def test_it_writes_nothing_to_the_store(self):
         self.live_record("r-20261008T120000Z-eeeeee")
         self.write_queue([self.entry("r-1")])

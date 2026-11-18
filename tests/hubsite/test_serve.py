@@ -2420,6 +2420,19 @@ class ClientCase(ServeCase):
                                              'backlog_at': None}, NOW),
                          ['revision 1', 'git: no answer', 'backlog: not read yet'])
 
+    def test_status_lines_name_the_damaged_files_set_aside(self):
+        base = {'revision': 1, 'store': 'the/store', 'git': None, 'backlog': None}
+        lines = servehealth.status_lines(
+            dict(base, corrupt=['_meta.json', 'landings/L-0005.json']), NOW)
+        self.assertEqual(lines[:3], [
+            'revision 1', 'store the/store',
+            'store: damaged files set aside in _corrupt/ (remove once read): _meta.json, '
+            'landings/L-0005.json'])
+        for none in ([], None):         # nothing set aside, or an older server's answer
+            self.assertEqual(servehealth.status_lines(dict(base, corrupt=none), NOW),
+                             ['revision 1', 'store the/store', 'git: no answer',
+                              'backlog: no source on this server'])
+
     def test_status_lines_say_a_backlog_timer_that_is_not_running(self):
         base = {'revision': 1, 'git': None, 'backlog': [], 'backlog_at': None}
         said = {running: servehealth.status_lines(dict(base, backlog_timer_running=running), NOW)

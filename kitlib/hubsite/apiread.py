@@ -274,7 +274,7 @@ def health(api, req):
     out.pop('store', None)
     out.update(ok=True, version=API_VERSION, revision=api.store.revision, unavailable=missing,
                watcher=api.watcher_seen(), push=api.push_seen(), code=api.code_seen(),
-               jobs=api.jobs_seen())
+               jobs=api.jobs_seen(), corrupt=api.store.corrupt())
     if req.role == OWNER:           # where the store is on this machine is the owner's to know
         out['store'] = api.store.root
     return out

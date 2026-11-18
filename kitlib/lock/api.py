@@ -323,10 +323,12 @@ def snapshot(store=None, history_days=7, since=None, until=None):
     except kinds_mod.KindsError as e:
         kinds, kerr = {}, str(e)
     gs = game.state(store, L, hs)
+    damaged = store.corrupt() + ([qm.ZEROED_TEXT] if qm.zeroed(store) else [])
     return {"schema_version": SCHEMA_VERSION, "revision": rev, "at": iso(now), "store": store.root,
             "hardware": hwd, "layout": _layout(store, lf, hw, runs),
             "slots": slots, "runs": run_rows,
             "queue": {"entries": queue_rows if qerr is None else None, "error": qerr},
+            "damaged": damaged,
             "holds": [hl.entry(h, now) for h in hs], "holds_error": herr, "game": gs,
             "kinds": kinds, "kinds_error": kerr,
             "stats": stats(store, days=history_days, since=since, until=until)}

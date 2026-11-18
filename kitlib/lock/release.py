@@ -22,7 +22,8 @@ release; run it at once, since a run that starts after the check is not seen.
 What the release brings in is the diff from the checkout's HEAD to commit on a fast-forward, or
 from their merge base to commit when it takes a merge. Runs are the store's active/ records and
 queue.json entries (live_runs); a background run has both. A record that cannot be read, or that
-names no owning process, counts as live.
+names no owning process, counts as live, but for an active/ record or a queue.json of only NUL
+bytes: a crash's zero-fill, whose writer the crash ended, listed as gone with "(all NUL bytes)".
 """
 import collections
 import json
@@ -30,6 +31,7 @@ import os
 import time
 
 import kitlib.platform
+from kitlib.fs import quarantine
 from kitlib.git import cmd, refs
 from kitlib.lock.store import ID_RE, Store, read_json, wrapper_state
 from kitlib.platform.linux import process as procfs
@@ -60,6 +62,7 @@ LOCK_PATHS = ("tools/machine_lock.py", "kitlib/__init__.py", "kitlib/lock/", "ki
               "kitlib/kitroot.py")
 
 MISSING = "store folder (missing)"
+ZEROED = "(all NUL bytes)"     # a crash's zero-fill (kitlib.fs.quarantine): its writer is dead
 
 Outcome = collections.namedtuple("Outcome", "code lines command")
 
@@ -134,8 +137,9 @@ def _is_mine(d, mine):
 
 
 def _queue_entries(store):
-    """The raw entries of queue.json ([] when there is none), or None when it cannot be read for
-    settings.queue_read_s. Malformed entries are kept: the caller counts them as live."""
+    """The raw entries of queue.json ([] when there is none), ZEROED at once for one of only NUL
+    bytes, or None when it cannot be read for settings.queue_read_s. Malformed entries are kept:
+    the caller counts them as live."""
     path = store.path("queue.json")
     end = time.monotonic() + store.settings.queue_read_s
     while True:
@@ -147,7 +151,9 @@ def _queue_entries(store):
             return list(d.get("entries") or [])
         except FileNotFoundError:
             return []
-        except (OSError, ValueError):
+        except (OSError, ValueError) as err:
+            if isinstance(err, ValueError) and quarantine.all_nul(path):
+                return ZEROED
             if time.monotonic() >= end:
                 return None
             time.sleep(0.1)
@@ -156,10 +162,11 @@ def _queue_entries(store):
 def live_runs(store, alive=None, mine=None):
     """(live, gone, own): the store's runs as 'active/<file>' and 'queue.json:<id>' ('?' for an
     entry with no id). Gone means the run's process is surely gone; anything unreadable is live,
-    and a missing store folder is the one live entry MISSING. own: the live runs whose process is
-    in mine ({(pid, ctime)}). Writes nothing. alive(pid, ctime): True, False, or None when it
-    cannot tell (store.wrapper_state, the default); then the run's mutex decides
-    (store.run_mutex_held), as store.run_live does."""
+    but an active/ record or queue.json of only NUL bytes, gone as 'active/<file> (all NUL
+    bytes)' or 'queue.json (all NUL bytes)'; a missing store folder is the one live entry
+    MISSING. own: the live runs whose process is in mine ({(pid, ctime)}). Writes nothing.
+    alive(pid, ctime): True, False, or None when it cannot tell (store.wrapper_state, the
+    default); then the run's mutex decides (store.run_mutex_held), as store.run_live does."""
     alive = alive or wrapper_state
     mine = mine or set()
     if not os.path.isdir(store.path()):
@@ -183,9 +190,17 @@ def live_runs(store, alive=None, mine=None):
         live.append("active/ (unreadable)")
     for n in names:
         if n.endswith(".json"):
-            sort("active/" + n, read_json(store.path("active", n)))
+            p = store.path("active", n)
+            d = read_json(p)
+            if d is None and quarantine.all_nul(p):
+                gone.append("active/%s %s" % (n, ZEROED))
+            else:
+                sort("active/" + n, d)
     entries = _queue_entries(store)
-    if entries is None:
+    if entries is ZEROED:
+        gone.append("queue.json %s" % ZEROED)
+        entries = []
+    elif entries is None:
         live.append("queue.json (unreadable)")
         entries = []
     for e in entries:

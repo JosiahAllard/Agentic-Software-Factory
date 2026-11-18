@@ -121,14 +121,138 @@ class FormatTest(StoreCase):
         self.assertEqual(s.revision, 1)
         self.assertEqual(s.get('questions', 'Q-1000')['title'], 't')
 
-    def test_an_unreadable_document_refuses_open(self):
+    def test_a_document_that_cannot_be_opened_refuses_open(self):
         root = tmpdir(self)
-        write_file(os.path.join(root, 'todos', 'T-001.json'), '[1]')
-        with self.assertRaises(HubError) as cm:
+        path = os.path.join(root, 'todos', 'T-001.json')
+        write_file(path, '{"status": "open", "title": "t"}')
+        real = open
+
+        def held(file, *a, **kw):
+            if os.path.normcase(str(file)) == os.path.normcase(path):
+                raise PermissionError(13, 'denied')
+            return real(file, *a, **kw)
+        with mock.patch('builtins.open', side_effect=held), self.assertRaises(HubError) as cm:
             Store.open(root)
         self.assertEqual(cm.exception.code, 'store')
-        os.remove(os.path.join(root, 'todos', 'T-001.json'))
+        self.assertIn('T-001.json', cm.exception.message)
+        self.assertTrue(os.path.exists(path))
         Store.open(root).close()        # the failed open released the lock
+
+
+def zero_fill(path, size=812):
+    """What a crash leaves at a renamed, never-flushed file: its length, all NUL bytes."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'wb') as f:
+        f.write(b'\0' * size)
+
+
+def landing(**kw):
+    d = {'repo': 'kit', 'branch': 'kit/x', 'tip': 'a' * 40, 'main': 'b' * 40}
+    d.update(kw)
+    return d
+
+
+class DamagedFileTest(StoreCase):
+    """Store.open sets a document or _meta.json that will not parse aside in `_corrupt/`."""
+
+    def setUp(self):
+        self.sleeps = []
+        patcher = mock.patch('time.sleep', side_effect=self.sleeps.append)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def open(self, root=None):
+        try:
+            return StoreCase.open(self, root)
+        except HubError as e:
+            self.fail('the store refused to open: %s' % e)
+
+    def test_a_zero_filled_document_is_set_aside_at_once_and_the_rest_open(self):
+        root = tmpdir(self)
+        write_file(os.path.join(root, 'landings', 'L-0004.json'), json.dumps(landing()))
+        zero_fill(os.path.join(root, 'landings', 'L-0005.json'))
+        s = self.open(root)
+        self.assertEqual(sorted(s.docs('landings')), ['L-0004'])
+        self.assertFalse(os.path.exists(os.path.join(root, 'landings', 'L-0005.json')))
+        with open(os.path.join(root, '_corrupt', 'landings', 'L-0005.json'), 'rb') as f:
+            self.assertEqual(f.read(), b'\0' * 812)
+        self.assertEqual(s.corrupt(), ['landings/L-0005.json'])
+        self.assertEqual(self.sleeps, [])           # all NUL: no write in flight to wait out
+
+    def test_another_unparseable_document_is_read_again_after_REPLACE_S_then_set_aside(self):
+        root = tmpdir(self)
+        write_file(os.path.join(root, 'todos', 'T-001.json'), '[1]')
+        write_file(os.path.join(root, 'todos', 'T-002.json'), '{"status": "op')
+        s = self.open(root)
+        self.assertEqual(s.docs('todos'), {})
+        self.assertEqual(s.corrupt(), ['todos/T-001.json', 'todos/T-002.json'])
+        self.assertEqual(self.sleeps, [store.REPLACE_S] * 2)
+
+    def test_a_document_that_parses_on_the_second_read_is_kept(self):
+        root = tmpdir(self)
+        path = os.path.join(root, 'todos', 'T-001.json')
+        write_file(path, '{"status": "op')
+        finish = lambda _s: write_file(path, '{"status": "open", "title": "t"}')   # noqa: E731
+        with mock.patch('time.sleep', side_effect=finish):
+            s = self.open(root)
+        self.assertEqual(s.get('todos', 'T-001')['title'], 't')
+        self.assertEqual(s.corrupt(), [])
+
+    def test_a_move_that_fails_refuses_open_naming_the_file(self):
+        root = tmpdir(self)
+        zero_fill(os.path.join(root, 'landings', 'L-0005.json'))
+        with mock.patch('kitlib.fs.replace.place_new', side_effect=PermissionError(13, 'denied')):
+            with self.assertRaises(HubError) as cm:
+                Store.open(root)
+        self.assertEqual(cm.exception.code, 'store')
+        self.assertIn('L-0005.json', cm.exception.message)
+        os.remove(os.path.join(root, 'landings', 'L-0005.json'))
+        Store.open(root).close()        # the failed open released the lock
+
+    def test_a_zeroed_meta_and_landing_never_give_an_id_twice(self):
+        # the PM's case: _meta.json and the newest landing both zero-filled by one crash
+        for zeroed_landing in (False, True):
+            with self.subTest(zeroed_landing=zeroed_landing):
+                root = tmpdir(self)
+                s = Store.open(root, clock=CLOCK)
+                for _ in range(5):
+                    s.add('landings', landing())
+                s.close()
+                self.assertTrue(os.path.exists(os.path.join(root, 'landings', 'L-005.json')))
+                os.rename(os.path.join(root, 'landings', 'L-005.json'),
+                          os.path.join(root, 'landings', 'L-0005.json'))
+                zero_fill(os.path.join(root, store.META_NAME), 64)
+                if zeroed_landing:
+                    zero_fill(os.path.join(root, 'landings', 'L-0005.json'))
+                s = self.open(root)
+                self.assertIn('_meta.json', s.corrupt())
+                self.assertEqual(('landings/L-0005.json' in s.corrupt()), zeroed_landing)
+                self.assertEqual(s.add('landings', landing()).id, 'L-006')
+
+    def test_every_write_is_fsynced_before_its_rename(self):
+        s = self.open()
+        order = []
+        real_fsync, real_replace = os.fsync, os.replace
+
+        def fsync(fd):
+            order.append('fsync')
+            real_fsync(fd)
+
+        def replace(src, dst):
+            order.append(os.path.basename(dst))
+            real_replace(src, dst)
+        with mock.patch('os.fsync', side_effect=fsync), \
+                mock.patch('os.replace', side_effect=replace):
+            s.add('landings', landing())
+        self.assertEqual(order, ['fsync', store.META_NAME, 'fsync', 'L-001.json'])
+
+    def test_an_earlier_copy_is_never_overwritten(self):
+        root = tmpdir(self)
+        for _ in range(2):
+            zero_fill(os.path.join(root, store.META_NAME), 10)
+            self.open(root).close()
+        s = self.open(root)
+        self.assertEqual(s.corrupt(), ['_meta.json', '_meta.json.1'])
 
 
 class IdTest(StoreCase):
@@ -217,7 +341,8 @@ class IdTest(StoreCase):
         s.close()
         for text in ('', '{"revision": 2, "coun'):
             write_file(os.path.join(self.root, store.META_NAME), text)
-            s = Store.open(self.root, clock=CLOCK)
+            with mock.patch('time.sleep'):
+                s = Store.open(self.root, clock=CLOCK)
             try:
                 self.assertEqual(s.revision, 0)
                 self.assertEqual(s.add('questions', question()).id, 'Q-1002')

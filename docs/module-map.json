@@ -3145,6 +3145,12 @@
   },
   {
    "from": "preflight",
+   "to": "fs",
+   "kind": "build",
+   "why": "work uses base"
+  },
+  {
+   "from": "preflight",
    "to": "git",
    "kind": "build",
    "why": "work uses facts"

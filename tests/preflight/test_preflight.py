@@ -389,6 +389,21 @@ class TheDamagedLines(Fixture):
         self.assertTrue(lines[0].endswith("/.git/worktrees/wt/HEAD all NUL bytes (a crash's "
                                           "zero-fill): restore it"), lines[0])
 
+    def test_a_worktrees_zeroed_git_file_is_named_before_the_usage_error(self):
+        # the .git file names no git folder (kitlib.git.defaults.git_dirs gives None), so the
+        # scan falls back to naming the pointer itself
+        wt = os.path.join(self.repo.base, 'wt')
+        self.git('worktree', 'add', '-q', '-b', 'side', wt)
+        with open(os.path.join(wt, '.git'), 'wb') as fh:
+            fh.write(b'\0' * 64)
+        code, out = self.run_preflight(where=wt)
+        self.assertEqual(code, 2, out)
+        lines = self.damaged(out)
+        self.assertEqual(len(lines), 1, out)
+        self.assertTrue(lines[0].endswith("/wt/.git all NUL bytes (a crash's zero-fill): "
+                                          "restore it"), lines[0])
+        self.assertLess(out.index('damaged'), out.index('USAGE: -C'), out)
+
     def test_a_sound_checkout_has_no_damaged_line(self):
         code, out = self.run_preflight()
         self.assertEqual(code, 0, out)

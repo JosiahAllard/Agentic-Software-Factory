@@ -54,7 +54,7 @@ def report(top, cfg, kit_root, base=None, fetch=False, lock_reader=lockline.read
     kitlib.config Config (kitlib.config.ConfigError for a "preflight" value preflight cannot
     use). `base` is --base (any revision), else the configured or guessed base branch. `home` is
     the home folder the `config` line reads the machine config under (default the user's). It
-    starts with the `damaged` lines (kitlib.preflight.damaged), read before any git call."""
+    starts with the `damaged` lines (kitlib.preflight.damaged), whose scan runs no git."""
     out = damaged.scan(top)
     s = st.settings(cfg)
     remote = cfg.remote

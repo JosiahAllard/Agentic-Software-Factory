@@ -106,7 +106,7 @@ Supersedes: R-9001,
   R-9003
 Items: FOO
 
-## H-alpha-0001 | 2026-10-11 08:00Z | alpha | selected
+## H-alpha-9001 | 2026-10-11 08:00Z | alpha | selected
 Q: q
 Supersedes: R-9010
 """
@@ -127,15 +127,15 @@ class SupersedesTest(unittest.TestCase):
 
     def test_ended_is_a_tombstone_or_a_supersedes_line_of_any_file(self):
         ended = [backlog_ledger.ended(self.entries, self.by, rid)
-                 for rid in ('R-9001', 'R-9004', 'R-9010', 'H-alpha-0001', 'R-9002', 'R-0404')]
+                 for rid in ('R-9001', 'R-9004', 'R-9010', 'H-alpha-9001', 'R-9002', 'R-9404')]
         self.assertEqual(ended, ['superseded by R-9010', 'retired: spent',
-                                 'superseded by H-alpha-0001', None, None, None])
+                                 'superseded by H-alpha-9001', None, None, None])
 
     def test_later_follows_supersedes_and_tombstones(self):
         self.assertEqual(backlog_ledger.later(self.entries, self.by, 'R-9001'),
-                         {'R-9010', 'H-alpha-0001'})
+                         {'R-9010', 'H-alpha-9001'})
         self.assertEqual(backlog_ledger.later(self.entries, self.by, 'R-9004'),
-                         {'R-9001', 'R-9010', 'H-alpha-0001'})
+                         {'R-9001', 'R-9010', 'H-alpha-9001'})
 
     def test_read_all_skips_a_repo_file_not_written_yet(self):
         with tempfile.TemporaryDirectory() as d:

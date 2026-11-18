@@ -163,24 +163,24 @@ def deliberate(rid, reason, day='2026-11-16', body=None, **over):
                body=body or 'Blocked on deliberate (%s): %s' % (day, reason), **over)
 
 
-LEDGER = """## R-1997 | 2026-11-01 08:00Z | retribution | typed
+LEDGER = """## R-9197 | 2026-11-01 08:00Z | alpha | typed
 Q: q
 A: a
-Decides: Combat records wait.
+Decides: Widget records wait.
 Source: s
 Supersedes: -
 
-## R-2104 | 2026-11-12 08:00Z | retribution | typed
+## R-9204 | 2026-11-12 08:00Z | alpha | typed
 Q: q
 A: a
-Decides: The combat-holds rule.
+Decides: The widget-holds rule.
 Source: s
-Supersedes: R-1997
+Supersedes: R-9197
 
-## R-2001 | 2026-11-02 08:00Z | retribution | typed
+## R-9201 | 2026-11-02 08:00Z | alpha | typed
 Retired: spent - done (see -)
 
-## R-2002 | 2026-11-02 08:00Z | retribution | typed
+## R-9202 | 2026-11-02 08:00Z | alpha | typed
 Q: q
 A: a
 Decides: Still live.
@@ -244,18 +244,18 @@ class StaleHolds(unittest.TestCase):
             'releasable: hub not read (TimeoutError: timed out); Q-/T- holds not checked']))
 
     def test_a_superseded_or_retired_ruling_is_stale(self):
-        found, notes = self.judge(deliberate('CMB', 'R-1997: combat waits'),
-                                  deliberate('OLD', 'R-2001 and R-2002'),
-                                  deliberate('LIVE', 'R-2002'))
-        self.assertEqual((found, notes), ({'CMB': [('R-1997', 'superseded by R-2104')],
-                                           'OLD': [('R-2001', 'retired: spent')]}, []))
+        found, notes = self.judge(deliberate('CMB', 'R-9197: widget waits'),
+                                  deliberate('OLD', 'R-9201 and R-9202'),
+                                  deliberate('LIVE', 'R-9202'))
+        self.assertEqual((found, notes), ({'CMB': [('R-9197', 'superseded by R-9204')],
+                                           'OLD': [('R-9201', 'retired: spent')]}, []))
 
     def test_a_ruling_re_cited_with_its_successor_is_not_stale(self):
-        found, _ = self.judge(deliberate('CMB', 'R-1997, now R-2104: combat waits'))
+        found, _ = self.judge(deliberate('CMB', 'R-9197, now R-9204: widget waits'))
         self.assertEqual(found, {})
 
     def test_a_ledger_that_cannot_be_read_flags_nothing_and_is_one_note(self):
-        found, notes = self.judge(deliberate('CMB', 'R-1997'), ledger=None)
+        found, notes = self.judge(deliberate('CMB', 'R-9197'), ledger=None)
         self.assertEqual((found, notes), ({}, [
             'stale holds: ledger not read (no ledger_path or ledger_dir); R- cites not checked']))
 
@@ -514,7 +514,7 @@ class NextCli(unittest.TestCase):
                                body='Blocked on deliberate (2026-11-10): %s' % reason)
         self.publish({'DONE': held('DONE', 'Q-2289: the WSL runtime choice'),
                       'OPEN': held('OPEN', 'Q-2290: still asked'),
-                      'CMB': held('CMB', 'R-1997: combat waits'),
+                      'CMB': held('CMB', 'R-9197: widget waits'),
                       'BBB': record_text(id='BBB', priority='3', priority_by='agent',
                                          scope='a/bbb.py')})
         self.hub(_Hub({'questions': [
@@ -523,7 +523,7 @@ class NextCli(unittest.TestCase):
         self.ledger(LEDGER)
         out = self.ok('next', '--all')
         self.assertIn('STALE HOLD DONE (rank 2): stale hold: Q-2289 ended (done ', out)
-        self.assertIn('STALE HOLD CMB (rank 1): stale hold: R-1997 ended (superseded by R-2104) '
+        self.assertIn('STALE HOLD CMB (rank 1): stale hold: R-9197 ended (superseded by R-9204) '
                       '-> unblock CMB --on deliberate, or block it again citing what holds it '
                       'now', out)
         self.assertNotIn('STALE HOLD OPEN', out)
@@ -531,8 +531,8 @@ class NextCli(unittest.TestCase):
         rows = {line.split()[1]: line for line in self.ok('list', '--blocked').splitlines()
                 if line[:4].strip().isdigit() or line.startswith('   ')}
         self.assertIn('[stale hold: Q-2289 ended (done ', rows['DONE'])
-        self.assertTrue(rows['CMB'].endswith('[deliberate]  [stale hold: R-1997 ended '
-                                             '(superseded by R-2104)]'), rows['CMB'])
+        self.assertTrue(rows['CMB'].endswith('[deliberate]  [stale hold: R-9197 ended '
+                                             '(superseded by R-9204)]'), rows['CMB'])
         self.assertTrue(rows['OPEN'].endswith('[deliberate]'), rows['OPEN'])
 
     def test_next_under_a_session_judges_only_its_held_records(self):

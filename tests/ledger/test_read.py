@@ -97,5 +97,59 @@ class SharedTest(unittest.TestCase):
                          'R-9001')
 
 
+SUPERSEDING = """## R-9010 | 2026-10-10 08:00Z | alpha | selected
+Q: q
+A: a
+Decides: Later.
+Source: s
+Supersedes: R-9001,
+  R-9003
+Items: FOO
+
+## H-alpha-0001 | 2026-10-11 08:00Z | alpha | selected
+Q: q
+Supersedes: R-9010
+"""
+
+
+class SupersedesTest(unittest.TestCase):
+    """What ends a ruling a hold cites (`next`'s STALE HOLD): a tombstone, or a `Supersedes:` line
+    of any entry naming it; nothing else."""
+
+    def setUp(self):
+        self.entries = {e.id: e for e in read.parse(TEXT + '\n' + SUPERSEDING)}
+        self.by = backlog_ledger.superseded_by(self.entries)
+
+    def test_supersedes_reads_every_id_over_continuation_lines(self):
+        self.assertEqual(self.entries['R-9010'].supersedes, ('R-9001', 'R-9003'))
+        self.assertEqual(self.entries['R-9001'].supersedes, ())       # `Supersedes: -`
+        self.assertEqual(self.entries['R-9002'].supersedes, ())       # no line
+
+    def test_ended_is_a_tombstone_or_a_supersedes_line_of_any_file(self):
+        ended = [backlog_ledger.ended(self.entries, self.by, rid)
+                 for rid in ('R-9001', 'R-9004', 'R-9010', 'H-alpha-0001', 'R-9002', 'R-0404')]
+        self.assertEqual(ended, ['superseded by R-9010', 'retired: spent',
+                                 'superseded by H-alpha-0001', None, None, None])
+
+    def test_later_follows_supersedes_and_tombstones(self):
+        self.assertEqual(backlog_ledger.later(self.entries, self.by, 'R-9001'),
+                         {'R-9010', 'H-alpha-0001'})
+        self.assertEqual(backlog_ledger.later(self.entries, self.by, 'R-9004'),
+                         {'R-9001', 'R-9010', 'H-alpha-0001'})
+
+    def test_read_all_skips_a_repo_file_not_written_yet(self):
+        with tempfile.TemporaryDirectory() as d:
+            frozen = os.path.join(d, 'rulings.md')
+            with open(frozen, 'w', encoding='utf-8') as f:
+                f.write(TEXT)
+            with open(os.path.join(d, 'alpha.md'), 'w', encoding='utf-8') as f:
+                f.write('# no header yet\n')
+            cfg = {'ledger_dir': d, 'ledger_repos': ['alpha', 'beta'], 'ledger_path': frozen}
+            got, why = backlog_ledger.read_all(lambda: cfg)
+            self.assertEqual((sorted(got), why), (IDS, None))
+            got, why = backlog_ledger.read_all(lambda: {})
+            self.assertEqual((got, why), (None, 'no ledger_path or ledger_dir'))
+
+
 if __name__ == '__main__':
     unittest.main()

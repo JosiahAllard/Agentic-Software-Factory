@@ -344,6 +344,57 @@ class TheReadings(Fixture):
         self.assertIn('USAGE: -C', out)
 
 
+class TheDamagedLines(Fixture):
+    """A git file a crash left all NUL bytes is named on a `damaged` line (kitlib.preflight
+    .damaged), read with no git: in the report, and before the usage error when git then finds no
+    checkout at all."""
+
+    def zero_fill(self, *rel):
+        path = os.path.join(self.root, '.git', *rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as fh:
+            fh.write(b'\0' * 41)
+
+    def damaged(self, out):
+        return [l for l in out.splitlines() if l.startswith('damaged')]
+
+    def test_a_zeroed_ref_is_named_in_the_short_report(self):
+        self.zero_fill('refs', 'heads', 'lost')
+        self.short = True
+        code, out = self.run_preflight()
+        self.assertEqual(code, 0, out)
+        lines = self.damaged(out)
+        self.assertEqual(len(lines), 1, out)
+        self.assertTrue(lines[0].startswith('damaged   FAIL '), lines[0])
+        self.assertTrue(lines[0].endswith(
+            "/.git/refs/heads/lost all NUL bytes (a crash's zero-fill): restore it"), lines[0])
+
+    def test_a_zeroed_head_is_named_before_the_usage_error(self):
+        self.zero_fill('HEAD')
+        code, out = self.run_preflight()
+        self.assertEqual(code, 2, out)
+        lines = self.damaged(out)
+        self.assertEqual(len(lines), 1, out)
+        self.assertTrue(lines[0].endswith("/.git/HEAD all NUL bytes (a crash's zero-fill): "
+                                          "restore it"), lines[0])
+        self.assertLess(out.index('damaged'), out.index('USAGE: -C'), out)
+
+    def test_a_worktrees_zeroed_head_is_found_through_its_git_file(self):
+        wt = os.path.join(self.repo.base, 'wt')
+        self.git('worktree', 'add', '-q', '-b', 'side', wt)
+        self.zero_fill('worktrees', 'wt', 'HEAD')
+        code, out = self.run_preflight(where=wt)
+        lines = self.damaged(out)
+        self.assertEqual(len(lines), 1, out)
+        self.assertTrue(lines[0].endswith("/.git/worktrees/wt/HEAD all NUL bytes (a crash's "
+                                          "zero-fill): restore it"), lines[0])
+
+    def test_a_sound_checkout_has_no_damaged_line(self):
+        code, out = self.run_preflight()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.damaged(out), [])
+
+
 class TheDocsLine(Fixture):
     """The first call of every task must not print a failing doc budget as a verdict."""
 

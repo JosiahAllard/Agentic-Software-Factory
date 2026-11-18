@@ -824,7 +824,7 @@ class Role(StoreCase):
                           ({run_held.ORIGIN_ENV: "garbage"}, "agent")):
             with self.subTest(env=env):
                 run = rm.Run(self.store, L, "kit", "t", "engine-test", None, None, "waiting",
-                             None, True, clean_env(**env), None)
+                             None, True, clean_env(**env))
                 self.assertEqual(run.rec["role"], want)
 
 

@@ -217,9 +217,9 @@ class Slot:
     A block that raised names its exception on the ended record (exception_fields)."""
 
     def __init__(self, store, run, L, own, parent, mutex, env, on_release_cmd, kind_entry,
-                 shares, log=None, gate=False):
+                 shares, gate=False):
         self.store, self.run, self.L, self.own, self.parent = store, run, L, own, parent
-        self.mutex, self.on_release_cmd, self.log, self.gate = mutex, on_release_cmd, log, gate
+        self.mutex, self.on_release_cmd, self.gate = mutex, on_release_cmd, gate
         self.nested = run is None
         self.id = parent["id"] if self.nested else run.id
         self.cores = list(parent["cores"] if self.nested else run.rec["cores"])
@@ -298,11 +298,7 @@ class Slot:
             self.offer, self.offer_bad = gbk.request_path(self.store, self.id), 0
             remove(self.offer)
             kw["env"] = dict(kw.get("env") or self.env, **{gbk.GIVE_ENV: self.offer})
-        if self.run is not None:
-            for k, v in self.run.popen_kw(self.env).items():
-                kw.setdefault(k, v)
-        else:
-            kw.setdefault("env", self.env)
+        kw.setdefault("env", self.env)
         if (WATCH_WINDOWS and kitlib.platform.NAME == "windows" and self.watch is None
                 and self.windows is None):
             self.watch_start()

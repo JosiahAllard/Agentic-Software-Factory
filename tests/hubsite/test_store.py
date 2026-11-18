@@ -157,7 +157,7 @@ class DamagedFileTest(StoreCase):
 
     def setUp(self):
         self.sleeps = []
-        patcher = mock.patch.object(store.time, 'sleep', side_effect=self.sleeps.append)
+        patcher = mock.patch('time.sleep', side_effect=self.sleeps.append)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -187,7 +187,7 @@ class DamagedFileTest(StoreCase):
         path = os.path.join(root, 'todos', 'T-001.json')
         write_file(path, '{"status": "op')
         finish = lambda _s: write_file(path, '{"status": "open", "title": "t"}')   # noqa: E731
-        with mock.patch.object(store.time, 'sleep', side_effect=finish):
+        with mock.patch('time.sleep', side_effect=finish):
             s = self.open(root)
         self.assertEqual(s.get('todos', 'T-001')['title'], 't')
         self.assertEqual(s.corrupt(), [])
@@ -334,7 +334,7 @@ class IdTest(StoreCase):
         s.close()
         for text in ('', '{"revision": 2, "coun'):
             write_file(os.path.join(self.root, store.META_NAME), text)
-            with mock.patch.object(store.time, 'sleep'):
+            with mock.patch('time.sleep'):
                 s = Store.open(self.root, clock=CLOCK)
             try:
                 self.assertEqual(s.revision, 0)

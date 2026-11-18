@@ -337,8 +337,9 @@ class DeadRecordsReaped(StoreCase):
 
         s = rm.book('engine-test', 'kit', 'pruner', cores=1, store=self.store, no_wait=True,
                     env=clean_env())
-        s.release()
+        self.addCleanup(s.release)
 
+        # gone before the release: the booking's wait removed them (run_wait.acquire)
         self.assertFalse(os.path.exists(self.store.path('ended', old + '.json')))
         self.assertFalse(os.path.exists(self.store.path('logs', old + '.log')))
         self.assertTrue(os.path.exists(self.store.path('ended', fresh + '.json')))
@@ -401,6 +402,14 @@ class FilesPruned(Case):
         self.assertFalse(self.there('background', self.DEAD + '.d'))
         for rid in (self.LIVE, self.UNREAD, self.FRESH):
             self.assertTrue(self.there('background', rid + '.d'), rid)
+
+    def test_no_background_folder_goes_when_active_cannot_be_listed(self):
+        aged(self.store.path('active'), 0)          # a plain file: listing it raises OSError
+        aged(self.store.path('background', self.DEAD + '.d'), DAY, folder=True)
+
+        self.store.prune_files()
+
+        self.assertTrue(self.there('background', self.DEAD + '.d'))
 
     def test_a_history_month_goes_history_keep_days_after_it_ended(self):
         now = lockstore.utc_now()

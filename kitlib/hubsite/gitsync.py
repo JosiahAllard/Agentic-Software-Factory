@@ -170,6 +170,7 @@ import time
 
 from kitlib import kitroot
 from kitlib.config import pmdata
+from kitlib.fs import quarantine
 from kitlib.git import cmd, refs, repo
 
 from . import store as _store
@@ -268,10 +269,14 @@ def _kit_checkout_error(root, branch, remote):
 
 
 def skipped(path):
-    """True for a store path that is never committed: the single-writer lock file and the temp
-    file of a write in flight (kitlib.hubsite.store names them `.<name>.<pid>.tmp`)."""
-    name = path.rsplit('/', 1)[-1]
-    return name == _store.LOCK_NAME or (name.startswith('.') and name.endswith(_store.TMP_SUFFIX))
+    """True for a store path that is never committed: the single-writer lock file, the temp
+    file of a write in flight (kitlib.hubsite.store names them `.<name>.<random>.tmp`) and
+    anything under `_corrupt/`, the damaged files the store set aside (the deletion of the
+    damaged document is committed; git history keeps its good copy)."""
+    parts = path.split('/')
+    name = parts[-1]
+    return (name == _store.LOCK_NAME or (name.startswith('.') and name.endswith(_store.TMP_SUFFIX))
+            or quarantine.FOLDER in parts[:-1])
 
 
 def _name_ok(value):

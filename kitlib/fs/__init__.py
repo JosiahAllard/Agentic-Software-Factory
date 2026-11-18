@@ -8,6 +8,8 @@
   target open; place_new, a file moved to a path that must not exist yet (never overwrites).
 - atomic: write_text and write_bytes, a whole file written through a unique temp file beside it
   (optionally fsynced), then replace, the temp file removed on error.
+- quarantine: all_nul, whether a file is a crash's zero-fill (every byte NUL), and quarantine,
+  such a file moved to its store's `_corrupt/` folder (never over an earlier copy); listed.
 - rmtree: rmtree_force, shutil.rmtree that also removes read-only files (git's objects), and
   plain_dir, whether a path is a folder itself (not a link or junction) before a sweep removes it.
 

@@ -12,8 +12,6 @@ tombstone's `see` chain over the entries that reader returns.
   ended(entries, by, rid)   why ruling `rid` has ended (retired or superseded), or None
   later(entries, by, rid)   every id after `rid` in its supersede and tombstone chain
 """
-import os
-
 from kitlib.ledger import fmt, read
 
 # The entry type and the reader are kitlib.ledger.read's: one reader for every consumer.
@@ -38,10 +36,11 @@ def successor(entries, rid):
 
 def read_all(config=None):
     """`({id: Entry}, None)` over every ledger file the machine config names (the frozen or
-    one-file ledger, then each repo's file: kitlib.ledger.files.readable), or `(None, why)`. A repo
-    file not written yet (missing, or no header in it) adds nothing, as files.read_views skips
-    one. `config()` gives the machine config (default kitlib.config.user.user_config); any failure
-    is a why, never a raise."""
+    one-file ledger, then each repo's file), read as list and grep read them
+    (kitlib.ledger.files.read_views): a repo file not written yet (missing, or no header in it)
+    adds nothing; the frozen or one-file ledger must be read and hold a header, else `(None,
+    why)`. `config()` gives the machine config (default kitlib.config.user.user_config); any
+    failure is a why, never a raise."""
     from kitlib.ledger import files as lfiles
     try:
         if config is None:
@@ -49,14 +48,15 @@ def read_all(config=None):
         found = lfiles.of_config(config())
         if found is None:
             return None, 'no ledger_path or ledger_dir'
+        texts, why = lfiles.read_views(found, None)
+        if texts is None:
+            return None, why
         out = {}
-        for repo, path in lfiles.readable(found):
-            if repo is not None and not os.path.exists(path):
-                continue
-            text, why = read.read_file(path)
-            if text is None:
-                return None, why
-            out.update((e.id, e) for e in read.parse(text))
+        for i, text in enumerate(texts):
+            got = read.parse(text)
+            if not got and i == 0 and found.frozen:
+                return None, '%s holds no `## R-nnnn` header' % found.frozen
+            out.update((e.id, e) for e in got)
         return out, None
     except Exception as exc:            # noqa: BLE001 - any failure is the one note line
         return None, '%s: %s' % (type(exc).__name__, ' '.join(str(exc).split()))

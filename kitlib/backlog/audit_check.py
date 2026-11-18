@@ -301,7 +301,7 @@ def hub_answers(docs):
     return out
 
 
-def _when(at):
+def answer_time(at):
     """The aware datetime of an answer time, or None when it is not one."""
     try:
         when = datetime.datetime.fromisoformat(at)
@@ -316,9 +316,9 @@ def held(answers, qid, rid, at):
     only the newer `at` (docs/backlog.md "Audit log", Known limits)."""
     if (qid, rid, at) in answers:
         return True
-    when = _when(at)
+    when = answer_time(at)
     return when is not None and any(
-        q == qid and r == rid and _when(a) is not None and _when(a) > when
+        q == qid and r == rid and answer_time(a) is not None and answer_time(a) > when
         for q, r, a in answers)
 
 

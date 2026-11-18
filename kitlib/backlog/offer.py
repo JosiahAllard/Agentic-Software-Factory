@@ -4,7 +4,6 @@ Every record lands in exactly one bucket, and the banner refuses to print a part
 not add up. The offer is a greedy fill down the rank order: scopes of live pulls are occupied
 first, and a comparison that cannot be decided is a collision, never a clearance.
 """
-import datetime
 import re
 
 from kitlib.git import cmd, refs
@@ -748,12 +747,11 @@ HUB_NOTE = 'releasable: hub not read (%s); Q-/T- holds not checked'
 
 
 def _epoch(at):
-    """The epoch of a hub time (ISO 8601 with its offset), or None when it is not one."""
-    try:
-        when = datetime.datetime.fromisoformat(at)
-    except (TypeError, ValueError):
-        return None
-    return when.timestamp() if when.tzinfo is not None else None
+    """The epoch of a hub time (ISO 8601 with its offset; audit_check.answer_time), or None when
+    it is not one."""
+    from .audit_check import answer_time          # audit_check imports the store modules
+    when = answer_time(at)
+    return when.timestamp() if when is not None else None
 
 
 def _ended_at(coll, doc):

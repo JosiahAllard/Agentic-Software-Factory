@@ -248,8 +248,13 @@ def releasable(rec, status, closed):
 
 # --- stale deliberate holds (`next`, `list --blocked`) --------------------------------------------
 
-def _day(epoch):
-    return datetime.datetime.fromtimestamp(epoch).date().isoformat()
+def _local(epoch):
+    """The local datetime of an epoch, or None when the platform cannot give one (a time before
+    1970 on Windows, one out of range): no time, so no flag."""
+    try:
+        return datetime.datetime.fromtimestamp(epoch)
+    except (OSError, OverflowError, ValueError):
+        return None
 
 
 def stale(note, hub, held_since, ruling):
@@ -284,13 +289,13 @@ def stale(note, hub, held_since, ruling):
         status, end = got
         if status not in (ANSWERED if cid.startswith('Q-') else ('done',)):
             continue
-        day = _day(end)
-        if day < note.date:
+        ended = _local(end)
+        if ended is None or ended.date().isoformat() < note.date:
             continue
-        if day == note.date:
+        if ended.date().isoformat() == note.date:
             at = written()
-            if at is None or _day(at) != note.date or end <= at:
+            held = _local(at) if at is not None else None
+            if held is None or held.date().isoformat() != note.date or end <= at:
                 continue
-        out.append((cid, '%s %s' % (
-            status, datetime.datetime.fromtimestamp(end).strftime('%Y-%m-%d %H:%M'))))
+        out.append((cid, '%s %s' % (status, ended.strftime('%Y-%m-%d %H:%M'))))
     return out

@@ -5,8 +5,9 @@ digest feed `list` in kitlib.ledger, and kitlib.backlog.ledger, which re-exports
 A header is read leniently, `## <id> | <when> | <repo> | <kind>` (the id R-nnnn or H-<repo>-nnnn,
 kitlib.ledger.fmt.ID); `strict` says it also has the
 form the writer produces (kitlib.ledger.fmt, docs/ledger.md "Format"). Beneath a header only the
-`Decides:` line and the last non-blank line are read. A last line `Items: A, B` names records; no
-such line, or a malformed one, names nobody. A tombstone (`Retired: <class> - <why> (see <id>|-)` as
+`Decides:` line, the `Supersedes:` line (with its continuation lines; its ids by
+kitlib.ledger.fmt.supersedes_ids) and the last non-blank line are read. A last line `Items: A, B`
+names records; no such line, or a malformed one, names nobody. A tombstone (`Retired: <class> - <why> (see <id>|-)` as
 the whole body) has `retired` set to `(class, successor)`. Pure over text, except `read_file`,
 which runs the ledger's path checks first (kitlib.ledger.safepath).
 """
@@ -15,7 +16,7 @@ import re
 
 from . import safepath
 
-from .fmt import ID
+from .fmt import ID, supersedes_ids
 
 HEADER_RE = re.compile(r'^## (%s) \|([^|]*)\|([^|]*)\|(.*)$' % ID)
 STRICT_RE = re.compile(r'^## (%s) \| (\d{4}-\d{2}-\d{2}) \d{2}:\d{2}Z \| ([^|]*) \| ([a-z-]+)\s*$' % ID)
@@ -25,8 +26,10 @@ TOMBSTONE_RE = re.compile(r'^Retired: (spent|superseded|duplicate) - (.+) \(see 
 
 # id, date (the day when strict, else the raw when-field), repo and kind (stripped, lower-case),
 # decides (None: no line), items (tuple or None), malformed (the bad Items line or None), retired
-# ((class, successor) or None), strict, dead (any `Retired:` line under the header).
-Entry = collections.namedtuple('Entry', 'id date repo kind decides items malformed retired strict dead')
+# ((class, successor) or None), strict, dead (any `Retired:` line under the header), supersedes
+# (the ids its `Supersedes:` line names; () for none or `-`).
+Entry = collections.namedtuple('Entry', 'id date repo kind decides items malformed retired strict dead '
+                               'supersedes', defaults=((),))
 
 
 def items_of(last):
@@ -53,22 +56,29 @@ def parse(text):
                 items, bad = items_of(last)
                 out.append(Entry(cur['id'], cur['date'], cur['repo'], cur['kind'], cur['decides'],
                                  items, bad, tomb.group(1, 3) if tomb else None, cur['strict'],
-                                 cur['dead']))
+                                 cur['dead'], tuple(supersedes_ids(cur['supersedes']))))
             m = HEADER_RE.match(line)
             if m:
                 s = STRICT_RE.match(line)
                 cur = {'id': m.group(1), 'date': s.group(2) if s else m.group(2).strip(),
                        'repo': m.group(3).strip().lower(), 'kind': m.group(4).strip().lower(),
-                       'strict': bool(s), 'decides': None, 'dead': False, 'last': None, 'body': 0}
+                       'strict': bool(s), 'decides': None, 'dead': False, 'last': None, 'body': 0,
+                       'supersedes': '', 'field': None}
             else:
                 cur = None
         elif cur is not None and line.strip():
             cur['last'] = line
             cur['body'] += 1
+            if line.startswith('  ') and cur['field'] == 'Supersedes':
+                cur['supersedes'] += '\n' + line
+                continue
+            cur['field'] = line.partition(':')[0]
             if line.startswith('Retired:'):
                 cur['dead'] = True
             elif line.startswith('Decides:'):
                 cur['decides'] = line[len('Decides:'):].strip()
+            elif line.startswith('Supersedes:'):
+                cur['supersedes'] = line[len('Supersedes:'):]
     return out
 
 

@@ -36,6 +36,14 @@ HEAD_RE = re.compile(r'^## (%s) \| (\d{4}-\d{2}-\d{2} \d{2}:\d{2}Z) \| ([a-z0-9-
 RETIRE_CLASSES = ('spent', 'superseded', 'duplicate')
 TOMBSTONE_RE = re.compile(r'^Retired: (spent|superseded|duplicate) - (.+) \(see (%s|-)\)$' % ID)
 RID_RE = re.compile(r'\b%s\b' % ID)
+
+
+def supersedes_ids(value):
+    """The ruling ids a `Supersedes:` value names (any number, continuation lines included), in
+    order; none for `-`. The one reading of that field: the validator, kitlib.ledger.read and
+    kitlib.delegations.run take it from here."""
+    return RID_RE.findall(value or '')
+
 # A hub approval as a delegated entry's anchor, `under hub:A-nnn` (docs/delegations.md "Hub
 # approvals"): the owner's signed approval on the hub is the anchor, so no owner entry is needed.
 # The id exactly as the hub issues it (kitlib.ownerfiles.rules.APPROVAL_RE). No group.
@@ -207,7 +215,7 @@ def validate(text, repos=None, repo=None, others=()):
             elif not _owner_before(m.group(1), rid, parsed, elsewhere):
                 errs.append('%s: delegated under %s, which is not an earlier owner entry' % (rid, m.group(1)))
         if e.get('Supersedes', '-') != '-':
-            for ref in RID_RE.findall(e['Supersedes']):
+            for ref in supersedes_ids(e['Supersedes']):
                 if ref in known and num(ref) < num(rid):
                     continue
                 if repo is not None and repo_of(ref) is None and ref in elsewhere:

@@ -742,10 +742,31 @@ def is_broad(member):
     return member.lower().endswith('.md') and not any(c in member for c in smod.WILDCARD_CHARS)
 
 
+# The one line `next` prints when the hub cannot be read (releasable and stale holds share it).
+HUB_NOTE = 'releasable: hub not read (%s); Q-/T- holds not checked'
+
+
+def _epoch(at):
+    """The epoch of a hub time (ISO 8601 with its offset; audit_check.answer_time), or None when
+    it is not one."""
+    from .audit_check import answer_time          # audit_check imports the store modules
+    when = answer_time(at)
+    return when.timestamp() if when is not None else None
+
+
+def _ended_at(coll, doc):
+    """When a hub document ended, as its own field says: a question's answer time (else when it
+    was marked done), a to-do's done_at. None when it says none."""
+    answer = doc.get('answer') if coll == 'questions' else None
+    at = answer.get('at') if isinstance(answer, dict) else None
+    return _epoch(at or doc.get('done_at'))
+
+
 def hub_statuses(listing=None, timeout=HUB_TIMEOUT_S):
-    """`({hub id: status}, None)` of every hub question and to-do on this machine, read with the
-    agent token (read only); `(None, why)` on any failure, never a raise. `listing(collection)`
-    gives a collection's documents (default: the hub client, `timeout` seconds a call)."""
+    """`({hub id: (status, end epoch or None)}, None)` of every hub question and to-do on this
+    machine (_ended_at), read with the agent token (read only); `(None, why)` on any failure,
+    never a raise. `listing(collection)` gives a collection's documents (default: the hub client,
+    `timeout` seconds a call)."""
     try:
         if listing is None:
             from kitlib.hubclient import client, settings
@@ -757,7 +778,7 @@ def hub_statuses(listing=None, timeout=HUB_TIMEOUT_S):
         for coll in ('questions', 'todos'):
             for doc in listing(coll) or ():
                 if isinstance(doc, dict) and isinstance(doc.get('status'), str):
-                    out[str(doc.get('id'))] = doc['status']
+                    out[str(doc.get('id'))] = (doc['status'], _ended_at(coll, doc))
         return out, None
     except Exception as exc:            # noqa: BLE001 - any failure is the one note line
         return None, '%s: %s' % (type(exc).__name__, ' '.join(str(exc).split()))
@@ -788,11 +809,24 @@ def cites_hub(recs):
     return any(cmod.cited_ids(' '.join(r.all('until'))) for r in recs)
 
 
+def hub_once(read=None):
+    """A `hub()` that asks `read()` (default hub_statuses) at most once, so releasable_holds and
+    stale_holds in one `next` share one hub read."""
+    got = []
+
+    def hub():
+        if not got:
+            got.append((read or hub_statuses)())
+        return got[0]
+    return hub
+
+
 def releasable_holds(snap, session, history, hub=None):
     """`([(rec, RELEASABLE line)], note)`: the held records of `session` whose cited end is met
-    (conditions.releasable). `hub()` -> `(statuses, why)` (default `hub_statuses`) is asked only
-    when one of them cites a hub id; a hub that cannot be read gives the one `note` line, and
-    then only `item:` ends are judged. `history(rid)` is the store's (Context.history)."""
+    (conditions.releasable). `hub()` -> `(items, why)` (default `hub_statuses`) is asked only
+    when one of them cites a hub id; a hub that cannot be read gives the one `note` line
+    (HUB_NOTE), and then only `item:` ends are judged. `history(rid)` is the store's
+    (Context.history)."""
     from . import conditions as cmod
     held = held_of(snap, session)
     if not held:
@@ -801,14 +835,15 @@ def releasable_holds(snap, session, history, hub=None):
     if cites_hub(held):
         statuses, why = (hub or hub_statuses)()
         if statuses is None:
-            statuses, note = {}, 'releasable: hub not read (%s); Q-/T- holds not checked' % why
+            statuses, note = {}, HUB_NOTE % why
     closed, ended = closed_reader(snap, history), ended_reader(snap, history)
     ranks = ranked(snap)
     out = []
     for rec in held:
         restore = _restore(rec, ended, snap.rules)
         merged = False
-        for member, why, reason in cmod.releasable(rec, statuses.get, closed):
+        for member, why, reason in cmod.releasable(rec, lambda i: (statuses.get(i) or (None,))[0],
+                                                   closed):
             rank = rank_label(rec, ranks)
             if restore and not merged and member in ['item:%s' % o for o in restore[0]]:
                 merged = True
@@ -818,6 +853,76 @@ def releasable_holds(snap, session, history, hub=None):
                 continue
             out.append((rec, releasable_line(rec, rank, member, why, reason)))
     return out, note
+
+
+# --- stale deliberate holds (`next`, `list --blocked`) --------------------------------------------
+
+LEDGER_NOTE = 'stale holds: ledger not read (%s); R- cites not checked'
+
+
+def held_records(snap, session=None):
+    """The held records `next` judges for stale holds: `session`'s under `--session`, every held
+    record without one (as `list --blocked` lists them)."""
+    return sorted((r for r in snap.records if r.readable and classify(r)[0] == HELD
+                   and (session is None or r.get('session') == session)), key=lambda r: r.id)
+
+
+def stale_holds(recs, hub, held_since, ledger=None):
+    """`({rid: [(id, why)]}, notes)`: for each record of `recs` held on `deliberate` with no
+    `until` (record.deliberate_note), the ids its note cites that have ended since the hold was
+    written (conditions.stale). Flagged, never released.
+
+    `hub()` -> `(items, why)` (hub_once) is asked only when a note cites a Q- or T- id, and the
+    ledger (`ledger()` -> `(entries, why)`, default kitlib.backlog.ledger.read_all) only when one
+    cites an R- id: one read each, whatever the count of records. `held_since(rid, members)` is the
+    epoch of the store commit that wrote the note (Store.blocked_at), asked only for an id that
+    ended on the note's own day; a Failure there is no time, so no flag. A source that cannot be
+    read flags nothing it would have told and gives one note line (HUB_NOTE, LEDGER_NOTE)."""
+    from . import conditions as cmod
+    from . import ledger as lmod
+    from .errors import Failure
+    cands = [(r, n) for r, n in ((r, rmod.deliberate_note(r)) for r in recs) if n and n.ids]
+    notes, items, entries, by = [], {}, None, {}
+    if any(not i.startswith('R-') for _r, n in cands for i in n.ids):
+        items, why = hub()
+        if items is None:
+            items = {}
+            notes.append(HUB_NOTE % why)
+    if any(i.startswith('R-') for _r, n in cands for i in n.ids):
+        entries, why = (ledger or lmod.read_all)()
+        if entries is None:
+            notes.append(LEDGER_NOTE % why)
+        else:
+            by = lmod.superseded_by(entries)
+    out = {}
+    for rec, note in cands:
+        named = set(lmod.ruling_ids(note.reason))
+
+        def ruling(rid, named=named):
+            if entries is None or named & lmod.later(entries, by, rid):
+                return None
+            return lmod.ended(entries, by, rid)
+
+        def since(rec=rec, note=note):
+            try:
+                return held_since(rec.id, note.members)
+            except Failure:
+                return None
+        found = cmod.stale(note, items.get, since, ruling)
+        if found:
+            out[rec.id] = found
+    return out, notes
+
+
+def stale_text(found):
+    """`stale hold: <id> ended (<why>)[, ...]`: what a stale hold's line and row say."""
+    return 'stale hold: ' + ', '.join('%s ended (%s)' % f for f in found)
+
+
+def stale_line(rec, rank, found):
+    """`next`'s STALE HOLD line: what ended, and what to do (flagged, never released)."""
+    return ('STALE HOLD %s (rank %s): %s -> unblock %s --on deliberate, or block it again citing '
+            'what holds it now' % (rec.id, rank, stale_text(found), rec.id))
 
 
 def ended_reader(snap, history):

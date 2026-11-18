@@ -36,11 +36,15 @@ skips one.
                             the blocked_on members of `rec` whose `until` end is already met
                             (`next`'s RELEASABLE lines; docs/backlog.md
                             "next: a short offer's causes")
+  stale(note, hub, held_since, ruling)
+                            the ids a `deliberate` hold's note cites that ended since the hold
+                            was written (`next`'s STALE HOLD lines, `list --blocked`)
 
 Nothing here reads a file, a store or the hub: evaluate and releasable ask the readers they are
 given.
 """
 import collections
+import datetime
 import os
 import re
 
@@ -239,4 +243,59 @@ def releasable(rec, status, closed):
         if ids and all(_met(i, status) for i in ids):
             shown = ', '.join(_shown(i, status) for i in ids)
             out.append((member, '%s cites %s' % (member, shown), shown))
+    return out
+
+
+# --- stale deliberate holds (`next`, `list --blocked`) --------------------------------------------
+
+def _local(epoch):
+    """The local datetime of an epoch, or None when the platform cannot give one (a time before
+    1970 on Windows, one out of range): no time, so no flag."""
+    try:
+        return datetime.datetime.fromtimestamp(epoch)
+    except (OSError, OverflowError, ValueError):
+        return None
+
+
+def stale(note, hub, held_since, ruling):
+    """`[(id, why)]`: the ids `note` (record.deliberate_note, a `deliberate` hold with no `until`)
+    cites that have ended since the hold was written, in its order. Flagged only, never released:
+    the hold's reason may still stand under another id.
+
+      Q-n, T-n  `hub(id)` -> `(status, end epoch or None)`, or None (not on the hub, or the hub
+                was not read: not judged). A question ends answered, filed, logged or done
+                (ANSWERED), a to-do done; its end must be after the hold was written: on a later
+                local day than the note's date, or on that day after `held_since()` (the epoch of
+                the store commit that wrote the note, or None: not judged). An end before the hold
+                is the ground it rests on (a "Defer" answer), never its end.
+      R-n       `ruling(id)` -> why it ended (retired, superseded) or None (live, unknown, the
+                ledger not read, or the note names a later id of its chain).
+    """
+    out, since = [], []
+
+    def written():
+        if not since:
+            since.append(held_since())
+        return since[0]
+    for cid in note.ids:
+        if cid.startswith('R-'):
+            why = ruling(cid)
+            if why:
+                out.append((cid, why))
+            continue
+        got = hub(cid)
+        if got is None or got[1] is None:
+            continue
+        status, end = got
+        if status not in (ANSWERED if cid.startswith('Q-') else ('done',)):
+            continue
+        ended = _local(end)
+        if ended is None or ended.date().isoformat() < note.date:
+            continue
+        if ended.date().isoformat() == note.date:
+            at = written()
+            held = _local(at) if at is not None else None
+            if held is None or held.date().isoformat() != note.date or end <= at:
+                continue
+        out.append((cid, '%s %s' % (status, ended.strftime('%Y-%m-%d %H:%M'))))
     return out

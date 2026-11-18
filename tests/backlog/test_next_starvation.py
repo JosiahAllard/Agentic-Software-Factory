@@ -3,6 +3,7 @@ cited hub id or `item:` blocker is already met is a RELEASABLE line with its `un
 passed over on a broad scope member (`x/**`, a literal `.md`) colliding with a live pull is a
 NARROW line naming what that pull's branch actually changed there; a `counts:` line closes it. The
 hub is read with a short timeout and any failure is one note line, never a traceback."""
+import datetime
 import os
 import shutil
 import tempfile
@@ -14,6 +15,7 @@ from kitlib.backlog import offer as omod
 from kitlib.backlog import record as rmod
 from kitlib.backlog import store as smod
 from kitlib.backlog import store_ref
+from kitlib.ledger import read as lread
 
 from tests.backlog import test_cli
 from tests.backlog.helpers import TODAY, priced, rec, record_text
@@ -104,7 +106,7 @@ class ReleasableHolds(unittest.TestCase):
         s = snap(owner_held('AAA', 'Q-5 first', until='owner question:Q-5 answered'),
                  priced('BBB'))
         out, note = omod.releasable_holds(s, None, lambda rid: None,
-                                          hub=lambda: ({'Q-5': 'answered'}, None))
+                                          hub=lambda: ({'Q-5': ('answered', None)}, None))
         self.assertIsNone(note)
         self.assertEqual([line for _, line in out], [
             'RELEASABLE AAA (rank 1): owner cites Q-5 answered -> the PM\'s (unblock-owner): '
@@ -137,10 +139,155 @@ class ReleasableHolds(unittest.TestCase):
         self.assertEqual(omod.hub_statuses(listing=boom), (None, 'TimeoutError: timed out'))
 
     def test_hub_statuses_reads_questions_and_todos(self):
-        docs = {'questions': [{'id': 'Q-1', 'status': 'answered'}, 'junk'],
-                'todos': [{'id': 'T-2', 'status': 'done'}, {'id': 'T-3'}]}
+        # each with its end time, as its own field says: a question's answer.at (else done_at), a
+        # to-do's done_at; a time with no offset, or none, is None
+        docs = {'questions': [{'id': 'Q-1', 'status': 'answered',
+                               'answer': {'at': '2026-11-16T10:06:00+01:00'}},
+                              {'id': 'Q-4', 'status': 'done', 'done_at': '2026-11-16T10:06:00'},
+                              'junk'],
+                'todos': [{'id': 'T-2', 'status': 'done', 'done_at': '2026-11-16T09:06:00+00:00'},
+                          {'id': 'T-3'}]}
         self.assertEqual(omod.hub_statuses(listing=docs.get),
-                         ({'Q-1': 'answered', 'T-2': 'done'}, None))
+                         ({'Q-1': ('answered', 1794819960.0), 'Q-4': ('done', None),
+                           'T-2': ('done', 1794819960.0)}, None))
+
+
+def local(text):
+    """The epoch of a local wall-clock time."""
+    return datetime.datetime.fromisoformat(text).timestamp()
+
+
+def deliberate(rid, reason, day='2026-11-16', body=None, **over):
+    """A record held on `deliberate` by `block --reason` on `day`: its `Blocked on` note."""
+    return rec(rid, priority='2', priority_by='agent', state='blocked', blocked_on='deliberate',
+               body=body or 'Blocked on deliberate (%s): %s' % (day, reason), **over)
+
+
+LEDGER = """## R-9197 | 2026-11-01 08:00Z | alpha | typed
+Q: q
+A: a
+Decides: Widget records wait.
+Source: s
+Supersedes: -
+
+## R-9204 | 2026-11-12 08:00Z | alpha | typed
+Q: q
+A: a
+Decides: The widget-holds rule.
+Source: s
+Supersedes: R-9197
+
+## R-9201 | 2026-11-02 08:00Z | alpha | typed
+Retired: spent - done (see -)
+
+## R-9202 | 2026-11-02 08:00Z | alpha | typed
+Q: q
+A: a
+Decides: Still live.
+Source: s
+Supersedes: -
+"""
+
+
+class StaleHolds(unittest.TestCase):
+    """A `deliberate` hold with no `until` whose note cites an id that has ended since the hold
+    was written is flagged `stale hold: <id> ended`, never released (offer.stale_holds)."""
+
+    def judge(self, *records, hub=None, since=None, ledger=LEDGER):
+        s = snap(*records)
+        got = omod.stale_holds(
+            omod.held_records(s), lambda: (hub, None) if hub is not None else
+            (None, 'TimeoutError: timed out'),
+            since or mock.Mock(side_effect=AssertionError('hold time read')),
+            ledger=lambda: ({e.id: e for e in lread.parse(ledger)}, None) if ledger else
+            (None, 'no ledger_path or ledger_dir'))
+        return got
+
+    def test_a_question_ended_on_a_later_day_is_stale_without_reading_the_hold_time(self):
+        found, notes = self.judge(deliberate('NODE', 'Q-2289: the WSL runtime choice'),
+                                  hub={'Q-2289': ('done', local('2026-11-17T10:06'))})
+        self.assertEqual((found, notes),
+                         ({'NODE': [('Q-2289', 'done 2026-11-17 10:06')]}, []))
+        self.assertEqual(omod.stale_line(snap(deliberate('NODE', 'Q-2289')).get('NODE'), 3,
+                                         found['NODE']),
+                         'STALE HOLD NODE (rank 3): stale hold: Q-2289 ended (done 2026-11-17 '
+                         '10:06) -> unblock NODE --on deliberate, or block it again citing what '
+                         'holds it now')
+
+    def test_on_the_notes_day_the_end_must_come_after_the_block_commit(self):
+        hold = deliberate('NODE', 'Q-2289: the WSL runtime choice')
+        hub = {'Q-2289': ('answered', local('2026-11-16T10:06'))}
+        asked = []
+
+        def since(rid, members):
+            asked.append((rid, members))
+            return local(at)
+        at = '2026-11-16T09:00'          # held at 09:00, answered at 10:06: ended since
+        self.assertEqual(self.judge(hold, hub=hub, since=since)[0],
+                         {'NODE': [('Q-2289', 'answered 2026-11-16 10:06')]})
+        self.assertEqual(asked, [('NODE', 'deliberate')])
+        at = '2026-11-16T11:00'          # answered before the hold: the ground it rests on
+        self.assertEqual(self.judge(hold, hub=hub, since=since)[0], {})
+        # no block commit that day (a later same-day block on another member, a store that
+        # commits nothing): no time, no flag
+        self.assertEqual(self.judge(hold, hub=hub, since=lambda rid, m: None)[0], {})
+
+    def test_an_end_before_the_notes_day_or_an_open_ask_is_not_stale(self):
+        hold = deliberate('NODE', 'Q-2289 and T-0400 first')
+        self.assertEqual(self.judge(hold, hub={
+            'Q-2289': ('answered', local('2026-11-15T10:06')),
+            'T-0400': ('open', None)})[0], {})
+
+    def test_a_hub_that_cannot_be_read_flags_nothing_and_is_one_note(self):
+        found, notes = self.judge(deliberate('NODE', 'Q-2289 first'))
+        self.assertEqual((found, notes), ({}, [
+            'releasable: hub not read (TimeoutError: timed out); Q-/T- holds not checked']))
+
+    def test_a_superseded_or_retired_ruling_is_stale(self):
+        found, notes = self.judge(deliberate('CMB', 'R-9197: widget waits'),
+                                  deliberate('OLD', 'R-9201 and R-9202'),
+                                  deliberate('LIVE', 'R-9202'))
+        self.assertEqual((found, notes), ({'CMB': [('R-9197', 'superseded by R-9204')],
+                                           'OLD': [('R-9201', 'retired: spent')]}, []))
+
+    def test_a_ruling_re_cited_with_its_successor_is_not_stale(self):
+        found, _ = self.judge(deliberate('CMB', 'R-9197, now R-9204: widget waits'))
+        self.assertEqual(found, {})
+
+    def test_a_ledger_that_cannot_be_read_flags_nothing_and_is_one_note(self):
+        found, notes = self.judge(deliberate('CMB', 'R-9197'), ledger=None)
+        self.assertEqual((found, notes), ({}, [
+            'stale holds: ledger not read (no ledger_path or ledger_dir); R- cites not checked']))
+
+    def test_only_a_deliberate_hold_with_no_until_and_a_live_note_is_judged(self):
+        # an `until` states the end (RELEASABLE's); an `Unblocked (` line after the note ended its
+        # wait; an owner hold's ask clears it itself; no note (set by hand): nothing to read
+        hub = mock.Mock(side_effect=AssertionError('hub read'))
+        s = snap(deliberate('UNTIL', 'Q-2289', until='deliberate question:Q-2289 answered'),
+                 deliberate('ENDED', '', body='Blocked on deliberate (2026-11-16): Q-2289\n'
+                            'Unblocked (2026-11-17): pull by kit/x restored.'),
+                 owner_held('OWN', 'Q-2289 first'),
+                 deliberate('BARE', '', body='notes'))
+        self.assertEqual(omod.stale_holds(omod.held_records(s), hub, None), ({}, []))
+
+    def test_the_note_head_follows_a_stopped_pull_line_and_names_several_members(self):
+        body = ('Stopped on branch kit/x at abc1234567, branch kept.\n'
+                'Blocked on deliberate, item:FOO (2026-11-16): Q-2289 first')
+        note = rmod.deliberate_note(snap(deliberate('NODE', '', body=body)).get('NODE'))
+        self.assertEqual(note, rmod.DeliberateNote('2026-11-16', 'deliberate, item:FOO',
+                                                   'Q-2289 first', ['Q-2289']))
+
+    def test_an_end_time_the_platform_cannot_place_flags_nothing(self):
+        # fromtimestamp raises on a time out of range (before 1970 on Windows): fail closed
+        found, notes = self.judge(deliberate('NODE', 'Q-2289 first'),
+                                  hub={'Q-2289': ('answered', 1e20)})
+        self.assertEqual((found, notes), ({}, []))
+
+    def test_under_a_session_only_its_held_records_are_judged(self):
+        s = snap(deliberate('MINE', 'Q-2289', session='kit'),
+                 deliberate('THEIRS', 'Q-2289', session='other'), deliberate('NONE', 'Q-2289'))
+        self.assertEqual([r.id for r in omod.held_records(s, 'kit')], ['MINE'])
+        self.assertEqual([r.id for r in omod.held_records(s)], ['MINE', 'NONE', 'THEIRS'])
 
 
 class Broad(unittest.TestCase):
@@ -350,6 +497,76 @@ class NextCli(unittest.TestCase):
         self.assertIn('NEXT (1 offered)', out)
         self.assertIn('BBB', out)
         self.assertIn('| 0 releasable |', out)
+
+    def ledger(self, text):
+        from tests import home
+        path = os.path.join(self.home, 'rulings.md')
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(text)
+        home.machine_config(self.home, {'ledger_path': path}, case=self)
+        # the tool runs under self.env alone: give it the PM-repo pointer machine_config set
+        self.env[home.PM_REPO_FENCE_ENV] = os.environ[home.PM_REPO_FENCE_ENV]
+
+    def test_a_stale_deliberate_hold_is_flagged_in_next_all_and_list_blocked(self):
+        def held(rid, reason):
+            return record_text(id=rid, priority='2', priority_by='agent', state='blocked',
+                               blocked_on='deliberate', scope='a/%s.py' % rid.lower(),
+                               body='Blocked on deliberate (2026-11-10): %s' % reason)
+        self.publish({'DONE': held('DONE', 'Q-2289: the WSL runtime choice'),
+                      'OPEN': held('OPEN', 'Q-2290: still asked'),
+                      'CMB': held('CMB', 'R-9197: widget waits'),
+                      'BBB': record_text(id='BBB', priority='3', priority_by='agent',
+                                         scope='a/bbb.py')})
+        self.hub(_Hub({'questions': [
+            {'id': 'Q-2289', 'status': 'done', 'done_at': '2026-11-12T10:06:00+00:00'},
+            {'id': 'Q-2290', 'status': 'open'}]}))
+        self.ledger(LEDGER)
+        out = self.ok('next', '--all')
+        self.assertIn('STALE HOLD DONE (rank 2): stale hold: Q-2289 ended (done ', out)
+        self.assertIn('STALE HOLD CMB (rank 1): stale hold: R-9197 ended (superseded by R-9204) '
+                      '-> unblock CMB --on deliberate, or block it again citing what holds it '
+                      'now', out)
+        self.assertNotIn('STALE HOLD OPEN', out)
+        self.assertIn(' | 2 stale', out.splitlines()[-1])
+        rows = {line.split()[1]: line for line in self.ok('list', '--blocked').splitlines()
+                if line[:4].strip().isdigit() or line.startswith('   ')}
+        self.assertIn('[stale hold: Q-2289 ended (done ', rows['DONE'])
+        self.assertTrue(rows['CMB'].endswith('[deliberate]  [stale hold: R-9197 ended '
+                                             '(superseded by R-9204)]'), rows['CMB'])
+        self.assertTrue(rows['OPEN'].endswith('[deliberate]'), rows['OPEN'])
+
+    def test_next_under_a_session_judges_only_its_held_records(self):
+        def held(rid, session):
+            return record_text(id=rid, priority='2', priority_by='agent', state='blocked',
+                               blocked_on='deliberate', scope='a/%s.py' % rid.lower(),
+                               session=session,
+                               body='Blocked on deliberate (2026-11-10): Q-2289 first')
+        self.publish({'MINE': held('MINE', 'kit'), 'THEIRS': held('THEIRS', 'other')})
+        self.hub(_Hub({'questions': [
+            {'id': 'Q-2289', 'status': 'done', 'done_at': '2026-11-12T10:06:00+00:00'}]}))
+        out = self.ok('--session', 'kit', 'next')
+        self.assertIn('STALE HOLD MINE ', out)
+        self.assertNotIn('STALE HOLD THEIRS', out)
+        self.assertIn(' | 1 stale', out.splitlines()[-1])
+
+    def test_on_the_hold_day_the_block_commit_decides(self):
+        # the store's own block commit is the hold time: an answer after it ends the hold, one
+        # before it is the ground the hold rests on; a later block on deliberate the same day
+        # moves the hold time past the answer (the known limit: unflagged)
+        self.publish({rid: record_text(id=rid, priority='2', priority_by='agent',
+                                       scope='a/%s.py' % rid.lower()) for rid in ('AFT', 'BEF')})
+        self.ledger(LEDGER)
+        self.ok('block', 'AFT', '--on', 'deliberate', '--reason', 'Q-0300: wait for it')
+        self.ok('block', 'BEF', '--on', 'deliberate', '--reason', 'Q-0301: deferred by it')
+        now = datetime.datetime.now().astimezone()
+        self.hub(_Hub({'questions': [
+            {'id': 'Q-0300', 'status': 'answered',
+             'answer': {'at': (now + datetime.timedelta(seconds=90)).isoformat()}},
+            {'id': 'Q-0301', 'status': 'answered',
+             'answer': {'at': (now - datetime.timedelta(hours=1)).isoformat()}}]}))
+        out = self.ok('next')
+        self.assertIn('STALE HOLD AFT ', out)
+        self.assertNotIn('STALE HOLD BEF', out)
 
     def live_pull(self, worktree=True, dirty=None):
         """HOLD (broad `brain/**`) live on kit/holder, which committed brain/a.py; `worktree`

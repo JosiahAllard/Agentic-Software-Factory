@@ -195,7 +195,7 @@ def uncite_line(line, opens=True):
 
 
 # The prefix of the body line plan_block writes for `--reason`: `Blocked on M (yyyy-mm-dd): `.
-_BLOCK_HEAD = re.compile(re.escape(rmod.BLOCK_NOTE) + r'[^()]*\([0-9]{4}-[0-9]{2}-[0-9]{2}\): ')
+_BLOCK_HEAD = rmod.BLOCK_HEAD_RE
 
 
 def _uncite_text(line, opens):

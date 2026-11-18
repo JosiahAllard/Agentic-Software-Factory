@@ -221,6 +221,25 @@ def _last_closing(root, rid, rev):
     return out or None
 
 
+def _ere(text):
+    """`text` as a literal inside a git extended regex (`--grep -E`)."""
+    return ''.join('\\' + c if c in '\\^$' else '[%s]' % c if c in '.[]{}()*+?|' else c
+                   for c in text)
+
+
+def last_block(root, rev, rel, rid, members):
+    """The committer time (epoch, `%ct` as _touch_times reads it) of the newest commit reachable
+    from `rev` that wrote `<rel>/<rid>.md` under plan_block's subject `backlog: block <rid> on
+    <members>` (`members` as the `Blocked on` note writes them, `, `-joined), or None when there
+    is none. Failure when git cannot answer."""
+    pattern = '^backlog: block %s on %s(: |$)' % (_ere(rid), _ere(members))
+    out, why = cmd.run_text(['log', '-1', '--format=%ct', '-E', '--grep', pattern, rev, '--',
+                             '%s/%s.md' % (rel.replace('\\', '/'), rid)], root)
+    if out is None:
+        raise Failure('cannot read the store history: %s' % why)
+    return int(out) if out.strip().isdigit() else None
+
+
 class Removal(object):
     """The commit that deleted a record's file: short sha, strict ISO commit date, the
     `Session:` line of its message (None when it has none) and its subject."""

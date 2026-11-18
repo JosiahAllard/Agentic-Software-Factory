@@ -206,7 +206,8 @@ class DamagedFileTest(StoreCase):
                 Store.open(root)
         self.assertEqual(cm.exception.code, 'store')
         self.assertIn('L-0005.json', cm.exception.message)
-        Store.open(root).close()
+        os.remove(os.path.join(root, 'landings', 'L-0005.json'))
+        Store.open(root).close()        # the failed open released the lock
 
     def test_a_zeroed_meta_and_landing_never_give_an_id_twice(self):
         # the PM's case: _meta.json and the newest landing both zero-filled by one crash

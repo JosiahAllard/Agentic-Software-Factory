@@ -2,8 +2,8 @@
 named Win32 mutexes (flocks on Linux), plus each run's liveness mutex.
 
     active/<run>.json      a live run's record (.stop: a stop request)
-    ended/<id>.json        ended runs and holds, kept ENDED_KEEP_S
-    logs/<run>.log         a detached run's output
+    ended/<id>.json        ended runs and holds, kept settings.ended_keep_s (Store.prune_files)
+    logs/<run>.log         an older kit's detached-run output: nothing writes it now
     history/YYYY-MM.jsonl  each ended run's measured use
     queue.json             the allocation (kitlib.lock.queue)
     holds/<id>.json        owner, agent and game holds (kitlib.lock.holds)
@@ -39,6 +39,7 @@ import contextlib
 import ctypes
 import datetime
 import hashlib
+import itertools
 import json
 import os
 import re
@@ -70,6 +71,9 @@ ERROR_FILE_NOT_FOUND = 2            # OpenMutexW: no mutex of that name exists
 # SYSTEM, administrators and every signed-in user open it, at medium integrity.
 MUTEX_SDDL = "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;AU)S:(ML;;NW;;;ME)"
 ID_RE = re.compile(r"^[rh]-\d{8}T\d{6}Z-[0-9a-f]{4,6}$")
+# What one Store.prune_files removes at most (about 0.3 s on Windows): the first prune of a
+# store never pruned (30,000 ended records) is spread over bookings, never one booking's wait.
+PRUNE_MAX = 500
 
 
 class LockError(Exception):
@@ -481,6 +485,16 @@ def remove(path):
         os.remove(path)
 
 
+def _scan(folder):
+    """The entries of folder (os.scandir: on Windows each carries its file's times with no more
+    calls), up to where it can no longer be listed; none when it cannot be."""
+    try:
+        with os.scandir(folder) as it:
+            yield from it
+    except OSError:
+        return
+
+
 def public(d):
     """A record without its computed `_` keys."""
     return {k: v for k, v in d.items() if not k.startswith("_")}
@@ -831,30 +845,57 @@ class Store:
         inside it with '/' ('active/r-1.json', 'queue.json'); [] when there are none."""
         return quarantine.listed(self.path())
 
-    def prune_files(self, live_ids):
-        """Ended records and logs past ENDED_KEEP_S, history months past history_keep_days,
-        and ended background folders past bg_keep_s."""
+    def prune_files(self):
+        """Removes what has outlived its readers, at most PRUNE_MAX in one call (the rest go at
+        the next; a booking calls it, kitlib.lock.run_wait.acquire): ended/ records and logs/
+        files past settings.ended_keep_s, history months history_keep_days after their month
+        ended, and background/<id>.d folders past bg_keep_s whose id has no file in active/
+        (a live run's, read or not; none go when active/ cannot be listed). `_corrupt/` is never
+        touched. A file or folder that cannot be listed, read or removed is passed over."""
+        for path, folder in itertools.islice(self._past_keep(), PRUNE_MAX):
+            if folder:
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                remove(path)
+
+    def _past_keep(self):
+        """(path, is a folder) for each thing prune_files removes, found as it is asked for."""
         now, s = time.time(), self.settings
         for sub in ("ended", "logs"):
-            with contextlib.suppress(OSError):
-                for n in os.listdir(self.path(sub)):
-                    if now - os.path.getmtime(self.path(sub, n)) > s.ended_keep_s:
-                        remove(self.path(sub, n))
-        with contextlib.suppress(OSError, ValueError):
-            for n in os.listdir(self.path("history")):
-                m = re.fullmatch(r"(\d{4})-(\d{2})\.jsonl", n)
-                if m:
-                    y, mo = int(m.group(1)), int(m.group(2))
-                    month_end = datetime.datetime(y + mo // 12, mo % 12 + 1, 1,
-                                                  tzinfo=datetime.timezone.utc)
-                    if (utc_now() - month_end).days > s.history_keep_days:
-                        remove(self.path("history", n))
-        with contextlib.suppress(OSError):
-            for n in os.listdir(self.path("background")):
-                d = self.path("background", n)
-                if (n.endswith(".d") and n[:-2] not in live_ids and os.path.isdir(d)
-                        and now - os.path.getmtime(d) > s.bg_keep_s):
-                    shutil.rmtree(d, ignore_errors=True)
+            for e in _scan(self.path(sub)):
+                try:
+                    old = e.is_file() and now - e.stat().st_mtime > s.ended_keep_s
+                except OSError:
+                    continue
+                if old:
+                    yield e.path, False
+        for e in _scan(self.path("history")):
+            m = re.fullmatch(r"(\d{4})-(\d{2})\.jsonl", e.name)
+            if not m:
+                continue
+            y, mo = int(m.group(1)), int(m.group(2))
+            try:
+                month_end = datetime.datetime(y + mo // 12, mo % 12 + 1, 1,
+                                              tzinfo=datetime.timezone.utc)
+            except ValueError:                      # year 0000: no month of the lock's
+                continue
+            if (utc_now() - month_end).days > s.history_keep_days:
+                yield e.path, False
+        try:
+            live = {n.split(".")[0] for n in os.listdir(self.path("active"))}
+        except FileNotFoundError:
+            live = set()
+        except OSError:
+            return
+        for e in _scan(self.path("background")):
+            if not e.name.endswith(".d") or e.name[:-2] in live:
+                continue
+            try:        # the folder's own stat: a listing's time for a folder can lag on Windows
+                old = e.is_dir() and now - os.stat(e.path).st_mtime > s.bg_keep_s
+            except OSError:
+                continue
+            if old:
+                yield e.path, True
 
     # -------------------------------------------------------------- history
     HISTORY_KEYS = ("id", "repo", "slug", "kind", "need", "cores", "gpus", "expect_s",

@@ -37,7 +37,8 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
     no_wait it waits only for background runs to yield. prefer: its hold's slots. within: {pool:
     the only slots it may take} (book's within): its entry carries it (kitlib.lock.queue.plan)
     and only holds over those slots park it. After its first look at the queue it moves dead
-    runs' records to ended/ (Store.live_runs prune), whether or not it then gets its slots.
+    runs' records to ended/ (Store.live_runs prune), then removes what has outlived its readers
+    (Store.prune_files), whether or not it then gets its slots.
     Memory: with its slots free it still waits, in its place, while its need (need_mem_mb) does
     not fit the commit headroom read at that look (kitlib.lock.queue.mem_fits; exempt nested in a
     held run, or with nothing else held); its entry's mem_wait says so. Nothing is paused for it."""
@@ -241,9 +242,13 @@ def acquire(store, run, L, need, wait_s, no_wait, prefer=None, within=None):
             # in active/ whose wrapper is surely gone (Store.run_live) move to ended/, how
             # "reaped". Nothing else takes them out, and every read of the store walks them. An
             # ended record makes a later prune drop the run's entry quietly (queue.prune).
+            # Then what has outlived its readers goes (Store.prune_files): only here, after this
+            # booking's queue prune, so an ended record is still there when that prune looks.
             reaped = True
             with contextlib.suppress(OSError):
                 store.live_runs(prune=True)
+            with contextlib.suppress(OSError):
+                store.prune_files()
         if stale_at is None or time.monotonic() >= stale_at:
             # Then, and every stale_check_s while it waits: a held run whose booking sessions
             # are gone and that has held far past its guide is asked to stop (kitlib.lock.stale).

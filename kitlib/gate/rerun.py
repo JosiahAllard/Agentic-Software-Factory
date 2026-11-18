@@ -114,8 +114,9 @@ PROGRESS = re.compile(r'^(\w+) \(([\w.]+)\)(.*)$')
 COVERED_REASON = re.compile(r'^(exit \S+|missing pass pattern .*)$')
 ABSENT = re.compile(r'ModuleNotFoundError|ImportError|AttributeError: module .* has no attribute')
 # A FAIL reason of the machine's (runner.run_steps): the step did not start, or a requires_strict
-# tool is missing. A mark leaves such a step out (machine_failure).
-MACHINE_REASON = re.compile(r'^(did not start \(see its log\)|requires .+, which (is|are) missing)$')
+# requirement is unmet (a tool missing, a probe that failed: runner.unmet; only run_steps writes
+# a `requires ...` reason). A mark leaves such a step out (machine_failure).
+MACHINE_REASON = re.compile(r'^(did not start \(see its log\)|requires .+, which .+)$')
 NO_AGAIN = 'no --again'     # what a machine FAIL's lines say the tree's next plain gate needs
 
 
@@ -517,7 +518,8 @@ def _not_ok_units(text):
 
 def machine_failure(res):
     """Why the FAIL step result `res` (runner.run_steps) is the machine's, not the tree's, or
-    None: every reason is that it did not start or that a tool it requires is missing; or its log
+    None: every reason is that it did not start or that a requirement is unmet (a tool missing,
+    a probe that failed: a busy resource); or its log
     is a kit_tests report whose every unit that is not OK timed out (load on a shared machine)."""
     reasons = res.get('reasons') or []
     if reasons and all(MACHINE_REASON.match(r) for r in reasons):

@@ -255,11 +255,16 @@ KT = ['{python}', '-c', 'import os, sys; units = os.environ["UNCHANGED_KT"].spli
       'bad = ["tests.u.test_%d (%s)" % (i, s) for i, s in enumerate(units) if s != "OK"]; '
       'print("kit_tests: FAILED %d of 5 units; failed: %s" % (len(bad), ", ".join(bad))); '
       'sys.exit(1)']
-# A busy resource's strict `requires` probe (docs/gate-run.md "Steps"): it exits 1, busy, while
-# the file UNCHANGED_BUSY names exists.
-BUSY = ['{python}', '-c', 'import os, sys; '
-        'sys.exit(1 if os.path.exists(os.environ["UNCHANGED_BUSY"]) else 0)']
+# A busy resource's strict `requires` probe (docs/gate-run.md "Steps"): it says so and exits 1,
+# busy, while the file UNCHANGED_BUSY names exists.
+BUSY_LINE = 'busy: held by another run'
+BUSY = ['{python}', '-c', 'import os, sys; b = os.path.exists(os.environ["UNCHANGED_BUSY"]); '
+        'b and print(%r); sys.exit(1 if b else 0)' % BUSY_LINE]
+# A probe that prints more than a small PROBE_OUTPUT_CAP, its last line TAIL_LINE, and exits 1.
+TAIL_LINE = 'TAILEND'
+NOISY = ['{python}', '-c', 'import sys; print("x" * 50); print(%r); sys.exit(1)' % TAIL_LINE]
 NO_AGAIN = getattr(rerun, 'NO_AGAIN', 'rerun.NO_AGAIN')    # the token naming the plain re-gate
+PROBE_CUT = getattr(runner, 'PROBE_CUT', 'runner.PROBE_CUT %d')     # the cut probe output's line
 
 
 class MachineFailures(Case):
@@ -272,6 +277,10 @@ class MachineFailures(Case):
          'requires': ['kit-no-such-tool-0f3c'], 'requires_strict': True},
         {'name': 'busy', 'always': True, 'cmd': OK, 'pass': '^ok$', 'continue': True,
          'requires': [BUSY], 'requires_strict': True},
+        {'name': 'noprobe', 'always': True, 'cmd': OK, 'pass': '^ok$', 'continue': True,
+         'requires': [['kit-no-such-probe-0f3c']], 'requires_strict': True},
+        {'name': 'noisy', 'globs': ['nothing/**'], 'cmd': OK, 'pass': '^ok$', 'continue': True,
+         'requires': [NOISY], 'requires_strict': True},
         {'name': 'kt', 'always': True, 'cmd': KT, 'continue': True},
         {'name': 'unit', 'always': True, 'cmd': STATE, 'pass': '^ok$'}]}
 
@@ -295,18 +304,49 @@ class MachineFailures(Case):
                             NO_AGAIN in s for s in out.said), out.said)
         self.assertEqual(self.gate(only=only).code, G.FAILED)       # not refused: it ran
         self.assertEqual(len(self.book_calls), 2)
+        return failed
+
+    def probe_failed(self, failed, how):
+        """The one FAIL is a probe's: one reason, `requires <argv>, which <how>`, which is the
+        machine's; its log: that reason's line, then the probe's output. The log's text."""
+        reasons = failed[0]['reasons']
+        self.assertEqual(len(reasons), 1, reasons)
+        self.assertTrue(reasons[0].startswith('requires ') and
+                        reasons[0].endswith(', which %s' % how), reasons)
+        self.assertNotIn('missing', reasons[0])
+        self.assertTrue(rerun.MACHINE_REASON.match(reasons[0]), reasons)
+        with open(failed[0]['log'], encoding='utf-8') as f:
+            text = f.read()
+        self.assertTrue(text.startswith('gate: %s\n' % reasons[0]), text)
+        return text
 
     def test_a_step_that_did_not_start(self):
         self.assert_unmarked_and_runs_again(['gone'])
 
     def test_a_required_tool_missing(self):
-        self.assert_unmarked_and_runs_again(['tool'])
+        failed = self.assert_unmarked_and_runs_again(['tool'])
+        self.assertEqual(failed[0]['reasons'], ['requires kit-no-such-tool-0f3c, which is missing'])
+
+    def test_a_probe_that_could_not_start(self):
+        """Its error goes below the one-line reason."""
+        failed = self.assert_unmarked_and_runs_again(['noprobe'])
+        text = self.probe_failed(failed, 'could not start')
+        self.assertTrue(text.split('\n', 1)[1].strip(), text)
+
+    def test_a_probe_s_output_is_cut_to_its_tail(self):
+        with mock.patch.object(runner, 'PROBE_OUTPUT_CAP', 12, create=True):
+            failed = self.assert_unmarked_and_runs_again(['noisy'])
+        text = self.probe_failed(failed, 'exited 1')
+        self.assertIn(PROBE_CUT % 12, text)
+        self.assertIn(TAIL_LINE, text)
+        self.assertNotIn('x' * 20, text)
 
     def test_a_strict_probe_of_a_busy_resource(self):
         """A busy resource held by another run: its probe fails, so the step is the machine's
-        FAIL and the same tree's next plain gate runs; once the resource is free it runs the
-        step."""
-        self.assert_unmarked_and_runs_again(['busy'])
+        FAIL and the same tree's next plain gate runs; the step's log says what the probe said
+        and its exit code. Once the resource is free it runs the step."""
+        failed = self.assert_unmarked_and_runs_again(['busy'])
+        self.assertIn(BUSY_LINE, self.probe_failed(failed, 'exited 1'))
         os.remove(self.busy)
         out = self.gate(only=['busy'])
         self.assertEqual(out.code, G.OK, out.lines)
@@ -350,9 +390,11 @@ class MachineFailures(Case):
         self.assertIsNone(rerun.machine_failure(
             {'name': 'x', 'status': 'FAIL', 'log': None,
              'reasons': ['did not start (see its log)', 'exit 1']}))
-        self.assertTrue(rerun.machine_failure(
-            {'name': 'x', 'status': 'FAIL', 'log': None,
-             'reasons': ['requires a, b, which are missing']}))
+        for reason in ('requires a, b, which are missing', 'requires a -b, which exited 1',
+                       'requires a, which did not exit within %d s' % runner.PROBE_TIMEOUT):
+            with self.subTest(reason):
+                self.assertTrue(rerun.machine_failure(
+                    {'name': 'x', 'status': 'FAIL', 'log': None, 'reasons': [reason]}))
 
     def test_rerun_after_a_machine_only_red_names_the_plain_gate(self):
         """A red whole gate whose every FAIL is the machine's writes its red run but no mark:

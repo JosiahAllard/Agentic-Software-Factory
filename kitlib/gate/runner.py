@@ -18,7 +18,7 @@ A check step calls the repo hook module's GATE_CHECKS[<check>](ctx). ctx is a di
 It returns 0 or True to pass; any other int or False fails it; raising, or calling sys.exit with
 any code, fails it with the traceback in the log.
 
-A gate where no selected step PASSed, WARNed, FAILed or was REUSED (all skipped for a missing
+A gate where no selected step PASSed, WARNed, FAILed or was REUSED (all skipped for an unmet
 `requires`) is REFUSED (nothing_ran). The branch gate writes the gate-OK record
 (kitlib.records.gate_ok) for HEAD only when every selected step passed, warned, was reused or
 was skipped, no --only was given, the base is the default base, the work tree was clean (no
@@ -39,6 +39,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 
@@ -84,6 +85,8 @@ STAGING_ARGS = ('STAGING: run with their staging_args (compile only, judged by s
 NO_CHECKS = ('GATE OK (auto-detected: no stack found, so NO checks ran; give the gate steps with a '
              '"gate" section in .kit.json or tools/gate.json)')
 PROBE_TIMEOUT = 60      # seconds a `requires` probe argv or a reuse.py toolchain probe may take
+PROBE_OUTPUT_CAP = 4000     # the last bytes of a failed `requires` probe's output its log keeps
+PROBE_CUT = "gate: the probe's output is cut to its last %d bytes"
 # The one variable a cmd step gets naming its missing-inputs file (inputs_file; docs/gate-run.md
 # "Missing stored inputs"). A fixed contract: repositories' steps write to it.
 INPUTS_ENV = 'KIT_GATE_MISSING_INPUTS'
@@ -224,32 +227,56 @@ def inputs_file(log_path):
 
 
 def unmet(step, launcher):
-    """The requirements of `step` that are missing: a command name not on PATH, or a probe argv
-    that does not exit 0 within PROBE_TIMEOUT (run in the slot's job)."""
-    missing = []
+    """`[(reason, output)]`, one per unmet requirement of `step`, in run_steps' words: the command
+    names not on PATH in one `requires a, b, which are missing` (output ''), then each probe argv
+    that did not exit 0 (_probe). [] when every requirement is met."""
+    names, probes = [], []
     for r in step.requires:
         if isinstance(r, str):
             if not shutil.which(r):
-                missing.append(r)
+                names.append(r)
             continue
-        ok = False
+        got = _probe(r, step, launcher)
+        if got is not None:
+            probes.append(got)
+    if names:
+        probes.insert(0, ('requires %s, which %s missing' % (
+            ', '.join(names), 'is' if len(names) == 1 else 'are'), ''))
+    return probes
+
+
+def _probe(argv, step, launcher):
+    """None when the probe `argv` exits 0 within PROBE_TIMEOUT (run in the slot's job), else
+    `(reason, output)`: `requires <argv>, which exited <code>`, `... which did not exit within
+    <PROBE_TIMEOUT> s` (its whole tree ended) or `... which could not start` (output: the error).
+    The output is the probe's stdout and stderr, its last PROBE_OUTPUT_CAP bytes, after a
+    PROBE_CUT line when cut. A file, not a pipe: a probe that writes much never blocks on it,
+    and a child it leaves running never holds the read open."""
+    what = 'requires %s, which ' % ' '.join(argv)
+    with tempfile.TemporaryFile() as out:
         try:
-            p = launcher.start(list(r), cwd=step.cwd, stdin=subprocess.DEVNULL,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               env=child_env(launcher))
+            p = launcher.start(list(argv), cwd=step.cwd, stdin=subprocess.DEVNULL, stdout=out,
+                               stderr=subprocess.STDOUT, env=child_env(launcher))
             ctime = process.proc_ctime(p.pid)
             try:
-                ok = p.wait(PROBE_TIMEOUT) == 0
+                code = p.wait(PROBE_TIMEOUT)
+                how = None if code == 0 else 'exited %d' % code
             except subprocess.TimeoutExpired:
                 if ctime is not None:       # the probe and everything it started
                     process.kill_tree(p.pid, ctime)
                 p.kill()
                 p.wait()
-        except (OSError, JobError, LockError):
-            ok = False
-        if not ok:
-            missing.append(' '.join(r))
-    return missing
+                how = 'did not exit within %d s' % PROBE_TIMEOUT
+        except (OSError, JobError, LockError) as e:
+            return what + 'could not start', '%s: %s' % (type(e).__name__, e)
+        if how is None:
+            return None
+        size = out.seek(0, os.SEEK_END)
+        out.seek(max(0, size - PROBE_OUTPUT_CAP))
+        text = out.read().decode('utf-8', errors='replace').replace('\r\n', '\n')
+    if size > PROBE_OUTPUT_CAP:
+        text = PROBE_CUT % PROBE_OUTPUT_CAP + '\n' + text
+    return what + how, text
 
 
 def _run_cmd(step, launcher, log_path, give_back=False):
@@ -320,7 +347,7 @@ def _read(path):
 
 def run_steps(launcher, chosen, gate, ctx, log_dir, say=None, checks=None, halted=None):
     """[{name, status, reasons, seconds, log}] for `chosen` run in order with `launcher`. status:
-    PASS, WARN, SKIP (a requirement missing), FAIL, or NOT RUN (after a failure of a step that
+    PASS, WARN, SKIP (a requirement unmet), FAIL, or NOT RUN (after a failure of a step that
     does not `continue`). `halted`, asked before each step: once true no other step starts, not
     even a `continue` one, and the results so far are returned (a stop: gated, kitlib.gate.rerun)."""
     say = say or _quiet
@@ -337,10 +364,12 @@ def run_steps(launcher, chosen, gate, ctx, log_dir, say=None, checks=None, halte
         missing = unmet(step, launcher)
         if missing:
             status = 'FAIL' if step.requires_strict else 'SKIP'
-            reasons = ['requires %s, which %s missing' % (', '.join(missing),
-                                                          'is' if len(missing) == 1 else 'are')]
+            reasons = [reason for reason, _ in missing]
             with open(log_path, 'w', encoding='utf-8') as f:
-                f.write('gate: %s\n' % reasons[0])
+                for reason, output in missing:      # each reason, then what its probe said
+                    f.write('gate: %s\n%s' % (reason, output))
+                    if output and not output.endswith('\n'):
+                        f.write('\n')
         else:
             if step.check:
                 rc = _run_check(step, launcher, log_path, ctx, checks)
@@ -380,7 +409,7 @@ def verdict(results, no_checks=False):
 
 def nothing_ran(results):
     """The REFUSED line when no step PASSed, WARNed, FAILed or was REUSED, i.e. every selected
-    step was skipped for a missing `requires`; else None. A REUSED step counts though it did
+    step was skipped for an unmet `requires`; else None. A REUSED step counts though it did
     not run here: a pass of its key (its inputs, argv, cwd, program, gate config and kit files)
     is in the gate cache (kitlib.gate.reuse). So a gate whose every step is reused passes, and a
     branch rerun of that kind writes a gate-OK record for a commit on which no step ran."""

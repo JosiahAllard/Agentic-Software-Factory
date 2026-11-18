@@ -7,6 +7,7 @@ first, and a comparison that cannot be decided is a collision, never a clearance
 import re
 
 from kitlib.git import cmd, refs
+from kitlib.ledger import fmt
 
 from . import record as rmod
 from . import scope as smod
@@ -857,7 +858,7 @@ def releasable_holds(snap, session, history, hub=None):
 
 # --- stale deliberate holds (`next`, `list --blocked`) --------------------------------------------
 
-LEDGER_NOTE = 'stale holds: ledger not read (%s); R- cites not checked'
+LEDGER_NOTE = 'stale holds: ledger not read (%s); ruling cites not checked'
 
 
 def held_records(snap, session=None):
@@ -874,21 +875,21 @@ def stale_holds(recs, hub, held_since, ledger=None):
 
     `hub()` -> `(items, why)` (hub_once) is asked only when a note cites a Q- or T- id, and the
     ledger (`ledger()` -> `(entries, why)`, default kitlib.backlog.ledger.read_all) only when one
-    cites an R- id: one read each, whatever the count of records. `held_since(rid, members)` is the
-    epoch of the store commit that wrote the note (Store.blocked_at), asked only for an id that
-    ended on the note's own day; a Failure there is no time, so no flag. A source that cannot be
+    cites an R- or H- id: one read each, whatever the count of records. `held_since(rid, members)`
+    is the epoch of the store commit that wrote the note (Store.blocked_at), asked only for an id
+    that ended on the note's own day; a Failure there is no time, so no flag. A source that cannot be
     read flags nothing it would have told and gives one note line (HUB_NOTE, LEDGER_NOTE)."""
     from . import conditions as cmod
     from . import ledger as lmod
     from .errors import Failure
     cands = [(r, n) for r, n in ((r, rmod.deliberate_note(r)) for r in recs) if n and n.ids]
     notes, items, entries, by = [], {}, None, {}
-    if any(not i.startswith('R-') for _r, n in cands for i in n.ids):
+    if any(not fmt.is_id(i) for _r, n in cands for i in n.ids):
         items, why = hub()
         if items is None:
             items = {}
             notes.append(HUB_NOTE % why)
-    if any(i.startswith('R-') for _r, n in cands for i in n.ids):
+    if any(fmt.is_id(i) for _r, n in cands for i in n.ids):
         entries, why = (ledger or lmod.read_all)()
         if entries is None:
             notes.append(LEDGER_NOTE % why)

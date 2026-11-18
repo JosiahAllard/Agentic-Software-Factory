@@ -7,6 +7,8 @@ import collections
 import datetime
 import re
 
+from kitlib.ledger import fmt
+
 from . import conditions as condmod
 from . import scope as scopemod
 from .errors import Usage
@@ -78,7 +80,7 @@ def blocked_on_error(v, rules):
 # --- hold citations (a hold cites the ruling, question or item it waits on, or it is void) --------
 
 UNCITED_KINDS = ('deliberate', 'owner')     # members that name nothing they wait on
-CITE_RE = re.compile(r'(?<![A-Za-z0-9-])(?:R-[0-9]{4,}|[QTA]-[0-9]{3,}|item:[A-Za-z0-9][A-Za-z0-9.-]*)')
+CITE_RE = re.compile(r'(?<![A-Za-z0-9-])(?:' + fmt.ID + r'|[QTA]-[0-9]{3,}|item:[A-Za-z0-9][A-Za-z0-9.-]*)')
 BLOCK_NOTE = 'Blocked on '                  # the body line plan_block writes for `--reason`
 # The one pattern of that line's head, `Blocked on M[, M2] (yyyy-mm-dd): `, matched at a line's
 # start (it may follow a `Stopped on branch ...` line): the members, then the date. plan_claim
@@ -86,13 +88,13 @@ BLOCK_NOTE = 'Blocked on '                  # the body line plan_block writes fo
 BLOCK_HEAD_RE = re.compile(re.escape(BLOCK_NOTE) + r'(.+?) \((\d{4}-\d{2}-\d{2})\): ')
 # The body lines that end a block's wait (plan_claim: restore_pull, stale_stop_note, plan_release).
 HOLD_ENDED = ('Unblocked (', 'Released (')
-# deliberate_note's answer: the note's date, its members (as written), its reason and the R-, Q-
-# and T- ids the reason cites (A- ids are not judged: `next` reads no approvals).
+# deliberate_note's answer: the note's date, its members (as written), its reason and the ruling
+# (R-, H-), Q- and T- ids the reason cites (A- ids are not judged: `next` reads no approvals).
 DeliberateNote = collections.namedtuple('DeliberateNote', 'date members reason ids')
 
 
 def cites(text):
-    """The R-nnnn, Q-nnn, T-nnn, A-nnn and item:<ID> citations in `text`, in order."""
+    """The R-nnnn, H-<repo>-nnnn, Q-nnn, T-nnn, A-nnn and item:<ID> citations in `text`, in order."""
     return CITE_RE.findall(text or '')
 
 
@@ -134,14 +136,16 @@ def deliberate_note(rec):
 
 def block_citation_error(members, reason=None, owner_ask=None):
     """None, or why `block --on <members>` may not be written: a `deliberate` or `owner` member
-    names nothing it waits on, so `--reason` or `--owner-ask` must cite an R-nnnn, Q-nnn, T-nnn, A-nnn
-    or item:<ID> (an uncited hold is void; `block` takes no ruling flag, so the reason carries it)."""
+    names nothing it waits on, so `--reason` or `--owner-ask` must cite an R-nnnn, H-<repo>-nnnn,
+    Q-nnn, T-nnn, A-nnn or item:<ID> (an uncited hold is void; `block` takes no ruling flag, so the
+    reason carries it)."""
     bare = [m for m in members if m in UNCITED_KINDS]
     if not bare or cites(reason) or cites(owner_ask):
         return None
     return ('`block --on %s` cites nothing it waits on: name the ruling, question or item and its '
             'end condition in `--reason` (or `--owner-ask`), e.g. `--reason "R-nnnn: until <end '
-            'condition>"`, a Q-nnn, a T-nnn, an A-nnn or an item:<ID> (an uncited hold is void)'
+            'condition>"`, an H-<repo>-nnnn, a Q-nnn, a T-nnn, an A-nnn '
+            'or an item:<ID> (an uncited hold is void)'
             % ' --on '.join(bare))
 
 

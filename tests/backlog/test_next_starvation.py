@@ -186,6 +186,20 @@ A: a
 Decides: Still live.
 Source: s
 Supersedes: -
+
+## H-alpha-9301 | 2026-11-03 08:00Z | alpha | typed
+Q: q
+A: a
+Decides: Per-repo rule.
+Source: s
+Supersedes: -
+
+## H-alpha-9302 | 2026-11-12 08:00Z | alpha | typed
+Q: q
+A: a
+Decides: Its successor.
+Source: s
+Supersedes: H-alpha-9301
 """
 
 
@@ -246,9 +260,17 @@ class StaleHolds(unittest.TestCase):
     def test_a_superseded_or_retired_ruling_is_stale(self):
         found, notes = self.judge(deliberate('CMB', 'R-9197: widget waits'),
                                   deliberate('OLD', 'R-9201 and R-9202'),
-                                  deliberate('LIVE', 'R-9202'))
+                                  deliberate('LIVE', 'R-9202'),
+                                  deliberate('HOLD', 'H-alpha-9301: per-repo wait'),
+                                  deliberate('HLIVE', 'H-alpha-9302'))
         self.assertEqual((found, notes), ({'CMB': [('R-9197', 'superseded by R-9204')],
+                                           'HOLD': [('H-alpha-9301', 'superseded by H-alpha-9302')],
                                            'OLD': [('R-9201', 'retired: spent')]}, []))
+        # H- holds alone still send the ledger read (no R- hold asks for it)
+        found, notes = self.judge(deliberate('HOLD', 'H-alpha-9301: per-repo wait'),
+                                  deliberate('HLIVE', 'H-alpha-9302'))
+        self.assertEqual((found, notes),
+                         ({'HOLD': [('H-alpha-9301', 'superseded by H-alpha-9302')]}, []))
 
     def test_a_ruling_re_cited_with_its_successor_is_not_stale(self):
         found, _ = self.judge(deliberate('CMB', 'R-9197, now R-9204: widget waits'))
@@ -257,7 +279,7 @@ class StaleHolds(unittest.TestCase):
     def test_a_ledger_that_cannot_be_read_flags_nothing_and_is_one_note(self):
         found, notes = self.judge(deliberate('CMB', 'R-9197'), ledger=None)
         self.assertEqual((found, notes), ({}, [
-            'stale holds: ledger not read (no ledger_path or ledger_dir); R- cites not checked']))
+            'stale holds: ledger not read (no ledger_path or ledger_dir); ruling cites not checked']))
 
     def test_only_a_deliberate_hold_with_no_until_and_a_live_note_is_judged(self):
         # an `until` states the end (RELEASABLE's); an `Unblocked (` line after the note ended its

@@ -148,6 +148,9 @@ class Store(object):
     def history(self, rid, snap):
         return self.backend.history(rid, snap)
 
+    def blocked_at(self, rid, members, snap):
+        return self.backend.blocked_at(rid, members, snap)
+
     def removal(self, rid, snap):
         return self.backend.removal(rid, snap)
 

@@ -400,8 +400,8 @@ def resume_line(body):
 
 
 # plan_block's `Blocked on M (date): T` line, and the lines that end a stopped pull's wait.
-BLOCKED_NOTE_RE = re.compile(r'Blocked on .+? \((\d{4}-\d{2}-\d{2})\): ')
-_STOP_ENDED = ('Unblocked (', 'Released (')
+BLOCKED_NOTE_RE = rmod.BLOCK_HEAD_RE
+_STOP_ENDED = rmod.HOLD_ENDED
 
 
 def blocked_pull(body):

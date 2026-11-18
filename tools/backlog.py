@@ -259,7 +259,9 @@ def do_next(args, ctx, snap):
     # The repository's cap (`.kit.json` backlog.cap, plan.Context.cap): the one `pull` checks.
     cap = None if args.all else (args.cap if args.cap is not None else ctx.cap)
     b = omod.Banner(snap)
-    released, hub_note = releasable_holds(ctx, snap)
+    hub = omod.hub_once()
+    released, hub_note = releasable_holds(ctx, snap, hub)
+    stale, stale_notes = stale_holds(ctx, snap, omod.held_records(snap, ctx.session), hub)
     for line in b.lines():
         if released and line.startswith('held '):
             line += '  (%d releasable, below)' % len(set(r.id for r, _ in released))
@@ -318,10 +320,12 @@ def do_next(args, ctx, snap):
         for line in summary:
             say('    ' + line)
     # A short offer's causes (docs/backlog.md "next: a short offer's causes").
-    if hub_note:
-        say(hub_note)
+    for note in dict.fromkeys(([hub_note] if hub_note else []) + stale_notes):
+        say(note)
     for line in [line for _, line in released]:
         say(line)
+    for rid in sorted(stale):
+        say(omod.stale_line(snap.get(rid), omod.rank_label(snap.get(rid), ranks), stale[rid]))
     restores = omod.restore_lines(snap, ctx.session, ctx.history(snap))
     for line in restores:
         say(line)
@@ -333,17 +337,24 @@ def do_next(args, ctx, snap):
         say(omod.narrows_line(o))
     n, kinds = omod.pass_counts(passed)
     why = ', '.join('%d %s' % (c, k) for k, c in kinds if c)
-    say('counts: %d offered | %d pullable | %d passed over%s | %d releasable | %d narrow%s%s'
+    say('counts: %d offered | %d pullable | %d passed over%s | %d releasable | %d narrow%s%s%s'
         % (len(offers), b.count(omod.PULLABLE), n, ' (%s)' % why if why else '',
            len(released), len(narrow), ' | %d narrows' % len(narrows) if narrows else '',
-           ' | %d restore' % len(restores) if restores else ''))
+           ' | %d restore' % len(restores) if restores else '',
+           ' | %d stale' % len(stale) if stale else ''))
     return 0
 
 
-def releasable_holds(ctx, snap):
+def releasable_holds(ctx, snap, hub=None):
     """omod.releasable_holds for the session, against the store's history and this machine's
     hub."""
-    return omod.releasable_holds(snap, ctx.session, ctx.history(snap))
+    return omod.releasable_holds(snap, ctx.session, ctx.history(snap), hub)
+
+
+def stale_holds(ctx, snap, recs, hub=None):
+    """omod.stale_holds for `recs`: the store's block commits, this machine's hub and ledger."""
+    return omod.stale_holds(recs, hub or omod.hub_once(),
+                            lambda rid, members: ctx.store.blocked_at(rid, members, snap))
 
 
 def narrow_lines(ctx, passed, holding, own):
@@ -416,7 +427,10 @@ def do_list(args, ctx, snap):
     else:
         recs = sorted(recs, key=lambda r: (str(ranks.get(r.id, 10 ** 6)).zfill(7), r.id))
     held = umod.Unblocks(snap) if args.needs_priority else None
+    stale, notes = stale_holds(ctx, snap, recs) if args.blocked else ({}, [])
     say('')
+    for note in notes:
+        say(note)
     for r in recs:
         line = row(r, ranks)
         if held is not None and r.stem in held.best:
@@ -425,6 +439,8 @@ def do_list(args, ctx, snap):
                 (held.count[r.stem],) + held.best[r.stem])
         if args.blocked:
             line += '  [%s]' % ', '.join(r.all('blocked_on'))
+            if r.id in stale:
+                line += '  [%s]' % omod.stale_text(stale[r.id])
         if r.get('state') == 'parked':
             days = rmod.parked_days(r, ctx.date())
             age = '?' if days is None else '%dd' % days

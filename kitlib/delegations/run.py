@@ -469,9 +469,7 @@ def hub_entry(texts, qid):
                 found[rid] = e
     gone = set()
     for e in found.values():
-        sup = e.get('Supersedes') or '-'
-        if sup.strip() != '-':
-            gone.update(fmt.RID_RE.findall(sup))
+        gone.update(fmt.supersedes_ids(e.get('Supersedes')))
     left = sorted(rid for rid in found if rid not in gone)
     if not left:
         raise RunRefused("%s: no live owner ledger entry's Source names it: log the owner's "

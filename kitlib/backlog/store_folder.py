@@ -720,6 +720,11 @@ class MainBackend(object):
     def history(self, rid, snap):
         return sread._last_closing(self.root, rid, 'HEAD')
 
+    def blocked_at(self, rid, members, snap):
+        """The epoch of the commit on HEAD that blocked `rid` on `members` (sread.last_block):
+        a store outside the PM data worktree commits no block, so it has none."""
+        return sread.last_block(self.root, 'HEAD', self.rel, rid, members)
+
     def removal(self, rid, snap):
         """The newest commit on HEAD that deleted `<dir>/<rid>.md` (a Removal), or None."""
         return sread.last_removal(self.root, 'HEAD', self.rel, rid)

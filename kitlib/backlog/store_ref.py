@@ -278,6 +278,12 @@ class RefBackend(object):
             return None
         return sread._last_closing(self.root, rid, snap.tip)
 
+    def blocked_at(self, rid, members, snap):
+        """The epoch of the store commit that blocked `rid` on `members` (sread.last_block)."""
+        if not snap.tip:
+            return None
+        return sread.last_block(self.root, snap.tip, smod.STORE_DIR, rid, members)
+
     def removal(self, rid, snap):
         """The newest store commit that deleted `backlog/<rid>.md` (a Removal), or None."""
         if not snap.tip:

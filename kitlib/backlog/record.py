@@ -80,6 +80,15 @@ def blocked_on_error(v, rules):
 UNCITED_KINDS = ('deliberate', 'owner')     # members that name nothing they wait on
 CITE_RE = re.compile(r'(?<![A-Za-z0-9-])(?:R-[0-9]{4,}|[QTA]-[0-9]{3,}|item:[A-Za-z0-9][A-Za-z0-9.-]*)')
 BLOCK_NOTE = 'Blocked on '                  # the body line plan_block writes for `--reason`
+# The one pattern of that line's head, `Blocked on M[, M2] (yyyy-mm-dd): `, matched at a line's
+# start (it may follow a `Stopped on branch ...` line): the members, then the date. plan_claim
+# (BLOCKED_NOTE_RE) and plan_citations (_BLOCK_HEAD) read it through here.
+BLOCK_HEAD_RE = re.compile(re.escape(BLOCK_NOTE) + r'(.+?) \((\d{4}-\d{2}-\d{2})\): ')
+# The body lines that end a block's wait (plan_claim: restore_pull, stale_stop_note, plan_release).
+HOLD_ENDED = ('Unblocked (', 'Released (')
+# deliberate_note's answer: the note's date, its members (as written), its reason and the R-, Q-
+# and T- ids the reason cites (A- ids are not judged: `next` reads no approvals).
+DeliberateNote = collections.namedtuple('DeliberateNote', 'date members reason ids')
 
 
 def cites(text):
@@ -100,6 +109,27 @@ def hold_citations(rec):
         if line.startswith(BLOCK_NOTE):
             out.extend(cites(line))
     return out
+
+
+def deliberate_note(rec):
+    """The DeliberateNote of a `deliberate` hold that states no end (no `until: deliberate` line),
+    or None: the latest `Blocked on` line (BLOCK_HEAD_RE) whose members name `deliberate` and no
+    HOLD_ENDED line follows. None too when the record is not held on `deliberate`, or when that
+    hold was set with no reason (`set --blocked_on`), whose note there is none of."""
+    if 'deliberate' not in rec.all('blocked_on') or any(
+            m == 'deliberate' for m, _ in until_lines(rec)):
+        return None
+    lines = (rec.body or '').split('\n')
+    for i in range(len(lines) - 1, -1, -1):
+        m = BLOCK_HEAD_RE.match(lines[i])
+        if m is None or 'deliberate' not in [x.strip() for x in m.group(1).split(',')]:
+            continue
+        if any(line.startswith(HOLD_ENDED) for line in lines[i + 1:]):
+            return None
+        reason = lines[i][m.end():]
+        ids = [c for c in dict.fromkeys(cites(reason)) if not c.startswith(('item:', 'A-'))]
+        return DeliberateNote(m.group(2), m.group(1), reason, ids)
+    return None
 
 
 def block_citation_error(members, reason=None, owner_ask=None):

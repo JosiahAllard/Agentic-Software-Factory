@@ -8,7 +8,8 @@ path(), mutex_name(), real_root(), profile_dir() and machine_home(). None reads,
 it; the release check's look at it (kitlib.lock.release.live_runs) is given a stand-in for `os`.
 
 On a scratch store, a booking moves the records of runs whose wrapper is surely gone out of
-active/, after the queue's prune has said which dead runs it dropped (DeadRecordsReaped)."""
+active/, after the queue's prune has said which dead runs it dropped, and removes what has
+outlived its readers (DeadRecordsReaped; what Store.prune_files keeps and removes: FilesPruned)."""
 import hashlib
 import json
 import os
@@ -181,7 +182,7 @@ class ScratchStore(Case):
             ('path', 'bump', lambda s: s.bump()),
             ('path', 'live_runs', lambda s: s.live_runs()),
             ('path', 'live_runs(prune)', lambda s: s.live_runs(prune=True)),
-            ('path', 'prune_files', lambda s: s.prune_files(())),
+            ('path', 'prune_files', lambda s: s.prune_files()),
             ('path', 'history_append', lambda s: s.history_append(ended)),
             ('path', 'history_records', lambda s: s.history_records()),
             ('mutex_name', 'bump', lambda s: s.bump()),
@@ -326,6 +327,108 @@ class DeadRecordsReaped(StoreCase):
         self.assertFalse(self.active(self.DEAD_MUTEX))
         self.assertEqual(self.store.read('ended/%s.json' % self.DEAD_MUTEX)['how'], 'reaped')
         self.assertTrue(self.active(self.LIVE_MUTEX))
+
+    def test_a_booking_removes_ended_records_and_logs_past_their_keep(self):
+        self.confine(1)
+        old, fresh = 'r-20261001T000000Z-01d0a1', 'r-20261010T000000Z-f7e5a1'
+        aged(self.store.path('ended', old + '.json'), DAY * 4)
+        aged(self.store.path('logs', old + '.log'), DAY * 4)
+        aged(self.store.path('ended', fresh + '.json'), DAY * 2)
+
+        s = rm.book('engine-test', 'kit', 'pruner', cores=1, store=self.store, no_wait=True,
+                    env=clean_env())
+        self.addCleanup(s.release)
+
+        # gone before the release: the booking's wait removed them (run_wait.acquire)
+        self.assertFalse(os.path.exists(self.store.path('ended', old + '.json')))
+        self.assertFalse(os.path.exists(self.store.path('logs', old + '.log')))
+        self.assertTrue(os.path.exists(self.store.path('ended', fresh + '.json')))
+
+
+DAY = 86400
+
+
+def aged(path, age_s, folder=False):
+    """A file (folder: a folder holding control.json) at path, last changed age_s ago."""
+    os.makedirs(path if folder else os.path.dirname(path), exist_ok=True)
+    if folder:
+        with open(os.path.join(path, 'control.json'), 'w', encoding='utf-8') as f:
+            f.write('{}')
+    else:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write('{}')
+    t = time.time() - age_s
+    os.utime(path, (t, t))
+    return path
+
+
+class FilesPruned(Case):
+    """Store.prune_files removes what has outlived its readers and nothing a live run or the
+    owner still has: on Linux too, so called directly (the booking's call: DeadRecordsReaped)."""
+    LIVE = 'r-20261010T000000Z-a11ve1'
+    UNREAD = 'r-20261010T000000Z-a11ve2'
+    DEAD = 'r-20261010T000000Z-dead01'
+    FRESH = 'r-20261010T000000Z-dead02'
+
+    def setUp(self):
+        self.store = Store(root=os.path.join(self.folder(), 'store'))
+
+    def there(self, *parts):
+        return os.path.exists(self.store.path(*parts))
+
+    def test_ended_records_and_logs_go_past_their_keep_and_corrupt_stays(self):
+        aged(self.store.path('ended', self.DEAD + '.json'), DAY * 4)
+        aged(self.store.path('logs', self.DEAD + '.log'), DAY * 4)
+        aged(self.store.path('ended', self.FRESH + '.json'), DAY * 2)
+        aged(self.store.path('_corrupt', 'active', self.DEAD + '.json'), DAY * 400)
+        aged(self.store.path('_corrupt', 'queue.json'), DAY * 400)
+
+        self.store.prune_files()
+
+        self.assertFalse(self.there('ended', self.DEAD + '.json'))
+        self.assertFalse(self.there('logs', self.DEAD + '.log'))
+        self.assertTrue(self.there('ended', self.FRESH + '.json'))
+        self.assertEqual(self.store.corrupt(), ['active/%s.json' % self.DEAD, 'queue.json'])
+
+    def test_a_background_folder_goes_only_when_no_active_file_names_its_run(self):
+        self.store.write('active/%s.json' % self.LIVE, {'id': self.LIVE})
+        with open(self.store.path('active', self.UNREAD + '.json'), 'w') as f:
+            f.write('{"id": ')                      # a record that does not parse
+        for rid, age in ((self.LIVE, DAY), (self.UNREAD, DAY), (self.DEAD, DAY), (self.FRESH, 60)):
+            aged(self.store.path('background', rid + '.d'), age, folder=True)
+
+        self.store.prune_files()
+
+        self.assertFalse(self.there('background', self.DEAD + '.d'))
+        for rid in (self.LIVE, self.UNREAD, self.FRESH):
+            self.assertTrue(self.there('background', rid + '.d'), rid)
+
+    def test_no_background_folder_goes_when_active_cannot_be_listed(self):
+        aged(self.store.path('active'), 0)          # a plain file: listing it raises OSError
+        aged(self.store.path('background', self.DEAD + '.d'), DAY, folder=True)
+
+        self.store.prune_files()
+
+        self.assertTrue(self.there('background', self.DEAD + '.d'))
+
+    def test_a_history_month_goes_history_keep_days_after_it_ended(self):
+        now = lockstore.utc_now()
+        this = aged(self.store.path('history', now.strftime('%Y-%m') + '.jsonl'), 0)
+        old = aged(self.store.path('history', '%04d-%02d.jsonl' % (now.year - 1, now.month)), 0)
+
+        self.store.prune_files()
+
+        self.assertFalse(os.path.exists(old))
+        self.assertTrue(os.path.exists(this))
+
+    def test_one_call_removes_at_most_prune_max(self):
+        for i in range(lockstore.PRUNE_MAX + 3):
+            aged(self.store.path('ended', 'r-20261001T000000Z-%06x.json' % i), DAY * 4)
+
+        self.store.prune_files()
+        self.assertEqual(len(os.listdir(self.store.path('ended'))), 3)
+        self.store.prune_files()
+        self.assertEqual(os.listdir(self.store.path('ended')), [])
 
 
 if __name__ == '__main__':

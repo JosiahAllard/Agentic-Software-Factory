@@ -10,7 +10,8 @@ fetches the remote first. --base names the base (any revision; default the work 
 set, else "repo".main_branch when set, else main when it exists, else master). --board adds the coordinator's board after the report: a row per worktree
 against the base and the stale-doc line. --write-state (only with --board) rewrites the board
 block of the coordinator's state file (docs/preflight.md "--board"). Exit 0 with the report; 2 on
-a usage error, a directory in no git work tree, or a `.kit.json` preflight cannot use. A reading
+a usage error, a directory in no git work tree (after a `damaged` line for each of its git files
+a crash left all NUL bytes), or a `.kit.json` preflight cannot use. A reading
 that fails is a line saying so, never an exit code: the report is read, not gated on.
 
 A thin entry point (ARCHITECTURE.md, Layers): kitlib.preflight does the work.
@@ -25,7 +26,7 @@ sys.path.insert(0, KIT)
 
 from kitlib.config import ConfigError, load as load_config        # noqa: E402
 from kitlib.git import refs, repo                                   # noqa: E402
-from kitlib.preflight import board, paths, report, state           # noqa: E402
+from kitlib.preflight import board, damaged, paths, report, state  # noqa: E402
 
 USAGE = 2
 
@@ -82,6 +83,9 @@ def main(argv=None, lock_reader=None, home=None):
         p.error(paths.mangled_message(a.dir, fixed))
     top, why = repo.toplevel(os.path.abspath(a.dir))
     if top is None:
+        # a zero-filled HEAD or ref makes git find no checkout: name the file, then refuse
+        for line in damaged.scan(os.path.abspath(a.dir)):
+            print_safe(line)
         p.error('-C: %s' % why)
     board_lines = rel = None
     try:

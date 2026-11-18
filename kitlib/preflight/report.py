@@ -10,8 +10,8 @@ import kitlib.config as kconfig
 from kitlib import verdict
 from kitlib.docs import callers as doc_callers
 from kitlib.git import cmd, refs, repo, stray
-from kitlib.preflight import (configline, defaultstore, hooks, leftovers, lockline, machine,
-                              nextblock, settings as st)
+from kitlib.preflight import (configline, damaged, defaultstore, hooks, leftovers, lockline,
+                              machine, nextblock, settings as st)
 
 MAX_LISTED = 12
 LIST_INDENT = ' ' * 12
@@ -53,9 +53,10 @@ def report(top, cfg, kit_root, base=None, fetch=False, lock_reader=lockline.read
     """The report's lines for the work tree whose top level is `top`. `cfg` is its loaded
     kitlib.config Config (kitlib.config.ConfigError for a "preflight" value preflight cannot
     use). `base` is --base (any revision), else the configured or guessed base branch. `home` is
-    the home folder the `config` line reads the machine config under (default the user's)."""
+    the home folder the `config` line reads the machine config under (default the user's). It
+    starts with the `damaged` lines (kitlib.preflight.damaged), read before any git call."""
+    out = damaged.scan(top)
     s = st.settings(cfg)
-    out = []
     remote = cfg.remote
     if fetch:
         done, why = cmd.run(['fetch', remote, '--quiet'], top, timeout=120)

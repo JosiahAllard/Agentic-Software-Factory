@@ -394,8 +394,13 @@ class TheDamagedLines(Fixture):
         # scan falls back to naming the pointer itself
         wt = os.path.join(self.repo.base, 'wt')
         self.git('worktree', 'add', '-q', '-b', 'side', wt)
-        with open(os.path.join(wt, '.git'), 'wb') as fh:
-            fh.write(b'\0' * 64)
+        # in place, as a crash leaves it: Git for Windows hides the .git file, and Windows
+        # refuses to recreate a hidden file ('wb')
+        with open(os.path.join(wt, '.git'), 'r+b') as fh:
+            size = len(fh.read())
+            fh.seek(0)
+            fh.write(b'\0' * size)
+            fh.truncate()
         code, out = self.run_preflight(where=wt)
         self.assertEqual(code, 2, out)
         lines = self.damaged(out)

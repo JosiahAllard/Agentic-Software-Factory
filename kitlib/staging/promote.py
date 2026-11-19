@@ -21,6 +21,11 @@ green writes S's promotion record and moves main to S (kitlib.staging.advance). 
      M not an ancestor of S: an attempt that ends diverged.
   6. The gate, its slot booked now or never (BOOK: no_wait). A machine-lock refusal (busy,
      timeout, reserved, hold, no lock): a skip, nothing recorded (the next hub tick asks again).
+     FAILED with every FAIL the machine's (kitlib.gate.rerun.machine_only: a step that did not
+     start, a strict requirement unmet such as a busy resource's probe, kit_tests units that
+     timed out): ends `machine`, tested again next time, until the streak of machine ends at S
+     (record.machine_since) is older than MACHINE_WINDOW_S; then it ends red with the reasons in
+     the attempt's `machine` (fix the machine or tool, not the tree; never hunted). Any other
      FAILED: ends red, then kitlib.staging.culprit after_red (`hunter`), still under the promote
      lock: the attempt's `inspect` (no probe, no slot), handed to the coordinator to fix first;
      the culprit hunt and its revert branch only when the red repeats one a fix was marked
@@ -38,9 +43,9 @@ fixed(main, cfg, sha) its mark that the fix of a red landed (`--fixed <sha>`, th
 `fix`). Both run under the promote lock, after the same fetch and staging read, on the latest
 attempt that ended red with no later one done; neither runs a gate.
 
-Outcome codes: OK (done, behind, not due, a skip, a wait; a hunt run, a fix marked), FAILED
-(red), USAGE (staging off), REFUSED (held, diverged, refused, failed, error, a step before the
-gate that could not be made; nothing to hunt, a fix not marked), BUSY (another run holds the
+Outcome codes: OK (done, behind, machine, not due, a skip, a wait; a hunt run, a fix marked),
+FAILED (red), USAGE (staging off), REFUSED (held, diverged, refused, failed, error, a step before
+the gate that could not be made; nothing to hunt, a fix not marked), BUSY (another run holds the
 promote lock). Output goes through `say`; nothing here prints.
 """
 import os
@@ -68,7 +73,8 @@ SLUG = 'promote'                # the gate's log folder (land-promote) and the t
 BOOK = {'no_wait': True}        # the gate's slot: now or never (a busy machine is a skip)
 OFF = ('promote: OFF - %s/%s names no "staging".branch, so there is nothing to promote '
        '(docs/gate-landing.md "Staging branch")')
-CODES = {'done': G.OK, 'behind': G.OK, 'red': G.FAILED}     # every other end: REFUSED
+CODES = {'done': G.OK, 'behind': G.OK, 'machine': G.OK, 'red': G.FAILED}  # else: REFUSED
+MACHINE_WINDOW_S = 3600     # a tip whose every FAIL is the machine's is retried this long, then red
 
 
 def _quiet(_line):
@@ -205,7 +211,7 @@ def _held(main, cfg, say, force, book, git, gate, record, mover, clock, hunter):
                                          tip[:10], held.phase, staging), R.line(held)])
     try:
         return _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate,
-                     record, move, hunter)
+                     record, move, hunter, now)
     except R.RecordError as e:
         return G.Outcome(G.REFUSED, ['REFUSED: %s' % e])
 
@@ -221,7 +227,7 @@ def _ended(where, tip, base, phase, why, log_dir=None):
 
 
 def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate, record, move,
-          hunter):
+          hunter, now):
     if git(main, 'merge-base', '--is-ancestor', base, tip)[0] != 0:
         return _ended(where, tip, base, 'diverged', '%s/%s (%s) has commits that are not on %s '
                       '(%s)' % (cfg.remote, P.main_of(cfg), base[:10], staging, tip[:10]))
@@ -254,7 +260,14 @@ def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate
     if out.code == G.FAILED:
         why = out.facts.get('verdict') or 'the gate failed'
         earlier = R.attempts(where)
-        a = R.start(where, tip, base, 'red', why=why, log_dir=log_dir)
+        machine = rerun.machine_only(out.facts.get('results') or [])
+        more = {}
+        if machine:
+            since = R.machine_since(earlier, tip)
+            if since is None or now - since < MACHINE_WINDOW_S:
+                return _ended(where, tip, base, 'machine', machine, log_dir)
+            why, more = "%s (the machine's FAIL for over 1 h)" % machine, {'machine': machine}
+        a = R.start(where, tip, base, 'red', why=why, log_dir=log_dir, **more)
         ctx = {'main': main, 'cfg': cfg, 'cfg_base': cfg_base, 'staging': staging, 'wt': wt,
                'tip': tip, 'base': base, 'book': book, 'git': git,
                'since': rerun.since_of(started), 'log_dir': log_dir, 'earlier': earlier}
@@ -292,10 +305,10 @@ def last_red(found):
 def hunt(main, cfg, say=_quiet, book_kw=None, git=D.git, hunter=CU.hunt_red):
     """The culprit hunt the coordinator asks for (`tools/promote.py --hunt`), after one failed fix,
     of last_red's attempt, under the promote lock: a G.Outcome. REFUSED (nothing to hunt) when no
-    red is left, it has no step a hunt can probe (no `inspect` red), or its hunt is marked
-    running; the promotion's tree is put at its tip and `hunter(ctx, attempt, say)`
-    (culprit.hunt_red) runs. A culprit found posts no promote-revert hub item: the attempt was
-    announced as red already."""
+    red is left, it is the machine's (its `machine`), it has no step a hunt can probe (no
+    `inspect` red), or its hunt is marked running; the promotion's tree is put at its tip and
+    `hunter(ctx, attempt, say)` (culprit.hunt_red) runs. A culprit found posts no promote-revert
+    hub item: the attempt was announced as red already."""
     book = dict(BOOK, **(book_kw or {}))
     return _locked(main, say, lambda: _hunt_held(main, cfg, say, book, git, hunter))
 
@@ -307,6 +320,9 @@ def _hunt_held(main, cfg, say, book, git, hunter):
     a, why = last_red(R.attempts(where))
     if a is None:
         return G.Outcome(G.REFUSED, ['promote: NOTHING TO HUNT - %s' % why])
+    if a.rec.get('machine'):
+        return G.Outcome(G.REFUSED, ["promote: NOTHING TO HUNT - the red is the machine's: %s; "
+                                     'fix the machine or tool' % a.rec['machine'], R.line(a)])
     if not (a.rec.get('inspect') or {}).get('red'):
         return G.Outcome(G.REFUSED, ['promote: NOTHING TO HUNT - the red of %s has no step a hunt '
                                      'can probe (`gate`, `windows` and `infra` reds are never '

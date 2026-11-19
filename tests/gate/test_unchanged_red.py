@@ -4,6 +4,7 @@ and kit that would only repeat a failed one is REFUSED before it books, and agai
 unless --again. A pass of the same tree and mode supersedes the mark."""
 import json
 import os
+import unittest
 from unittest import mock
 
 import kitlib.config as kconfig
@@ -432,6 +433,22 @@ INPUT = ['{python}', '-c', 'import json, os, sys; print("ok"); p = os.environ["U
          'c = os.environ.get("UNCHANGED_CLAIM"); ok = os.path.exists(p) and not c; '
          'ok or open(os.environ["%s"], "w").write(c or json.dumps([p])); '
          'sys.exit(0 if ok else 1)' % INPUTS_ENV]
+
+
+class MachineOnly(unittest.TestCase):
+    """rerun.machine_only: why every FAIL of a gate's results is the machine's, or None."""
+
+    def res(self, status, *reasons):
+        return {'name': 'x', 'status': status, 'log': None, 'reasons': list(reasons)}
+
+    def test_every_fail_the_machine_s_gives_their_reasons_else_none(self):
+        busy = 'requires a -b, which exited 1'
+        gone = 'did not start (see its log)'
+        self.assertEqual(rerun.machine_only([self.res('PASS'), self.res('FAIL', busy),
+                                             self.res('FAIL', gone)]), busy + '; ' + gone)
+        self.assertIsNone(rerun.machine_only([]))
+        self.assertIsNone(rerun.machine_only([self.res('PASS'), self.res('NOT RUN', 'x failed')]))
+        self.assertIsNone(rerun.machine_only([self.res('FAIL', busy), self.res('FAIL', 'exit 1')]))
 
 
 class InputMisses(Case):

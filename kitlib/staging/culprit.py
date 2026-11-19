@@ -98,6 +98,8 @@ STEP_KEYS = ('name', 'status', 'reasons', 'log')    # a step entry, as `inspect`
 HANDED = ('promote: RED handed to the coordinator: inspect it and fix it on a branch from the '
           'staging tip; after one failed fix, tools/promote.py --hunt (docs/modules/'
           'staging-design.md "Culprit and revert")')
+MACHINE_HANDED = ("promote: RED handed to the coordinator: the machine's FAIL for over 1 h: fix "
+                  'the machine or tool, not the tree (%s)')
 _SUSPECT = re.compile(r'^suspect ([0-9a-f]{40})$')
 _PREFIX = 'daily: bisect'
 
@@ -341,11 +343,13 @@ def after_red(ctx, attempt, out, say, clock=time.time, budget=HUNT_BUDGET_S, mak
     repeats a red a fix was marked landed for (repeat, over ctx's `earlier`), hunts as hunt_red
     does. `ctx`: {main, cfg (the main checkout's), cfg_base (M's), staging, wt (the promotion's
     tree), tip, base, book (the gate's booking), git, since (the gate's start, epoch seconds),
-    log_dir, earlier}. Nothing when no red step can be hunted (red_steps). RecordError passes
-    through."""
+    log_dir, earlier}. Nothing when no red step can be hunted (red_steps). A red the machine
+    window ended (the attempt's `machine`, kitlib.staging.promote) is handed over as the machine's
+    (MACHINE_HANDED) and never hunts. RecordError passes through."""
     red = red_steps(out)
+    machine = attempt.rec.get('machine')
     if not red:
-        return []
+        return [MACHINE_HANDED % machine] if machine else []
     results = [{k: r.get(k) for k in STEP_KEYS} for r in out.facts.get('results') or []]
     ctx = dict(ctx, log_dir=ctx.get('log_dir') or attempt.folder, folder=attempt.folder)
     deadline = clock() + budget
@@ -362,6 +366,8 @@ def after_red(ctx, attempt, out, say, clock=time.time, budget=HUNT_BUDGET_S, mak
     attempt.rec['inspect'] = rec
     attempt.write()
     lines = [inspect_line(rec)]
+    if machine:
+        return lines + [MACHINE_HANDED % machine]
     if not repeat(ctx.get('earlier') or [], rec):
         return lines + [HANDED]
     lines.append('promote: the same tests are red again after a fix was marked landed: the '

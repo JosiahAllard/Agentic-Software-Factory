@@ -835,6 +835,8 @@ class MachineFail(Case):
         self.assertNotIn('machine', a.rec)
         self.assertEqual(SP.look(self.main_dir, self.cfg(), lambda a: None,
                                  clock=lambda: time.time() + 7 * HOUR)[0], 'start')
+        self.assertEqual(self.busy().code, G.OK)    # still busy, inside the window: machine again
+        self.assertEqual([a.phase for a in self.attempts()], ['machine', 'machine'])
         out = self.run_promote()                # the resource is free: the same probe passes
         self.assertEqual(out.code, G.OK, out.lines)
         self.assertEqual((self.remote_main(), self.attempts()[-1].phase), (tip, 'done'))
@@ -861,12 +863,27 @@ class MachineFail(Case):
         self.assertIn('which exited 1', a.rec['machine'])
         self.assertTrue(a.rec['why'].endswith("(the machine's FAIL for over 1 h)"), a.rec['why'])
         self.assertIn(CU.MACHINE_HANDED % a.rec['machine'], out.lines)
-        self.assertIn("the machine's FAIL for over 1 h: fix the machine or tool, not the tree",
-                      CU.MACHINE_HANDED)
         self.assertNotIn(CU.HANDED, out.lines)
         self.assertEqual(a.rec['inspect']['red'], ['probe'])
         out = self.run_promote(gate=self.no_gate)
         self.assertIn('HELD - %s ended red' % tip[:10], out.lines[0])
+
+    def test_a_window_red_with_no_step_a_hunt_can_probe_is_still_handed_as_the_machine_s(self):
+        tip = self.land()
+        self.crafted('machine', sha=tip)
+        why = 'did not start (see its log)'
+
+        def gate(*a, **k):      # only the gate's own step FAILs, for the machine: none to probe
+            return G.Outcome(G.FAILED, ['GATE FAILED: gate'], verdict='GATE FAILED: gate',
+                             head=tip, log_dir=None, results=[
+                                 {'name': 'gate', 'status': 'FAIL', 'reasons': [why],
+                                  'log': None}])
+        out = self.run_promote(gate=gate, clock=lambda: time.time() + SP.MACHINE_WINDOW_S + 60)
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        a = self.attempts()[-1]
+        self.assertEqual((a.phase, a.rec['machine']), ('red', why))
+        self.assertNotIn('inspect', a.rec)
+        self.assertIn(CU.MACHINE_HANDED % why, out.lines)
 
 
 class HuntDailyForm(Case):

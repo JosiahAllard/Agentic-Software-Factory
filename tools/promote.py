@@ -11,8 +11,8 @@
 
 A thin entry point: it parses, calls kitlib.staging.promote, prints and exits. The hub job
 staging-promote starts it when a promotion is due; --force runs it when it is not.
-Exit: 0 done, behind, not due, or skipped by the machine lock (nothing recorded), a hunt run or a
-fix marked; 1 the gate was red; 2 usage, or staging off at <remote>/<main>; 4 held, diverged,
+Exit: 0 done, behind, machine (every FAIL the machine's: tested again), not due, or skipped by
+the machine lock (nothing recorded), a hunt run or a fix marked; 1 the gate was red; 2 usage, or staging off at <remote>/<main>; 4 held, diverged,
 refused by the pre-push guard, failed or the gate refused, nothing to hunt or a fix not marked;
 5 another promotion run holds the promote lock (nothing recorded).
 """

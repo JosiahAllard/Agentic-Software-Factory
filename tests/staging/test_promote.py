@@ -586,6 +586,14 @@ class Fixed(Case):
         self.assertEqual(self.attempts()[-1].rec['fix']['sha'], fix)
         self.assertNotIn('fix', R.attempts(older.folder.rsplit(os.sep, 1)[0])[0].rec)
 
+    def test_a_red_the_machine_window_ended_is_refused_and_marks_nothing(self):
+        self.crafted('red', machine='requires probe, which exited 1')
+        out = self.fixed(self.land())
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn("NO FIX MARKED - the red of", out.lines[0])
+        self.assertIn("the machine's: requires probe, which exited 1", out.lines[0])
+        self.assertNotIn('fix', self.attempts()[-1].rec)
+
     def test_a_machine_end_after_the_red_moves_neither_last_red_nor_the_mark(self):
         red = self.crafted('red')
         self.crafted('machine')

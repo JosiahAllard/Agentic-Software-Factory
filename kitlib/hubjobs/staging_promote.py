@@ -21,7 +21,11 @@ inspect and fix first (the attempt's `inspect`, kitlib.staging.culprit after_red
 `--fixed` and, after one failed fix or for a suspected flake, `--hunt`; it holds for a red that
 already hunted too. A red attempt whose culprit hunt prepared a revert branch is word
 `promote-revert` instead, detail `<repo>:<culprit's sha10>` (record.Attempt.event): in
-JOB_EACH, and its text tells the PM to hand the branch to the coordinator. A hunt run by hand
+JOB_EACH, and its text tells the PM to hand the branch to the coordinator. A red the machine
+window ended (its `machine`, kitlib.staging.promote MACHINE_WINDOW_S) is word
+`promote-machine-red` instead, detail `<repo>:<sha10>`: in JOB_EACH, and its text says to fix
+the machine or tool, not the tree (`--fixed` and `--hunt` refuse it), with the reasons in
+`--status`, and that a new staging tip clears it. A hunt run by hand
 (`tools/promote.py --hunt`) on a red already announced posts no item: its revert branch shows in
 `--status` and in the run's own output.
 
@@ -38,7 +42,7 @@ from kitlib.hubsite import jobs
 
 NAME = 'staging-promote'
 EVERY_S = 600
-EVENTS = ('red', 'refused', 'diverged', 'failed', 'error', 'revert')    # promote-<word>
+EVENTS = ('red', 'refused', 'diverged', 'failed', 'error', 'revert', 'machine-red')  # promote-<word>
 
 
 class PromoteFailed(Exception):

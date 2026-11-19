@@ -131,8 +131,9 @@ Jobs (the hub's timed jobs, kitlib.hubsite.jobs): job_event(name, event, detail=
 thread, owes the PM one `job <name> <event>` push, with `detail:<detail>` after the event when
 one is given (one owed push per job name: a newer event of the same job replaces one still owed,
 its detail with it; an event in JOB_EACH, `unblocked`, `approval-expired`, `fill`, `stale-lock`,
-`promote-red`, `promote-revert` and the usage crossover's words, is owed once per detail instead, beside the rest, and its text says what to
-do: each names one thing); the
+`promote-red`, `promote-revert`, `promote-machine-red` and the usage crossover's words, is owed
+once per detail instead, beside the rest, and its text says what to do: each names one thing);
+the
 thread sends each owed one every round (send_jobs), tried on the same schedule until a try is
 written or GIVE_UP_S passes. Owed job pushes live in memory only, never in the outbox: a restart
 drops them, and the job pushes again when it fails again.
@@ -313,7 +314,18 @@ JOB_EACH = {'stale-code': 'The hub server (serve.py, job name hub) will not rest
                            '`tools/promote.py --fixed <sha>` marks it, so the same tests red '
                            'again hunt the culprit by themselves. After one failed fix, or when '
                            'the red looks like a flake, `tools/promote.py --hunt` runs the '
-                           'culprit hunt. Nothing was reverted or pushed.'}
+                           'culprit hunt. Nothing was reverted or pushed.',
+            'promote-machine-red': 'The hub staging-promote job: a promotion of a staging branch '
+                                   "ended red because every FAIL was the machine's for over 1 h "
+                                   '(a busy resource, a tool that did not start, units that '
+                                   'timed out), not the tree\'s. Detail is <repo>:<staging tip '
+                                   "sha10>. The reasons are in the attempt's `machine`; "
+                                   '`tools/promote.py --status` there shows them in its line. '
+                                   "Hand it to that repository's coordinator to fix the machine "
+                                   'or tool, not the tree: there is no tree fix to mark and no '
+                                   'culprit to hunt, and promote.py refuses both. A new staging '
+                                   'tip clears it, or deleting the attempt\'s folder once the '
+                                   'machine is fixed. Nothing was reverted or pushed.'}
 UNDELIVERED = 'push-undelivered.jsonl'
 COLLECTIONS = {'questions': 'question', 'todos': 'todo', 'approvals': 'approval',
                'stories': 'story', 'to_pm': 'to_pm', 'skill_edits': 'skill_edit'}

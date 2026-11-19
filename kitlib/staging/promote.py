@@ -357,7 +357,7 @@ def fixed(main, cfg, sha, say=_quiet, git=D.git):
     """The coordinator's mark that the fix of last_red's attempt landed on the staging branch as
     `sha` (`tools/promote.py --fixed <sha>`), under the promote lock: the attempt's `fix` {sha,
     at}, which lets a red on the same tests hunt by itself (culprit.repeat). REFUSED when no red
-    is left, `sha` is no commit, is not on `<remote>/<staging>`, or is already in the red tip."""
+    is left, the red is the machine's (its `machine`: no tree fix to mark), `sha` is no commit, is not on `<remote>/<staging>`, or is already in the red tip."""
     return _locked(main, say, lambda: _fixed_held(main, cfg, sha, say, git))
 
 
@@ -368,6 +368,11 @@ def _fixed_held(main, cfg, sha, say, git):
     a, why = last_red(R.attempts(where))
     if a is None:
         return G.Outcome(G.REFUSED, ['promote: NO FIX MARKED - %s' % why])
+    if a.rec.get('machine'):
+        return G.Outcome(G.REFUSED, ["promote: NO FIX MARKED - the red of %s is the machine's: %s; "
+                                     'fix the machine or tool: a new staging tip clears it, or '
+                                     'deleting its folder once the machine is fixed' % (
+                                         a.sha[:10], a.rec['machine']), R.line(a)])
     rc, full, err = git(main, 'rev-parse', '--verify', '-q', '%s^{commit}' % sha)
     if rc != 0 or not full:
         return G.Outcome(G.REFUSED, ['promote: NO FIX MARKED - %s names no commit' % sha])

@@ -28,14 +28,18 @@ The record (SCHEMA 1):
               that run gone), then {end, verdict, merge, by, suspects, probes, red[, mode]}
   revert      for a culprit found: {branch, base, commit, note} (the local branch prepared), or
               {why[, base]} when none could be
+  machine     a red the machine window ended (kitlib.staging.promote MACHINE_WINDOW_S): every
+              FAIL's machine reason (kitlib.gate.rerun.machine_only); never on a tree's red
 
 Phases: tested (green, its record written) -> pushing -> pushed (main is S on the remote) -> done
 (the main checkout's local main synced as far as it safely can). The ends: red (a step failed),
 behind (main moved since the test: tested again next time), refused (the pre-push guard refused
 the push), diverged (main holds commits the staging branch lacks), failed (the push could not be
 made or verified in PUSH_TRIES tries, or the tested record could not be written), error (the gate
-refused to run on the tip). HOLDS never test the same tip again (failed among them, so a tip
-whose push or record keeps failing is not gated again on every hub tick): a new staging tip is a
+refused to run on the tip), machine (every FAIL was the machine's: tested again next time, until
+machine_since's streak is older than the promotion's window). HOLDS never test the same tip again
+(failed among them, so a tip whose push or record keeps failing is not gated again on every hub
+tick): a new staging tip is a
 fresh attempt, and a refused one waits for the owner's action as well. ANNOUNCE get one hub item
 each (Attempt.event: a red one whose culprit's revert branch was prepared is word `revert`).
 
@@ -52,7 +56,7 @@ SCHEMA = 1
 FILE = 'promote.json'
 DIR = 'promote'
 LIVE = ('tested', 'pushing', 'pushed')
-ENDS = ('done', 'red', 'behind', 'refused', 'diverged', 'failed', 'error')
+ENDS = ('done', 'red', 'behind', 'refused', 'diverged', 'failed', 'error', 'machine')
 HOLDS = ('red', 'refused', 'diverged', 'failed', 'error')
 ANNOUNCE = ('red', 'refused', 'diverged', 'failed', 'error')
 HUNTING = 'hunting'     # a culprit hunt's verdict while it runs (kitlib.staging.culprit)
@@ -123,13 +127,13 @@ class Attempt(object):
             raise RecordError('the phase record %s could not be written: %s' % (self.path, e))
 
 
-def start(folder, sha, base, phase, via='promotion', why=None, log_dir=None, stamp=None):
-    """A new attempt's record under `folder`, written at `phase`."""
+def start(folder, sha, base, phase, via='promotion', why=None, log_dir=None, stamp=None, **more):
+    """A new attempt's record under `folder`, written at `phase`; `more`: other keys (as set's)."""
     path = os.path.join(folder, '%s-%s' % (stamp or stamp_now(), sha[:10]), FILE)
     rec = {'schema': SCHEMA, 'via': via, 'sha': sha, 'base': base, 'phase': None,
            'started': now_text(), 'updated': None, 'pid': None, 'log_dir': log_dir,
            'why': why, 'tries': 0, 'announced': False, 'history': []}
-    return Attempt(path, rec).set(phase)
+    return Attempt(path, rec).set(phase, **more)
 
 
 def attempts(folder):
@@ -160,6 +164,29 @@ def held(found, sha):
     """The latest attempt of `found` at `sha` that ended in one of HOLDS, or None: that tip is
     never tested again."""
     return next((a for a in reversed(found) if a.sha == sha and a.phase in HOLDS), None)
+
+
+def machine_since(found, sha):
+    """When the streak of `machine` ends at `sha` began, epoch seconds: the `started` of the
+    oldest attempt in the unbroken run of them at the newest end of `found` (attempts()); None
+    when the newest attempt is not one. Another sha or any other end breaks the streak. An
+    unreadable `started` falls back to that attempt folder's mtime (0.0 when that cannot be read
+    either, so the streak reads as old). `started` is local time with no zone, so across a
+    daylight-saving change the age is off by that hour."""
+    first = None
+    for a in reversed(found):
+        if a.sha != sha or a.phase != 'machine':
+            break
+        first = a
+    if first is None:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(first.rec.get('started')).timestamp()
+    except (TypeError, ValueError, OverflowError, OSError):
+        try:
+            return os.path.getmtime(first.folder)
+        except OSError:
+            return 0.0
 
 
 def unannounced(found):

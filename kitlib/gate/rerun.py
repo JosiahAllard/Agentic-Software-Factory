@@ -530,6 +530,14 @@ def machine_failure(res):
     return None
 
 
+def machine_only(results):
+    """Why every FAIL of the step results `results` (runner.run_steps) is the machine's
+    (machine_failure; their reasons joined by '; '), or None: no FAIL, or one is the tree's."""
+    fails = [r for r in results if r.get('status') == 'FAIL']
+    why = [machine_failure(r) for r in fails]
+    return '; '.join(why) if fails and all(why) else None
+
+
 def _claimed(res):
     """The list a FAIL step `res` wrote to its missing-inputs file (runner.inputs_file), or
     None when it wrote none; ValueError when the file is there and cannot be read."""
@@ -587,10 +595,9 @@ def mark(top, key, tree, commit, branch, results, log_dir, cmd_steps=()):
     `cmd_steps`; a check step's file is never read) whose missing-inputs file input_claim takes
     has its paths in `inputs` ({step: paths}); it stays in `failed`.
     `(its path, [(step, its file, why the file is not used)])`; RerunError."""
-    fails = [r for r in results if r.get('status') == 'FAIL']
-    tree_fails = [r for r in fails if not machine_failure(r)]
-    if fails and not tree_fails:
+    if machine_only(results):
         return None, []
+    tree_fails = [r for r in results if r.get('status') == 'FAIL' and not machine_failure(r)]
     failed, inputs, unused = [], {}, []
     for r in tree_fails:
         failed.append(r['name'])

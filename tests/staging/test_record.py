@@ -1,4 +1,5 @@
 """kitlib.staging.record: one attempt's phase record, in a scratch folder."""
+import datetime
 import json
 import os
 import shutil
@@ -54,6 +55,15 @@ class Phases(Case):
         self.assertNotIn('behind', R.HOLDS)
         self.assertIn('failed', R.HOLDS)
         self.assertTrue(set(R.HOLDS) <= set(R.ANNOUNCE))
+        self.assertIn('machine', R.ENDS)
+        self.assertNotIn('machine', R.HOLDS + R.ANNOUNCE)
+
+    def test_start_and_set_write_a_machine_key(self):
+        R.start(self.dir, S1, BASE, 'red', machine='requires x, which exited 1')
+        a = R.attempts(self.dir)[0]
+        self.assertEqual(a.rec['machine'], 'requires x, which exited 1')
+        a.set('red', machine='requires y, which exited 1')
+        self.assertEqual(R.attempts(self.dir)[0].rec['machine'], 'requires y, which exited 1')
 
     def test_a_record_that_cannot_be_written_is_a_record_error(self):
         blocker = os.path.join(self.dir, 'file')
@@ -103,6 +113,37 @@ class Reading(Case):
             R.start(self.dir, S1, BASE, end, stamp='20261112-00010%d' % i)
             self.assertEqual(R.held(R.attempts(self.dir), S1).phase, end)
         self.assertIsNone(R.held(R.attempts(self.dir), S2))
+
+    def machine(self, sha, stamp, started='2026-11-18T10:00:00', phase='machine'):
+        a = R.start(self.dir, sha, BASE, phase, stamp=stamp)
+        a.rec['started'] = started
+        a.write()
+        return a
+
+    def since(self, sha=S1):
+        return R.machine_since(R.attempts(self.dir), sha)
+
+    def test_machine_since_is_the_start_of_the_newest_unbroken_streak_at_that_sha(self):
+        self.assertIsNone(self.since())
+        self.machine(S1, '20261118-000001', '2026-11-18T10:00:00')
+        self.machine(S1, '20261118-000002', '2026-11-18T10:20:00')
+        self.assertEqual(self.since(), datetime.datetime(2026, 11, 18, 10, 0).timestamp())
+        self.assertIsNone(self.since(S2))
+
+    def test_another_end_or_a_new_tip_breaks_the_streak_and_the_next_starts_fresh(self):
+        self.machine(S1, '20261118-000001', '2026-11-18T10:00:00')
+        self.machine(S1, '20261118-000002', '2026-11-18T10:10:00', phase='behind')
+        self.assertIsNone(self.since())
+        self.machine(S1, '20261118-000003', '2026-11-18T12:00:00')
+        self.assertEqual(self.since(), datetime.datetime(2026, 11, 18, 12, 0).timestamp())
+        self.machine(S2, '20261118-000004', '2026-11-18T13:00:00')
+        self.assertIsNone(self.since())          # S1's streak ended at the new tip
+        self.assertEqual(self.since(S2), datetime.datetime(2026, 11, 18, 13, 0).timestamp())
+
+    def test_an_unreadable_started_falls_back_to_the_attempt_folder_s_mtime(self):
+        a = self.machine(S1, '20261118-000001', started='not a time')
+        os.utime(a.folder, (1000000000, 1000000000))
+        self.assertEqual(self.since(), 1000000000)
 
     def test_unannounced_until_marked(self):
         R.start(self.dir, S1, BASE, 'refused', stamp='20261112-000001')

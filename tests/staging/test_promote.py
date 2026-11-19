@@ -24,6 +24,7 @@ from kitlib.staging import record as R
 from kitlib.gate import runner
 from kitlib.records import gate_ok, place
 from tests.dailyfull.test_promote import StagingCase
+from tests.gate import fixtures
 from tests.realgit import real_git
 from tests.staging.test_advance import FakeLock
 
@@ -585,6 +586,14 @@ class Fixed(Case):
         self.assertEqual(self.attempts()[-1].rec['fix']['sha'], fix)
         self.assertNotIn('fix', R.attempts(older.folder.rsplit(os.sep, 1)[0])[0].rec)
 
+    def test_a_machine_end_after_the_red_moves_neither_last_red_nor_the_mark(self):
+        red = self.crafted('red')
+        self.crafted('machine')
+        self.assertEqual(SP.last_red(self.attempts())[0].path, red.path)
+        fix = self.land()
+        self.assertEqual(self.fixed(fix).code, G.OK)
+        self.assertEqual([a.rec.get('fix', {}).get('sha') for a in self.attempts()], [fix, None])
+
     def test_a_held_promote_lock_is_busy(self):
         self.crafted('red')
         fix = self.land()
@@ -623,6 +632,12 @@ class NothingToHunt(Case):
     def test_a_red_with_no_step_a_hunt_can_probe(self):
         self.crafted('red')
         self.refused('has no step a hunt can probe')
+
+    def test_a_red_the_machine_window_ended(self):
+        self.crafted('red', inspect={'red': ['probe'], 'results': []},
+                     machine='requires probe, which exited 1')
+        self.refused("the red is the machine's: requires probe, which exited 1; fix the machine "
+                     'or tool')
 
     def test_a_hunt_marked_running(self):
         self.crafted('red', inspect={'red': ['unit'], 'results': []},
@@ -787,6 +802,88 @@ class Hunt(Case):
 # only where a landed-*.txt shows a landing to select; its daily_cmd runs everything.
 SELECTING = ['{python}', '-c', 'import glob, os, sys; print("ok"); sys.exit(1 if os.path.exists('
              '"RED") and ("--daily" in sys.argv or glob.glob("landed-*.txt")) else 0)']
+
+
+# A probe that exits 1 while KIT_TEST_BUSY is set: a resource another run holds.
+BUSY = ['{python}', '-c', 'import os, sys; sys.exit(1 if os.environ.get("KIT_TEST_BUSY") else 0)']
+
+
+class MachineFail(Case):
+    """A promotion whose every FAIL is the machine's (rerun.machine_only: here a strict probe
+    of a busy resource) ends `machine`, not red, and the next run tests the tip again, until
+    the streak is older than MACHINE_WINDOW_S. The probe sees KIT_TEST_BUSY through the slot's
+    env: the gate books with self.book_kw's env (self.env, tests/gate/fixtures test_env), which
+    lock.run book copies, so os.environ never reaches it."""
+    GATE = {'steps': [      # `probe` continues, so `unit` (RED_AWARE) runs after its FAIL
+        {'name': 'probe', 'always': True, 'cmd': ['{python}', '-c', 'print("ok")'],
+         'pass': '^ok$', 'continue': True, 'requires': [BUSY], 'requires_strict': True},
+        {'name': 'unit', 'always': True, 'cmd': fixtures.RED_AWARE, 'pass': '^ok$'}]}
+
+    def busy(self, **kw):
+        with mock.patch.dict(self.env, KIT_TEST_BUSY='1'):
+            return self.run_promote(**kw)
+
+    def test_a_busy_probe_records_no_red_and_the_tip_is_retried_and_promoted_once_free(self):
+        before = self.remote_main()
+        tip = self.land()
+        out = self.busy()
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual(self.remote_main(), before)
+        a = self.attempts()[-1]
+        self.assertEqual((a.phase, a.sha, len(self.attempts())), ('machine', tip, 1))
+        self.assertIn('which exited 1', a.rec['why'])
+        self.assertNotIn('machine', a.rec)
+        self.assertEqual(SP.look(self.main_dir, self.cfg(), lambda a: None,
+                                 clock=lambda: time.time() + 7 * HOUR)[0], 'start')
+        self.assertEqual(self.busy().code, G.OK)    # still busy, inside the window: machine again
+        self.assertEqual([a.phase for a in self.attempts()], ['machine', 'machine'])
+        out = self.run_promote()                # the resource is free: the same probe passes
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual((self.remote_main(), self.attempts()[-1].phase), (tip, 'done'))
+
+    def test_a_busy_probe_beside_a_tree_fail_is_red(self):
+        self.land_red()
+        out = self.busy()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertIn(CU.HANDED, out.lines)
+        a = self.attempts()[-1]
+        self.assertEqual(a.phase, 'red')
+        self.assertNotIn('machine', a.rec)
+        self.assertEqual([r['status'] for r in a.rec['inspect']['results']], ['FAIL', 'FAIL'])
+
+    def test_a_streak_older_than_the_window_ends_red_as_the_machine_s_and_is_held(self):
+        tip = self.land()
+        self.assertEqual(self.busy().code, G.OK)
+        later = time.time() + SP.MACHINE_WINDOW_S + 60
+        with mock.patch.object(CU.B, 'Prober', side_effect=AssertionError('a prober was built')):
+            out = self.busy(clock=lambda: later)
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        a = self.attempts()[-1]
+        self.assertEqual(a.phase, 'red')
+        self.assertIn('which exited 1', a.rec['machine'])
+        self.assertTrue(a.rec['why'].endswith("(the machine's FAIL for over 1 h)"), a.rec['why'])
+        self.assertIn(CU.MACHINE_HANDED % a.rec['machine'], out.lines)
+        self.assertNotIn(CU.HANDED, out.lines)
+        self.assertEqual(a.rec['inspect']['red'], ['probe'])
+        out = self.run_promote(gate=self.no_gate)
+        self.assertIn('HELD - %s ended red' % tip[:10], out.lines[0])
+
+    def test_a_window_red_with_no_step_a_hunt_can_probe_is_still_handed_as_the_machine_s(self):
+        tip = self.land()
+        self.crafted('machine', sha=tip)
+        why = 'did not start (see its log)'
+
+        def gate(*a, **k):      # only the gate's own step FAILs, for the machine: none to probe
+            return G.Outcome(G.FAILED, ['GATE FAILED: gate'], verdict='GATE FAILED: gate',
+                             head=tip, log_dir=None, results=[
+                                 {'name': 'gate', 'status': 'FAIL', 'reasons': [why],
+                                  'log': None}])
+        out = self.run_promote(gate=gate, clock=lambda: time.time() + SP.MACHINE_WINDOW_S + 60)
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        a = self.attempts()[-1]
+        self.assertEqual((a.phase, a.rec['machine']), ('red', why))
+        self.assertNotIn('inspect', a.rec)
+        self.assertIn(CU.MACHINE_HANDED % why, out.lines)
 
 
 class HuntDailyForm(Case):

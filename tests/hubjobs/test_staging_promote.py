@@ -79,11 +79,13 @@ class Job(unittest.TestCase):
 
     def test_each_end_is_announced_as_its_event(self):
         self.looks = {'/a': ('idle', 'held', [Attempt('refused', 'f' * 40),
-                                               Attempt('red', None)])}
+                                               Attempt('red', None),
+                                               Attempt('red', 'e' * 40, machine='busy probe')])}
         self.run_job({'a': '/a'})
         self.assertEqual(self.ctx.events, [('promote-refused', 'a:' + 'f' * 10),
-                                           ('promote-red', 'a:?')])
-        for end in ('red', 'refused', 'diverged', 'failed', 'error'):
+                                           ('promote-red', 'a:?'),
+                                           ('promote-machine-red', 'a:' + 'e' * 10)])
+        for end in ('red', 'refused', 'diverged', 'failed', 'error', 'machine-red'):
             self.assertIn(end, sp.EVENTS)
 
     def test_a_red_with_a_revert_branch_is_announced_as_promote_revert_of_the_culprit(self):
@@ -110,9 +112,19 @@ class Job(unittest.TestCase):
         for end in (CU.FLAKE, CU.ON_MAIN, CU.CAPPED, CU.INCONCLUSIVE):     # a red that hunted
             self.assertIn(end, text)
 
+    def test_promote_machine_red_names_status_alone_and_says_fix_the_machine(self):
+        text = push.JOB_EACH['promote-machine-red']
+        calls = re.findall(r'`tools/promote\.py ([^`]*)`', text)
+        self.assertEqual(calls, ['--status'])
+        tool.parse_args(calls[0].split())
+        for said in ('`machine`', 'fix the machine or tool, not the tree', 'new staging tip'):
+            self.assertIn(said, text)
+        self.assertNotIn('inspect', text)
+
     def test_promote_red_and_revert_alone_are_owed_once_per_detail_and_revert_says_review(self):
         self.assertIn('promote-revert', push.JOB_EACH)
         self.assertIn('promote-red', push.JOB_EACH)
+        self.assertIn('promote-machine-red', push.JOB_EACH)
         for end in ('refused', 'diverged', 'failed', 'error'):
             self.assertNotIn('promote-' + end, push.JOB_EACH)
         text = push.JOB_EACH['promote-revert']

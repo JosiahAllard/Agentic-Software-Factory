@@ -134,7 +134,7 @@ store's git push (the `push` setting).
   a detail is one more header field, `[hub push] job <name> <word> detail:<detail> route:pm
   attempt:<k>`, cut to the header alphabet like every field (a sha or a count, never prose). Each job
   owes at most one push: a newer event replaces one not yet written, its detail with it, except a
-  word in `push.JOB_EACH` (`unblocked`, `approval-expired`, `fill`, `stale-lock`, `behind`, `stale-code`, `promote-red`, `promote-revert` and the usage crossover's words), owed once per detail, so two
+  word in `push.JOB_EACH` (`unblocked`, `approval-expired`, `fill`, `stale-lock`, `behind`, `stale-code`, `promote-red`, `promote-revert`, `promote-machine-red` and the usage crossover's words), owed once per detail, so two
   records unblocked in one round are two pushes. `unblock-conditions` (`kitlib/hubjobs/unblock_conditions.py`, every 300 s) reads
   each `launcher.repos` repository's store with no fetch and, on each blocked record, each `until`
   line it may act on (docs/backlog.md "block --until"); a met condition clears that one member in one
@@ -180,7 +180,10 @@ store's git push (the `push` setting).
   already hunted as well. A red whose culprit hunt prepared a local revert branch is pushed as
   `promote-revert` instead, detail `<repo>:<landing sha10>`: in `JOB_EACH`, so each prepared revert
   is its own item, and its text tells the PM to hand the branch to that coordinator to review and
-  land. A hand-run `promote.py --hunt` on a red already pushed posts no item, a culprit found
+  land. A red the machine window ended (the attempt's `machine`) is pushed as `promote-machine-red`
+  instead, detail `<repo>:<sha10>`: in `JOB_EACH`, its text says to fix the machine or tool, not
+  the tree (`--fixed` and `--hunt` refuse it), names `promote.py --status` for the reasons, and
+  says a new staging tip clears it. A hand-run `promote.py --hunt` on a red already pushed posts no item, a culprit found
   included (docs/modules/staging-design.md "Culprit and revert").
   `session-watch` (`kitlib/hubjobs/session_watch.py`, docs/session-watch.md) runs the
   session checks every 60 s, first at 30 s, and pushes at most once a run: one event as its kind

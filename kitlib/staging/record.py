@@ -41,7 +41,8 @@ machine_since's streak is older than the promotion's window). HOLDS never test t
 (failed among them, so a tip whose push or record keeps failing is not gated again on every hub
 tick): a new staging tip is a
 fresh attempt, and a refused one waits for the owner's action as well. ANNOUNCE get one hub item
-each (Attempt.event: a red one whose culprit's revert branch was prepared is word `revert`).
+each (Attempt.event: a red one whose culprit's revert branch was prepared is word `revert`, a
+red the machine window ended is word `machine-red`).
 
 The records are written atomically (kitlib.fs.atomic) and only by the run holding the promote
 lock (kitlib.staging.promote.lock_for), the hub job's `announced` mark included.
@@ -99,9 +100,12 @@ class Attempt(object):
 
     def event(self):
         """`(word, detail id)` of this attempt's hub item: ('revert', the culprit's sha10) when a
-        revert branch was prepared, else (its phase, its sha10)."""
+        revert branch was prepared, ('machine-red', its sha10) for a red the machine window ended
+        (its `machine`), else (its phase, its sha10)."""
         if (self.rec.get('revert') or {}).get('branch'):
             return 'revert', ((self.rec.get('culprit') or {}).get('merge') or '?')[:10]
+        if self.phase == 'red' and self.rec.get('machine'):
+            return 'machine-red', (self.sha or '?')[:10]
         return self.phase, (self.sha or '?')[:10]
 
     def set(self, phase, why=None, **more):

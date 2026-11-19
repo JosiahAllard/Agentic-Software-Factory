@@ -113,6 +113,7 @@ class Job(unittest.TestCase):
             self.assertIn(end, text)
 
     def test_promote_machine_red_names_status_alone_and_says_fix_the_machine(self):
+        self.assertIn('promote-machine-red', push.JOB_EACH)    # owed once per detail
         text = push.JOB_EACH['promote-machine-red']
         calls = re.findall(r'`tools/promote\.py ([^`]*)`', text)
         self.assertEqual(calls, ['--status'])
@@ -124,7 +125,6 @@ class Job(unittest.TestCase):
     def test_promote_red_and_revert_alone_are_owed_once_per_detail_and_revert_says_review(self):
         self.assertIn('promote-revert', push.JOB_EACH)
         self.assertIn('promote-red', push.JOB_EACH)
-        self.assertIn('promote-machine-red', push.JOB_EACH)
         for end in ('refused', 'diverged', 'failed', 'error'):
             self.assertNotIn('promote-' + end, push.JOB_EACH)
         text = push.JOB_EACH['promote-revert']

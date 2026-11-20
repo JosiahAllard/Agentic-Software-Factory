@@ -129,6 +129,33 @@ def pid_list(n):
         "_fields_": [("assigned", DW), ("listed", DW), ("ids", ctypes.c_size_t * n)]})()
 
 
+# CreateProcessW with a job list (create_process): the child is born inside the jobs (Windows 10
+# 1709+), so no instant of it is outside them, not even suspended.
+PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
+PROC_THREAD_ATTRIBUTE_JOB_LIST = 0x0002000D
+EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+CREATE_UNICODE_ENVIRONMENT = 0x00000400
+CSTR_EQUAL = 2                              # CompareStringOrdinal: 1 less, 2 equal, 3 greater
+
+
+class STARTUPINFOW(ctypes.Structure):
+    _fields_ = [("cb", DW), ("lpReserved", wintypes.LPWSTR), ("lpDesktop", wintypes.LPWSTR),
+                ("lpTitle", wintypes.LPWSTR)] + [(n, DW) for n in (
+                    "dwX", "dwY", "dwXSize", "dwYSize", "dwXCountChars", "dwYCountChars",
+                    "dwFillAttribute", "dwFlags")] + [
+                ("wShowWindow", wintypes.WORD), ("cbReserved2", wintypes.WORD),
+                ("lpReserved2", ctypes.c_void_p), ("hStdInput", H), ("hStdOutput", H),
+                ("hStdError", H)]
+
+
+class STARTUPINFOEXW(ctypes.Structure):
+    _fields_ = [("StartupInfo", STARTUPINFOW), ("lpAttributeList", ctypes.c_void_p)]
+
+
+class PROCESS_INFORMATION(ctypes.Structure):
+    _fields_ = [("hProcess", H), ("hThread", H), ("dwProcessId", DW), ("dwThreadId", DW)]
+
+
 K32_PROTOTYPES = {_n: (_r, _a) for _n, _r, _a in (
         ("CreateMutexW", H, (wintypes.LPVOID, BOOL, wintypes.LPCWSTR)),
         ("OpenMutexW", H, (DW, BOOL, wintypes.LPCWSTR)),
@@ -163,7 +190,19 @@ K32_PROTOTYPES = {_n: (_r, _a) for _n, _r, _a in (
         ("GetSystemCpuSetInformation", BOOL, (wintypes.LPVOID, wintypes.ULONG,
                                               ctypes.POINTER(wintypes.ULONG), H, wintypes.ULONG)),
         ("SetProcessAffinityMask", BOOL, (H, ctypes.c_size_t)),
-        ("SetProcessDefaultCpuSets", BOOL, (H, ctypes.POINTER(wintypes.ULONG), wintypes.ULONG)))}
+        ("SetProcessDefaultCpuSets", BOOL, (H, ctypes.POINTER(wintypes.ULONG), wintypes.ULONG)),
+        ("CreateProcessW", BOOL, (wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.LPVOID,
+                                  wintypes.LPVOID, BOOL, DW, wintypes.LPVOID, wintypes.LPCWSTR,
+                                  ctypes.POINTER(STARTUPINFOEXW),
+                                  ctypes.POINTER(PROCESS_INFORMATION))),
+        ("InitializeProcThreadAttributeList", BOOL, (wintypes.LPVOID, DW, DW,
+                                                     ctypes.POINTER(ctypes.c_size_t))),
+        ("UpdateProcThreadAttribute", BOOL, (wintypes.LPVOID, DW, ctypes.c_size_t,
+                                             wintypes.LPVOID, ctypes.c_size_t, wintypes.LPVOID,
+                                             wintypes.LPVOID)),
+        ("DeleteProcThreadAttributeList", None, (wintypes.LPVOID,)),
+        ("CompareStringOrdinal", ctypes.c_int, (wintypes.LPCWSTR, ctypes.c_int, wintypes.LPCWSTR,
+                                                ctypes.c_int, BOOL)))}
 K32 = LazyDLL("kernel32", K32_PROTOTYPES, use_last_error=True)
 
 NTDLL = LazyDLL("ntdll", {
@@ -227,48 +266,6 @@ def resume(handle):
     return NTDLL.NtResumeProcess(int(h))
 
 
-# CreateProcessW with a job list (create_process): the child is born inside the jobs (Windows 10
-# 1709+), so no instant of it is outside them, not even suspended.
-PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
-PROC_THREAD_ATTRIBUTE_JOB_LIST = 0x0002000D
-EXTENDED_STARTUPINFO_PRESENT = 0x00080000
-CREATE_UNICODE_ENVIRONMENT = 0x00000400
-CSTR_EQUAL = 2                              # CompareStringOrdinal: 1 less, 2 equal, 3 greater
-
-
-class STARTUPINFOW(ctypes.Structure):
-    _fields_ = [("cb", DW), ("lpReserved", wintypes.LPWSTR), ("lpDesktop", wintypes.LPWSTR),
-                ("lpTitle", wintypes.LPWSTR)] + [(n, DW) for n in (
-                    "dwX", "dwY", "dwXSize", "dwYSize", "dwXCountChars", "dwYCountChars",
-                    "dwFillAttribute", "dwFlags")] + [
-                ("wShowWindow", wintypes.WORD), ("cbReserved2", wintypes.WORD),
-                ("lpReserved2", ctypes.c_void_p), ("hStdInput", H), ("hStdOutput", H),
-                ("hStdError", H)]
-
-
-class STARTUPINFOEXW(ctypes.Structure):
-    _fields_ = [("StartupInfo", STARTUPINFOW), ("lpAttributeList", ctypes.c_void_p)]
-
-
-class PROCESS_INFORMATION(ctypes.Structure):
-    _fields_ = [("hProcess", H), ("hThread", H), ("dwProcessId", DW), ("dwThreadId", DW)]
-
-
-K32_PROTOTYPES.update({_n: (_r, _a) for _n, _r, _a in (
-        ("CreateProcessW", BOOL, (wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.LPVOID,
-                                  wintypes.LPVOID, BOOL, DW, wintypes.LPVOID, wintypes.LPCWSTR,
-                                  ctypes.POINTER(STARTUPINFOEXW),
-                                  ctypes.POINTER(PROCESS_INFORMATION))),
-        ("InitializeProcThreadAttributeList", BOOL, (wintypes.LPVOID, DW, DW,
-                                                     ctypes.POINTER(ctypes.c_size_t))),
-        ("UpdateProcThreadAttribute", BOOL, (wintypes.LPVOID, DW, ctypes.c_size_t,
-                                             wintypes.LPVOID, ctypes.c_size_t, wintypes.LPVOID,
-                                             wintypes.LPVOID)),
-        ("DeleteProcThreadAttributeList", None, (wintypes.LPVOID,)),
-        ("CompareStringOrdinal", ctypes.c_int, (wintypes.LPCWSTR, ctypes.c_int, wintypes.LPCWSTR,
-                                                ctypes.c_int, BOOL)))})
-
-
 def _env_block(env):
     """_winapi.CreateProcess's environment block for the mapping `env`: names sorted ignoring
     case (CompareStringOrdinal, as _winapi sorts), of names equal but for case the last one given
@@ -283,7 +280,7 @@ def _env_block(env):
         pairs.append((name, value))
 
     def order(a, b):
-        return K32.CompareStringOrdinal(a[0], len(a[0]), b[0], len(b[0]), True) - CSTR_EQUAL
+        return K32.CompareStringOrdinal(a[0], -1, b[0], -1, True) - CSTR_EQUAL   # NUL-ended
     pairs.sort(key=functools.cmp_to_key(order))         # stable: equal names keep their order
     kept = []
     for pair in pairs:
@@ -292,7 +289,7 @@ def _env_block(env):
         else:
             kept.append(pair)
     text = "".join("%s=%s\0" % pair for pair in kept) + "\0"
-    return ctypes.create_unicode_buffer(text, len(text))
+    return ctypes.create_unicode_buffer(text)     # sized in UTF-16 units, one NUL more
 
 
 def _handles(values):
@@ -330,7 +327,9 @@ def create_process(app, cmd, proc_attrs, thread_attrs, inherit, flags, env, cwd,
                 raise ctypes.WinError(ctypes.get_last_error())
         sx.lpAttributeList = ctypes.addressof(buf)
         line = ctypes.create_unicode_buffer(cmd) if cmd is not None else None
-        flags |= EXTENDED_STARTUPINFO_PRESENT | (CREATE_UNICODE_ENVIRONMENT if block else 0)
+        flags |= EXTENDED_STARTUPINFO_PRESENT
+        if block is not None:
+            flags |= CREATE_UNICODE_ENVIRONMENT
         info = PROCESS_INFORMATION()
         if not K32.CreateProcessW(app, line, None, None, bool(inherit), flags, block, cwd,
                                   ctypes.byref(sx), ctypes.byref(info)):

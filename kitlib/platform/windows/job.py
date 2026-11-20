@@ -223,11 +223,11 @@ class Job:
         startup = startup.copy() if startup is not None else subprocess.STARTUPINFO()
         startup.lpAttributeList = dict(startup.lpAttributeList or {}, **{JOB_LIST: [int(self.h)]})
         hold = not self.kill_on_close   # kill-on-close from the birth to the resume
-        if hold and not self._limit(True):
-            raise JobError("kill-on-close for the command's birth: SetInformationJobObject: "
-                           "windows error %d" % ctypes.get_last_error())
         held = _Held()      # making the child to its resume; one that raises holds nothing
         try:
+            if hold and not self._limit(True):  # half set (a group pin refused): undone below
+                raise JobError("kill-on-close for the command's birth: SetInformationJobObject: "
+                               "windows error %d" % ctypes.get_last_error())
             p = subprocess.Popen(cmd, creationflags=flags, startupinfo=startup, **kw)
             try:
                 self._born(p)

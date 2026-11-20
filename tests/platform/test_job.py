@@ -43,7 +43,7 @@ ENV_BLOCK = "\n".join([
     "p, out = k.GetEnvironmentStringsW(), []",
     "while ctypes.wstring_at(p):",
     "    out.append(ctypes.wstring_at(p))",
-    "    p += 2 * (len(out[-1]) + 1)",
+    "    p += len(out[-1].encode('utf-16-le')) + 2",
     "sys.stdout.write(json.dumps(out))"])
 
 
@@ -66,6 +66,15 @@ def end_own(proc):
     proc.wait(30)
     for f in (proc.stdin, proc.stdout):
         f.close()
+
+
+def limit_flags(j):
+    """The job's LimitFlags now."""
+    info = win32.EXT_LIMITS()
+    if not win32.K32.QueryInformationJobObject(j.h, win32.JOB_EXT_LIMITS, ctypes.byref(info),
+                                               ctypes.sizeof(info), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return info.Basic.LimitFlags
 
 
 def end_by_handle(h):
@@ -132,6 +141,15 @@ class Plans(unittest.TestCase):
         self.assertIsNone(winjob.affinity_plan(None))
         self.assertIsNone(winjob.affinity_plan(0))
 
+    def test_every_kernel32_prototype_is_the_dll_s(self):
+        # LazyDLL copies the table when it is made: a row added after that is never applied.
+        self.assertEqual(win32.K32._prototypes, win32.K32_PROTOTYPES)
+        self.assertIn("CreateProcessW", win32.K32._prototypes)
+        fn = win32.K32.CreateProcessW
+        self.assertIs(fn.restype, win32.BOOL)
+        self.assertEqual(fn.argtypes[8], ctypes.POINTER(win32.STARTUPINFOEXW))
+        self.assertIs(win32.K32.CompareStringOrdinal.restype, ctypes.c_int)
+
     def test_a_mask_past_64_is_set_per_group(self):
         self.assertEqual(winjob.affinity_plan(0b11 | (0b1 << 64)), ("groups", [(0, 0b11), (1, 1)]))
         self.assertEqual(winjob.affinity_plan(0b1 << 70), ("groups", [(1, 1 << 6)]))
@@ -165,7 +183,12 @@ class LimitRefused(unittest.TestCase):
             j.close()
 
     def test_a_no_kill_job_that_cannot_hold_kill_on_close_for_the_birth_starts_nothing(self):
-        with mock.patch.object(winjob, "_set_ext", return_value=False):
+        flags = []
+
+        def refuse(h, f, affinity=0):
+            flags.append(f)
+            return False
+        with mock.patch.object(winjob, "_set_ext", side_effect=refuse):
             j = job.Job(kill_on_close=False)
             try:
                 with mock.patch.object(subprocess, "Popen") as popen:
@@ -174,6 +197,22 @@ class LimitRefused(unittest.TestCase):
                 popen.assert_not_called()
             finally:
                 j.close()
+        # a refusal may have set part of it (a group pin): the job is put back as asked
+        self.assertEqual(flags[-2:], [win32.JOB_KILL_ON_CLOSE, 0])
+
+    def test_a_group_pin_refused_at_the_birth_leaves_no_kill_on_close(self):
+        # _limit(True) sets kill-on-close, then the group pin is refused: put back, nothing run
+        j = job.Job(kill_on_close=False)
+        try:
+            with mock.patch.object(winjob, "affinity_plan", return_value=("groups", [(0, 1)])), \
+                    mock.patch.object(winjob, "_set_groups", return_value=False), \
+                    mock.patch.object(subprocess, "Popen") as popen:
+                with self.assertRaisesRegex(job.JobError, "birth"):
+                    j.start([sys.executable, "-c", "pass"])
+            popen.assert_not_called()
+            self.assertFalse(limit_flags(j) & win32.JOB_KILL_ON_CLOSE)
+        finally:
+            j.close()
 
     def test_a_kill_on_close_not_cleared_after_the_resume_ends_the_child(self):
         # Left set, the job's close would end a git write: the child, just resumed, is ended.
@@ -341,6 +380,21 @@ class Live(unittest.TestCase):
                 self.assertEqual(win32.K32.WaitForSingleObject(h, 10000), win32.WAIT_OBJECT_0,
                                  "the child outlived its parent")
 
+    def test_a_no_kill_job_whose_start_fails_is_left_without_kill_on_close(self):
+        def not_born(j, p):
+            raise job.JobError("not born")
+        for why, patch in (("no such program", None), ("not born", not_born)):
+            with self.subTest(why):
+                j = job.Job(kill_on_close=False)
+                try:
+                    with mock.patch.object(winjob.Job, "_born", patch or winjob.Job._born):
+                        with self.assertRaises((OSError, job.JobError)):
+                            j.start([os.path.join(self.tmp, "no-such-program.exe")] if patch is None
+                                    else [sys.executable, "-c", "pass"])
+                    self.assertFalse(limit_flags(j) & win32.JOB_KILL_ON_CLOSE)
+                finally:
+                    j.close()
+
     def test_a_no_kill_job_s_command_outlives_the_job(self):
         # kill-on-close is held only from the birth to the resume: kitlib.git.cmd's writes run
         # on after their job's handle closes (as at the parent's death).
@@ -460,6 +514,7 @@ class EnvBlock(unittest.TestCase):
         for env in ({"PATH": "a", "Path": "b"}, {"Path": "b", "PATH": "a"},
                     {"b": "1", "A": "2", "c": "3", "_x": "4", "a1": "5"},
                     {"=C:": "C:\\x", "=D:": "D:\\", "Z": "z"}, {"": "1"}, {"=": "1"},
+                    {"\U0001F600N": "1", "M": "2"}, {"V": "a\U0001F600b"},
                     {"A=B": "1"}, {"A": "1\0"}, {}):
             with self.subTest(env=env):
                 env = dict(env, **root) if env else env

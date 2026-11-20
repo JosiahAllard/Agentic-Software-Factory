@@ -144,11 +144,14 @@ class Plans(unittest.TestCase):
     def test_every_kernel32_prototype_is_the_dll_s(self):
         # LazyDLL copies the table when it is made: a row added after that is never applied.
         self.assertEqual(win32.K32._prototypes, win32.K32_PROTOTYPES)
-        self.assertIn("CreateProcessW", win32.K32._prototypes)
-        fn = win32.K32.CreateProcessW
-        self.assertIs(fn.restype, win32.BOOL)
-        self.assertEqual(fn.argtypes[8], ctypes.POINTER(win32.STARTUPINFOEXW))
-        self.assertIs(win32.K32.CompareStringOrdinal.restype, ctypes.c_int)
+        born = [name for name, (_, args) in win32.K32_PROTOTYPES.items()
+                if ctypes.POINTER(win32.STARTUPINFOEXW) in args]
+        self.assertEqual(len(born), 1, "the job-list start's prototype is in the table")
+        for name, (restype, argtypes) in win32.K32_PROTOTYPES.items():
+            with self.subTest(name):
+                fn = getattr(win32.K32, name)       # the bound function, its prototype applied
+                self.assertIs(fn.restype, restype)
+                self.assertEqual(tuple(fn.argtypes), tuple(argtypes))
 
     def test_a_mask_past_64_is_set_per_group(self):
         self.assertEqual(winjob.affinity_plan(0b11 | (0b1 << 64)), ("groups", [(0, 0b11), (1, 1)]))

@@ -107,6 +107,9 @@ GUARD_TEST = ('a guard test hands the guard a command line that holds this text 
               'command is parsed, never run')
 FLAG_PASSES = ('a test of how a caller\'s console choice is passed on: the flag goes to a stand-in '
                'for CreateProcess, nothing is started with it')
+JOB_BIRTH = ('a Job.start child born inside its job (its prototype row, and the call): reached '
+             'only through console._create_process, the CreateProcess hook, after the hook has '
+             'resolved the console flags')
 OPEN = ' OPEN (reported, not fixed here): '
 
 HAZARD_EXEMPT = {
@@ -146,6 +149,8 @@ HAZARD_EXEMPT = {
         1, 'the constant definition the kit\'s callers and tests name; defining it starts nothing'),
     ('kitlib/platform/windows/win32.py', '<module>', 'DETACHED_PROCESS'): (
         1, 'the constant definition the kit\'s callers and tests name; defining it starts nothing'),
+    ('kitlib/platform/windows/win32.py', '<module>', 'CreateProcessW'): (1, JOB_BIRTH),
+    ('kitlib/platform/windows/win32.py', 'create_process', 'CreateProcessW'): (1, JOB_BIRTH),
     ('optional/bridge/win/startup.py', 'render', '-WindowStyle Hidden'): (
         2, 'renders the optional bridge\'s logon task (powershell -WindowStyle Hidden -File) and '
            'start-bridge.ps1, which the owner installs by hand.' + OPEN + 'a console started '

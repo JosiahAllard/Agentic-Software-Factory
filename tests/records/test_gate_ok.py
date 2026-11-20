@@ -228,6 +228,17 @@ class VerifyTest(GateOkCase):
         self.assertEqual(gate_ok.verify(self.repo.root, self.head, GATE), (rec, None))
         self.assertEqual(gate_ok.verify(self.repo.root, 'main')[0], rec)
 
+    def test_one_common_dir_read_per_verify_and_none_when_given(self):
+        _, rec = self.passed()
+        common = self.repo.common_dir()
+        with mock.patch.object(gate_ok.repo, 'common_dir', wraps=gate_ok.repo.common_dir) as cd:
+            self.assertEqual(gate_ok.verify(self.repo.root, self.head)[0], rec)
+            self.assertEqual(cd.call_count, 1)
+            self.assertEqual(gate_ok.verify_full(self.repo.root, self.head, common=common),
+                             gate_ok.verify_full(self.repo.root, self.head))
+            self.assertEqual(gate_ok.verify(self.repo.root, self.head, common=common)[0], rec)
+            self.assertEqual(cd.call_count, 2)
+
     def test_no_record_and_an_unknown_revision_refuse(self):
         rec, why = gate_ok.verify(self.repo.root, self.head)
         self.assertIsNone(rec)

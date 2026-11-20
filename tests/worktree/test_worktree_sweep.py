@@ -13,11 +13,11 @@ import time
 import unittest
 from unittest import mock
 
-from kitlib import kitroot
 from kitlib.config import user
 from kitlib.git import defaults as gitdefaults
 from kitlib.worktree import nightly, remove, sweep
 from tests import gitfixture
+from tests.lock.helpers import StoreCase
 from tests.realgit import real_git
 from tests.worktree.test_classify import ClassifyCase
 
@@ -651,63 +651,37 @@ class StaleMarkOpenClaim(StaleMarkCase):
         self.assertTrue(os.path.isdir(path))
 
 
-class MachineLockEntries(unittest.TestCase):
-    """The lock tool is the kit's own tools/machine_lock.py (kitlib.kitroot.lock_tool), never one
-    under the home folder: a temp home with no `.claude` in it stands in for the user's."""
+class MachineLockEntries(StoreCase):
+    """The machine lock is read in this process (kitlib.lock.api.live_records), never through a
+    `machine_lock.py status` child; any read that fails, the test fence among them, fails closed."""
 
-    def setUp(self):
-        self.kit = tempfile.mkdtemp(prefix='kit-')
-        self.addCleanup(gitfixture.rmtree, self.kit)
-        self.tool = sweep.machine_lock_path(self.kit)
-        os.makedirs(os.path.dirname(self.tool))
-        with open(self.tool, 'w') as f:
-            f.write('# never run: the runner is faked\n')
-        self.home = tempfile.mkdtemp(prefix='kit-home-')
-        self.addCleanup(gitfixture.rmtree, self.home)
-        patch = mock.patch.object(user, 'home_dir', return_value=self.home)
-        patch.start()
-        self.addCleanup(patch.stop)
+    RUN = 'r-20261120T120000Z-aaaaaa'
 
-    def entries(self, stdout, rc=0):
-        def run(args, **kw):
-            self.assertEqual(args[-2:], ['status', '--json'])
-            self.assertEqual(args[-3], self.tool)
-            return subprocess.CompletedProcess(args, rc, stdout, '')
-        return sweep.machine_lock_entries(run=run, kit=self.kit)
+    def test_the_lock_is_read_in_process(self):
+        self.live_record(self.RUN, slug='other', branch='kit/slug')
+        with mock.patch.object(subprocess, 'Popen', side_effect=AssertionError('a child ran')):
+            got, why = sweep.machine_lock_entries(store=self.store)
+        self.assertIsNone(why)
+        self.assertEqual([e['id'] for e in got], [self.RUN])
+        path = os.path.join('C:' + os.sep, 'r', '.claude', 'worktrees', 'slug')
+        self.assertIn(self.RUN, sweep.machine_lock_holder(got, path, 'kit/slug'))
 
-    def test_the_default_is_the_kits_own_lock_tool(self):
-        self.assertEqual(sweep.machine_lock_path(), kitroot.lock_tool())
-        self.assertEqual(sweep.machine_lock_path(self.kit), os.path.join(self.kit, 'tools', 'machine_lock.py'))
-        ran = []
-
-        def run(args, **kw):
-            ran.append(args)
-            return subprocess.CompletedProcess(args, 0, '{"runs": [], "queue": {"entries": []}}', '')
-        self.assertEqual(sweep.machine_lock_entries(run=run), ([], None))
-        self.assertEqual(ran[0][-3], kitroot.lock_tool())
-        self.assertFalse(os.path.normcase(ran[0][-3]).startswith(os.path.normcase(self.home)), ran[0])
-
-    def test_the_pm_shape(self):
-        doc = {'lock': {'held': [{'id': 1}], 'waiting': [{'id': 2}], 'background': [{'id': 3}]}}
-        self.assertEqual(self.entries(json.dumps(doc)), ([{'id': 1}, {'id': 2}, {'id': 3}], None))
-
-    def test_the_kit_shape(self):
-        doc = {'runs': [{'id': 1}], 'queue': {'entries': [{'id': 2}]}}
-        self.assertEqual(self.entries(json.dumps(doc)), ([{'id': 1}, {'id': 2}], None))
-
-    def test_anything_else_fails_closed(self):
-        for text, rc in (('{}', 0), ('not json', 0), ('{"lock": {"held": []}}', 3),
-                         ('{"lock": {"held": [], "waiting": 5}}', 0)):
-            got, why = self.entries(text, rc)
-            self.assertIsNone(got, text)
-            self.assertTrue(why)
-
-    def test_a_missing_tool_fails_closed(self):
-        run = mock.Mock()
-        got, why = sweep.machine_lock_entries(run=run, kit=os.path.join(self.kit, 'no'))
+    def test_a_store_that_cannot_be_read_fails_closed(self):
+        os.makedirs(self.store.path(), exist_ok=True)
+        with open(self.store.path('queue.json'), 'w', encoding='utf-8') as f:
+            f.write('{not json')
+        got, why = sweep.machine_lock_entries(store=self.store)
         self.assertIsNone(got)
-        self.assertIn('not at', why)
-        run.assert_not_called()
+        self.assertIn('queue unreadable', why)
+
+    def test_the_fenced_machine_store_fails_closed(self):
+        with mock.patch.object(user, 'fenced', return_value=True):
+            got, why = sweep.machine_lock_entries()
+        self.assertIsNone(got)
+        self.assertIn('fenced', why)
+
+
+class MachineLockHolder(unittest.TestCase):
 
     def test_holder_matching(self):
         path = os.path.join('C:' + os.sep, 'r', '.claude', 'worktrees', 'slug')

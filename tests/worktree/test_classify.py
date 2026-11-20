@@ -1105,6 +1105,20 @@ class SharedReads(ClassifyCase):
         self.assertEqual([self.row(data, p)['class'] for p in [first] + others], ['L'] * 3)
         self.assertEqual(calls, [])
 
+    def test_a_dead_tree_asks_git_for_no_common_dir(self):
+        """gate_state hands gate_ok the run's common dir: the gate-OK record read of a dead tree
+        starts no `rev-parse --git-common-dir` (two each before)."""
+        from kitlib.records import gate_ok
+        counts, real = [], gate_ok.repo.common_dir
+        for names in (['one'], ['two', 'three']):
+            paths = [self.workstream(name, commits=1) for name in names]
+            self.green(paths[-1])
+            with mock.patch.object(gate_ok.repo, 'common_dir', wraps=real) as cd:
+                rc, out, data = self.run_classify()
+            self.assertEqual([t['class'] for t in data['trees']].count('L'), 0, out)
+            counts.append(cd.call_count)
+        self.assertEqual(counts[0], counts[1], counts)
+
     def test_a_failed_batch_reads_each_tip_and_classes_stay(self):
         paths = [self.workstream('one'), self.workstream('two', commits=2)]
         self.green(paths[1])

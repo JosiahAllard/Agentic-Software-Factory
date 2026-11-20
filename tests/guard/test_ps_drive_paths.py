@@ -489,6 +489,31 @@ class DynamicTargets(Base):
             with self.subTest(text):
                 self.refused_for_both(text)
 
+    def test_a_long_word_before_a_comma_is_read_at_once(self):
+        # rules_write._atomic: a cmdlet's and a native program's argument that does not end where an
+        # argument may is judged at once, not after every split of its run (2^n: a 600 s hook on
+        # 2026-11-19, a Copy-Item of a path list). Without it 27 characters take some 30 s, doubling
+        # with each one more, so a faster machine stays red
+        # The fourth: a string that cannot close (at its $( ) is read at once too, not after each split
+        # of its variables into name and plain characters (rules_write._PS_DQ; 8 take some 25 s)
+        strung = 'Copy-Item "%s$(Get-Date)" x' % ''.join('$env:' + c * 6 for c in 'ABCDEFGH')
+        for text in ('Copy-Item %s.md, b.md -Destination c' % ('a' * 24), 'robocopy %s.md, b c' % ('a' * 24),
+                     r'Set-Content -Path $env:aaaaaa$env:aaaaaa$env:aaaaaa, b -Value x', strung):
+            with self.subTest(text):
+                start = time.monotonic()
+                self.refused_for_both(text)
+                self.assertLess(time.monotonic() - start, 5.0)
+
+    def test_many_blank_lines_are_read_at_once(self):
+        # rules_write: ^[^\S\n]* in the line searches, not ^\s* (from every line start over every blank
+        # line after it: 30000 take some 30 s); the line is judged as with one blank line
+        text = 'Set-Content env:FOO -Value "%sx"'
+        start = time.monotonic()
+        d = self.run_ps(text % ('\n' * 30000))
+        self.assertLess(time.monotonic() - start, 5.0)
+        one = self.run_ps(text % '\n')
+        self.assertEqual(d and (d.verdict, d.rule), one and (one.verdict, one.rule))
+
     def test_a_redirection_past_a_continuation_or_comment_is_a_computed_target(self):
         # rules.write_targets: a PowerShell redirection whose target is not a plain word, or that
         # has none the scanner read

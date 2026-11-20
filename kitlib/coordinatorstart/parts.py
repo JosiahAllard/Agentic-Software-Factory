@@ -16,7 +16,7 @@ import time
 
 from kitlib import kitroot
 from kitlib.config import user as kuser
-from kitlib.proc import spawn
+from kitlib.proc import job
 
 PART_TIMEOUT = 5      # seconds for one subprocess part
 DEADLINE = 9          # seconds for all parts together
@@ -28,36 +28,15 @@ NEXT_LINES = 8
 FOLDER_SUFFIX = "-coordinator"
 
 
-def _kill_tree(proc):
-    """End `proc` and every process it started (a timed-out part must leave nothing behind when
-    the hook exits); the child alone when its tree cannot be read."""
-    try:
-        from kitlib.proc import process
-        ctime = process.proc_ctime(proc.pid)
-        if ctime is not None:
-            process.kill_tree(proc.pid, ctime)
-    except Exception:
-        pass
-    try:
-        proc.kill()
-    except OSError:
-        pass
-
-
 def _exec(args, timeout):
-    """(exit code, stdout, stderr). On a timeout the child and its descendants are ended, then
-    subprocess.TimeoutExpired is raised."""
-    proc = spawn.popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    try:
-        out, err = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _kill_tree(proc)
-        try:
-            proc.communicate(timeout=1)
-        except Exception:
-            pass
-        raise
-    return proc.returncode, out, err
+    """(exit code, stdout, stderr). The part runs in a kill-on-close job of its own
+    (kitlib.proc.job.run_short): on a timeout every process it started is ended, one whose parent
+    has exited and a git still suspended before its own job included, then
+    subprocess.TimeoutExpired is raised. That job also ends the gits kitlib.git.cmd._run starts in
+    jobs that are not kill-on-close (those that may write or take a lock), so this is safe only
+    while every part stays read-only. Untested: the job ending the part when this hook exits at
+    DEADLINE, or when the host kills the hook."""
+    return job.run_short(args, timeout, 1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
 def _failed(args, rc, err):

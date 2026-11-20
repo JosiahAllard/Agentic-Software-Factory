@@ -5,6 +5,7 @@ start, so nothing runs."""
 import unittest
 from unittest import mock
 
+from kitlib.coordinatorstart import parts
 from kitlib.git import cmd
 from kitlib.machinesetup import extras
 from kitlib.proc import job
@@ -51,6 +52,9 @@ class ShortCallers(unittest.TestCase):
 
     def test_an_inflight_look_is_short_and_killed_on_close(self):
         self.check(lambda: inflight.run(['git', '--version'], '.', 5), kill_on_close=True)
+
+    def test_a_coordinator_start_part_is_short_and_killed_on_close(self):
+        self.check(lambda: parts._exec(['git', '--version'], 5), kill_on_close=True)
 
     def test_a_plugin_runner_command_is_short_and_released_on_close(self):
         self.check(lambda: extras.run_tree(['claude', '--version']), kill_on_close=False)

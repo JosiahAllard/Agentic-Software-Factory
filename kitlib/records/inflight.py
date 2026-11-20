@@ -16,7 +16,9 @@ they fetch (docs/new-worktree.md "Waiting for a landing in flight"; docs/sync-ba
   Anything else, a timeout, or a command that cannot start: in flight, because "cannot tell"
   must not read as "free".
 - `wait_s`: the most seconds from the first look to going on (unset: WAIT_S). A look still
-  running at the bound ends by its own capped timeout, plus KILL_GRACE at worst.
+  running at the bound ends by its own capped timeout, plus GONE_WAIT (kitlib.proc.job) and
+  KILL_GRACE at worst (10 s), and on Linux GONE_SECONDS (kitlib.platform.linux.contain) more
+  (15 s).
 
 A reader only reads; it never takes, breaks or changes a lock. Nothing here prints: `wait()` hands
 its progress lines to the caller's `say`.
@@ -120,23 +122,12 @@ def run(argv, cwd, timeout):
     """`(rc, stdout, stderr)` bytes of argv run in `cwd` in its own job, with no input and the
     environment kitlib.git.cmd.scrubbed_env() gives (an inherited GIT_DIR would make a git in it
     answer about another repository). Raises OSError when it cannot start, and
-    subprocess.TimeoutExpired after `timeout` seconds, the job's whole tree ended first."""
-    job = _job.Job(short=True)             # kill-on-close: nothing it started outlives the look
-    try:
-        p = job.start(argv, cwd=cwd, env=gitcmd.scrubbed_env(), stdin=subprocess.DEVNULL,
-                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        try:
-            out, err = p.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            job.terminate()
-            try:
-                p.communicate(timeout=KILL_GRACE)
-            except subprocess.TimeoutExpired:
-                pass
-            raise
-        return p.returncode, out, err
-    finally:
-        job.close()
+    subprocess.TimeoutExpired after `timeout` seconds, the job's whole tree ended first
+    (kitlib.proc.job.run_short): a tree that resists its end holds the look timeout + GONE_WAIT
+    (kitlib.proc.job) + KILL_GRACE seconds at worst (10 s past it), and on Linux + GONE_SECONDS
+    (kitlib.platform.linux.contain, the job's close waiting for a member still alive; 15 s)."""
+    return _job.run_short(argv, timeout, KILL_GRACE, cwd=cwd, env=gitcmd.scrubbed_env(),
+                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
 def reader(root, cfg, lock):

@@ -18,10 +18,12 @@ for a start that goes through neither.
 Ending a tree and waiting for it: end_and_wait. Terminating a job only starts each process's end
 (TerminateJobObject on Windows, the cgroup or member kill on Linux), and the job lists none of
 them at once, so a caller that waits for its direct child alone can go on while a grandchild is
-still ending. end_and_wait holds each process first and returns once all have ended.
+still ending. end_and_wait holds each process first and returns once all have ended. A brief
+command run to its end, its whole tree ended on a timeout: run_short.
 """
 import os
 import select
+import subprocess
 import time
 
 import kitlib.platform
@@ -95,6 +97,33 @@ def end_and_wait(job):
     finally:
         for h in held:
             _release(h)
+
+
+def run_short(argv, timeout, grace, **popen_kw):
+    """`(returncode, stdout, stderr)` of argv run to its end in a Job(short=True) of its own,
+    kill-on-close, with `popen_kw` given to its start. Every process argv starts is in that job
+    from birth, its parent gone or not, so nothing it started outlives the call. After `timeout`
+    seconds the job is ended (end_and_wait), its pipes get `grace` seconds to close, and
+    subprocess.TimeoutExpired is raised; the closed job still ends the tree when end_and_wait
+    fails. Raises OSError when argv cannot start."""
+    j = Job(short=True)
+    try:
+        p = j.start(argv, **popen_kw)
+        try:
+            out, err = p.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                end_and_wait(j)
+            except OSError:
+                pass
+            try:
+                p.communicate(timeout=grace)
+            except subprocess.TimeoutExpired:
+                pass
+            raise
+        return p.returncode, out, err
+    finally:
+        j.close()
 
 
 def _hold_one(pid):

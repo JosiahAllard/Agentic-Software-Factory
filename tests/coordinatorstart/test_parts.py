@@ -1,6 +1,7 @@
 """The read-only start parts of the coordinator header (kitlib.coordinatorstart.parts)."""
 import json
 import os
+import shutil
 import tempfile
 import threading
 import time
@@ -183,16 +184,31 @@ class CommandPartsTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 parts.run_loose(["x", "y"])
 
-    def test_a_timeout_ends_the_whole_process_tree(self):
-        proc = mock.Mock(pid=77)
-        proc.communicate.side_effect = [parts.subprocess.TimeoutExpired("x", 1), ("", "")]
-        killed = []
-        with mock.patch.object(parts.spawn, "popen", return_value=proc), \
-                mock.patch("kitlib.proc.process.proc_ctime", return_value=123), \
-                mock.patch("kitlib.proc.process.kill_tree", lambda pid, ct: killed.append((pid, ct))):
-            with self.assertRaises(parts.subprocess.TimeoutExpired):
-                parts._exec(["x"], 1)
-        self.assertEqual(killed, [(77, 123)])
+    def test_a_timeout_ends_the_whole_tree_even_a_process_whose_parent_has_exited(self):
+        # The part A starts B, B starts C and exits once C has written its pid, then A sleeps past
+        # the timeout. C's parent is gone, so no parent-pid walk from A reaches it; the part's job
+        # holds it from birth. This shows the tree ends whole, not the race with a git that is
+        # still suspended before its own job (that one was shown in scratch, not here).
+        from kitlib.proc import process
+        t = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, t, True)
+        pidfile = os.path.join(t, "c.pid")
+        c = ("import os, sys, time; f = open(sys.argv[1] + '.tmp', 'w'); f.write(str(os.getpid()));"
+             " f.close(); os.replace(sys.argv[1] + '.tmp', sys.argv[1]); time.sleep(30)")
+        b = ("import os, subprocess, sys, time; subprocess.Popen([sys.executable, '-c', %r, sys.argv[1]]);"
+             " end = time.monotonic() + 20\n"
+             "while not os.path.exists(sys.argv[1]) and time.monotonic() < end: time.sleep(0.05)" % c)
+        a = ("import subprocess, sys, time; subprocess.call([sys.executable, '-c', %r, sys.argv[1]]);"
+             " time.sleep(30)" % b)
+        with self.assertRaises(parts.subprocess.TimeoutExpired):
+            parts._exec([parts.sys.executable, "-c", a, pidfile], 3)
+        self.assertTrue(os.path.exists(pidfile), "C never started: the test proves nothing")
+        with open(pidfile, encoding="utf-8") as f:
+            pid = int(f.read())
+        ctime = process.proc_ctime(pid)
+        if ctime is not None:
+            self.addCleanup(process.terminate_verified, pid, ctime)
+        self.assertFalse(ctime is not None and process.alive(pid, ctime))
 
 
 class RunAllTest(unittest.TestCase):

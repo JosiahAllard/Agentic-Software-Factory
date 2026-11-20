@@ -1203,11 +1203,11 @@ class SharedReads(ClassifyCase):
         fresh = os.path.join(admin, 'FRESH_HEAD')
         with open(fresh, 'w') as f:
             f.write('x')
-        os.utime(fresh, (now + 900, now + 900))
+        os.utime(fresh, (int(now) + 900, int(now) + 900))
         want = [os.path.normcase(os.path.normpath(admin))]
         walked, got = self.walks(path, tip_time=0.0, since=now + 100)
         self.assertEqual(walked, want)
-        self.assertEqual(got[0], now + 900)
+        self.assertEqual(got[0], int(now) + 900)
         os.remove(fresh)
         walked, got = self.walks(path, tip_time=0.0, since=now + 100)
         self.assertEqual(walked, want + [os.path.normcase(os.path.normpath(path))])

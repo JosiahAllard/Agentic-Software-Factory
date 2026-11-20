@@ -489,6 +489,18 @@ class DynamicTargets(Base):
             with self.subTest(text):
                 self.refused_for_both(text)
 
+    def test_a_long_word_before_a_comma_is_read_at_once(self):
+        # rules_write._atomic: a cmdlet's and a native program's argument that does not end where an
+        # argument may is judged at once, not after every split of its run (2^n: a 600 s hook on
+        # 2026-11-19, a Copy-Item of a path list). Without it 27 characters take some 30 s, doubling
+        # with each one more, so a faster machine stays red
+        for text in ('Copy-Item %s.md, b.md -Destination c' % ('a' * 24), 'robocopy %s.md, b c' % ('a' * 24),
+                     r'Set-Content -Path $env:aaaaaa$env:aaaaaa$env:aaaaaa, b -Value x'):
+            with self.subTest(text):
+                start = time.monotonic()
+                self.refused_for_both(text)
+                self.assertLess(time.monotonic() - start, 5.0)
+
     def test_a_redirection_past_a_continuation_or_comment_is_a_computed_target(self):
         # rules.write_targets: a PowerShell redirection whose target is not a plain word, or that
         # has none the scanner read

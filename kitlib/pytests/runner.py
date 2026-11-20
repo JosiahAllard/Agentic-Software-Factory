@@ -24,7 +24,7 @@ A unit that ran no test FAILS (named): an empty run proves nothing. Each skipped
 to disk: children are read through pipes.
 
 The kill. A unit still running after `unit_timeout` seconds is killed and reported TIMEOUT (a
-FAIL, named). Each child is started by kitlib.proc.job.Job.start: CREATED SUSPENDED, put in its
+FAIL, named). Each child is started by kitlib.proc.job.Job.start: BORN SUSPENDED inside its
 own job (kill-on-close, no breakaway), shielded while still suspended, then resumed - so not one
 of its instructions, nor those of a launcher-type python.exe that re-executes the real
 interpreter, runs outside the job, and TerminateJobObject ends exactly that job. No pid is ever

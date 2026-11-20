@@ -8,6 +8,8 @@ on any platform (docs/modules/base-design.md "Contract") and a call off Windows 
 PlatformUnsupported.
 """
 import ctypes
+import functools
+import sys
 from ctypes import wintypes
 
 from kitlib.platform.dll import LazyDLL
@@ -223,3 +225,116 @@ def resume(handle):
     Popen closes the thread handle of a CREATE_SUSPENDED child, so the process is resumed."""
     h = getattr(handle, "_handle", handle)
     return NTDLL.NtResumeProcess(int(h))
+
+
+# CreateProcessW with a job list (create_process): the child is born inside the jobs (Windows 10
+# 1709+), so no instant of it is outside them, not even suspended.
+PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
+PROC_THREAD_ATTRIBUTE_JOB_LIST = 0x0002000D
+EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+CREATE_UNICODE_ENVIRONMENT = 0x00000400
+CSTR_EQUAL = 2                              # CompareStringOrdinal: 1 less, 2 equal, 3 greater
+
+
+class STARTUPINFOW(ctypes.Structure):
+    _fields_ = [("cb", DW), ("lpReserved", wintypes.LPWSTR), ("lpDesktop", wintypes.LPWSTR),
+                ("lpTitle", wintypes.LPWSTR)] + [(n, DW) for n in (
+                    "dwX", "dwY", "dwXSize", "dwYSize", "dwXCountChars", "dwYCountChars",
+                    "dwFillAttribute", "dwFlags")] + [
+                ("wShowWindow", wintypes.WORD), ("cbReserved2", wintypes.WORD),
+                ("lpReserved2", ctypes.c_void_p), ("hStdInput", H), ("hStdOutput", H),
+                ("hStdError", H)]
+
+
+class STARTUPINFOEXW(ctypes.Structure):
+    _fields_ = [("StartupInfo", STARTUPINFOW), ("lpAttributeList", ctypes.c_void_p)]
+
+
+class PROCESS_INFORMATION(ctypes.Structure):
+    _fields_ = [("hProcess", H), ("hThread", H), ("dwProcessId", DW), ("dwThreadId", DW)]
+
+
+K32_PROTOTYPES.update({_n: (_r, _a) for _n, _r, _a in (
+        ("CreateProcessW", BOOL, (wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.LPVOID,
+                                  wintypes.LPVOID, BOOL, DW, wintypes.LPVOID, wintypes.LPCWSTR,
+                                  ctypes.POINTER(STARTUPINFOEXW),
+                                  ctypes.POINTER(PROCESS_INFORMATION))),
+        ("InitializeProcThreadAttributeList", BOOL, (wintypes.LPVOID, DW, DW,
+                                                     ctypes.POINTER(ctypes.c_size_t))),
+        ("UpdateProcThreadAttribute", BOOL, (wintypes.LPVOID, DW, ctypes.c_size_t,
+                                             wintypes.LPVOID, ctypes.c_size_t, wintypes.LPVOID,
+                                             wintypes.LPVOID)),
+        ("DeleteProcThreadAttributeList", None, (wintypes.LPVOID,)),
+        ("CompareStringOrdinal", ctypes.c_int, (wintypes.LPCWSTR, ctypes.c_int, wintypes.LPCWSTR,
+                                                ctypes.c_int, BOOL)))})
+
+
+def _env_block(env):
+    """_winapi.CreateProcess's environment block for the mapping `env`: names sorted ignoring
+    case (CompareStringOrdinal, as _winapi sorts), of names equal but for case the last one given
+    kept, a name with '=' past its first character or a NUL anywhere a ValueError."""
+    pairs = []
+    for name, value in env.items():
+        name, value = str(name), str(value)
+        if "=" in name[1:]:
+            raise ValueError("illegal environment variable name")
+        if "\0" in name or "\0" in value:
+            raise ValueError("embedded null character")
+        pairs.append((name, value))
+
+    def order(a, b):
+        return K32.CompareStringOrdinal(a[0], len(a[0]), b[0], len(b[0]), True) - CSTR_EQUAL
+    pairs.sort(key=functools.cmp_to_key(order))         # stable: equal names keep their order
+    kept = []
+    for pair in pairs:
+        if kept and order(kept[-1], pair) == 0:
+            kept[-1] = pair
+        else:
+            kept.append(pair)
+    text = "".join("%s=%s\0" % pair for pair in kept) + "\0"
+    return ctypes.create_unicode_buffer(text, len(text))
+
+
+def _handles(values):
+    return (H * len(values))(*[int(v) for v in values])
+
+
+def create_process(app, cmd, proc_attrs, thread_attrs, inherit, flags, env, cwd, startup, jobs):
+    """_winapi.CreateProcess (its arguments, its return (process handle, thread handle, pid,
+    tid), its audit event and its OSError) with the child born in the job handles `jobs`. Of
+    `startup` (a subprocess.STARTUPINFO) it reads what _winapi reads: dwFlags, wShowWindow, the
+    std handles and lpAttributeList's "handle_list" (an empty one is not set, as _winapi does).
+    proc_attrs and thread_attrs are ignored, as _winapi ignores them."""
+    sys.audit("_winapi.CreateProcess", app, cmd, cwd)
+    attrs = dict(getattr(startup, "lpAttributeList", None) or {})
+    lists = [(PROC_THREAD_ATTRIBUTE_JOB_LIST, _handles(jobs))]
+    if attrs.get("handle_list"):
+        lists.append((PROC_THREAD_ATTRIBUTE_HANDLE_LIST, _handles(attrs["handle_list"])))
+    block = _env_block(env) if env is not None else None
+    sx = STARTUPINFOEXW()
+    sx.StartupInfo.cb = ctypes.sizeof(sx)
+    sx.StartupInfo.dwFlags = startup.dwFlags
+    sx.StartupInfo.wShowWindow = startup.wShowWindow
+    sx.StartupInfo.hStdInput = int(startup.hStdInput or 0) or None
+    sx.StartupInfo.hStdOutput = int(startup.hStdOutput or 0) or None
+    sx.StartupInfo.hStdError = int(startup.hStdError or 0) or None
+    size = ctypes.c_size_t()
+    K32.InitializeProcThreadAttributeList(None, len(lists), 0, ctypes.byref(size))
+    buf = ctypes.create_string_buffer(size.value)
+    if not K32.InitializeProcThreadAttributeList(buf, len(lists), 0, ctypes.byref(size)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        for attribute, values in lists:
+            if not K32.UpdateProcThreadAttribute(buf, 0, attribute, values, ctypes.sizeof(values),
+                                                 None, None):
+                raise ctypes.WinError(ctypes.get_last_error())
+        sx.lpAttributeList = ctypes.addressof(buf)
+        line = ctypes.create_unicode_buffer(cmd) if cmd is not None else None
+        flags |= EXTENDED_STARTUPINFO_PRESENT | (CREATE_UNICODE_ENVIRONMENT if block else 0)
+        info = PROCESS_INFORMATION()
+        if not K32.CreateProcessW(app, line, None, None, bool(inherit), flags, block, cwd,
+                                  ctypes.byref(sx), ctypes.byref(info)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return info.hProcess, info.hThread, info.dwProcessId, info.dwThreadId
+    finally:
+        K32.DeleteProcThreadAttributeList(buf)

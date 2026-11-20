@@ -20,6 +20,7 @@ import subprocess
 from kitlib.platform.jobparts import JobError, _Held
 from kitlib.platform.mask import cores_text
 from . import cpu, win32
+from .console import JOB_LIST
 from .process import process_working_set
 from .win32 import K32
 
@@ -188,11 +189,22 @@ class Job:
             raise JobError("AssignProcessToJobObject: windows error %d" % ctypes.get_last_error())
 
     def start(self, cmd, before_resume=None, **kw):
-        """Popen(cmd) created suspended, put in the job, then resumed: no instant runs outside it
-        or unpinned. before_resume(p), if given, runs while it is still suspended (a pid shield,
-        say). Raises OSError when the command cannot start, and JobError (the child ended) when it
-        cannot be put in the job or resumed. `cmd` and `creationflags` are used as given (the
-        module docstring).
+        """Popen(cmd) born suspended inside the job (a JOB_LIST startupinfo, which the console
+        hook gives win32.create_process), checked to be in it, then resumed: no instant of it is
+        outside the job or unpinned, so a parent that dies before the resume leaves no child
+        behind. before_resume(p), if given, runs while it is still suspended (a pid shield, say).
+        Raises OSError when the command cannot start, and JobError when the job is closed, when
+        the child was not born in it (the child ended: a CreateProcess wrapper that does not
+        route the JOB_LIST key, an older kit copy's, is installed), or when it cannot be resumed.
+        `cmd` and `creationflags` are used as given (the module docstring); a caller's
+        `startupinfo` is copied, the job list added.
+
+        A Job(kill_on_close=False) is kill-on-close from the birth to the resume, so a parent
+        that dies before the resume ends the suspended child with the job, and is cleared just
+        after the resume: the command then outlives the job's handle, as asked. When it cannot
+        be made kill-on-close, start raises JobError and starts nothing; when it cannot be
+        cleared after the resume, the child, resumed an instant before, is ended and start
+        raises JobError (it would end with the job's handle otherwise).
 
         Ctrl+C and Ctrl+Break are held from making the child to its resume (_Held). Once the
         child is in the job, before it is resumed, they go to the handlers they would have
@@ -204,11 +216,21 @@ class Job:
         as for a Ctrl+C one instant after start: end(kill=True), or closing a kill-on-close job.
         Under SIG_DFL the default ends this process there; a kill-on-close job ends the child
         with it, but with Job(kill_on_close=False) nothing ends the child, and it runs on."""
+        if self.h is None:
+            raise JobError("the job is closed: the command has no job to be born in")
         flags = kw.pop("creationflags", 0) | win32.CREATE_SUSPENDED
+        startup = kw.pop("startupinfo", None)
+        startup = startup.copy() if startup is not None else subprocess.STARTUPINFO()
+        startup.lpAttributeList = dict(startup.lpAttributeList or {}, **{JOB_LIST: [int(self.h)]})
+        hold = not self.kill_on_close   # kill-on-close from the birth to the resume
+        if hold and not self._limit(True):
+            raise JobError("kill-on-close for the command's birth: SetInformationJobObject: "
+                           "windows error %d" % ctypes.get_last_error())
         held = _Held()      # making the child to its resume; one that raises holds nothing
         try:
-            p = subprocess.Popen(cmd, creationflags=flags, **kw)
+            p = subprocess.Popen(cmd, creationflags=flags, startupinfo=startup, **kw)
             try:
+                self._born(p)
                 self.assign(p)
                 self.check_pin(p)
                 if before_resume is not None:
@@ -218,6 +240,11 @@ class Job:
                 if status != 0:
                     raise JobError("the suspended command could not be resumed (NTSTATUS 0x%08X)"
                                    % (status & 0xFFFFFFFF))
+                if hold:
+                    hold = False
+                    if not self._limit(False):
+                        raise JobError("kill-on-close could not be cleared after the resume "
+                                       "(windows error %d)" % ctypes.get_last_error())
                 held.deliver()  # one that came during the resume
             except BaseException:
                 p.kill()
@@ -225,8 +252,19 @@ class Job:
                 raise
             self.p = p
         finally:
+            if hold:            # the start failed before the resume: the job as asked again
+                self._limit(False)
             held.close()
         return p
+
+    def _born(self, proc):
+        """Raises JobError unless proc (a Popen) is in this job (start: born in it)."""
+        got = win32.BOOL(0)
+        if not K32.IsProcessInJob(int(proc._handle), self.h, ctypes.byref(got)):
+            raise JobError("IsProcessInJob: windows error %d" % ctypes.get_last_error())
+        if not got.value:
+            raise JobError("the command was not born in its job: this process's CreateProcess "
+                           "wrapper does not route %r (another kit copy's is installed)" % JOB_LIST)
 
     def pids(self):
         return pid_list(self.h)

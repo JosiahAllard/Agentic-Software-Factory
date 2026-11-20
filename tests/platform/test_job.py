@@ -14,8 +14,65 @@ from unittest import mock
 from tests.platforms import windows_only
 
 if os.name == "nt":
+    import _winapi
     from kitlib.proc import job
-    from kitlib.platform.windows import job as winjob, process, win32
+    from kitlib.platform.windows import console as wincon, job as winjob, process, win32
+
+# A parent that dies just after Job.start has made its child, before the resume: it prints the
+# child's pid, waits for a line (the test holds the child's handle meanwhile), then exits 7.
+# argv[1] "1" is Job(kill_on_close=True), "0" Job(kill_on_close=False).
+DIES = "\n".join([
+    "import os, subprocess, sys",
+    "from kitlib.proc import job",
+    "real = subprocess.Popen",
+    "def made(*a, **kw):",
+    "    p = real(*a, **kw)",
+    "    sys.stdout.write('%d\\n' % p.pid)",
+    "    sys.stdout.flush()",
+    "    sys.stdin.readline()",
+    "    os._exit(7)",
+    "subprocess.Popen = made",
+    "job.Job(kill_on_close=sys.argv[1] == '1').start(",
+    "    [sys.executable, '-c', 'import time; time.sleep(60)'])"])
+
+# A child that prints its raw environment block, one string per variable, as JSON.
+ENV_BLOCK = "\n".join([
+    "import ctypes, json, sys",
+    "k = ctypes.WinDLL('kernel32')",
+    "k.GetEnvironmentStringsW.restype = ctypes.c_void_p",
+    "p, out = k.GetEnvironmentStringsW(), []",
+    "while ctypes.wstring_at(p):",
+    "    out.append(ctypes.wstring_at(p))",
+    "    p += 2 * (len(out[-1]) + 1)",
+    "sys.stdout.write(json.dumps(out))"])
+
+
+def read_pid(proc, timeout=60):
+    """The first line `proc` prints, as an int; AssertionError when none comes in `timeout`."""
+    import threading
+    got = []
+    t = threading.Thread(target=lambda: got.append(proc.stdout.readline()), daemon=True)
+    t.start()
+    t.join(timeout)
+    if not got or not got[0].strip():
+        raise AssertionError("the parent printed no pid")
+    return int(got[0])
+
+
+def end_own(proc):
+    """Ends the test's own child by its Popen (its handle) if it still runs, and reaps it."""
+    if proc.poll() is None:
+        proc.kill()
+    proc.wait(30)
+    for f in (proc.stdin, proc.stdout):
+        f.close()
+
+
+def end_by_handle(h):
+    """Ends a process the test made, through the handle it holds, and closes the handle."""
+    if win32.K32.WaitForSingleObject(h, 0) != win32.WAIT_OBJECT_0:
+        win32.K32.TerminateProcess(h, 1)
+    process.close(h)
 
 TREE = ("import subprocess,sys,time;"
         "g=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']);"
@@ -104,6 +161,35 @@ class LimitRefused(unittest.TestCase):
         try:
             self.assertFalse(j.kill_on_close)
             self.assertIsNone(j.pin)
+        finally:
+            j.close()
+
+    def test_a_no_kill_job_that_cannot_hold_kill_on_close_for_the_birth_starts_nothing(self):
+        with mock.patch.object(winjob, "_set_ext", return_value=False):
+            j = job.Job(kill_on_close=False)
+            try:
+                with mock.patch.object(subprocess, "Popen") as popen:
+                    with self.assertRaisesRegex(job.JobError, "birth"):
+                        j.start([sys.executable, "-c", "pass"])
+                popen.assert_not_called()
+            finally:
+                j.close()
+
+    def test_a_kill_on_close_not_cleared_after_the_resume_ends_the_child(self):
+        # Left set, the job's close would end a git write: the child, just resumed, is ended.
+        started, real = [], subprocess.Popen
+
+        def spy(*a, **kw):
+            started.append(real(*a, **kw))
+            return started[-1]
+        j = job.Job(kill_on_close=False)
+        try:
+            with mock.patch.object(winjob, "_set_ext", side_effect=lambda h, flags, affinity=0:
+                                   bool(flags & win32.JOB_KILL_ON_CLOSE)), \
+                    mock.patch.object(subprocess, "Popen", spy):
+                with self.assertRaisesRegex(job.JobError, "cleared"):
+                    j.start([sys.executable, "-c", "import time; time.sleep(30)"])
+            self.assertIsNotNone(started[0].poll())
         finally:
             j.close()
 
@@ -213,16 +299,60 @@ class Live(unittest.TestCase):
         finally:
             outer.end(kill=True)
 
-    def test_a_child_that_cannot_join_the_job_is_ended_not_run(self):
-        # Nothing runs outside the job. The old machine_lock Job ran it anyway,
-        # unpinned ("not in a job"): red there.
+    def test_a_closed_job_starts_nothing(self):
         j = job.Job()
-        j.close()                                   # no job handle: the assign must fail
+        j.close()
+        with mock.patch.object(subprocess, "Popen") as popen:
+            with self.assertRaisesRegex(job.JobError, "closed"):
+                j.start([sys.executable, "-c", "pass"])
+        popen.assert_not_called()
+
+    def test_a_child_not_born_in_the_job_is_ended_not_run(self):
+        # Nothing runs outside the job. The old machine_lock Job ran it anyway,
+        # unpinned ("not in a job"): red there. Here the CreateProcess wrapper ignores the job
+        # list, as an older kit copy's would.
         marker = os.path.join(self.tmp, "ran")
-        with self.assertRaises(job.JobError):
-            j.start([sys.executable, "-c", "open(%r, 'w').close()" % marker])
+        j = job.Job()
+        try:
+            with mock.patch.object(_winapi, "CreateProcess", wincon._original):
+                with self.assertRaisesRegex(job.JobError, "not born in its job"):
+                    j.start([sys.executable, "-c", "open(%r, 'w').close()" % marker])
+        finally:
+            j.close()
         time.sleep(1)
         self.assertFalse(os.path.exists(marker))
+
+    def test_a_parent_that_dies_before_the_resume_leaves_no_child(self):
+        # The parent dies just after the child is made, before it is resumed (and, before the
+        # job-list birth, before it was put in the job): the child must end with it. Red before:
+        # the child stayed suspended, in no job of the parent's, for good.
+        for kill in ("1", "0"):
+            with self.subTest(kill_on_close=kill):
+                parent = subprocess.Popen([sys.executable, "-c", DIES, kill], cwd=ROOT,
+                                          env=dict(os.environ, PYTHONPATH=ROOT),
+                                          stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                self.addCleanup(end_own, parent)
+                h = process.open_process(read_pid(parent), process.SYNCHRONIZE
+                                         | process.PROCESS_TERMINATE)
+                self.addCleanup(end_by_handle, h)
+                parent.stdin.write(b"go\n")
+                parent.stdin.flush()
+                self.assertEqual(parent.wait(60), 7)
+                self.assertEqual(win32.K32.WaitForSingleObject(h, 10000), win32.WAIT_OBJECT_0,
+                                 "the child outlived its parent")
+
+    def test_a_no_kill_job_s_command_outlives_the_job(self):
+        # kill-on-close is held only from the birth to the resume: kitlib.git.cmd's writes run
+        # on after their job's handle closes (as at the parent's death).
+        j = job.Job(kill_on_close=False)
+        p = j.start([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            j.close()
+            with self.assertRaises(subprocess.TimeoutExpired):
+                p.wait(1)
+        finally:
+            p.kill()
+            p.wait(30)
 
     def test_before_resume_runs_while_suspended(self):
         seen = []
@@ -301,6 +431,39 @@ class Live(unittest.TestCase):
         finally:
             j.end(kill=True)
             p.wait(30)
+
+
+@windows_only("Windows only")
+class EnvBlock(unittest.TestCase):
+    """A job birth (win32.create_process) gives the child the environment block _winapi's
+    CreateProcess gives it on this interpreter, and refuses what _winapi refuses."""
+
+    def started(self, env, born):
+        """The child's block, or the exception's (type, winerror)."""
+        argv = [sys.executable, "-c", ENV_BLOCK]
+        try:
+            if born:
+                j = job.Job()
+                try:
+                    p = j.start(argv, env=env, stdout=subprocess.PIPE)
+                    out = p.communicate(timeout=60)[0]
+                finally:
+                    j.end(kill=True)
+            else:
+                out = subprocess.run(argv, env=env, stdout=subprocess.PIPE, timeout=60).stdout
+        except (OSError, ValueError) as e:
+            return type(e).__name__, getattr(e, "winerror", None)
+        return json.loads(out)
+
+    def test_each_block_is_the_one_winapi_makes(self):
+        root = {"SYSTEMROOT": os.environ["SYSTEMROOT"]}
+        for env in ({"PATH": "a", "Path": "b"}, {"Path": "b", "PATH": "a"},
+                    {"b": "1", "A": "2", "c": "3", "_x": "4", "a1": "5"},
+                    {"=C:": "C:\\x", "=D:": "D:\\", "Z": "z"}, {"": "1"}, {"=": "1"},
+                    {"A=B": "1"}, {"A": "1\0"}, {}):
+            with self.subTest(env=env):
+                env = dict(env, **root) if env else env
+                self.assertEqual(self.started(env, True), self.started(env, False))
 
 
 @windows_only("Windows only")

@@ -252,10 +252,14 @@ def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s,
     for pid, name, forms in cwds[0]:
         if _holds(forms, target):
             return 'process pid %d %s has its current directory in it' % (pid, name), None
-    since = now - dead_after_s
+    # One bar for both tests: the read stops at a source newer than `since` (never below `bar`),
+    # and the tree is live when its activity is newer than `bar`, by the same `>`, so a read that
+    # stopped early is always live.
+    bar = now - dead_after_s
+    since = bar
     if mark is not None:
         try:
-            since = max(since, marks.at_epoch(mark))
+            since = max(bar, marks.at_epoch(mark))
         except (KeyError, ValueError):
             since = None                # the newest itself: void_reason reads it whole
     folders = []
@@ -263,7 +267,7 @@ def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s,
                         common=common, since=since, folders=folders)
     if got is None:
         return 'unreadable: its last activity (%s)' % why, None
-    if now - got[0] < dead_after_s:
+    if got[0] > bar:
         return 'active %.1f h ago (seen: %s), under the %d h dead bar' % (
             max(now - got[0], 0) / 3600.0, got[1], dead_after_s // 3600), got
     if cwds[1]:

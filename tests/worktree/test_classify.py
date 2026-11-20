@@ -1165,6 +1165,53 @@ class SharedReads(ClassifyCase):
             'unreadable: its last activity (the tree could not be read in full'), row)
         held.assert_not_called()
 
+    def walks(self, path, tip_time, since):
+        """The folders sweep.newest is asked to walk in one last_activity, and its answer."""
+        walked = []
+        real = sweep.newest
+
+        def newest(root, *a, **k):
+            walked.append(os.path.normcase(os.path.normpath(root)))
+            return real(root, *a, **k)
+        with mock.patch.object(sweep, 'newest', newest):
+            got, why = sweep.last_activity(self.repo, path, 'kit/' + os.path.basename(path),
+                                           tip_time=tip_time, common=self.fx.common_dir(),
+                                           since=since)
+        self.assertIsNone(why)
+        return walked, got
+
+    def test_a_fresh_cheap_source_skips_both_walks(self):
+        """Cheapest first: a tip or a reflog entry newer than `since` answers before any walk."""
+        path = self.workstream('cheap')
+        now = time.time()
+        walked, got = self.walks(path, tip_time=now + 500, since=now + 100)
+        self.assertEqual(walked, [])
+        self.assertEqual(got, (now + 500, 'the commit date of kit/cheap'))
+        logs = os.path.join(self.fx.common_dir(), 'worktrees', 'cheap', 'logs')
+        os.makedirs(logs, exist_ok=True)
+        with open(os.path.join(logs, 'HEAD'), 'a', newline='\n') as f:
+            f.write('%s %s T <t@example.invalid> %d +0000\tcommit: x\n'
+                    % ('0' * 40, '1' * 40, int(now) + 500))
+        walked, got = self.walks(path, tip_time=0.0, since=now + 100)
+        self.assertEqual(walked, [])
+        self.assertEqual(got, (int(now) + 500, 'an entry of its HEAD reflog'))
+
+    def test_a_fresh_git_dir_skips_the_tree_walk(self):
+        path = self.workstream('gitdir')
+        admin = os.path.join(self.fx.common_dir(), 'worktrees', 'gitdir')
+        now = time.time()
+        fresh = os.path.join(admin, 'FRESH_HEAD')
+        with open(fresh, 'w') as f:
+            f.write('x')
+        os.utime(fresh, (now + 900, now + 900))
+        want = [os.path.normcase(os.path.normpath(admin))]
+        walked, got = self.walks(path, tip_time=0.0, since=now + 100)
+        self.assertEqual(walked, want)
+        self.assertEqual(got[0], now + 900)
+        os.remove(fresh)
+        walked, got = self.walks(path, tip_time=0.0, since=now + 100)
+        self.assertEqual(walked, want + [os.path.normcase(os.path.normpath(path))])
+
     def test_a_relative_gitdir_in_the_git_file_is_read(self):
         path = self.workstream('rel')
         admin = os.path.join(self.fx.common_dir(), 'worktrees', 'rel')

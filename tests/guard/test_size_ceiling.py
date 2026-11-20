@@ -52,7 +52,7 @@ CEILINGS = {
     'rules_push.py': 411,
     'rules_run.py': 799,
     'rules_tools.py': 651,
-    'rules_write.py': 885,
+    'rules_write.py': 888,
     'shell.py': 1465,
 }
 

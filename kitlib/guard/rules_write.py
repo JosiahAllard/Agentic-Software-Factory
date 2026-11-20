@@ -27,16 +27,18 @@ from .rules_tools import (EVALS, PY_PS_WHY, PY_UNREAD_WHY, Under, awk_writes, co
 # value is passed over when it holds no command (_ps_value_end).
 PS_VALUE_PARAMS = frozenset(('value', 'encoding', 'filter', 'include', 'exclude', 'newname', 'inputobject',
                              'delimiter', 'itemtype', 'uri', 'body', 'headers'))
-_PS_SQ = r"'(?:[^'‘’‚‛]|'')*'"
-_PS_DQ_PLAIN = r'"[^"“”„`$]*"'
-_PS_BARE = r'[^\s$(){}\[\]@`\'"“”„‘’‚‛,;|&<>#]+'
-_PS_VAR = r'\$(?:\{[A-Za-z_]\w*(?::[A-Za-z_]\w*)?\}|[A-Za-z_]\w*(?::[A-Za-z_]\w*)?)'
-_PS_DQ = r'"(?:[^"“”„`$]|`[^\r\n]|%s)*"' % _PS_VAR
-_PS_END = r'(?=[\s;|)}]|$)'
 # _atomic(name, alts): (?:alts)+ as one run, group `name`, that re never splits again (a lookahead is atomic; no 3.11
 # (?>)), so a word not ending where _PS_END allows fails at once, not after 2^n splits (a hang). Same end: the alternatives'
 # first characters are disjoint, and every shorter cut leaves a next character that is not an END character
 _atomic = r'(?=(?P<{0}>(?:{1})+))(?P={0})'.format
+_PS_SQ = r"'(?:[^'‘’‚‛]|'')*'"
+_PS_DQ_PLAIN = r'"[^"“”„`$]*"'
+_PS_BARE = r'[^\s$(){}\[\]@`\'"“”„‘’‚‛,;|&<>#]+'
+_PS_VAR = r'\$(?:\{[A-Za-z_]\w*(?::[A-Za-z_]\w*)?\}|[A-Za-z_]\w*(?::[A-Za-z_]\w*)?)'
+# its body one run too (a name is body characters too: an unclosed string tried each split); same match: a " in the run
+# is only a backtick pair's, so no shorter run can close. Group dqbody: embed _PS_DQ once per pattern
+_PS_DQ = r'"(?:%s)?"' % _atomic('dqbody', r'[^"“”„`$]|`[^\r\n]|%s' % _PS_VAR)
+_PS_END = r'(?=[\s;|)}]|$)'
 # a native program's argument: plain words and strings with no variable
 PS_PLAIN_ARG_RE = re.compile(_atomic('plain', r'%s|%s|%s' % (_PS_BARE, _PS_SQ, _PS_DQ_PLAIN)) + _PS_END)
 # a cmdlet's argument: a variable, or a string with one, is one argument too
@@ -46,8 +48,9 @@ _PS_CALL_ARG = r"\s*(?:%s|%s|-?\d+)\s*" % (_PS_SQ, _PS_VAR)
 _PS_CHAIN = re.compile(r'(?:\.[A-Za-z_]\w*(?:\((?:%s(?:,%s)*)?\))?)*' % (_PS_CALL_ARG, _PS_CALL_ARG))
 _PS_VALUE_ATOM = re.compile(r'%s|%s|%s|%s' % (_PS_VAR, _PS_SQ, _PS_DQ, _PS_BARE))
 _PS_VALUE_END = re.compile(_PS_END)
-# a here-string body line PowerShell may end it on: any quote of its kind then @, indented or not
-_PS_HERE_CLOSE = {"'": re.compile("(?m)^\\s*['‘’‚‛]@"), '"': re.compile('(?m)^\\s*["“”„]@')}
+# a here-string body line PowerShell may end it on: any quote of its kind then @, indented or not. ^[^\S\n]* (also in
+# PS_DRIVE_REMAP_RE, PS_DOTNET_RE): ^\s* ran from each line start over all blank lines after (quadratic), same matches
+_PS_HERE_CLOSE = {"'": re.compile("(?m)^[^\\S\\n]*['‘’‚‛]@"), '"': re.compile('(?m)^[^\\S\\n]*["“”„]@')}
 
 
 def _ps_group_end(src, k):
@@ -482,9 +485,9 @@ DOTDOT_RE = re.compile(r'(?:^|[\\/:])\.\.(?:[\\/]|$)')
 # raw line and against each word as the parser decodes it (n`dr reads ndr, 'New-PSDr'+'ive' reads
 # New-PSDr+ive).
 PS_DRIVE_REMAP_RE = re.compile(r'(?im)drive|psdr|\b(?:ndr|rdr|mount|iex|ipmo)\b|invoke-expression|import-module'
-                               r'|\.ps1\b|\.psm1\b|scriptblock|sessionstate|(?:^|[;&|({])\s*\.\s')
+                               r'|\.ps1\b|\.psm1\b|scriptblock|sessionstate|(?:^[^\S\n]*|[;&|({]\s*)\.\s')
 # Session objects, .NET types and static calls a line may reach a drive through
-PS_DOTNET_RE = re.compile(r'(?im)\$executioncontext|\$host\b|new-object|add-type|^\s*using\b|[\])]\s*::')
+PS_DOTNET_RE = re.compile(r'(?im)\$executioncontext|\$host\b|new-object|add-type|^[^\S\n]*using\b|[\])]\s*::')
 # The provider-aware item and content cmdlets (PSCmdlet provider), as the line names them: the
 # canonical name or one of PS_PROVIDER_ALIASES (any other alias is judged as a file write). Their
 # item on a drive that holds no files is no file. Script functions (Compress-Archive, mkdir) and

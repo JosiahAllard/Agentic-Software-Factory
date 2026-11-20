@@ -280,8 +280,9 @@ class CtrlCWhileStarting(unittest.TestCase):
         self.restored()
 
     def test_a_ctrl_c_and_a_child_that_cannot_join_end_it_and_raise_the_ctrl_c(self):
-        self.j.close()                          # no job handle: the assign fails
-        with self.popen(then=self.ctrl_c):
+        def cannot_join(j, p):                  # the join fails: the child is not in the job
+            raise jobparts.JobError("the command was not born in its job")
+        with self.popen(then=self.ctrl_c), mock.patch.object(winjob.Job, "_born", cannot_join):
             with self.assertRaises(KeyboardInterrupt) as got:
                 self.j.start(SLEEP)
         self.assertIsInstance(got.exception.__context__, job.JobError)

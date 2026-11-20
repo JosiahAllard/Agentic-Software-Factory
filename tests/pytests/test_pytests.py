@@ -957,6 +957,7 @@ class TheHandshake(unittest.TestCase):
             real_close(job)
 
         with mock.patch.object(subprocess, 'Popen', FakePopen), \
+                mock.patch.object(job_mod.Job, '_born', lambda job, p: calls.append('born')), \
                 mock.patch.object(job_mod.Job, 'assign', lambda job, p: calls.append('assign')), \
                 mock.patch.object(job_mod.Job, 'close', close), \
                 mock.patch.object(win32, 'resume', lambda p: calls.append('resume') or 0), \
@@ -967,7 +968,7 @@ class TheHandshake(unittest.TestCase):
         self.assertTrue(spawned.get('creationflags', 0) & runner.CREATE_SUSPENDED, spawned)
         self.assertEqual(runner.CREATE_SUSPENDED, 0x4)
         # Shielded while still suspended: not one instruction of the unit runs unshielded.
-        self.assertEqual(calls[:5], ['popen', 'assign', 'shield', 'resume', 'wait'])
+        self.assertEqual(calls[:6], ['popen', 'born', 'assign', 'shield', 'resume', 'wait'])
         self.assertEqual(calls[-1], 'close')
         self.assertNotIn('kill', calls)
 

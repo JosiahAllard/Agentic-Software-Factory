@@ -16,6 +16,10 @@ wrapper costs one module-global check per start. When no console can be had, eve
 makes no console choice gets CREATE_NO_WINDOW instead. Nothing here loads ctypes until the first
 such start.
 
+The hook also routes job births: a start whose startupinfo's lpAttributeList carries JOB_LIST
+(kitlib.platform.windows.job's Job.start) is made by win32.create_process, so the child is born
+inside its job; _winapi itself ignores that key.
+
 ensure_windowless_console(): AllocConsoleWithOptions with ALLOC_CONSOLE_MODE_NO_WINDOW where
 kernel32 exports it (measured on Windows 11 under pythonw: hr 0, a new
 console, no Windows Terminal or OpenConsole process, the std handles unchanged, a bare child's
@@ -59,6 +63,7 @@ CTRL_C_EVENT, CTRL_BREAK_EVENT = 0, 1   # the console control events _take_ctrl 
 HOLDER_WAIT_S = 5.0                     # how long the fallback waits for the holder's console
 
 MARK = '__kit_windowless__'             # set on the wrapper: install() is done in this process
+JOB_LIST = 'job_list'                   # the lpAttributeList key of Job.start: born in these jobs
 
 # ensure_windowless_console's answers
 PRESENT = 'present'                     # the process had a console already
@@ -228,9 +233,16 @@ def _take_ctrl():
 
 def _create_process(app, cmd, proc_attrs, thread_attrs, inherit, flags, env, cwd, startup):
     """_winapi.CreateProcess, with this process given a windowless console before its first
-    child that makes no console choice (install)."""
+    child that makes no console choice (install). A start whose startupinfo carries a JOB_LIST
+    (Job.start's) is made by win32.create_process, born in those jobs, with the flags resolved
+    here first; every other start goes to the original."""
     if _mode != _DONE and not flags & CONSOLE_CHOICE:
         flags = flags | CREATE_NO_WINDOW if _mode == _NO_WINDOW else _resolve(flags, app, cmd)
+    jobs = (getattr(startup, 'lpAttributeList', None) or {}).get(JOB_LIST)
+    if jobs:
+        from . import win32             # ctypes loads here: a job birth, never on import
+        return win32.create_process(app, cmd, proc_attrs, thread_attrs, inherit, flags, env, cwd,
+                                    startup, jobs)
     return _original(app, cmd, proc_attrs, thread_attrs, inherit, flags, env, cwd, startup)
 
 

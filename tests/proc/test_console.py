@@ -364,6 +364,26 @@ class WrapperTest(unittest.TestCase):
         self.assertEqual(self.start(0), "started")
         self.assertEqual(self.flags, [CREATE_NO_WINDOW])
 
+    def test_only_a_job_list_start_is_born_by_create_process_with_the_resolved_flags(self):
+        from kitlib.platform.windows import win32
+        born = []
+
+        def create_process(*a):
+            born.append((a[5], a[9]))
+            return "born"
+        self.answer = wincon.NONE
+        with mock.patch.object(win32, "create_process", create_process):
+            for attrs in (None, {}, {"handle_list": [5]}, {wincon.JOB_LIST: []}):
+                si = subprocess.STARTUPINFO(lpAttributeList=attrs)
+                self.assertEqual(wincon._create_process(None, "prog", None, None, 0, 0, None,
+                                                        None, si), "started")
+            self.assertEqual(self.start(0), "started")                 # no startupinfo
+            si = subprocess.STARTUPINFO(lpAttributeList={wincon.JOB_LIST: [7]})
+            self.assertEqual(wincon._create_process(None, "prog", None, None, 0, 0x4, None, None,
+                                                    si), "born")
+        self.assertEqual(born, [(0x4 | CREATE_NO_WINDOW, [7])])
+        self.assertEqual(self.flags, [CREATE_NO_WINDOW] * 5)
+
 
 @windows_only("Windows only")
 class EnsureTest(unittest.TestCase):

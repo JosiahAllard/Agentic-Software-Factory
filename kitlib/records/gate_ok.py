@@ -148,7 +148,10 @@ def config_hash(gate_config):
     return hashlib.sha256(canonical_json(gate_config).encode('utf-8')).hexdigest()
 
 
-def _common(root):
+def _common(root, common=None):
+    """`common` when given (the caller's read of root's git common dir), else git's."""
+    if common:
+        return common
     common, why = repo.common_dir(root)
     if not common:
         raise RecordError('no git common dir for %s: %s' % (root, why))
@@ -176,19 +179,18 @@ def machine_dir(kind=None):
         raise NoRecordFolder(str(e))
 
 
-def record_dir(root, kind=None):
+def record_dir(root, kind=None, common=None):
     """The record folder of the repository `root` is in: `<dev_drive>/pm-kit/kit-gate-ok/<repo
     key>` (place.repo_key: one for every worktree of a repository; the `kind`'s folder for a
     tested record). RecordError when it cannot be worked out (no git common dir; NoRecordFolder:
-    no dev_drive)."""
-    common = _common(root)
-    return os.path.join(machine_dir(kind), place.repo_key(common))
+    no dev_drive). `common`: root's git common dir, when the caller has it (_common)."""
+    return os.path.join(machine_dir(kind), place.repo_key(_common(root, common)))
 
 
-def legacy_dir(root, kind=None):
+def legacy_dir(root, kind=None, common=None):
     """The old record folder, `<git common dir>/kit-gate-ok` (or the `kind`'s): written and read
-    only when there is no record folder (no dev_drive; write, read)."""
-    return os.path.join(_common(root), dir_name(kind))
+    only when there is no record folder (no dev_drive; write, read). `common`: as record_dir's."""
+    return os.path.join(_common(root, common), dir_name(kind))
 
 
 def _name(commit):
@@ -197,12 +199,12 @@ def _name(commit):
     return commit + '.json'
 
 
-def record_path(root, commit, kind=None):
-    return os.path.join(record_dir(root, kind), _name(commit))
+def record_path(root, commit, kind=None, common=None):
+    return os.path.join(record_dir(root, kind, common), _name(commit))
 
 
-def legacy_path(root, commit, kind=None):
-    return os.path.join(legacy_dir(root, kind), _name(commit))
+def legacy_path(root, commit, kind=None, common=None):
+    return os.path.join(legacy_dir(root, kind, common), _name(commit))
 
 
 def is_record_name(name):
@@ -267,10 +269,11 @@ def mode_of(record):
     return mode
 
 
-def verify_full(root, commit):
+def verify_full(root, commit, common=None):
     """`(record, None)` when verify() takes `commit`'s record and it is from a --full gate
-    (full_of), else `(None, why)`: verify's reason first, then that the gate was not --full."""
-    rec, why = verify(root, commit)
+    (full_of), else `(None, why)`: verify's reason first, then that the gate was not --full.
+    `common`: as verify's."""
+    rec, why = verify(root, commit, common=common)
     if rec is None:
         return None, why
     if full_of(rec):
@@ -546,17 +549,19 @@ def _load(path, strict=False):
     return rec, None
 
 
-def read(root, commit, kind=None, strict=False):
+def read(root, commit, kind=None, strict=False, common=None):
     """`(record, None)`, `(None, 'none')` when there is no record, or `(None, why)` when the file
     is there and cannot be read as one. The record folder's file; only when there is no record
     folder (no dev_drive), the .git copy (legacy_path). `kind`: a tested record's folder.
-    `strict`: as _load's."""
+    `strict`: as _load's. `common`: root's git common dir when the caller has it; else it is read
+    once here, for both paths."""
     try:
-        old = legacy_path(root, commit, kind)
+        common = _common(root, common)
+        old = legacy_path(root, commit, kind, common)
     except RecordError as e:
         return None, str(e)
     try:
-        return _load(record_path(root, commit, kind), strict)
+        return _load(record_path(root, commit, kind, common), strict)
     except NoRecordFolder:
         # Kept for load nodes set up without a dev_drive (docs/load-nodes.md).
         return _load(old, strict)
@@ -564,20 +569,21 @@ def read(root, commit, kind=None, strict=False):
         return None, str(e)
 
 
-def verify(root, commit, gate_config=None, config_at=None, kind=None, strict=False):
+def verify(root, commit, gate_config=None, config_at=None, kind=None, strict=False,
+           common=None):
     """`(record, None)` when `commit` has a gate-OK record git still agrees with, else
     `(None, why)`. `gate_config` given: the record's hash must be that config's. `config_at` given
     (a callable: full hash -> the gate config that commit holds; it may raise RecordError): the
     record's `config_rev` must be a full hash in `commit`'s history and the record's hash must be
     config_at(config_rev)'s. `kind`: a tested record's folder (KINDS) instead. `strict`: a record
     file, or git (the commit's tree and author, config_rev's ancestry), that cannot be read raises
-    Unreadable instead of giving `(None, why)`."""
+    Unreadable instead of giving `(None, why)`. `common`: as read's."""
     if not refs.is_sha(commit):
         resolved, why = refs.resolve(commit, root) if isinstance(commit, str) else (None, None)
         if not resolved:
             return None, 'cannot resolve %r: %s' % (commit, why)
         commit = resolved
-    rec, why = read(root, commit, kind, strict)
+    rec, why = read(root, commit, kind, strict, common)
     if rec is None:
         return None, ('no %s record for %s' % (LABELS.get(kind, kind), commit)) if why == 'none' \
             else why

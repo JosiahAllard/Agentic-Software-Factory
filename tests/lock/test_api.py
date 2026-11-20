@@ -757,6 +757,47 @@ class MoveToTop(ApiCase):
         self.assertEqual(self.order(), [R_A, R_B])
 
 
+class LiveRecords(ApiCase):
+    """live_records: the live runs and the live waiting entries, each on its named key set
+    (RUN_KEYS, QUEUE_KEYS), for a reader that matches their text (kitlib.worktree.sweep)."""
+
+    entry = MoveToTop.entry
+
+    def test_live_runs_and_waiting_entries_on_their_keys(self):
+        self.live_record(R_LIVE, branch="kit/slug", role="agent", layout="t24 cpu 12",
+                         tree="a" * 40, session="s-1")
+        self.store.write("queue.json", {"ticket": 3, "entries": [
+            self.entry(R_A, 1), self.entry(R_B, 2, pid=0),
+            self.entry(R_H, 3, "held", cores=[0])]})
+        got, why = api.live_records(self.store)
+        self.assertIsNone(why)
+        self.assertEqual([r["id"] for r in got], [R_LIVE, R_A])
+        run, waiting = got
+        self.assertEqual(set(run), set(api.RUN_KEYS))
+        self.assertEqual((run["branch"], run["session"]), ("kit/slug", "s-1"))
+        self.assertEqual(set(waiting), set(api.QUEUE_KEYS))
+        self.assertNotIn("tree", api.RUN_KEYS)
+        self.assertNotIn("layout", api.RUN_KEYS)
+
+    def test_an_unreadable_queue_is_no_answer(self):
+        os.makedirs(self.store.path(), exist_ok=True)
+        with open(self.store.path("queue.json"), "w", encoding="utf-8") as f:
+            f.write("{not json")
+        got, why = api.live_records(self.store)
+        self.assertIsNone(got)
+        self.assertIn("queue unreadable", why)
+
+    def test_a_store_that_cannot_be_built_is_no_answer(self):
+        with mock.patch.object(st_mod, "real_root", side_effect=OSError("no profile folder")):
+            self.assertEqual(api.live_records(), (None, "no profile folder"))
+
+    def test_a_lock_or_value_error_is_no_answer(self):
+        for err in (st_mod.LockError(1, "a run record is bad"), ValueError("not a number")):
+            with self.subTest(err=err), mock.patch.object(self.store, "live_runs",
+                                                          side_effect=err):
+                self.assertEqual(api.live_records(self.store), (None, str(err)))
+
+
 class StopWaiting(ApiCase):
     """stop_waiting (kitlib.gate.gatecap.replace_stale's): a run's stop request is written only
     while its queue entry waits, under the queue mutex; a held run is never asked. stop_asked

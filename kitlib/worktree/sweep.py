@@ -4,16 +4,11 @@ on (the landing lock, `landing_hold`; the fetch of the base, `fetch_base`; the m
 `machine_lock_entries`), the reads classify shares (`machine_lock_holder`, `last_activity`), and
 the checks of a stale-marked tree before the sweep abandons it (`sweep_skip`, `sweep_status`).
 """
-import json
 import os
 import re
-import subprocess
-import sys
 
-from kitlib import kitroot
 from kitlib.config import ConfigError
 from kitlib.git import defaults as gitdefaults
-from kitlib.proc import spawn
 from kitlib.records import landing
 
 from . import holders, marks, remove_checks
@@ -60,52 +55,21 @@ def landing_hold(ctx):
     return 'the landing lock %s is held (%s)' % (lock.path, landing.describe(held))
 
 
-def machine_lock_path(kit=None):
-    """The kit's own lock tool, `<kit>/tools/machine_lock.py` (kitlib.kitroot.lock_tool; with no
-    `kit`, the checkout this kitlib is in)."""
-    return kitroot.lock_tool(kit)
-
-
-def machine_lock_entries(run=spawn.run, kit=None):
-    """`(entries, None)`: every record `machine_lock.py status --json` lists - its `lock.held`,
-    `waiting` and `background` lists, or (the kit lock's snapshot) its `runs` and `queue.entries`;
-    or `(None, why)` when it cannot be read: the sweep then defers (fail closed)."""
-    path = machine_lock_path(kit)
-    if not os.path.isfile(path):
-        return None, 'the machine lock tool is not at %s' % path
+def machine_lock_entries(store=None):
+    """`(entries, None)`: the machine lock's live runs and waiting queue entries, read in this
+    process (kitlib.lock.api.live_records, each on its named key set: no `status` child, no
+    snapshot); or `(None, why)` when they cannot be read, the test fence's refusal among them: the
+    sweep then defers (fail closed). kitlib.lock is imported here, not at the top: the backlog's
+    imports reach this module (quiet)."""
+    from kitlib.config import user
+    from kitlib.lock import api
     try:
-        r = run([sys.executable, '-B', path, 'status', '--json'], capture_output=True, text=True,
-                encoding='utf-8', errors='replace', timeout=60, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.TimeoutExpired) as e:
-        return None, 'machine_lock.py status --json did not run: %s' % e
-    if r.returncode != 0:
-        return None, 'machine_lock.py status --json exited %d: %s' % (
-            r.returncode, (r.stderr or r.stdout or '').strip()[:300] or 'nothing printed')
-    try:
-        data = json.loads(r.stdout)
-    except ValueError as e:
-        return None, 'machine_lock.py status --json printed no JSON (%s)' % e
-    return entries_of(data)
-
-
-def entries_of(data):
-    """The records of a `status --json` document, either shape; `(None, why)` for any other."""
-    lock = data.get('lock') if isinstance(data, dict) else None
-    if isinstance(lock, dict) and isinstance(lock.get('held'), list):
-        entries = []
-        for key in ('held', 'waiting', 'background'):
-            value = lock.get(key, [])
-            if not isinstance(value, list):
-                return None, 'machine_lock.py status --json: `lock.%s` is not a list' % key
-            entries += value
-        return entries, None
-    if isinstance(data, dict) and isinstance(data.get('runs'), list):
-        queue = data.get('queue', {})
-        waiting = queue.get('entries', []) if isinstance(queue, dict) else None
-        if not isinstance(waiting, list):
-            return None, 'machine_lock.py status --json: `queue.entries` is not a list'
-        return list(data['runs']) + waiting, None
-    return None, 'machine_lock.py status --json has neither a `lock.held` nor a `runs` list'
+        entries, why = api.live_records(store)
+    except user.HomeFenced as e:
+        return None, 'the machine lock store is fenced: %s' % e
+    if why is not None:
+        return None, 'the machine lock could not be read: %s' % why
+    return entries, None
 
 
 def machine_lock_holder(entries, path, branch):

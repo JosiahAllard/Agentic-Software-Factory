@@ -182,17 +182,18 @@ def evidence_name(path):
     return any(fnmatch.fnmatchcase(name, glob) for glob in EVIDENCE_GLOBS)
 
 
-def gate_state(main, head):
+def gate_state(main, head, common=None):
     """'green' (a gate-OK record git agrees with from a --full or a default-mode gate, either of
     which a landing takes: gate_ok.verify_full, gate_ok.mode_of; docs/gate-landing.md
     "Landing"), 'none', 'not full: <why>' (a record git agrees with from a docs-only gate, which
-    lands only a docs-only change, or of an unknown mode), or 'unknown: <why>'."""
-    rec, why = gate_ok.verify_full(main, head)
+    lands only a docs-only change, or of an unknown mode), or 'unknown: <why>'. `common`: main's
+    git common dir when the caller has read it (None: gate_ok asks git)."""
+    rec, why = gate_ok.verify_full(main, head, common=common)
     if rec is not None:
         return 'green'
     if why == 'no gate-OK record for %s' % head:
         return 'none'
-    scoped = gate_ok.verify(main, head)[0]
+    scoped = gate_ok.verify(main, head, common=common)[0]
     if scoped is not None:
         if gate_ok.mode_of(scoped) == 'select':
             return 'green'
@@ -465,7 +466,7 @@ def work_class(ctx, entry, base, ancestors, own, claims, dirt, landed, fields):
         return ('C' if keep else 'A'), fields
     rc, count, err = git(ctx.main, 'rev-list', '--count', '%s..%s' % (base, head))
     fields['ahead'] = int(count) if rc == 0 and count.isdigit() else None
-    fields['gate'] = gate_state(ctx.main, head)
+    fields['gate'] = gate_state(ctx.main, head, entry.get('common'))
     if not dirt and fields['gate'] == 'green':
         return 'B', fields
     return 'C', fields
@@ -592,8 +593,8 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None, fe
     marked, marks_error = read_marks(ctx)
     if marks_error:
         ctx.say('note      the stale marks cannot be read (%s): no mark is shown' % marks_error)
-    # Read once for every tree's activity: the common dir (None: each tree asks git) and the branch
-    # tips' commit times (one missing: that tree asks git).
+    # Read once for every tree's activity and gate-OK record: the common dir (None: each tree asks
+    # git) and the branch tips' commit times (one missing: that tree asks git).
     common = gitdefaults.common_dir(main)
     stamps = sweep.tip_times(main) if entries else {}
     trees, acted = [], []
@@ -602,6 +603,7 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None, fe
         row = {'path': path, 'branch': entry['branch'], 'head': entry['head']}
         if entry['branch'] in stamps:
             entry['stamp'] = stamps[entry['branch']]
+        entry['common'] = common            # gate_state's record read (None: it asks git)
         mark = marks.find(marked, entry['branch']) if entry['branch'] else None
         reason, seen = live_reason(ctx, entry, *probes, now=now, dead_after_s=dead_after_s,
                                    common=common, mark=mark)

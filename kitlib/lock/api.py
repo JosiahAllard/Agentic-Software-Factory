@@ -5,7 +5,7 @@ snapshot()) and anything later (a web page, an MCP server) call these and
 nothing else. docs/lock-api.md is the contract; SCHEMA_VERSION changes when a key's meaning
 changes or a key goes (added keys do not change it).
 
-Reads:  snapshot(), revision(), wait_change(revision, timeout_s), stats(...), history(...).
+Reads:  snapshot(), live_records(), revision(), wait_change(revision, timeout_s), stats(...), history(...).
 Writes: set_division, hold_create, hold_edit, hold_end, set_games, set_game_mode, end_run,
         move_to_top.
 Each write takes `actor` and returns
@@ -155,6 +155,41 @@ def _store(store):
     return store if store is not None else Store()
 
 
+# A snapshot run row's record keys (docs/lock-api.md, Snapshot), the rest of the row is worked out.
+_RUN_ROW = ("id", "state", "repo", "slug", "kind", "note", "pid", "ctime", "since", "held_since",
+            "expect_s", "expect_from", "hold", "parent", "need", "has", "shares", "pinned", "pin",
+            "pin_note", "threads", "child", "blocked_by", "detached", "session", "releasing",
+            "moved", "resource", "priority", "within", "need_mem_mb", "mem_from")
+# live_records' key sets: a run's (a snapshot row's record keys and its branch) and a waiting
+# queue entry's (a snapshot queue row's record keys).
+RUN_KEYS = _RUN_ROW + ("branch",)
+QUEUE_KEYS = ("id", "ticket", "repo", "slug", "kind", "since", "expect_s", "blocked_by", "hold",
+              "moved", "resource", "priority", "parked")
+
+
+def _live_queue(store, q):
+    """The queue `q` without the entries whose run is dead (store.run_dead)."""
+    return dict(q, entries=[e for e in q["entries"] if not store.run_dead(e)])
+
+
+def live_records(store=None):
+    """The live runs and the waiting queue entries of live runs, as they are on file: each run on
+    RUN_KEYS, each entry on QUEUE_KEYS, for a reader that only matches their text (a worktree's
+    holder, kitlib.worktree.sweep). Writes nothing and starts no process (no snapshot: no
+    layout, process tree or hardware read). (records, None), or (None, why) when the store cannot
+    be read or built (Store() on a machine with no lock backend or profile folder); the store's
+    HomeFenced is not caught (a BaseException, kitlib.lock.store.fence)."""
+    try:
+        store = _store(store)
+        runs = store.live_runs()
+        waiting = [e for e in _live_queue(store, qm.load(store))["entries"]
+                   if e.get("state") == "waiting"]
+    except (OSError, LockError, ValueError) as e:
+        return None, str(e)
+    return ([{k: r.get(k) for k in RUN_KEYS} for r in runs]
+            + [{k: e.get(k) for k in QUEUE_KEYS} for e in waiting]), None
+
+
 def _epoch_iso(t):
     return iso(datetime.datetime.fromtimestamp(t, datetime.timezone.utc)) if t is not None else None
 
@@ -223,8 +258,7 @@ def snapshot(store=None, history_days=7, since=None, until=None):
         q, qerr = qm.load(store), None
     except qm.QueueUnreadable as e:
         q, qerr = {"ticket": 0, "entries": []}, str(e)
-    dead = {e["id"] for e in q["entries"] if store.run_dead(e)}
-    lq = dict(q, entries=[e for e in q["entries"] if e["id"] not in dead])
+    lq = _live_queue(store, q)
     planned = qm.plan(L, lq)[0]
     ents = {e["id"]: e for e in lq["entries"]}
     try:
@@ -248,12 +282,7 @@ def snapshot(store=None, history_days=7, since=None, until=None):
             tree += [p for p, _c in process.descendants(r["pid"], r.get("ctime"), snap)]
         info = planned.get(r["id"]) or {}
         start_at = r.get("held_since") or r.get("since")
-        row = {k: r.get(k) for k in ("id", "state", "repo", "slug", "kind", "note", "pid", "ctime",
-                                     "since", "held_since", "expect_s", "expect_from", "hold",
-                                     "parent", "need", "has", "shares", "pinned", "pin", "pin_note",
-                                     "threads", "child", "blocked_by", "detached", "session",
-                                     "releasing", "moved", "resource", "priority",
-                                     "within", "need_mem_mb", "mem_from")}
+        row = {k: r.get(k) for k in _RUN_ROW}
         row.update(cores=qm.entry_holds(L, e, "cpu") if e else r.get("cores") or [],
                    gpus=qm.entry_holds(L, e, "gpu") if e else r.get("gpus") or [],
                    tree=tree, usage=_usage(r),
@@ -691,7 +720,7 @@ def move_to_top(actor, rid, store=None):
                                            "run moves to the top" % rid, "id")
             m = qm.move_to_top(q, e, "owner", me.get("name"), iso())
             qm.save(store, q)
-            live = dict(q, entries=[x for x in q["entries"] if not store.run_dead(x)])
+            live = _live_queue(store, q)
         pos = (qm.plan(L, live)[0].get(rid) or {}).get("position")
         return {"id": rid, "moved": dict(m), "position": pos}
     return _write(store, go)

@@ -636,6 +636,7 @@ None: no module is open to every other.
 | worktree | git | build | work uses facts |
 | worktree | host | build | work uses facts |
 | worktree | kitlib-root | build | work uses base |
+| worktree | lock | build | work uses services |
 | worktree | ownerfiles | build | work uses services |
 | worktree | pieces | build | work uses services |
 | worktree | platform | build | work uses base |

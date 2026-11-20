@@ -75,8 +75,38 @@ def linked(path):
         st = os.lstat(path)
     except OSError:
         return False
+    return linked_stat(st)
+
+
+def linked_stat(st):
+    """`linked` for a stat already read without following links (os.lstat, or a scandir entry's
+    `stat(follow_symlinks=False)`)."""
     return stat.S_ISLNK(st.st_mode) or bool(
         getattr(st, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0))
+
+
+def scan(where, errors):
+    """`[(entry, stat)]` of the folder `where` from one listing, each stat read without following
+    links. On Windows the listing carries each entry's stat, so this costs no call per entry (an
+    `os.walk` and an lstat of each entry cost 3x the time on a large tree, measured 2026-11-20).
+    A folder or entry that cannot be read is appended to `errors` and left out."""
+    out = []
+    try:
+        with os.scandir(where) as it:
+            for entry in it:
+                try:
+                    out.append((entry, entry.stat(follow_symlinks=False)))
+                except OSError as e:
+                    errors.append(e)
+    except OSError as e:
+        errors.append(e)
+    return out
+
+
+def subfolders(listing):
+    """The folders of a `scan` listing that a walk descends: every folder but a link or junction
+    (`linked_stat`)."""
+    return [entry.path for entry, st in listing if stat.S_ISDIR(st.st_mode) and not linked_stat(st)]
 
 
 def prune(where, dirs):
@@ -185,14 +215,16 @@ def _delete_error(lib, path):
     return 0
 
 
-def held_folder(root):
+def held_folder(root, folders=None):
     """The first folder under `root` (itself included) that cannot be opened for DELETE, as
     (path, windows error), or None when every folder opened: `blockers` for folders only, so a
     holder is found without naming it. Windows holds a process's current directory open without
     FILE_SHARE_DELETE, so that folder answers SHARING_VIOLATION and its parents do not (measured
     2026-10-19); a file held open is not looked for. Fails closed: a walk error is
     (its path, its error or 0), a tree past WALK_MAX entries is (root, NOT_SEARCHED), and off
-    Windows the answer is (root, NOT_SEARCHED). A link or junction is never descended."""
+    Windows the answer is (root, NOT_SEARCHED). A link or junction is never descended.
+    `folders`: every folder under `root` in this walk's order, from a walk that read the tree in
+    full (sweep.newest's `folders`); then only the opens are made, no second walk."""
     whole = plain(os.path.abspath(root))
     if not WINDOWS:
         return whole, NOT_SEARCHED
@@ -201,17 +233,25 @@ def held_folder(root):
     err = _delete_error(lib, extended(root))
     if err:
         return whole, err
-    seen = 0
-    for where, dirs, files in os.walk(extended(root), onerror=walk_errors.append):
-        seen += len(dirs) + len(files)
-        if seen > WALK_MAX:
-            return whole, NOT_SEARCHED
-        prune(where, dirs)
-        for name in dirs:
-            path = os.path.join(where, name)
+    if folders is not None:
+        for path in folders:
             err = _delete_error(lib, path)
             if err:
                 return plain(path), err
+        return None
+    seen = 0
+    stack = [extended(root)]
+    while stack:
+        listing = scan(stack.pop(), walk_errors)
+        seen += len(listing)
+        if seen > WALK_MAX:
+            return whole, NOT_SEARCHED
+        dirs = subfolders(listing)
+        for path in dirs:
+            err = _delete_error(lib, path)
+            if err:
+                return plain(path), err
+        stack.extend(reversed(dirs))     # os.walk's top-down order
     for failure in walk_errors:
         return (plain(str(getattr(failure, 'filename', root))),
                 getattr(failure, 'winerror', None) or 0)

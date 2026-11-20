@@ -879,7 +879,7 @@ class ReflogTimes(ClassifyCase):
             with self.subTest(what):
                 row = self.row(data, where)
                 self.assertEqual(row['class'], 'L', row)
-                self.assertIn('active 0.0 h ago (newest: %s)' % what, row['reason'])
+                self.assertIn('active 0.0 h ago (seen: %s)' % what, row['reason'])
 
     def test_a_reflog_line_that_does_not_parse_is_unreadable_not_dead(self):
         path = self.workstream('garbled')
@@ -1003,6 +1003,227 @@ class SweepNewest(unittest.TestCase):
         with mock.patch.object(sweep, 'WALK_MAX', 1):
             got, why = sweep.newest(self.dir, 'the tree')
         self.assertEqual((got, why), (None, 'the tree could not be read in full: more than 1 entries'))
+
+    def test_one_listing_reads_every_entry_with_no_stat_of_its_own(self):
+        """The slow classify's cost: a stat per entry on top of the listing. Only the
+        top is stat'ed (its own mtime), whatever the tree holds."""
+        for n in range(4):
+            for m in range(5):
+                self.put('d%d/f%d' % (n, m), 1000 + n * 10 + m)
+            os.utime(os.path.join(self.dir, 'd%d' % n), (1000, 1000))
+        calls = []
+        real = os.lstat
+
+        def lstat(path, *a, **k):
+            calls.append(path)
+            return real(path, *a, **k)
+        with mock.patch.object(sweep.os, 'lstat', lstat):
+            got, why = sweep.newest(self.dir, 'the tree', skip=('d9',))
+        self.assertIsNone(why)
+        self.assertEqual(got[0], 1034)
+        self.assertLessEqual(len(calls), 1, calls)
+
+    def link(self, target, where):
+        try:
+            if os.name == 'nt':
+                import _winapi
+                _winapi.CreateJunction(target, where)
+            else:
+                os.symlink(target, where)
+        except OSError as e:
+            self.skipTest('cannot make a link here: %s' % e)
+
+    def test_a_link_is_neither_read_nor_listed(self):
+        import tempfile
+        outside = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, outside, True)
+        self.put('sub/a', 1000)
+        os.utime(os.path.join(self.dir, 'sub'), (1000, 1000))
+        with open(os.path.join(outside, 'new'), 'w') as f:
+            f.write('x')
+        os.utime(os.path.join(outside, 'new'), (9000, 9000))
+        self.link(outside, os.path.join(self.dir, 'via'))
+        folders = []
+        got, why = sweep.newest(self.dir, 'the tree', skip=('via',), folders=folders)
+        self.assertIsNone(why)
+        self.assertLess(got[0], 9000)        # the link's own entry counts, never its target's
+        self.assertEqual([os.path.normcase(sweep.plain(f)) for f in folders],
+                         [os.path.normcase(os.path.join(self.dir, 'sub'))])
+
+    def test_since_stops_at_the_first_newer_entry(self):
+        self.put('a', 1000)
+        for n in range(6):
+            self.put('d%d/f' % n, 5000)
+            os.utime(os.path.join(self.dir, 'd%d' % n), (1000, 1000))
+        listed = []
+        real = sweep.scan
+
+        def scan(where, errors):
+            listed.append(where)
+            return real(where, errors)
+        with mock.patch.object(sweep, 'scan', scan):
+            got, why = sweep.newest(self.dir, 'the tree', skip=('x',), since=2000)
+        self.assertIsNone(why)
+        self.assertEqual(got[0], 5000)
+        self.assertEqual(len(listed), 2, listed)         # the top, then the first folder
+        whole, why = sweep.newest(self.dir, 'the tree', skip=('x',))
+        self.assertEqual(whole[0], 5000)
+
+
+class SharedReads(ClassifyCase):
+    """What classify reads once per run: the common dir and the branch
+    tips' commit times, so a live tree costs no git call of its own; and the folder list the
+    activity walk hands to holders.held_folder."""
+
+    def counted(self, fail=()):
+        """A wrapper of remove_checks.git for sweep and classify that counts the per-tree reads
+        and fails the commands named in `fail`."""
+        calls = []
+        real = remove_checks.git
+
+        def git(cwd, *args, **kw):
+            if args and args[0] in fail:
+                return 1, '', 'refused by the test'
+            if '--git-dir' in args or (args[:2] == ('log', '-1')):
+                calls.append(args)
+            return real(cwd, *args, **kw)
+        return calls, git
+
+    def per_tree_reads(self, **kw):
+        calls, git = self.counted(**kw)
+        with mock.patch.object(sweep, 'git', git), mock.patch.object(classify, 'git', git):
+            rc, out, data = self.run_classify(now=time.time())
+        return calls, data
+
+    def test_a_live_tree_costs_no_git_read_of_its_own(self):
+        first = self.workstream('one')
+        calls, data = self.per_tree_reads()
+        self.assertEqual(self.row(data, first)['class'], 'L')
+        self.assertEqual(calls, [])
+        others = [self.workstream('two'), self.workstream('three')]
+        calls, data = self.per_tree_reads()
+        self.assertEqual([self.row(data, p)['class'] for p in [first] + others], ['L'] * 3)
+        self.assertEqual(calls, [])
+
+    def test_a_failed_batch_reads_each_tip_and_classes_stay(self):
+        paths = [self.workstream('one'), self.workstream('two', commits=2)]
+        self.green(paths[1])
+        rc, out, want = self.run_classify()
+        calls, git = self.counted(fail=('for-each-ref',))
+        with mock.patch.object(sweep, 'git', git), mock.patch.object(classify, 'git', git):
+            rc, out, got = self.run_classify()
+        self.assertEqual([self.row(got, p)['class'] for p in paths],
+                         [self.row(want, p)['class'] for p in paths])
+        self.assertEqual([self.row(got, p)['class'] for p in paths], ['C', 'B'])
+        self.assertEqual(len([c for c in calls if c[:2] == ('log', '-1')]), 2, calls)
+        calls, data = self.per_tree_reads(fail=('for-each-ref',))
+        self.assertEqual([self.row(data, p)['class'] for p in paths], ['L', 'L'])
+
+    def test_a_marked_live_tree_keeps_its_void_flag_exact(self):
+        """The walk stops past the mark's time, not the dead bar's: a live tree changed after its
+        mark is void, one unchanged since is not."""
+        t0 = time.time()
+        path = self.workstream('open')
+        mark = {'branch': 'kit/open', 'tip': self.git('rev-parse', 'kit/open'), 'path': path,
+                'why': 'superseded', 'by': 'c1 (coordinator)', 'at': marks.stamp(t0 + 600)}
+        with open(os.path.join(self.fx.common_dir(), marks.FILE_NAME), 'w',
+                  encoding='utf-8') as f:
+            f.write(json.dumps({'version': 1, 'marks': [mark]}))
+        for touched, void in ((False, False), (True, True)):
+            with self.subTest(touched=touched):
+                if touched:
+                    later = os.path.join(path, 'later.txt')
+                    with open(later, 'w') as f:
+                        f.write('x')
+                    os.utime(later, (t0 + 900, t0 + 900))
+                rc, out, data = self.run_classify(now=t0 + 1200)
+                row = self.row(data, path)
+                self.assertEqual(row['class'], 'L', row)
+                if void:
+                    self.assertIn('changed at ', row['mark']['void'] or '', row)
+                else:
+                    self.assertIsNone(row['mark']['void'], row)
+
+    def test_a_walk_error_leaves_a_dead_tree_l_and_lists_no_folder(self):
+        path = self.workstream('broken')
+        os.makedirs(os.path.join(path, 'sub'))
+        bad = os.path.normcase(os.path.join(path, 'sub'))
+        real = sweep.scan
+
+        def scan(where, errors):
+            if os.path.normcase(sweep.plain(where)) == bad:
+                errors.append(OSError(13, 'denied', where))
+                return []
+            return real(where, errors)
+        held = mock.Mock(return_value=None)
+        with mock.patch.object(sweep, 'scan', scan), \
+                mock.patch.object(holders, 'held_folder', held):
+            rc, out, data = self.run_classify(procs=lambda: (([], 1, 1), None))
+        row = self.row(data, path)
+        self.assertEqual(row['class'], 'L', row)
+        self.assertTrue(row['reason'].startswith(
+            'unreadable: its last activity (the tree could not be read in full'), row)
+        held.assert_not_called()
+
+    def test_a_relative_gitdir_in_the_git_file_is_read(self):
+        path = self.workstream('rel')
+        admin = os.path.join(self.fx.common_dir(), 'worktrees', 'rel')
+        with open(os.path.join(path, '.git'), 'w', newline='\n') as f:
+            f.write('gitdir: %s\n' % os.path.relpath(admin, path).replace(os.sep, '/'))
+        calls, data = self.per_tree_reads()
+        row = self.row(data, path)
+        self.assertEqual(row['class'], 'L', row)
+        self.assertIn('under the 24 h dead bar', row['reason'])
+        self.assertEqual(calls, [])
+
+    def test_a_git_file_naming_a_dir_outside_the_common_worktrees_is_l(self):
+        import tempfile
+        path = self.workstream('stray')
+        elsewhere = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, elsewhere, True)
+        with open(os.path.join(path, '.git'), 'w', newline='\n') as f:
+            f.write('gitdir: %s\n' % elsewhere)
+        rc, out, data = self.run_classify(now=time.time())
+        row = self.row(data, path)
+        self.assertEqual(row['class'], 'L', row)
+        self.assertTrue(row['reason'].startswith(
+            'unreadable: its last activity (its .git file names no git dir in '), row)
+
+    @windows_only('held_folder opens folders for delete: Windows only')
+    def test_held_folder_answers_the_same_from_the_walks_list(self):
+        import tempfile
+        path = self.workstream('held')
+        inner = os.path.join(path, 'sub', 'inner')
+        os.makedirs(inner)
+        outside = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, outside, True)
+        try:
+            import _winapi
+            _winapi.CreateJunction(outside, os.path.join(path, 'via'))
+        except OSError as e:
+            self.skipTest('cannot make a junction here: %s' % e)
+
+        def listed():
+            folders = []
+            got, why = sweep.newest(path, 'the tree', folders=folders)
+            self.assertIsNone(why)
+            return folders
+
+        def hold(where):
+            child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'],
+                                     cwd=where)
+            self.addCleanup(child.wait)
+            self.addCleanup(child.kill)
+            deadline = time.time() + 10
+            while holders.held_folder(where) is None and time.time() < deadline:
+                time.sleep(0.1)
+        hold(outside)            # held behind the junction: never descended, so free either way
+        self.assertIsNone(holders.held_folder(path))
+        self.assertIsNone(holders.held_folder(path, listed()))
+        hold(inner)
+        want = holders.held_folder(path)
+        self.assertEqual(want[0], inner)
+        self.assertEqual(holders.held_folder(path, listed()), want)
 
 
 class StaleMarkShown(ClassifyCase):

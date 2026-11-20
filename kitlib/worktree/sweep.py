@@ -12,11 +12,12 @@ import sys
 
 from kitlib import kitroot
 from kitlib.config import ConfigError
+from kitlib.git import defaults as gitdefaults
 from kitlib.proc import spawn
 from kitlib.records import landing
 
 from . import holders, marks, remove_checks
-from .holders import canon, extended, plain, prune, WALK_MAX
+from .holders import canon, extended, plain, scan, subfolders, WALK_MAX
 from .remove_checks import failure, git
 
 SWEEP_IDLE_S = 24 * 3600            # idle 24h+
@@ -152,31 +153,36 @@ def reflog_newest(path, label):
     return ((best, 'an entry of %s' % label), None) if best is not None else (None, None)
 
 
-def newest(root, label, skip=(), drop=()):
+def newest(root, label, skip=(), drop=(), since=None, folders=None):
     """`((mtime, path), None)` of the newest entry under `root` (links not followed; names in `skip`
     at the top left out, and then the top's own mtime too, though the top must still be readable;
     folders in `drop` at the top neither read nor walked into), or `(None, why)` when it cannot be
-    read in full: never idle."""
+    read in full: never idle. One listing per folder (holders.scan). `since`: return the first
+    entry newer than it, unread rest and all (the dead bar's answer, not the newest). `folders`: a
+    list that gets every folder walked into, in holders.held_folder's order; whole only when the
+    walk returned no why and found no entry newer than `since`."""
     best, errors, seen = [0.0, None], [], 0
     top = extended(root)
-    for where, dirs, files in os.walk(top, onerror=errors.append):
+    stack = [top]
+    while stack:
+        where = stack.pop()
+        listing = scan(where, errors)
         if where == top:
-            dirs[:] = [d for d in dirs if d not in drop]
-        seen += len(dirs) + len(files)
+            listing = [(e, st) for e, st in listing if e.name not in drop]
+        seen += len(listing)
         if seen > WALK_MAX:
             return None, '%s could not be read in full: more than %d entries' % (label, WALK_MAX)
-        for name in dirs + files:
-            if where == top and name in skip:
+        for entry, st in listing:
+            if where == top and entry.name in skip:
                 continue
-            full = os.path.join(where, name)
-            try:
-                when = os.lstat(full).st_mtime
-            except OSError as e:
-                errors.append(e)
-                continue
-            if when > best[0]:
-                best[:] = [when, plain(full)]
-        prune(where, dirs)
+            if st.st_mtime > best[0]:
+                best[:] = [st.st_mtime, plain(entry.path)]
+                if since is not None and best[0] > since:
+                    return (best[0], best[1]), None
+        dirs = subfolders(listing)
+        if folders is not None:
+            folders.extend(dirs)
+        stack.extend(reversed(dirs))     # os.walk's top-down order
     try:
         when = os.lstat(top).st_mtime
         if not skip and when > best[0]:
@@ -189,47 +195,92 @@ def newest(root, label, skip=(), drop=()):
     return (best[0], best[1]), None
 
 
-def last_activity(main, path, branch):
+def tip_times(main):
+    """`{branch: its tip's committer time}` of every local branch from one `git for-each-ref`, or
+    `{}` when that read fails: each tree then reads its own (last_activity's `tip_time=None`), as
+    does a detached tree or a branch missing from the answer."""
+    rc, out, _ = git(main, 'for-each-ref', '--format=%(refname) %(committerdate:unix)',
+                     'refs/heads/')
+    if rc != 0:
+        return {}
+    got = {}
+    for line in out.splitlines():
+        parts = line.split(' ')
+        if len(parts) == 2 and parts[0].startswith('refs/heads/') and parts[1].isdigit():
+            got[parts[0][len('refs/heads/'):]] = float(parts[1])
+    return got
+
+
+def last_activity(main, path, branch, tip_time=None, common=None, since=None, folders=None,
+                  head=None):
     """`((newest time, what), None)`, or `(None, why)` when it cannot be read in full: the mtime of
     everything in the tree; everything in the worktree's own git dir except `index`, `index.lock`,
     the dir's own mtime (a status rewrites the index: a read, not work) and `logs/`, whose HEAD
     reflog counts by its newest entry's time (reflog_newest); the branch reflog's newest entry; the
-    branch tip's committer date. A tree that cannot be read in full is never called idle."""
-    best = [0.0, None]
+    branch tip's committer date. A tree that cannot be read in full is never called idle.
+    `branch` None: a detached tree, whose tip is `head` and which has no branch reflog.
 
-    def see(when, what):
-        if when > best[0]:
-            best[0], best[1] = when, what
+    A run over many trees (classify) hands in what it read once: `common` (the git common dir; the
+    tree's git dir is then read from its `.git` file, kitlib.git.defaults.git_dir, and must be a
+    folder of `<common>/worktrees`), `tip_time` (tip_times) and `since`: the reflogs and the tip
+    date are read first, and the git dir's and the tree's walks are made, with `since`, only when
+    none of them is newer than `since`; the answer is then the first source newer than `since`, not
+    the newest. `folders`: a list the tree's walk fills (newest), whole when no why is returned."""
+    seen = []
+    tip = 'refs/heads/' + branch if branch else head
 
-    got, why = newest(path, 'the tree')
-    if why:
-        return None, why
-    see(*got)
-    rc, gitdir, err = git(path, 'rev-parse', '--path-format=absolute', '--git-dir')
-    if rc != 0 or not gitdir:
-        return None, failure(('rev-parse', '--git-dir'), rc, err)
-    gitdir = os.path.normpath(gitdir)
-    got, why = newest(gitdir, 'its git dir', skip=('index', 'index.lock'), drop=('logs',))
-    if why:
-        return None, why
-    see(*got)
-    rc, common, err = git(main, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-    if rc != 0 or not common:
-        return None, failure(('rev-parse', '--git-common-dir'), rc, err)
-    reflog = os.path.join(os.path.normpath(common), 'logs', 'refs', 'heads', *branch.split('/'))
-    for where, label in ((os.path.join(gitdir, 'logs', 'HEAD'), 'its HEAD reflog'),
-                         (reflog, 'the reflog of %s' % branch)):
+    def answer():
+        # On equal times the source named is the first in the order tree, git dir, reflogs, tip.
+        when, _, what = max(seen, key=lambda t: (t[0], -t[1]))
+        return (when, what), None
+
+    def fresh():
+        return since is not None and seen and max(t[0] for t in seen) > since
+
+    if common is None:
+        rc, gitdir, err = git(path, 'rev-parse', '--path-format=absolute', '--git-dir')
+        if rc != 0 or not gitdir:
+            return None, failure(('rev-parse', '--git-dir'), rc, err)
+        gitdir = os.path.normpath(gitdir)
+        rc, common, err = git(main, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+        if rc != 0 or not common:
+            return None, failure(('rev-parse', '--git-common-dir'), rc, err)
+    else:
+        gitdir = gitdefaults.git_dir(path)
+        if gitdir is None or canon(os.path.dirname(gitdir)) != \
+                canon(os.path.join(common, 'worktrees')):
+            return None, 'its .git file names no git dir in %s' % os.path.join(common, 'worktrees')
+    reflogs = [(os.path.join(gitdir, 'logs', 'HEAD'), 'its HEAD reflog')]
+    if branch:
+        reflogs.append((os.path.join(os.path.normpath(common), 'logs', 'refs', 'heads',
+                                     *branch.split('/')), 'the reflog of %s' % branch))
+    for rank, (where, label) in enumerate(reflogs, 2):
         got, why = reflog_newest(where, label)
         if why:
             return None, why
         if got:
-            see(*got)
-    args = ('log', '-1', '--format=%ct', 'refs/heads/' + branch, '--')
-    rc, stamp, err = git(main, *args)
-    if rc != 0 or not stamp.isdigit():
-        return None, failure(args, rc, err)
-    see(float(stamp), 'the commit date of %s' % branch)
-    return (best[0], best[1]), None
+            seen.append((got[0], rank, got[1]))
+    if tip_time is None:
+        args = ('log', '-1', '--format=%ct', tip, '--')
+        rc, stamp, err = git(main, *args)
+        if rc != 0 or not stamp.isdigit():
+            return None, failure(args, rc, err)
+        tip_time = float(stamp)
+    seen.append((tip_time, 4, 'the commit date of %s' % (branch or head[:10])))
+    if fresh():
+        return answer()
+    got, why = newest(gitdir, 'its git dir', skip=('index', 'index.lock'), drop=('logs',),
+                      since=since)
+    if why:
+        return None, why
+    seen.append((got[0], 1, got[1]))
+    if fresh():
+        return answer()
+    got, why = newest(path, 'the tree', since=since, folders=folders)
+    if why:
+        return None, why
+    seen.append((got[0], 0, got[1]))
+    return answer()
 
 
 def sweep_skip(ctx, entry, base, ancestors, entries, machine, now, idle_s, mark):

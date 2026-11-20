@@ -58,6 +58,7 @@ import kitlib.platform
 from kitlib import kitroot
 from kitlib.records import gate_ok
 
+from kitlib.git import defaults as gitdefaults
 from kitlib.git import refs
 from kitlib.platform.linux import paths as linux_paths
 
@@ -153,32 +154,12 @@ def _holds(forms, target):
     return any(flat == target or flat.startswith(target + os.sep) for flat in forms)
 
 
-def activity(main, path, branch, head):
-    """`((newest time, what), None)` or `(None, why)`. A tree on a branch: sweep.last_activity. A
-    detached tree: the same reads without a branch (the tree, its git dir but the index and
-    `logs/`, its HEAD reflog's newest entry (sweep.reflog_newest), and the HEAD commit's committer
-    date)."""
-    if branch:
-        return sweep.last_activity(main, path, branch)
-    got, why = sweep.newest(path, 'the tree')
-    if got is None:
-        return None, why
-    rc, gitdir, err = git(path, 'rev-parse', '--path-format=absolute', '--git-dir')
-    if rc != 0 or not gitdir:
-        return None, failure(('rev-parse', '--git-dir'), rc, err)
-    gitdir = os.path.normpath(gitdir)
-    inner, why = sweep.newest(gitdir, 'its git dir', skip=('index', 'index.lock'), drop=('logs',))
-    if inner is None:
-        return None, why
-    logged, why = sweep.reflog_newest(os.path.join(gitdir, 'logs', 'HEAD'), 'its HEAD reflog')
-    if why:
-        return None, why
-    args = ('log', '-1', '--format=%ct', head, '--')
-    rc, stamp, err = git(main, *args)
-    if rc != 0 or not stamp.isdigit():
-        return None, failure(args, rc, err)
-    return max([got, inner, (float(stamp), 'the commit date of %s' % head[:10])] +
-               ([logged] if logged else []), key=lambda pair: pair[0]), None
+def activity(main, path, branch, head, tip_time=None, common=None, since=None, folders=None):
+    """`((newest time, what), None)` or `(None, why)`: sweep.last_activity, for a tree on a branch
+    or a detached one (the same reads without a branch reflog, the HEAD commit's date for the
+    tip's), with its run-wide reads and walk options."""
+    return sweep.last_activity(main, path, branch, tip_time=tip_time, common=common, since=since,
+                               folders=folders, head=head)
 
 
 def landing_branches(ctx):
@@ -234,11 +215,16 @@ def own_commit(main, branch):
     return any(s.startswith(('commit', 'cherry-pick')) for s in subjects[:-1]), None
 
 
-def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s):
+def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s, common=None,
+                mark=None):
     """Why this tree is L (kept, held or unreadable), or None. Also `(when, what)` of its last
     activity when it was read. `cwds` is (cwd_forms, unreadable, total): when any process could
     not be read, a tree no other probe holds is L unless every folder in it opens for DELETE
-    (holders.held_folder: a process's current directory never does)."""
+    (holders.held_folder: a process's current directory never does; the folders are those its
+    activity walk listed). `common`: the run's git common dir, and `entry['stamp']` its tip's
+    batched commit time (sweep.tip_times), read once per run. The activity read stops at the first
+    source newer than the dead bar, or than `mark`'s time (its branch's stale mark) when that is
+    later, so a mark's void flag stays exact; a dead tree's is the newest."""
     path, branch = entry['path'], entry['branch']
     if run_wide:
         return 'unreadable: %s' % run_wide, None
@@ -266,14 +252,28 @@ def live_reason(ctx, entry, run_wide, landing, machine, cwds, now, dead_after_s)
     for pid, name, forms in cwds[0]:
         if _holds(forms, target):
             return 'process pid %d %s has its current directory in it' % (pid, name), None
-    got, why = activity(ctx.main, path, branch, entry['head'])
+    # One bar for both tests: the read stops at a source newer than `since` (never below `bar`),
+    # and the tree is live when its activity is newer than `bar`, by the same `>`, so a read that
+    # stopped early is always live.
+    bar = now - dead_after_s
+    since = bar
+    if mark is not None:
+        try:
+            since = max(bar, marks.at_epoch(mark))
+        except (KeyError, ValueError):
+            since = None                # the newest itself: void_reason reads it whole
+    folders = []
+    got, why = activity(ctx.main, path, branch, entry['head'], tip_time=entry.get('stamp'),
+                        common=common, since=since, folders=folders)
     if got is None:
         return 'unreadable: its last activity (%s)' % why, None
-    if now - got[0] < dead_after_s:
-        return 'active %.1f h ago (newest: %s), under the %d h dead bar' % (
+    if got[0] > bar:
+        return 'active %.1f h ago (seen: %s), under the %d h dead bar' % (
             max(now - got[0], 0) / 3600.0, got[1], dead_after_s // 3600), got
     if cwds[1]:
-        held = holders.held_folder(path)
+        # Dead: the walk found nothing newer than the bar, so it listed every folder (none
+        # listed: held_folder walks for itself).
+        held = holders.held_folder(path, folders or None)
         if held is not None:
             where, err = held
             what = ('was not probed: Linux has no open that shows which folders a process holds'
@@ -592,11 +592,19 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None, fe
     marked, marks_error = read_marks(ctx)
     if marks_error:
         ctx.say('note      the stale marks cannot be read (%s): no mark is shown' % marks_error)
+    # Read once for every tree's activity: the common dir (None: each tree asks git) and the branch
+    # tips' commit times (one missing: that tree asks git).
+    common = gitdefaults.common_dir(main)
+    stamps = sweep.tip_times(main) if entries else {}
     trees, acted = [], []
     for entry in entries:
         path = os.path.normpath(entry['path'])
         row = {'path': path, 'branch': entry['branch'], 'head': entry['head']}
-        reason, seen = live_reason(ctx, entry, *probes, now=now, dead_after_s=dead_after_s)
+        if entry['branch'] in stamps:
+            entry['stamp'] = stamps[entry['branch']]
+        mark = marks.find(marked, entry['branch']) if entry['branch'] else None
+        reason, seen = live_reason(ctx, entry, *probes, now=now, dead_after_s=dead_after_s,
+                                   common=common, mark=mark)
         if seen is not None:
             row['idle_s'] = round(max(now - seen[0], 0))
         if reason == ORPHAN:
@@ -620,7 +628,6 @@ def _classify(ctx, now, machine, procs, dead_after_s, act=None, environ=None, fe
         if entry['branch']:
             row['claims'] = (claimed(claims[0], entry['branch']) if claims[0] is not None
                              else 'unknown: %s' % claims[1])
-        mark = marks.find(marked, entry['branch']) if entry['branch'] else None
         if mark is not None:
             row['mark'] = {'at': mark['at'], 'why': mark['why'], 'by': mark['by'],
                            'tip': mark['tip'],

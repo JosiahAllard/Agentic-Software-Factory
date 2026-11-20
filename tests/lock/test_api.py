@@ -787,6 +787,16 @@ class LiveRecords(ApiCase):
         self.assertIsNone(got)
         self.assertIn("queue unreadable", why)
 
+    def test_a_store_that_cannot_be_built_is_no_answer(self):
+        with mock.patch.object(st_mod, "real_root", side_effect=OSError("no profile folder")):
+            self.assertEqual(api.live_records(), (None, "no profile folder"))
+
+    def test_a_lock_or_value_error_is_no_answer(self):
+        for err in (st_mod.LockError(1, "a run record is bad"), ValueError("not a number")):
+            with self.subTest(err=err), mock.patch.object(self.store, "live_runs",
+                                                          side_effect=err):
+                self.assertEqual(api.live_records(self.store), (None, str(err)))
+
 
 class StopWaiting(ApiCase):
     """stop_waiting (kitlib.gate.gatecap.replace_stale's): a run's stop request is written only

@@ -177,9 +177,10 @@ def live_records(store=None):
     RUN_KEYS, each entry on QUEUE_KEYS, for a reader that only matches their text (a worktree's
     holder, kitlib.worktree.sweep). Writes nothing and starts no process (no snapshot: no
     layout, process tree or hardware read). (records, None), or (None, why) when the store cannot
-    be read; the store's HomeFenced is not caught (a BaseException, kitlib.lock.store.fence)."""
-    store = _store(store)
+    be read or built (Store() on a machine with no lock backend or profile folder); the store's
+    HomeFenced is not caught (a BaseException, kitlib.lock.store.fence)."""
     try:
+        store = _store(store)
         runs = store.live_runs()
         waiting = [e for e in _live_queue(store, qm.load(store))["entries"]
                    if e.get("state") == "waiting"]

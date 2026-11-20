@@ -38,7 +38,7 @@ _PS_END = r'(?=[\s;|)}]|$)'
 # first characters are disjoint, and every shorter cut leaves a next character that is not an END character
 _atomic = r'(?=(?P<{0}>(?:{1})+))(?P={0})'.format
 # a native program's argument: plain words and strings with no variable
-PS_PLAIN_ARG_RE = re.compile(r'(?:%s|%s|%s)+%s' % (_PS_BARE, _PS_SQ, _PS_DQ_PLAIN, _PS_END))
+PS_PLAIN_ARG_RE = re.compile(_atomic('plain', r'%s|%s|%s' % (_PS_BARE, _PS_SQ, _PS_DQ_PLAIN)) + _PS_END)
 # a cmdlet's argument: a variable, or a string with one, is one argument too
 PS_CMDLET_ARG_RE = re.compile(_atomic('cmdlet', r'%s|%s|%s|%s(?:\.[A-Za-z_]\w*)*' % (_PS_BARE, _PS_SQ, _PS_DQ, _PS_VAR))
                               + _PS_END)

@@ -241,7 +241,8 @@ def _layout(store, lf, hw, runs):
 
 
 def _usage(r):
-    keys = ("cpu_s", "peak_cpu_cores", "peak_mem_mb", "peak_commit_mb", "cpu_cores_now", "mem_mb_now")
+    keys = ("cpu_s", "peak_cpu_cores", "peak_mem_mb", "peak_commit_mb", "cpu_cores_now", "mem_mb_now",
+            "partial")
     return {k: r.get(k) for k in keys}
 
 

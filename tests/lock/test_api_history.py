@@ -57,6 +57,11 @@ class History(StoreCase):
                 api.history(self.store, days=bad)
             self.assertEqual(e.exception.code, "invalid")
 
+    def test_partial_is_the_records_own_never_read_from_its_command(self):
+        self.ended("r-20261007T000000Z-aaaa", 3, partial=True, cmd=[])
+        self.ended("r-20261007T000000Z-bbbb", 2, cmd=["docker", "exec", "box", "sh"])
+        self.assertEqual([r["partial"] for r in api.history(self.store)], [True, False])
+
     def put(self, rid, ended):
         self.store.history_append({"id": rid, "repo": "kit", "slug": "g", "kind": "engine-test",
                                    "since": ended, "held_since": ended, "ended": ended, "code": 0,

@@ -699,6 +699,47 @@ class DockerCpuEnv(unittest.TestCase):
         self.assertEqual(run_held.docker_cpu_env(both, False), both)
 
 
+class FakeJob:
+    """A job's two reads Usage makes: usage() (cpu s, peak commit, working set) and pids()."""
+
+    def __init__(self, pids):
+        self.ids = list(pids)
+
+    def usage(self):
+        return (1.0, 2**20, 2**20)
+
+    def pids(self):
+        return self.ids
+
+
+@windows_only("the lock is Windows only")
+class UsagePartial(unittest.TestCase):
+    """Usage.partial: a closing sample window that finds the docker client in the job (any case
+    of its image name) makes the run partial for good: past a background restart (job_ended) and
+    on samples whose job has no client. A client outside the job, or none, leaves it false."""
+    SNAP = [(10, 1, "python.exe"), (11, 10, "DOCKER.EXE"), (12, 1, "docker.exe")]
+
+    def sampled(self, u, job):
+        u.last = (time.monotonic() - 10, 0.0)          # a window closes at this sample
+        self.assertTrue(u.sample(job))
+        return u.fields()["partial"]
+
+    def test_the_docker_client_in_the_job_makes_the_run_partial_for_good(self):
+        u = run_held.Usage()
+        with mock.patch.object(process, "snapshot", return_value=self.SNAP):
+            self.assertFalse(self.sampled(u, FakeJob([10])))
+            self.assertTrue(self.sampled(u, FakeJob([10, 11])))
+            u.job_ended()
+            self.assertTrue(self.sampled(u, FakeJob([10])))
+
+    def test_a_client_outside_the_job_or_an_unreadable_job_is_not_partial(self):
+        u = run_held.Usage()
+        with mock.patch.object(process, "snapshot", return_value=self.SNAP):
+            self.assertFalse(self.sampled(u, FakeJob([10, 99])))
+        with mock.patch.object(process, "snapshot", side_effect=OSError("no snapshot")):
+            self.assertFalse(self.sampled(u, FakeJob([11])))
+
+
 GRADLE_OFF = "-Dorg.gradle.daemon=false"
 WRITE_GRADLE_OPTS = ("import os,sys; open(sys.argv[1], 'w').write(os.environ.get('GRADLE_OPTS', "
                      "'<unset>'))")
@@ -792,6 +833,20 @@ class DockerRuns(StoreCase):
         got, gpus = self.started("local-ai", ["docker", "exec", "box", "sh"])
         self.assertTrue(gpus)
         self.assertEqual(got, ["docker", "exec", "box", "sh"])
+
+    def test_a_run_whose_job_holds_the_docker_client_is_partial_to_its_history_line(self):
+        # A gate's record has cmd []: partial comes from the job's samples, never the command.
+        self.confine(1)
+        with mock.patch.object(run_held, "docker_client_in", return_value=True):
+            with rm.slot("engine-test", "kit", "t", cores=1, store=self.store,
+                         env=clean_env()) as launch:
+                rid = launch.id
+                launch.run([sys.executable, "-c", "import time; time.sleep(1.2)"])
+                live = api.run_record(rid, self.store)
+        self.assertTrue(live["partial"])
+        self.assertTrue(self.store.read("ended/%s.json" % rid)["partial"])
+        [line] = [d for d in self.store.history_records() if d["id"] == rid]
+        self.assertTrue(line["partial"])
 
 
 class Role(StoreCase):

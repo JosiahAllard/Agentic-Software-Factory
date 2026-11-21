@@ -156,6 +156,13 @@ class Build(unittest.TestCase):
         self.assertIn("peak 3.5 cores, 2048 MB", txt)
         self.assertIn("OVERRUN 10 min past its expected end", txt)
         self.assertIn(("  OVERRUN", ("bad",)), [(t[:9], tags) for t, tags in self.v["details"]])
+        self.assertNotIn("docker", txt)
+
+    def test_details_say_a_partial_runs_docker_work_is_not_measured(self):
+        s = snap()
+        s["runs"][0]["usage"]["partial"] = True
+        txt = "".join(t for t, _tags in m.build(s, now=NOW)["details"])
+        self.assertIn("peak 3.5 cores, 2048 MB; its docker work is not measured", txt)
 
     def test_queue_lines(self):
         txt = "".join(t for t, _tags in self.v["queue"])

@@ -909,13 +909,13 @@ class Store:
                     "pinned", "given_back", "tree", "gate", "priority", "session", "role",
                     "stopped_by", "branch", "need_mem_mb", "mem_from", "wait_by", "wait_on",
                     "gate_mode")
-    DOCKER_EXEC_RE = re.compile(r"\bdocker(\.exe)?\b.*\bexec\b", re.I)
 
     def history_append(self, d):
         """Appends ended run record d's history line to history/YYYY-MM.jsonl, the month it
         ended. A run that never held anything (refused, or it gave up waiting) has none. Each
-        line adds held_s, wait_s, partial (the command runs docker exec, so its use is partly
-        outside the job) and background."""
+        line adds held_s, wait_s, partial (the record's: a sample found the docker client in the
+        run's job, so its use is partly outside the job; kitlib.lock.run_held.Usage) and
+        background."""
         if not d or not (d.get("held_since") or d.get("background")):
             return
         h = {k: d.get(k) for k in self.HISTORY_KEYS}
@@ -928,8 +928,7 @@ class Store:
             h["wait_s"] = int((parse_iso(d["held_since"]) - parse_iso(d["since"])).total_seconds())
         except (KeyError, TypeError, ValueError):
             h["wait_s"] = None
-        h.update(partial=bool(self.DOCKER_EXEC_RE.search(" ".join(str(c) for c in d.get("cmd") or ()))),
-                 background=bool(d.get("background")))
+        h.update(partial=bool(d.get("partial")), background=bool(d.get("background")))
         with contextlib.suppress(OSError):
             os.makedirs(self.path("history"), exist_ok=True)
             with open(self.path("history", "%s.jsonl" % d["ended"][:7]), "a", encoding="utf-8",

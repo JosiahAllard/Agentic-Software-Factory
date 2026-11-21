@@ -52,6 +52,20 @@ NO_SHARED_DAEMON_ENV = (("GRADLE_OPTS", "-Dorg.gradle.daemon=false"),)
 # docker exec options that take a value as the next argument (`docker exec --help`).
 DOCKER_EXEC_VALUE_OPTS = ("-e", "--env", "--env-file", "-u", "--user", "-w", "--workdir",
                           "--detach-keys")
+# The docker client's image names (matched case-insensitively): a container that `docker run` or
+# `docker exec` starts works outside the run's job, and only its client is in the job.
+DOCKER_CLIENTS = ("docker", "docker.exe")
+
+
+def docker_client_in(job):
+    """True when a process in `job` is the docker client (DOCKER_CLIENTS, by the process
+    snapshot's image name); False when none is, or the job or the snapshot cannot be read."""
+    try:
+        pids = set(job.pids())
+        snap = process.snapshot() if pids else ()
+    except OSError:
+        return False
+    return any(pid in pids and (name or "").lower() in DOCKER_CLIENTS for pid, _pp, name in snap)
 
 
 # ------------------------------------------------------------------ the record
@@ -59,12 +73,16 @@ class Usage:
     """A run's measured use, from its job object: CPU seconds, the most physical cores
     busy over any sample window (CPU time per second over the threads a core has), the process
     tree's peak working set and the job's peak committed memory; and, for live views, the cores
-    busy over the last window and the working set now. A background run's restarts add up."""
+    busy over the last window and the working set now. A background run's restarts add up.
+    `partial` turns True, and stays so, when a closing window finds the docker client in the job
+    (docker_client_in): the container's work is outside the job, so none of these figures can
+    show the run idle."""
 
     def __init__(self, threads_per_core=1, sample_s=5.0):
         self.tpc, self.sample_s = max(1, threads_per_core), sample_s
         self.done_s, self.cur_s, self.peak_cores, self.last = 0.0, 0.0, 0.0, None
         self.peak_mem, self.peak_commit, self.now_cores, self.now_mem = 0, 0, 0.0, 0
+        self.partial = False
 
     def sample(self, job):
         """Reads the job; True when a sample window closed (the record is worth saving)."""
@@ -84,6 +102,7 @@ class Usage:
         self.now_cores = rate / self.tpc
         self.peak_cores = max(self.peak_cores, self.now_cores)
         self.last = (t, self.cur_s)
+        self.partial = self.partial or docker_client_in(job)
         return True
 
     def job_ended(self):
@@ -95,7 +114,8 @@ class Usage:
                 "peak_cpu_cores": round(self.peak_cores, 2),
                 "peak_mem_mb": int(self.peak_mem // 2**20),
                 "peak_commit_mb": int(self.peak_commit // 2**20),
-                "cpu_cores_now": round(self.now_cores, 2), "mem_mb_now": int(self.now_mem // 2**20)}
+                "cpu_cores_now": round(self.now_cores, 2), "mem_mb_now": int(self.now_mem // 2**20),
+                "partial": self.partial}
 
 
 def docker_cpu_env(cmd, holds_gpu):

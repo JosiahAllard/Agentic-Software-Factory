@@ -313,7 +313,8 @@ def holders(view, s, e, owner=True):
 
 def _details(runs, colour, now):
     """Each running run: what it is, what it holds, start, expected end, OVERRUN, its
-    measured peaks. The marker's tag is 'c:<run id>' (its colour)."""
+    measured peaks (and that its docker work is not measured, when its usage is partial). The
+    marker's tag is 'c:<run id>' (its colour)."""
     parts = []
     for r in runs:
         rid = r.get("id") or "?"
@@ -331,6 +332,8 @@ def _details(runs, colour, now):
         pc, pm = u.get("peak_cpu_cores"), u.get("peak_mem_mb")
         parts.append(("   peak %.1f cores, %d MB" % (pc, pm) if pc is not None and pm is not None
                       else "   peak not measured yet", ()))
+        if u.get("partial"):
+            parts.append(("; its docker work is not measured", ()))
         over = r.get("overrun")
         if over and over.get("s") is not None:
             parts.append(("  OVERRUN %s past its expected end" % span(over["s"]), ("bad",)))

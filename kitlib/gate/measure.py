@@ -50,7 +50,7 @@ SATURATED = 0.9
 # about 6 s into a run. Under 10 s a run has one window at most, often none: no peak to trust.
 MIN_HELD_S = 10
 MIN_BUSY_THREADS = 0.1      # cpu_s / held_s, the job's mean busy cpu threads, of a run seen working
-SKIPPED = (('partial', 'partial (docker exec: use partly outside the job)'),
+SKIPPED = (('partial', 'partial (docker: use partly outside the job)'),
            ('short', 'held under %d s (no peak window)' % MIN_HELD_S),
            ('no_figures', 'without cpu figures (none, or a peak of 0)'),
            ('idle', "under %s cpu thread busy (work outside the run's job, or idle)"

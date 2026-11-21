@@ -147,7 +147,7 @@ SIZED = {'engine-test': {'cpu': 'medium', 'gpu': 0, 'warn_min': 30},
          'cpu-eval': {'cpu': 'heavy', 'gpu': 0, 'warn_min': 120}}
 IDLE = "under 0.1 cpu thread busy (work outside the run's job, or idle)"
 SHORT = 'held under 10 s (no peak window)'
-PARTIAL = 'partial (docker exec: use partly outside the job)'
+PARTIAL = 'partial (docker: use partly outside the job)'
 NO_FIGURES = 'without cpu figures (none, or a peak of 0)'
 
 

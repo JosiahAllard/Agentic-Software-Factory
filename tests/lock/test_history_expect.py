@@ -121,13 +121,13 @@ class HistoryExpect(StoreCase):
         self.assertEqual(m(None, "kit/x", True), "branch")
         self.assertEqual(m(None, "kit/x", False), "other")
         self.assertEqual(m(None, None, True), "other")
-        self.assertEqual(m("land", None, True, "merged"), "land")
-        self.assertEqual(m(None, "kit/x", True, "full"), "branch")
-        self.assertEqual(m(None, None, True, "full"), "merged")
-        self.assertEqual(m(None, None, True, "merged"), "merged")
+        self.assertEqual(m("land", None, True, gate_mode="merged"), "land")
+        self.assertEqual(m(None, "kit/x", True, gate_mode="full"), "branch")
+        self.assertEqual(m(None, None, True, gate_mode="full"), "merged")
+        self.assertEqual(m(None, None, True, gate_mode="merged"), "merged")
         for mode in ("daily", "bisect", "rerun", None):
-            self.assertEqual(m(None, None, True, mode), "other", mode)
-        self.assertEqual(m(None, None, False, "merged"), "other")
+            self.assertEqual(m(None, None, True, gate_mode=mode), "other", mode)
+        self.assertEqual(m(None, None, False, gate_mode="merged"), "other")
 
     @windows_only("the lock runs on Windows")
     def test_book_takes_the_estimate_of_its_own_mode(self):

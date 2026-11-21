@@ -494,7 +494,7 @@ def book(kind, repo, slug, cores=None, hold=None, gpu_share=None, wait_s=None, n
     rid, mutex = claim_id(store, rid)
     try:
         run = Run(store, L, repo, slug, kind, note, cmd, "waiting", rid, detached, env)
-        mode = store.run_mode(priority, branch, gate)
+        mode = store.run_mode(priority, branch, gate, gate_mode)
         # History is read once, and only when a guess needs it: it is every line of the last
         # history_keep_days, and this mutex is held meanwhile.
         recs = store.history_records() if expect_s is None or mem_mb is None else None

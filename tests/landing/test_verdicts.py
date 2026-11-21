@@ -127,10 +127,29 @@ class ReportLines(unittest.TestCase):
         text = ('Done-when: X-1 (a) MET - test_a\nDone-when: X-1 (b) UNMET - no test\n'
                 'Done-when: X-1 (c) met, not unmetered\n'
                 'Done-when: X-1 (d) MET - was UNMET until the fix\n'
-                'Done-when: X-MET-2 (a) UNMET - an id holding the word does not count\n')
+                'Done-when: X-MET-2 (a) UNMET - an id holding the word does not count\n'
+                '- **Done-when:** my earlier UNMET item is now MET.\n'
+                'Done-when: X-1 (unmet input refused) MET - test_e\n'
+                'Done-when: X-1 (a) now holds (test_b) unmet before, met now\n'
+                '- **Done-when:** X-2 (a) **UNMET** - no test\n'
+                'done-when: x-3 (a) unmet\n'
+                'Done-when: unmet - no id\n'    # the status lookbehind: else id `un`, status `met`
+                'Done-when: X-1 (b): UNMET - colon after the item\n'
+                'Done-when: X-1 — UNMET\n'
+                'Done-when: X-1 (item (b) part) UNMET\n'
+                'Done-when: EX-1: (a) UNMET\n'
+                'Done-when: EX-1 - (a) UNMET\n')
         self.assertEqual(V.unmet_lines(text), [
             'Done-when: X-1 (b) UNMET - no test',
-            'Done-when: X-MET-2 (a) UNMET - an id holding the word does not count'])
+            'Done-when: X-MET-2 (a) UNMET - an id holding the word does not count',
+            '- **Done-when:** X-2 (a) **UNMET** - no test',
+            'done-when: x-3 (a) unmet',
+            'Done-when: unmet - no id',
+            'Done-when: X-1 (b): UNMET - colon after the item',
+            'Done-when: X-1 — UNMET',
+            'Done-when: X-1 (item (b) part) UNMET',
+            'Done-when: EX-1: (a) UNMET',
+            'Done-when: EX-1 - (a) UNMET'])
         for text, want in (('Design: APPROVE', 'APPROVE'), ('**Design:** revise', 'REVISE'),
                            ('Design: APPROVE\nDesign: maybe', None), ('', None)):
             self.assertEqual(V.design_of(text), want, text)

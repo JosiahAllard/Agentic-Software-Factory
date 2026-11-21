@@ -20,6 +20,7 @@ M = 'b' * 40                                    # main
 L1, L2, L3 = ('1' * 40), ('2' * 40), ('3' * 40)  # first-parent M..S, oldest first; S is L3
 LANDS = [CU.Landing(L1, ['src/a.py']), CU.Landing(L2, ['docs/x.md']), CU.Landing(L3, ['c.txt'])]
 REVERT = 'e' * 40
+NO_HOLDS = mock.Mock(**{'section.return_value': {'steps': []}})    # M's config: no promote_hold
 
 
 class Probe(object):
@@ -401,18 +402,21 @@ class Pieces(unittest.TestCase):
         CU.bound(p)('a' * 40, 0.2)
         self.assertEqual(p.book_kw['wait_s'], 1)
 
-    def test_the_red_steps_drop_the_gate_s_own_and_a_green_one(self):
+    def test_the_red_steps_drop_the_gate_s_own_a_green_one_and_a_promote_hold_one(self):
         out = G.Outcome(G.FAILED, [], results=[
             {'name': 'unit', 'status': 'FAIL'}, {'name': 'gate', 'status': 'FAIL'},
-            {'name': 'windows', 'status': 'FAIL'}, {'name': 'lint', 'status': 'PASS'}])
-        self.assertEqual(CU.red_steps(out), ['unit'])
+            {'name': 'windows', 'status': 'FAIL'}, {'name': 'lint', 'status': 'PASS'},
+            {'name': 'hold', 'status': 'FAIL'}])
+        self.assertEqual(CU.red_steps(out), ['unit', 'hold'])
+        gate = {'steps': [{'name': 'hold', 'promote_hold': True}, {'name': 'unit'}]}
+        self.assertEqual(CU.red_steps(out, gate), ['unit'])
 
     def test_a_red_with_no_step_to_probe_is_not_hunted_and_writes_nothing(self):
         tmp = tempfile.mkdtemp(prefix='kit-culprit-')
         self.addCleanup(shutil.rmtree, tmp, True)
         a = R.start(tmp, 'f' * 40, M, 'red', why='the gate failed')
         out = G.Outcome(G.FAILED, [], results=[{'name': 'gate', 'status': 'FAIL'}])
-        self.assertEqual(CU.after_red({}, a, out, lambda line: None), [])
+        self.assertEqual(CU.after_red({'cfg_base': NO_HOLDS}, a, out, lambda line: None), [])
         self.assertNotIn('culprit', R.attempts(tmp)[0].rec)
         self.assertNotIn('inspect', R.attempts(tmp)[0].rec)
 
@@ -486,7 +490,7 @@ class AfterRed(unittest.TestCase):
         self.out = G.Outcome(G.FAILED, [], results=[
             {'name': 'unit', 'status': 'FAIL', 'reasons': ['exit 1'], 'log': 'u.log', 'x': 1}])
         self.ctx = {'main': tmp, 'wt': tmp, 'tip': L3, 'base': M, 'git': FakeGit({}),
-                    'since': 5.0, 'book': {'no_wait': True}}
+                    'since': 5.0, 'book': {'no_wait': True}, 'cfg_base': NO_HOLDS}
         self.hunted = []
         self.patch(CU, '_evidence', return_value=EV)
         self.patch(CU.B, 'Prober', side_effect=AssertionError('a prober was built'))

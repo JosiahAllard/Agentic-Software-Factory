@@ -410,6 +410,13 @@ def staging_off(gate):
     return [s['name'] for s in gate.get('steps') or [] if s.get('staging_landing') is False]
 
 
+def promote_holds(gate):
+    """The names of the steps whose FAIL in a staging promotion is a standing hold on the
+    repository's state, not the tree's (`"promote_hold": true`; kitlib.staging.promote), in
+    config order."""
+    return [s['name'] for s in gate.get('steps') or [] if s.get('promote_hold')]
+
+
 def select(gate, steps, changed, full=False, only=None, read=None, docs=False, staging=False,
            skipped=None):
     """`(the steps to run in order, {name: why})`. GateConfigError for an --only name no step has.

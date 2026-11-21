@@ -54,7 +54,7 @@ class Phases(Case):
         self.assertNotIn('refused', R.LIVE)
         self.assertNotIn('behind', R.HOLDS)
         self.assertIn('failed', R.HOLDS)
-        self.assertTrue(set(R.HOLDS) <= set(R.ANNOUNCE))
+        self.assertEqual(set(R.HOLDS) - set(R.ANNOUNCE), {R.STANDING})   # its own hold: no item
         self.assertIn('machine', R.ENDS)
         self.assertNotIn('machine', R.HOLDS + R.ANNOUNCE)
 

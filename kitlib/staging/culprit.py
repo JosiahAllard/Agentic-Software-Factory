@@ -31,7 +31,8 @@ tree at S); a step with no globs and no content, or one the gate at M lacks, tak
 A candidate that changed a failing test's file, or a path under a failing gradle or dotnet
 test's scope, is a hit; the suspects are the hits, else the candidates. "One suspect" is one
 across every red step together (bisect.bisectable names them: `gate`, `windows` and an `infra`
-red are never hunted).
+red are never hunted, nor is a `"promote_hold"` step of M's gate, steps.promote_holds: its red is
+the repository's own hold, which no probe in the daily form can reproduce).
 
 A repository with `"staging".suspects_cmd` (read at M, as `<remote>/<main>` writes it) names its
 own instead (cmd_suspects): its `suspect <sha40>` lines, exit 0. A command that cannot start,
@@ -312,10 +313,13 @@ def bound(prober):
     return probe
 
 
-def red_steps(out):
-    """The red step names of the gate outcome `out` a hunt can probe (bisect.bisectable)."""
+def red_steps(out, gate=None):
+    """The red step names of the gate outcome `out` a hunt can probe (bisect.bisectable), less
+    the promote_hold steps of `gate` (M's, when given: steps.promote_holds)."""
     results = out.facts.get('results') or []
-    return B.bisectable({'red': [r['name'] for r in results if r.get('status') == 'FAIL']})
+    hold = S.promote_holds(gate) if gate else []
+    return B.bisectable({'red': [r['name'] for r in results
+                                 if r.get('status') == 'FAIL' and r['name'] not in hold]})
 
 
 def repeat(earlier, inspect):
@@ -346,7 +350,7 @@ def after_red(ctx, attempt, out, say, clock=time.time, budget=HUNT_BUDGET_S, mak
     log_dir, earlier}. Nothing when no red step can be hunted (red_steps). A red the machine
     window ended (the attempt's `machine`, kitlib.staging.promote) is handed over as the machine's
     (MACHINE_HANDED) and never hunts. RecordError passes through."""
-    red = red_steps(out)
+    red = red_steps(out, ctx['cfg_base'].section('gate'))
     machine = attempt.rec.get('machine')
     if not red:
         return [MACHINE_HANDED % machine] if machine else []

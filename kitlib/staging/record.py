@@ -37,12 +37,14 @@ behind (main moved since the test: tested again next time), refused (the pre-pus
 the push), diverged (main holds commits the staging branch lacks), failed (the push could not be
 made or verified in PUSH_TRIES tries, or the tested record could not be written), error (the gate
 refused to run on the tip), machine (every FAIL was the machine's: tested again next time, until
-machine_since's streak is older than the promotion's window). HOLDS never test the same tip again
-(failed among them, so a tip whose push or record keeps failing is not gated again on every hub
-tick): a new staging tip is a
-fresh attempt, and a refused one waits for the owner's action as well. ANNOUNCE get one hub item
-each (Attempt.event: a red one whose culprit's revert branch was prepared is word `revert`, a
-red the machine window ended is word `machine-red`).
+machine_since's streak is older than the promotion's window), standing-hold (every FAIL was a
+`"promote_hold"` step's: the repository's own hold, such as a daily hold, not the tree's).
+HOLDS never test the same tip again (failed among them, so a tip whose push or record keeps
+failing is not gated again on every hub tick): a new staging tip is a fresh attempt, and a
+refused one waits for the owner's action as well. ANNOUNCE get one hub item each (Attempt.event:
+a red one whose culprit's revert branch was prepared is word `revert`, a red the machine window
+ended is word `machine-red`). Every hold is announced but standing-hold: the hold is the
+repository's own work item (its daily red), and each new tip meets it again until it clears.
 
 The records are written atomically (kitlib.fs.atomic) and only by the run holding the promote
 lock (kitlib.staging.promote.lock_for), the hub job's `announced` mark included.
@@ -57,8 +59,9 @@ SCHEMA = 1
 FILE = 'promote.json'
 DIR = 'promote'
 LIVE = ('tested', 'pushing', 'pushed')
-ENDS = ('done', 'red', 'behind', 'refused', 'diverged', 'failed', 'error', 'machine')
-HOLDS = ('red', 'refused', 'diverged', 'failed', 'error')
+STANDING = 'standing-hold'      # every FAIL a promote_hold step's (kitlib.staging.promote)
+ENDS = ('done', 'red', 'behind', 'refused', 'diverged', 'failed', 'error', 'machine', STANDING)
+HOLDS = ('red', 'refused', 'diverged', 'failed', 'error', STANDING)
 ANNOUNCE = ('red', 'refused', 'diverged', 'failed', 'error')
 HUNTING = 'hunting'     # a culprit hunt's verdict while it runs (kitlib.staging.culprit)
 

@@ -74,6 +74,11 @@ ID_RE = re.compile(r"^[rh]-\d{8}T\d{6}Z-[0-9a-f]{4,6}$")
 # What one Store.prune_files removes at most (about 0.3 s on Windows): the first prune of a
 # store never pruned (30,000 ended records) is spread over bookings, never one booking's wait.
 PRUNE_MAX = 500
+# The gate_mode words of kitlib.gate's merged gate ("merged", or "full" when the merge changes a
+# gate config file) and of a whole --full gate. A branchless gate with one of them (a staging
+# promotion, or --full on a detached HEAD) keeps its own expected time and memory need
+# (Store.run_mode "merged").
+MERGED = ("merged", "full")
 
 
 class LockError(Exception):
@@ -964,14 +969,18 @@ class Store:
         return out
 
     @staticmethod
-    def run_mode(priority=None, branch=None, gate=False):
+    def run_mode(priority=None, branch=None, gate=False, gate_mode=None):
         """The mode a run's expected time is kept by: "land" (a landing's gate, priority land),
-        "branch" (a branch gate, which names its branch) or "other" (the rest, and every line
-        written before a gate named its branch). A history line's own priority, branch and gate
-        give the same answer as the booking's."""
+        "branch" (a branch gate, which names its branch), "merged" (a branchless merged or full
+        gate, gate_mode one of MERGED: a staging promotion, or --full on a detached HEAD) or
+        "other" (the rest, and every line written before a gate named its branch
+        or its gate_mode). A history line's own priority, branch, gate and gate_mode give the
+        same answer as the booking's."""
         if priority == "land":
             return "land"
-        return "branch" if gate and branch else "other"
+        if gate and branch:
+            return "branch"
+        return "merged" if gate and gate_mode in MERGED else "other"
 
     def history_expect(self, repo, kind, mode="other", records=None):
         """Expected seconds of a run of repo, kind and mode (run_mode): the median held time of
@@ -988,7 +997,8 @@ class Store:
         ds = sorted(float(d["held_s"]) for d in records
                     if d.get("repo") == repo and d.get("how") == "done"
                     and kinds_mod.canonical(d.get("kind"), table_aliases=al) == kind
-                    and self.run_mode(d.get("priority"), d.get("branch"), d.get("gate")) == mode
+                    and self.run_mode(d.get("priority"), d.get("branch"), d.get("gate"),
+                                      d.get("gate_mode")) == mode
                     and isinstance(d.get("held_s"), (int, float)) and d["held_s"] >= 0)
         if len(ds) < s.history_min_runs:
             return None
@@ -1010,7 +1020,8 @@ class Store:
         ds = sorted(int(d["peak_commit_mb"]) for d in records
                     if d.get("repo") == repo and d.get("how") == "done"
                     and kinds_mod.canonical(d.get("kind"), table_aliases=al) == kind
-                    and self.run_mode(d.get("priority"), d.get("branch"), d.get("gate")) == mode
+                    and self.run_mode(d.get("priority"), d.get("branch"), d.get("gate"),
+                                      d.get("gate_mode")) == mode
                     and (not start or d["ended"] >= start)
                     and isinstance(d.get("peak_commit_mb"), (int, float))
                     and not isinstance(d["peak_commit_mb"], bool) and d["peak_commit_mb"] >= 0)

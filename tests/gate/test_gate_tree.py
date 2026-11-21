@@ -10,6 +10,7 @@ import os
 
 from kitlib import gate as G
 from kitlib.gate import runner
+from kitlib.lock import store as lockstore
 from tests.landing import test_land
 from tests.landing.test_land_tip_gated import SELECT_GATE
 
@@ -81,12 +82,17 @@ class LandingGateMode(test_land.LandCase):
         return [d.get('gate_mode') for d in self.store.history_records()
                 if d.get('priority') == 'land']
 
+    # Each mode a merged gate writes is one the lock keeps a promotion's guide by (lockstore.MERGED,
+    # Store.run_mode "merged"): a rename here fails, not a promotion back among the "other" runs.
     def test_a_landing_notes_the_merged_gate_mode_on_the_slot_it_holds(self):
-        self.assertEqual(self.landed_modes({'a.py': 'x = 1\n'}), ['merged'])
+        got = self.landed_modes({'a.py': 'x = 1\n'})
+        self.assertEqual(got, ['merged'])
+        self.assertIn(got[0], lockstore.MERGED)
 
     def test_a_gate_config_landing_notes_full(self):
-        self.assertEqual(self.landed_modes({'tools/kit_hooks.py': '# changed\n' + self.HOOKS}),
-                         ['full'])
+        got = self.landed_modes({'tools/kit_hooks.py': '# changed\n' + self.HOOKS})
+        self.assertEqual(got, ['full'])
+        self.assertIn(got[0], lockstore.MERGED)
 
     def test_a_docs_only_landing_notes_docs(self):
         self.assertEqual(self.landed_modes({'docs/guide.md': 'words\n'}), ['docs'])

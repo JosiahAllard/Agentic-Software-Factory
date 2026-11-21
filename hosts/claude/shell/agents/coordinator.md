@@ -35,9 +35,9 @@ you and every agent you spawn, and win any disagreement: say so to the owner.
 |---|---|---|
 | Pull | at dispatch, from `next`'s offer, never after the work | backlog-ops |
 | Brief | the observed failure, the design section, scope files, risk, tests to extend | coordinator-dispatch |
-| Design | the builder reads the design docs and reports a design; you or an analyst approve it | branch-review A |
+| Design | the builder reads the design docs and reports a design; an analyst approves it | branch-review A |
 | Build | the approved design only; touched unit tests only | skill builder |
-| Review | defects and thin, clean tests; you or an analyst | branch-review B |
+| Review | defects and thin, clean tests; an analyst | branch-review B |
 | Gate | the author runs the one gate on the reviewed tip | skill builder |
 | Land | `verdict.py add`, then `land.py ... --submit` at once | land-branch |
 | After | close records, tell overlapping workstreams, clean up | land-branch |

@@ -26,7 +26,7 @@ success line and exit code, how to verify the push, what to do on each failure v
 whether batches are allowed.
 
 ## Review
-The diff size a coordinator may review itself, and standing review checks. End-goal design: the
+Standing review checks. End-goal design: the
 doc a builder reads before its design and a design review checks it against (skills builder and
 specialty-review), by path; none named: ARCHITECTURE.md, else the README. The other design docs,
 each by path. A stale or

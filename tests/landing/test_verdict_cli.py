@@ -91,19 +91,19 @@ class VerdictCli(GateRepoCase):
         self.assert_usage(self.run_tool(*self.add_args(**{'--branch': 'refs/heads/kit/a'})))
         self.assert_usage(self.run_tool('drop', 'kit/a', '--tip', self.tip[:12]))
 
-    def test_a_medium_or_high_risk_self_review_is_refused_with_an_instead_line(self):
-        for risk in ('Medium', 'High'):
+    def test_a_self_review_of_any_risk_is_refused_with_an_instead_line(self):
+        for risk in VE.RISKS:
             for over in ({'--reviewer-id': 'coord-1'}, {'--reviewer': 'pm-kit:coordinator'}):
                 with self.subTest(risk=risk, **over):
                     code, out, err = self.run_tool(*self.add_args(**dict(over, **{'--risk': risk})))
                     self.assertEqual(code, 2, (out, err))
                     lines = out.splitlines()
-                    self.assertTrue(lines[0].startswith('REFUSED: a %s-risk verdict needs a reviewer '
-                                                        'other than the coordinator' % risk), out)
+                    self.assertTrue(lines[0].startswith('REFUSED: a verdict needs a reviewer '
+                                                        'other than the coordinator'), out)
                     self.assertEqual(lines[-1], V.SELF_REVIEW_INSTEAD)
                     self.assertNotIn('QUEUED', out)
                     self.assertEqual(V.scan(self.repo.common_dir()), ([], []))
-        code, out, err = self.run_tool(*self.add_args(**{'--risk': 'Low', '--reviewer-id': 'coord-1'}))
+        code, out, err = self.run_tool(*self.add_args(**{'--risk': 'Low', '--reviewer-id': 'agent-a7'}))
         self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), err)
 
     def test_list_drops_a_landed_entry_and_says_so(self):
@@ -163,54 +163,6 @@ class VerdictCli(GateRepoCase):
             code = self.tool.main(['list', '-C', self.tmp])
         self.assertEqual(code, 1)
         self.assertIn('NOT DONE: no git repository', out.getvalue())
-
-    def test_add_with_a_kit_json_that_cannot_be_read_is_not_done(self):
-        self.repo.write('.kit.json', '{')
-        code, out, _ = self.run_tool(*self.add_args())
-        self.assertEqual(code, 1)
-        self.assertIn('NOT DONE: the kit configuration cannot be read: ', out)
-        self.assertEqual(V.scan(self.repo.common_dir()), ([], []))
-
-
-class VerdictCliSizeCap(GateRepoCase):
-    """add reads "landing".self_review_max_lines from the -C checkout's .kit.json and passes it to
-    verdicts.add: a coordinator self-read over it is REFUSED (exit 2, the Instead: line)."""
-    KIT = {'landing': {'self_review_max_lines': 3}}
-
-    setUp = VerdictCli.setUp
-    run_tool = VerdictCli.run_tool
-    add_args = VerdictCli.add_args
-
-    def test_a_self_read_over_the_cap_is_refused_and_a_small_one_queued(self):
-        code, out, err = self.run_tool(*self.add_args(**{'--reviewer-id': 'coord-1'}))
-        self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), err)  # 1 line
-        self.repo.write('b.txt', 'b\nb\nb\n', root=self.wt)
-        tip = self.repo.commit('more', 'b.txt', cwd=self.wt)
-        code, out, err = self.run_tool(*self.add_args(tip=tip, **{'--reviewer-id': 'coord-1'}))
-        self.assertEqual(code, 2, (out, err))
-        lines = out.splitlines()
-        self.assertTrue(lines[0].startswith(
-            'REFUSED: a verdict the coordinator queueing it reviewed itself covers at most 3 '
-            'changed lines ("landing".self_review_max_lines), and %s..%s changes 4 (+4 -0 in 2 '
-            'files; the larger of the range given and %s...%s from main as fetched)'
-            % (self.main[:10], tip[:10], self.main[:10], tip[:10])), out)
-        self.assertEqual(lines[-1], V.SELF_REVIEW_INSTEAD)
-        code, out, err = self.run_tool(*self.add_args(
-            tip=tip, **{'--reviewer': 'pm-kit:analyst', '--reviewer-id': 'agent-a7'}))
-        self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % tip), err)
-
-    def test_a_self_read_is_refused_when_main_as_fetched_cannot_be_read(self):
-        self.repo.git('update-ref', '-d', 'refs/remotes/origin/main')
-        code, out, err = self.run_tool(*self.add_args(**{'--reviewer-id': 'coord-1'}))
-        self.assertEqual(code, 2, (out, err))
-        self.assertTrue(out.startswith(
-            'REFUSED: a verdict the coordinator queueing it reviewed itself covers at most 3 '
-            'changed lines ("landing".self_review_max_lines), and main as fetched cannot be read '
-            '(origin/main: '), out)
-        self.assertIn('so the size of %s..%s cannot be told' % (self.main[:10], self.tip[:10]), out)
-        code, out, err = self.run_tool(*self.add_args(
-            **{'--reviewer': 'pm-kit:analyst', '--reviewer-id': 'agent-a7'}))
-        self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip), err)
 
 
 if __name__ == '__main__':

@@ -275,7 +275,6 @@ SECTIONS = {
         'log_dir': Field(RelPath(), None, 'where gate logs live'),
         'wait_s': Field(Int(0, 86400), 21600, 'seconds tools/land.py waits for its turn (its machine-lock booking, then the landing lock) unless --wait says otherwise'),
         'batch_max': Field(Int(1, 20), 5, 'most branches one tools/land.py landing merges and gates together; a submitted landing folds the submissions queued behind it into its batch, up to it (docs/gate-landing.md "Folding queued submissions"); 1: no batch and no folding (the opt-out)'),
-        'self_review_max_lines': Field(Int(1, 100000), None, 'most changed lines (added plus removed, git diff --numstat: the larger of <base>...<tip> and <main as fetched>...<tip>) a verdict the queueing coordinator reviewed itself may cover: tools/verdict.py add refuses a larger self-read, or one whose size cannot be told (docs/gate-landing-policy.md "Strict paths"); unset: no size check'),
         'reuse_max_age_h': Field(Int(0, 168), 24, 'hours a pass stored in the gate cache serves a branch gate rerun or a landing; 0: no gate reads or stores a step result'),
         'reuse_never': Field(Strs, [], 'globs of paths whose change makes a gate (branch or landing) read and store no step result in the gate cache'),
         'in_flight': Field(IN_FLIGHT, None, 'how tools/new_worktree.py and tools/sync_base.py see a landing in flight before they fetch, and wait for it (unset: off; {}: the kit landing lock; wait_s unset: 100, inferred not measured; docs/new-worktree.md "Waiting for a landing in flight")'),
@@ -395,7 +394,7 @@ MAPS = {
 # Keys no tool reads any more, per section. A config that still carries one loads: the key is
 # dropped unchecked (not an unknown-key refusal), so an install written before the removal works,
 # and the Config names it (Config.retired) for gate.py and land.py to warn about once a run.
-RETIRED = {'landing': ('lanes', 'lock_file', 'shared_paths', 'gate_once')}
+RETIRED = {'landing': ('lanes', 'lock_file', 'shared_paths', 'gate_once', 'self_review_max_lines')}
 # Whole sections no tool reads any more: any value loads, unchecked, and the Config names the section.
 RETIRED_SECTIONS = ('testlist',)
 

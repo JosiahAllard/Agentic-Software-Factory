@@ -5,20 +5,15 @@
                  [--follow-up ID ...] [-C DIR]
       queue B at SHA (the coordinator, after reading the review; never the reviewer). SHA must be
       B's head now. A re-add replaces B's entry. V: LAND | "LAND WITH FOLLOW-UP"; R: Low |
-      Medium | High. Prints `QUEUED <branch> <tip>`. A Medium or High-risk verdict whose reviewer is the
+      Medium | High. Prints `QUEUED <branch> <tip>`. A verdict, of any risk, whose reviewer is the
       calling coordinator (--reviewer-id is --session, or --reviewer names the coordinator role)
       prints `REFUSED: ...` and an `Instead:` line naming a dispatched analyst (exit 2, nothing
-      written; verdicts.self_review_why). With "landing".self_review_max_lines set in the -C
-      checkout's .kit.json, a Low verdict the calling coordinator reviewed itself is
-      refused the same way when it changes more lines than that (the larger of --range and the
-      tip's diff from main as last fetched), or its size cannot be told
-      (verdicts.self_review_size_why); a .kit.json that cannot be read is NOT DONE (exit 1).
-      Each --reviewer-id that is a subagent id of the host (its ADAPTER's optional
-      agent_models(); Claude: hosts.claude.adapter.agent_models) has its transcript read for the
-      models it ran on: one that is not --reviewer-model (`claude-haiku-5-5` for `opus`) prints
+      written; verdicts.self_review_why). Each --reviewer-id that is a subagent id of the host
+      (its ADAPTER's optional agent_models(); Claude: hosts.claude.adapter.agent_models) has its
+      transcript read for the models it ran on: one that is not --reviewer-model (`claude-haiku-5-5` for `opus`) prints
       `REFUSED: ...` and an `Instead:` line (exit 2, nothing written; verdicts.model_mismatch_why); an
       id with no transcript prints `NOTE: --reviewer-model <m> is not checked: ...` before QUEUED.
-      A session name, a self-review and a host with no reader (Codex) are not looked up.
+      A session name and a host with no reader (Codex) are not looked up.
       The same ids have the final `Verdict:` line of their final report read (the ADAPTER's
       optional agent_verdict(); Claude: hosts.claude.adapter.agent_models.verdict): a reviewer
       that said SEND BACK prints `REFUSED: ...` and an `Instead:` line naming a fresh review of
@@ -52,12 +47,12 @@
   verdict.py design --branch B --design-reviewer-id ID --session S [-C DIR]
       record B's approved design (verdicts.record_design): the file the guard reads before it lets
       a source file be written in B's linked worktree (docs/guard-rules.md `design-first`), and
-      add reads for a new source file or class. ID is S when the coordinator approved the design
-      itself (skill branch-review A.2, or the brief's design at dispatch); else the design
-      reviewer's final report must have its last `Design:` line APPROVE and a `Checks:` line giving
-      each verdicts.DESIGN_CHECKS id (verdicts.design_why): `REFUSED: ...` and an `Instead:` line
-      (exit 2, nothing written); with no transcript, or a host with no reader, it prints `NOTE:
-      the design review is not checked: ...` and records it. Prints `DESIGN APPROVED <branch> by
+      add reads for a new source file or class. ID is an analyst's agent id: one that is S, the
+      coordinator's own approval, is refused on any host; the design reviewer's final report must
+      have its last `Design:` line APPROVE and a `Checks:` line giving each
+      verdicts.DESIGN_CHECKS id (verdicts.design_why). Each refusal prints `REFUSED: ...` and an
+      `Instead:` line (exit 2, nothing written); with no transcript, or a host with no reader, it
+      prints `NOTE: the design review is not checked: ...` and records it. Prints `DESIGN APPROVED <branch> by
       <ID>`; NOT DONE (exit 1) when no linked worktree has B checked out.
   verdict.py carry --branch B [-C DIR]
       after a main sync of a queued branch: move B's verdict to B's head when every commit after
@@ -140,7 +135,7 @@ def parser():
     de = sub.add_parser('design', help="record a branch's approved design")
     de.add_argument('--branch', required=True)
     de.add_argument('--design-reviewer-id', required=True, metavar='ID',
-                    help="the design reviewer's agent id, or --session for the coordinator's own approval")
+                    help="the analyst design reviewer's agent id (never --session)")
     de.add_argument('--session', required=True, help='the coordinator session recording it')
     common(de)
     ca = sub.add_parser('carry', help="move a queued verdict to the branch's head after a main sync")
@@ -257,12 +252,11 @@ def carry(a, common_dir):
 
 
 def design(a):
-    """verdict.py design: the transcript is read unless the coordinator approved the design itself."""
-    own = a.design_reviewer_id.strip().casefold() == a.session.strip().casefold()
-    reader = None if own else verdict_reader()
+    """verdict.py design: the design reviewer's transcript is read when the host has a reader."""
+    reader = verdict_reader()
     said = verdicts.seen_reports(a.design_reviewer_id, reader) if reader is not None else None
     verdicts.record_design(os.path.abspath(a.root), a.branch, a.design_reviewer_id, a.session, said)
-    if not own and reader is None:
+    if reader is None:
         print('NOTE: the design review is not checked: this host has no transcript reader', flush=True)
     for rid in sorted(r for r, (found, _, _) in (said or {}).items() if not found):
         print('NOTE: the design review is not checked: no transcript found for the design reviewer id %s'
@@ -279,13 +273,7 @@ def run(a, common_dir):
                  'reviewer': a.reviewer, 'reviewer_model': a.reviewer_model,
                  'reviewer_id': a.reviewer_id, 'author': a.author, 'range': a.range,
                  'session': a.session, 'records': a.record}
-        try:
-            cap = kconfig.load(os.path.abspath(a.root)).section('landing')['self_review_max_lines']
-        except kconfig.ConfigError as e:
-            return fail('NOT DONE', 'the kit configuration cannot be read: %s; nothing was queued'
-                        % e, NOT_DONE)
-        main, main_why = (main_as_fetched(a.root) if cap is not None or a.follow_up
-                          else (None, None))
+        main = main_as_fetched(a.root)[0] if a.follow_up else None
         well = not verdict_entry.check(entry, stored=False)
         seen = verdicts.seen_models(entry, transcript_reader()) if well else {}
         reader = verdict_reader()
@@ -293,8 +281,7 @@ def run(a, common_dir):
         follow_ups = follow_up_states(a.root, a.follow_up, a.branch, a.tip, main) if well else None
         new = new_sources(a.root, a.range) if well else None
         approval = verdicts.read_design(a.root, a.branch) if new else None
-        _, stored = verdicts.add(common_dir, entry, self_review_max_lines=cap, main=main,
-                                 main_why=main_why, seen=seen, said=said, follow_ups=follow_ups,
+        _, stored = verdicts.add(common_dir, entry, seen=seen, said=said, follow_ups=follow_ups,
                                  new=new, approval=approval)
         for rid in sorted(r for r, models in seen.items() if not models):
             print('NOTE: --reviewer-model %s is not checked: no transcript found for the reviewer '

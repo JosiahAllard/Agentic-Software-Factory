@@ -401,6 +401,19 @@ class RetiredLandingLanesTest(TreeCase):
         self.assertNotIn('lanes', schema.SECTIONS['landing'])
         self.assertFalse(any('`lanes`' in line for line in schema.doc_lines()))
 
+    def test_self_review_max_lines_is_retired_loads_without_it_and_is_named(self):
+        """Every verdict names an analyst (kitlib.landing.verdicts.self_review_why), so the size
+        under which a coordinator once reviewed itself is retired, whatever its value."""
+        self.assertIn('self_review_max_lines', schema.RETIRED['landing'])
+        self.assertNotIn('self_review_max_lines', schema.SECTIONS['landing'])
+        self.assertFalse(any('self_review_max_lines' in line for line in schema.doc_lines()))
+        for value in (150, 0, 'x', None):
+            with self.subTest(value=value):
+                cfg = self.load({'landing': {'batch_max': 2, 'self_review_max_lines': value}})
+                self.assertEqual(cfg.section('landing')['batch_max'], 2)
+                self.assertNotIn('self_review_max_lines', cfg.section('landing'))
+                self.assertIn('landing.self_review_max_lines', cfg.retired)
+
     def test_a_typo_beside_lanes_still_refuses(self):
         why = self.refused({'landing': {'lanes': {}, 'lanez': {}}})
         self.assertIn('unknown key(s) lanez', why)
@@ -556,6 +569,8 @@ class RetiredTextTest(TreeCase):
             ('no .kit.json', None, ()),
             ('no retired key', {'repo': {'main_branch': 'master'}}, ()),
             ('one retired key', {'landing': {'gate_once': True}}, ('landing.gate_once',)),
+            ('the self-review size, retired', {'landing': {'self_review_max_lines': 150}},
+             ('landing.self_review_max_lines',)),
             ('two retired keys, in schema order',
              {'landing': {'shared_paths': ['x'], 'lanes': 2}},
              ('landing.lanes', 'landing.shared_paths')),

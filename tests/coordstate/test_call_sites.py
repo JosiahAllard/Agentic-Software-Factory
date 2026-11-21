@@ -10,6 +10,7 @@ import unittest
 from unittest import mock
 
 from kitlib import gate as G
+from kitlib.backlog import opener
 from kitlib.host import sessionmark
 from kitlib.coordstate import log
 from kitlib.landing import submit as submitmod
@@ -116,6 +117,10 @@ class BacklogWrites(TempAgentFolder):
                                        self.tool_env, self.repo.root)
         self.assertEqual(rc, 0, out + err)
         self.assertRegex(out, r'## Open pulls \(1\)\n- FOO tools/wk session=kit-a pulled \d{4}-')
+        self.repo.write('.kit.json', '{not json\n')     # a store that cannot be read: why, no rows
+        rows, why = opener.pulled_rows(self.repo.root)
+        self.assertIsNone(rows)
+        self.assertTrue(why)
 
 
 class TestsLeaveTheLiveLogAlone(TempAgentFolder):

@@ -104,14 +104,9 @@ def follow_up_states(root, ids, branch, tip, base):
     (main as fetched, or None when it cannot be read) would close it (landable.follow_up_closes,
     git read in `root`). `(None, why)` when the live store cannot be found or opened, or whether
     the landing closes one cannot be told. A read, so it opens the store with NO_PROBES."""
-    try:
-        path, why = store_live.live_store_root(root)
-        if why:
-            return None, why
-        store = open_store(path, fetch=False, probes=NO_PROBES).store
-        snap = store.load()
-    except (Failure, Refusal, Usage, kconfig.ConfigError, OSError) as e:
-        return None, str(e)
+    store, snap, why = _live_snapshot(root)
+    if why:
+        return None, why
     recs = {rid: snap.get(rid) for rid in ids}
     closes, why = landable.follow_up_closes(
         store.backend, [r for r in recs.values() if r is not None and r.readable], root, branch,
@@ -130,16 +125,26 @@ def pulled_rows(root):
     of the live store of `root`'s records, as last fetched (store_live.live_store_root, as
     follow_up_states finds it); `(None, why)` when it cannot be found or opened. A field the record
     lacks is None. A read, so it opens the store with NO_PROBES."""
-    try:
-        path, why = store_live.live_store_root(root)
-        if why:
-            return None, why
-        snap = open_store(path, fetch=False, probes=NO_PROBES).store.load()
-    except (Failure, Refusal, Usage, kconfig.ConfigError, OSError) as e:
-        return None, str(e)
+    _store, snap, why = _live_snapshot(root)
+    if why:
+        return None, why
     rows = [(r.id, r.get('pulled_by'), r.get('pulled_session'), r.get('pulled_at'))
             for r in snap.readable if r.get('state') == 'pulled']
     return sorted(rows), None
+
+
+def _live_snapshot(root):
+    """`(store, snapshot, None)` of the live store of `root`'s records as last fetched
+    (store_live.live_store_root), opened with NO_PROBES and no fetch; `(None, None, why)` when it
+    cannot be found, opened or loaded: follow_up_states' and pulled_rows' one read."""
+    try:
+        path, why = store_live.live_store_root(root)
+        if why:
+            return None, None, why
+        store = open_store(path, fetch=False, probes=NO_PROBES).store
+        return store, store.load(), None
+    except (Failure, Refusal, Usage, kconfig.ConfigError, OSError) as e:
+        return None, None, str(e)
 
 
 def repo_cap(top, *, worktrees=None):

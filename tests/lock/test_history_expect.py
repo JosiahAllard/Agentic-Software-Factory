@@ -1,7 +1,6 @@
 """kitlib.lock.store.Store.history_expect: a run's expected time is the median of the finished
-runs of its own repo, kind and mode (land, branch gate, merged gate outside a landing, other),
-not of all of them; a mode with
-too few runs has none (book then uses the kind's guide)."""
+runs of its own repo, kind and mode (land, branch gate, branchless merged or full gate, other),
+not of all of them; a mode with too few runs has none (book then uses the kind's guide)."""
 import datetime
 import os
 import unittest

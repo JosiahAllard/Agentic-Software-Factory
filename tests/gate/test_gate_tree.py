@@ -85,13 +85,14 @@ class LandingGateMode(test_land.LandCase):
     # Each mode a merged gate writes is one the lock keeps a promotion's guide by (lockstore.MERGED,
     # Store.run_mode "merged"): a rename here fails, not a promotion back among the "other" runs.
     def test_a_landing_notes_the_merged_gate_mode_on_the_slot_it_holds(self):
-        self.assertEqual(self.landed_modes({'a.py': 'x = 1\n'}), ['merged'])
-        self.assertIn('merged', lockstore.MERGED)
+        got = self.landed_modes({'a.py': 'x = 1\n'})
+        self.assertEqual(got, ['merged'])
+        self.assertIn(got[0], lockstore.MERGED)
 
     def test_a_gate_config_landing_notes_full(self):
-        self.assertEqual(self.landed_modes({'tools/kit_hooks.py': '# changed\n' + self.HOOKS}),
-                         ['full'])
-        self.assertIn('full', lockstore.MERGED)
+        got = self.landed_modes({'tools/kit_hooks.py': '# changed\n' + self.HOOKS})
+        self.assertEqual(got, ['full'])
+        self.assertIn(got[0], lockstore.MERGED)
 
     def test_a_docs_only_landing_notes_docs(self):
         self.assertEqual(self.landed_modes({'docs/guide.md': 'words\n'}), ['docs'])

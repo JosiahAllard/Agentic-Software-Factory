@@ -74,9 +74,10 @@ ID_RE = re.compile(r"^[rh]-\d{8}T\d{6}Z-[0-9a-f]{4,6}$")
 # What one Store.prune_files removes at most (about 0.3 s on Windows): the first prune of a
 # store never pruned (30,000 ended records) is spread over bookings, never one booking's wait.
 PRUNE_MAX = 500
-# The gate_mode words kitlib.gate's merged gate books with (runner.merged_gate: "merged", or
-# "full" when the merge changes a gate config file). Outside a landing (a staging promotion)
-# they keep its own expected time and memory need (Store.run_mode "merged").
+# The gate_mode words of kitlib.gate's merged gate ("merged", or "full" when the merge changes a
+# gate config file) and of a whole --full gate. A branchless gate with one of them (a staging
+# promotion, or --full on a detached HEAD) keeps its own expected time and memory need
+# (Store.run_mode "merged").
 MERGED = ("merged", "full")
 
 
@@ -970,9 +971,9 @@ class Store:
     @staticmethod
     def run_mode(priority=None, branch=None, gate=False, gate_mode=None):
         """The mode a run's expected time is kept by: "land" (a landing's gate, priority land),
-        "branch" (a branch gate, which names its branch), "merged" (a gate with neither whose
-        gate_mode is one of MERGED: a merged gate outside a landing's slot, a staging
-        promotion) or "other" (the rest, and every line written before a gate named its branch
+        "branch" (a branch gate, which names its branch), "merged" (a branchless merged or full
+        gate, gate_mode one of MERGED: a staging promotion, or --full on a detached HEAD) or
+        "other" (the rest, and every line written before a gate named its branch
         or its gate_mode). A history line's own priority, branch, gate and gate_mode give the
         same answer as the booking's."""
         if priority == "land":

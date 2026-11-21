@@ -23,6 +23,7 @@ from tests.home import machine_config
 LAND = inproc.load_tool('land')
 GATE = inproc.load_tool('gate')
 BACKLOG = inproc.load_tool('backlog')
+COORD = inproc.load_tool('coord_state')
 TIP = 'c' * 40
 OUTPUT = 'Z:/results/kit-b.123.land.log'
 
@@ -104,6 +105,17 @@ class BacklogWrites(TempAgentFolder):
     def test_with_the_log_off_a_write_writes_nothing_here(self):
         self.add()
         self.assertEqual(os.listdir(self.temp), [])
+
+    def test_show_lists_the_stores_open_pulls(self):
+        self.turn_on()
+        self.add()
+        self.ok('set', 'FOO', '--priority', '2', '--priority-by', 'agent', '--effort', 's')
+        self.repo.git('checkout', '-b', 'tools/wk')
+        self.ok('--session', 'kit-a', 'pull', 'FOO', '--reason', 'the test pulls it')
+        rc, out, err = inproc.run_main(COORD.main, ['show', '--no-write', '-C', self.repo.root],
+                                       self.tool_env, self.repo.root)
+        self.assertEqual(rc, 0, out + err)
+        self.assertRegex(out, r'## Open pulls \(1\)\n- FOO tools/wk session=kit-a pulled \d{4}-')
 
 
 class TestsLeaveTheLiveLogAlone(TempAgentFolder):

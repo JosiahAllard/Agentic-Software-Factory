@@ -37,6 +37,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from kitlib.backlog import opener                                   # noqa: E402
 from kitlib.coordstate import log, render                          # noqa: E402
 from kitlib.fs import replace                                       # noqa: E402
 from kitlib.git import repo                                        # noqa: E402
@@ -168,8 +169,10 @@ def do_show(a):
                               if common else (None, why))
         if not a.no_write and log.seed(f):
             sys.stderr.write('added %s to %s: edit that file from now on\n' % (f.state, f.judgments))
+        pulls, pulls_why = opener.pulled_rows(root)
         note = render.text(session, f.events, groups, backlog, queued, queued_why,
-                           _read(f.judgments), skipped, datetime.datetime.now(datetime.timezone.utc))
+                           _read(f.judgments), skipped, datetime.datetime.now(datetime.timezone.utc),
+                           pulls=pulls or (), pulls_why=pulls_why)
         if not a.no_write:
             _write(f.state, note)
     except (log.LogError, OSError) as e:

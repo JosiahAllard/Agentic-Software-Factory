@@ -722,7 +722,7 @@ class UsagePartial(unittest.TestCase):
     def sampled(self, u, job):
         u.last = (time.monotonic() - 10, 0.0)          # a window closes at this sample
         self.assertTrue(u.sample(job))
-        return u.fields()["partial"]
+        return u.fields().get("partial")
 
     def test_the_docker_client_in_the_job_makes_the_run_partial_for_good(self):
         u = run_held.Usage()

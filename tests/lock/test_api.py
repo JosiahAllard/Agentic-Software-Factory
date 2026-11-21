@@ -81,14 +81,14 @@ class Snapshot(ApiCase):
         self.assertEqual([r["id"] for r in s["runs"]], [R_LIVE])
         self.assertEqual(s["runs"][0]["tree"][0], os.getpid())
         self.assertIsNone(s["runs"][0]["gpu_mem_mb"])
-        self.assertIsNone(s["runs"][0]["usage"]["partial"])
+        self.assertIsNone(s["runs"][0]["usage"].get("partial"))
         self.assertTrue(api.run_record(R_LIVE, self.store)["live"])
         self.assertIsNone(api.run_record(R_NONE, self.store))
 
     def test_a_partial_runs_usage_says_so(self):
         # The record's partial (kitlib.lock.run_held.Usage): its job held the docker client.
         self.live_record(R_LIVE, repo="kit", slug="t", cpu_cores_now=0.0, partial=True)
-        self.assertEqual(self.snap()["runs"][0]["usage"]["partial"], True)
+        self.assertEqual(self.snap()["runs"][0]["usage"].get("partial"), True)
 
     def test_a_live_record_with_another_slot_label_is_named_and_warned(self):
         # A record this kit writes carries slot_key of the layout in force: named nowhere. One

@@ -332,7 +332,13 @@ CHECKS_HEAD = report_head('checks')
 DONE_HEAD = report_head('done-when')
 DESIGN_HEAD = report_head('design')
 CHECK_RE = re.compile(r'^([a-z][\w-]*)\s*[:=]?\s*(pass|fail|n/a)$', re.IGNORECASE)
-STATUS_RE = re.compile(r'(?<![\w-])(met|unmet)(?![\w-])', re.IGNORECASE)
+# A Done-when line's status, where the form puts it (`<ID> (<item>) UNMET - <evidence>`): first after
+# the head but for decoration, separators, one id-like token and one item in parentheses (one level
+# nested), so prose before it (`my earlier UNMET item is now MET`) makes no status.
+_DECOR, _SEP = r'[\s*_`]*', r'[\s*_`:,–—-]*'
+DONE_STATUS_RE = re.compile(_SEP + r'(?:[A-Za-z0-9][\w.-]*' + _DECOR + r')?(?:\((?:[^()]|\([^()]*\))*\)'
+                            + _DECOR + r')?' + _SEP + r'(?<![\w-])(met|unmet)(?![\w-])',
+                            re.IGNORECASE)
 DESIGN_RE = re.compile(DESIGN_HEAD.pattern + r'[*_`\s]*(approve|revise)(?![\w-])', re.IGNORECASE)
 
 
@@ -361,13 +367,14 @@ def checks_of(text):
 
 
 def unmet_lines(text):
-    """The `Done-when:` lines of `text` whose status, the first MET or UNMET word after the item
-    (`Done-when: <ID> (<x>) UNMET - <evidence>`), is UNMET, stripped: the evidence may name the
-    word (`MET - was UNMET`) without counting. Pure."""
+    """The `Done-when:` lines of `text` whose status (DONE_STATUS_RE: the MET or UNMET word first
+    after an optional `<ID>` and `(<item>)`, `Done-when: <ID> (<x>) UNMET - <evidence>`) is UNMET,
+    stripped: the item or evidence may name the word (`MET - was UNMET`) without counting, and a
+    line with prose before any status has none. Pure."""
     out = []
     for line in (text or '').splitlines():
         head = DONE_HEAD.match(line)
-        m = STATUS_RE.search(line, head.end()) if head else None
+        m = DONE_STATUS_RE.match(line, head.end()) if head else None
         if m and m.group(1).upper() == 'UNMET':
             out.append(line.strip())
     return out

@@ -102,6 +102,7 @@ STEP = Obj({
     'staging_args': Field(Strs, None, 'arguments added after merged_args at a landing onto a staging branch alone (a compile-only run); needs staging_pass (docs/gate-landing.md "What a landing re-runs and what it reuses")'),
     'staging_pass': Field(Regexes, None, 'patterns the log of a staging_args run must hold, instead of pass; the zero-tests rules do not apply to that run'),
     'staging_landing': Field(Bool(), None, 'false: a landing onto a staging branch does not select the step (its promotion does); never on a smoke step, never with staging_args'),
+    'promote_hold': Field(Bool(), None, 'a FAIL of this step in a staging promotion is a standing hold on the repository\'s state (a daily hold), not the tree\'s: a promotion whose every FAIL is such a step ends standing-hold, never inspected, hunted or announced (docs/modules/staging-design.md "Promotion")'),
     'stage': Field(Enum(*STAGES), None, 'first, main or last'),
     'ok_exits': Field(ListOf(Int(), nonempty=True), None, 'exit codes that pass'),
     'content': Field(Obj({'globs': Field(Argv, None, 'files read'),

@@ -16,8 +16,8 @@ green writes S's promotion record and moves main to S (kitlib.staging.advance). 
      (advance.Mover): this run does nothing else.
   4. Due? (kitlib.staging.changes: "staging".promote_after_landings untested landings, or the
      oldest promote_after_hours old; `force` skips only this check.) Not due: OK, nothing recorded.
-  5. S already ended in a hold (record.HOLDS: red, refused, diverged, failed, error): never
-     tested again; a new staging tip is a fresh attempt.
+  5. S already ended in a hold (record.HOLDS: red, refused, diverged, failed, error,
+     standing-hold): never tested again; a new staging tip is a fresh attempt.
      M not an ancestor of S: an attempt that ends diverged.
   6. The gate, its slot booked now or never (BOOK: no_wait). A machine-lock refusal (busy,
      timeout, reserved, hold, no lock): a skip, nothing recorded (the next hub tick asks again).
@@ -25,9 +25,12 @@ green writes S's promotion record and moves main to S (kitlib.staging.advance). 
      start, a strict requirement unmet such as a busy resource's probe, kit_tests units that
      timed out): ends `machine`, tested again next time, until the streak of machine ends at S
      (record.machine_since) is older than MACHINE_WINDOW_S; then it ends red with the reasons in
-     the attempt's `machine` (fix the machine or tool, not the tree; never hunted). Any other
-     FAILED: ends red, then kitlib.staging.culprit after_red (`hunter`), still under the promote
-     lock: the attempt's `inspect` (no probe, no slot), handed to the coordinator to fix first;
+     the attempt's `machine` (fix the machine or tool, not the tree; never hunted). FAILED with
+     every FAIL a `"promote_hold"` step's of M's gate (steps.promote_holds: the repository's own
+     standing hold, such as a daily hold): ends standing-hold, never inspected, hunted or
+     announced; each new staging tip is gated again, which is how the hold is seen to clear. Any
+     other FAILED: ends red, then kitlib.staging.culprit after_red (`hunter`), still under the
+     promote lock: the attempt's `inspect` (no probe, no slot), handed to the coordinator to fix first;
      the culprit hunt and its revert branch only when the red repeats one a fix was marked
      landed for (culprit.repeat), its probes' slots waiting within culprit.HUNT_BUDGET_S. Any
      other refusal: ends error.
@@ -44,9 +47,9 @@ fixed(main, cfg, sha) its mark that the fix of a red landed (`--fixed <sha>`, th
 attempt that ended red with no later one done; neither runs a gate.
 
 Outcome codes: OK (done, behind, machine, not due, a skip, a wait; a hunt run, a fix marked),
-FAILED (red), USAGE (staging off), REFUSED (held, diverged, refused, failed, error, a step before
-the gate that could not be made; nothing to hunt, a fix not marked), BUSY (another run holds the
-promote lock). Output goes through `say`; nothing here prints.
+FAILED (red), USAGE (staging off), REFUSED (held, standing-hold, diverged, refused, failed,
+error, a step before the gate that could not be made; nothing to hunt, a fix not marked), BUSY
+(another run holds the promote lock). Output goes through `say`; nothing here prints.
 """
 import os
 import time
@@ -61,6 +64,7 @@ from kitlib.fs.treelock import TreeBusy, TreeLock, TreeLockError, describe
 from kitlib.gate import rerun
 from kitlib.gate import reuse
 from kitlib.gate import runner
+from kitlib.gate import steps as S
 from kitlib.git import repo
 from kitlib.records import gate_ok, place
 from kitlib.staging import advance as A
@@ -75,6 +79,9 @@ OFF = ('promote: OFF - %s/%s names no "staging".branch, so there is nothing to p
        '(docs/gate-landing.md "Staging branch")')
 CODES = {'done': G.OK, 'behind': G.OK, 'machine': G.OK, 'red': G.FAILED}  # else: REFUSED
 MACHINE_WINDOW_S = 3600     # a tip whose every FAIL is the machine's is retried this long, then red
+STANDING_HELD = ('promote: STANDING HOLD - %s ended standing-hold (%s) and is never gated again; '
+                 "main moves on a new landing the hold no longer stops, the daily run's own "
+                 "promotion, or the owner deleting that attempt's folder")
 
 
 def _quiet(_line):
@@ -205,6 +212,9 @@ def _held(main, cfg, say, force, book, git, gate, record, mover, clock, hunter):
         return G.Outcome(G.REFUSED, ['REFUSED: %s/%s or %s/%s cannot be read' % (
             cfg.remote, staging, cfg.remote, P.main_of(cfg))])
     held = R.held(found, tip)
+    if held is not None and held.phase == R.STANDING:
+        return G.Outcome(G.REFUSED, [STANDING_HELD % (tip[:10], held.rec.get('why')),
+                                     R.line(held)])
     if held is not None:
         return G.Outcome(G.REFUSED, ['promote: HELD - %s ended %s and is never tested again; a '
                                      'new landing on %s, or the owner, moves it on' % (
@@ -267,6 +277,11 @@ def _test(main, cfg, two, staging, tip, base, where, count, say, book, git, gate
             if since is None or now - since < MACHINE_WINDOW_S:
                 return _ended(where, tip, base, 'machine', machine, log_dir)
             why, more = "%s (the machine's FAIL for over 1 h)" % machine, {'machine': machine}
+        else:
+            fails = [r['name'] for r in out.facts.get('results') or [] if r.get('status') == 'FAIL']
+            if fails and set(fails) <= set(S.promote_holds(cfg_base.section('gate'))):
+                return _ended(where, tip, base, R.STANDING, 'held by %s (%s)' % (
+                    ', '.join(fails), why), log_dir)
         a = R.start(where, tip, base, 'red', why=why, log_dir=log_dir, **more)
         ctx = {'main': main, 'cfg': cfg, 'cfg_base': cfg_base, 'staging': staging, 'wt': wt,
                'tip': tip, 'base': base, 'book': book, 'git': git,

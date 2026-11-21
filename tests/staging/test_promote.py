@@ -894,6 +894,103 @@ class MachineFail(Case):
         self.assertIn(CU.MACHINE_HANDED % why, out.lines)
 
 
+# A daily hold: exits 1 while KIT_TEST_HOLD is set, the repository's state and not the tree's.
+HOLD = ['{python}', '-c', 'import os, sys; print("ok"); '
+        'sys.exit(1 if os.environ.get("KIT_TEST_HOLD") else 0)']
+
+
+class PromoteHold(Case):
+    """A promotion whose every FAIL is a `"promote_hold"` step's ends standing-hold: never
+    inspected, hunted or announced, the same tip never gated again, each new tip gated once.
+    The hold sees KIT_TEST_HOLD through the slot's env (MachineFail's note)."""
+    GATE = {'steps': [      # `hold` continues, so `unit` (RED_AWARE) runs after its FAIL
+        {'name': 'hold', 'always': True, 'cmd': HOLD, 'pass': '^ok$', 'continue': True,
+         'promote_hold': True},
+        {'name': 'unit', 'always': True, 'cmd': fixtures.RED_AWARE, 'pass': '^ok$'}]}
+
+    def held(self, **kw):
+        with mock.patch.dict(self.env, KIT_TEST_HOLD='1'):
+            with mock.patch.object(CU.B, 'Prober',
+                                   side_effect=AssertionError('a prober was built')):
+                return self.run_promote(**kw)
+
+    def test_a_hold_only_red_ends_standing_hold_with_no_inspect_and_nothing_to_hunt(self):
+        before = self.remote_main()
+        tip = self.land()
+        out = self.held()
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('promote: %s - held by hold' % R.STANDING.upper(), out.lines[0])
+        self.assertNotIn(CU.HANDED, out.lines)
+        self.assertEqual(self.remote_main(), before)
+        a = self.attempts()[-1]
+        self.assertEqual((a.phase, a.sha, len(self.attempts())), (R.STANDING, tip, 1))
+        self.assertNotIn('inspect', a.rec)
+        self.assertNotIn('culprit', a.rec)
+        self.assertNotIn('flake', ' '.join(out.lines))
+        self.assertEqual([c for c in self.book_calls if c['slug'] == CU.SLUG], [])
+        hunted = SP.hunt(self.main_dir, self.cfg(), hunter=mock.Mock(side_effect=AssertionError))
+        self.assertEqual(hunted.code, G.REFUSED, hunted.lines)
+        self.assertIn('no promotion attempt ended red', hunted.lines[0])
+
+    def test_the_same_tip_is_never_gated_again_and_its_end_has_its_own_words(self):
+        tip = self.land()
+        self.held()
+        out = self.run_promote(gate=self.no_gate)
+        self.assertEqual(out.code, G.REFUSED, out.lines)
+        self.assertIn('STANDING HOLD - %s ended standing-hold (held by hold' % tip[:10],
+                      out.lines[0])
+        self.assertIn("the daily run's own promotion", out.lines[0])
+        self.assertNotIn('a new landing on staging, or the owner, moves it on', out.lines[0])
+
+    def test_look_is_idle_on_a_held_tip_and_never_announces_it(self):
+        self.land()
+        self.held()
+        announced = []
+        later = time.time() + 7 * HOUR
+        self.assertEqual(SP.look(self.main_dir, self.cfg(), announced.append,
+                                 clock=lambda: later)[0], 'idle')
+        SP.look(self.main_dir, self.cfg(), announced.append, clock=lambda: later)
+        self.assertEqual(announced, [])
+        self.assertFalse(self.attempts()[-1].rec.get('announced'))
+
+    def test_a_new_tip_is_gated_once_and_once_the_hold_clears_it_promotes(self):
+        self.land()
+        self.held()
+        self.land()
+        gates = self.gates
+        self.assertEqual(self.held().code, G.REFUSED)
+        self.assertEqual(self.gates, gates + 1)
+        self.assertEqual([a.phase for a in self.attempts()], [R.STANDING, R.STANDING])
+        self.assertEqual(self.run_promote(gate=self.no_gate).code, G.REFUSED)
+        tip = self.land()
+        out = self.run_promote()                # the hold cleared: the next tip promotes
+        self.assertEqual(out.code, G.OK, out.lines)
+        self.assertEqual((self.remote_main(), self.attempts()[-1].phase), (tip, 'done'))
+
+    def test_a_hold_beside_a_tree_fail_is_red_and_the_hunt_never_probes_the_hold(self):
+        tip = self.land_red()
+        out = self.held()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertIn(CU.HANDED, out.lines)
+        a = self.attempts()[-1]
+        self.assertEqual(a.phase, 'red')
+        self.assertEqual((a.rec['inspect']['red'], a.rec['inspect']['suspects']), (['unit'], [tip]))
+
+
+
+class PromoteHoldUnset(Case):
+    """The same FAIL with no `"promote_hold"` on its step is an ordinary red."""
+    GATE = {'steps': [{'name': 'hold', 'always': True, 'cmd': HOLD, 'pass': '^ok$'}]}
+
+    def test_it_ends_red_and_is_inspected(self):
+        self.land()
+        with mock.patch.dict(self.env, KIT_TEST_HOLD='1'):
+            out = self.run_promote()
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        a = self.attempts()[-1]
+        self.assertEqual((a.phase, a.rec['inspect']['red']), ('red', ['hold']))
+
+
 class HuntDailyForm(Case):
     """A whole-step probe runs the daily form (kitlib.dailyfull.plan), never the promotion's
     change-selecting cmd: that selects nothing at main or at a revert, and would probe green."""

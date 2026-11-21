@@ -6,6 +6,8 @@ import contextlib
 import datetime
 import io
 import os
+import shlex
+import subprocess
 import sys
 import tempfile
 import types
@@ -20,7 +22,9 @@ if ROOT not in sys.path:
 sys.path.insert(0, CODE)
 sys.path.insert(0, HERE)
 from kitlib.config import user as kuser  # noqa: E402
+from tests import gitfixture  # noqa: E402
 from tests import home as thome  # noqa: E402
+from tests.realgit import real_git  # noqa: E402
 import _fixture as F  # noqa: E402
 import _usage as U  # noqa: E402
 import agent_costs as AC  # noqa: E402
@@ -362,6 +366,39 @@ class RecordCosts(unittest.TestCase):
         ])
         self.assertEqual(self.placed("m7"), ("EX-A", None, "main", "medium"))
 
+    def test_a_branch_with_no_pull_open_is_placed_by_the_later_rules(self):
+        # The main branch with an old pull: its turns are not claimed by it, nor dropped as "window".
+        old = """commit m1 2026-09-01T00:00:00Z
+diff --git a/kit/backlog/EX-M.md b/kit/backlog/EX-M.md
++pulled_by: master
+commit m2 2026-09-02T00:00:00Z
+diff --git a/kit/backlog/EX-M.md b/kit/backlog/EX-M.md
+-pulled_by: master
+"""
+        path = os.path.join(self.tmp.name, "m.jsonl")
+        F.write(path, [
+            F.turn("o1", "2026-09-01T12:00:00Z", usage=OUT, branch="master"),
+            F.turn("o2", "2026-10-01T13:00:00Z", usage=OUT, branch="master",
+                   content=[agent("t8", "review kit/alpha")]),
+            F.turn("o3", "2026-10-01T13:01:00Z", usage=OUT, branch="master"),
+        ])
+        index = AC.PullIndex(AC.parse_pull_log(old + PULL_LOG))
+        got = {t.mid: (t.key, t.reason, t.sure) for t in AC.attribute([("a", path)], index, "2026-08-01")}
+        self.assertEqual(got["o1"], ("EX-M", None, "high"))
+        self.assertEqual(got["o2"], ("EX-A", None, "medium"))
+        self.assertEqual(got["o3"], (None, "coordination", None))
+
+    def test_until_leaves_out_turns_at_or_after_it(self):
+        index = AC.PullIndex(AC.parse_pull_log(PULL_LOG))
+        paths = [("account 1", p) for p in sorted(U.transcripts(self.root))]
+        got = {t.mid for t in AC.attribute(paths, index, "2026-09-30", "2026-10-01T13:10:00")}
+        self.assertEqual(got, {"c1", "c2"})                          # c3 is at the bound
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(AC.main([self.root, "2026-09-30", "--records", "--pull-log", self.log,
+                                      "--until", "2026-10-01T13:06"]), 0)
+        self.assertIn("since 2026-09-30 until 2026-10-01T13:06 | 2 calls", out.getvalue())
+
     def test_an_empty_pull_log_is_warned_about(self):
         empty = os.path.join(self.tmp.name, "empty.log")
         open(empty, "w").close()
@@ -461,6 +498,22 @@ class RecordCosts(unittest.TestCase):
         text = self.report()
         for leak in (self.tmp.name, "Secret", "worktrees", "Z:", "acct1", "acct2"):
             self.assertNotIn(leak, text)
+
+
+@real_git("the pathspec is git's own: PULL_LOG is run as printed")
+class PullLogPathspec(unittest.TestCase):
+    def test_records_at_the_store_root_and_in_a_subfolder_are_read(self):
+        repo = gitfixture.TempRepo()
+        self.addCleanup(repo.cleanup)
+        repo.write("backlog/R1.md", "id: R1\npulled_by: kit/one\n")
+        repo.write("kit/backlog/R2.md", "id: R2\npulled_by: kit/two\n")
+        repo.write("notes/R3.md", "id: R3\npulled_by: kit/three\n")
+        repo.commit("pull", "backlog/R1.md", "kit/backlog/R2.md", "notes/R3.md")
+        argv = shlex.split(AC.PULL_LOG.replace("<store>", repo.root.replace("\\", "/")))
+        log = subprocess.run(argv, capture_output=True, text=True, check=True,
+                             env=gitfixture.fixture_env()).stdout
+        self.assertEqual(sorted((p.record, p.branch) for p in AC.parse_pull_log(log)),
+                         [("R1", "kit/one"), ("R2", "kit/two")])
 
 
 if __name__ == "__main__":

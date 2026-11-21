@@ -5,7 +5,7 @@ usage: python <kit>/optional/usage/agent_costs.py <project transcript folder> [s
                                                     [--days 7]
        <PULL_LOG> | python <kit>/optional/usage/agent_costs.py --records
            <project transcript folder> [since] [top] [--root <another account's project folder>]
-           [--pull-log -|<file>] [--days 7]
+           [--pull-log -|<file>] [--until <date>] [--days 7]
 
 <project transcript folder> is a config folder's projects/<project> (it and its subagents/ are
 read). since is a UTC date or timestamp (default: --days days ago); top is how many rows (40).
@@ -16,10 +16,13 @@ Weights: _usage.py.
 removes it (a release, or the close that deletes the file). It writes nothing and starts nothing.
 Each assistant turn (a message id once across every transcript) goes to the records pulled onto
 one branch at its time, by the first rule that names a branch:
-- the turn's gitBranch is a pulled branch (high);
+- the turn's gitBranch is a pulled branch with a pull open at the turn's time (high); a turn on a
+  branch with no pull open then (the main branch, with old pulls) goes on to the rules below;
 - a subagent: the branches and worktree slugs (`worktrees/<slug>`, a branch's last part) its first
   prompt and tool inputs name, one at RULE_SHARE or more of the mentions (medium);
 - a main session: the one branch or slug the turn's own tool inputs name (medium).
+--until <date or timestamp> ends the window: a turn at or after it is left out (exclusive, a bare
+date is midnight UTC: `2026-11-16 --until 2026-11-21` is 11-16 to 11-20 whole).
 Records pulled onto one branch at once are one row ("A + B"); a record pulled twice sums its pulls.
 A turn no rule places is unattributed, by reason (REASONS). Prices: api_cost.RATES. The report
 names records, branches, roles and models only: no description, path or account name.
@@ -37,7 +40,7 @@ import _usage as U  # noqa: E402
 import api_cost as AP  # noqa: E402
 
 PULL_LOG = ('git -C <store> log --reverse --no-renames -p --unified=0 --format="commit %H %cI" '
-            '-- "*/backlog/*.md"')
+            '-- "backlog/*.md" "*/backlog/*.md"')
 RULE_SHARE = 0.8
 REASONS = {"none": "no branch or worktree named",
            "several": "several branches named, none at %d%%" % (RULE_SHARE * 100),
@@ -181,8 +184,8 @@ def _whole(recs, index):
     return (None, cand) if n >= RULE_SHARE * total else ("several", None)
 
 
-def attribute(paths, index, since):
-    """[Turn] for each assistant turn since `since` in `paths` ([(account label, transcript)]), a
+def attribute(paths, index, since, until=None):
+    """[Turn] for each assistant turn since `since` (and before `until`, when given) in `paths` ([(account label, transcript)]), a
     message id once across them all. key is the record row ("A + B"), or None with a REASONS key
     as reason; sure is "high" or "medium"; usd is None for a model with no list price."""
     seen, out = set(), []
@@ -199,11 +202,11 @@ def attribute(paths, index, since):
             msg = d.get("message") or {}
             mid = msg.get("id")
             if d.get("type") != "assistant" or d.get("timestamp", "") < since \
-                    or msg.get("model") == "<synthetic>" or (mid is not None and mid in seen):
+                    or (until and d.get("timestamp", "") >= until)                     or msg.get("model") == "<synthetic>" or (mid is not None and mid in seen):
                 continue
             if mid is not None:
                 seen.add(mid)
-            if d.get("gitBranch") in index.by_branch:
+            if index.live(d.get("gitBranch"), d.get("timestamp", "")[:19]):
                 reason, cand, sure = None, frozenset([d["gitBranch"]]), "high"
             elif sub:
                 (reason, cand), sure = whole, "medium"
@@ -267,12 +270,13 @@ def _lines(title, rows, total, top, extra=None):
     return out
 
 
-def report(turns, since, top=40):
+def report(turns, since, top=40, until=None):
     """The --records report's lines: tables by record, role, record and role, and unattributed
     reason (USD and share of the priced total), then what is unpriced or estimated."""
     total = sum(t.usd or 0 for t in turns)
     placed = [t for t in turns if t.key]
-    out = ["records | since %s | %d calls | %s" % (since, len(turns), ", ".join(
+    out = ["records | since %s%s | %d calls | %s" % (since, " until " + until if until else "",
+                                                       len(turns), ", ".join(
         "%s: %d calls" % (a, n) for a, n in sorted(Counter(t.account for t in turns).items())))]
     if total:
         out.append("attributed %.1f%% of USD (high %.1f%%, medium %.1f%%)" % tuple(
@@ -320,8 +324,8 @@ def records_main(a):
     paths = [("account %d" % (i + 1), p)
              for i, root in enumerate([a.root] + (a.extra_root or [])) for p in sorted(U.transcripts(root))
              if _touched_since(p, since)]
-    turns = attribute(paths, PullIndex(parse_pull_log(text)), since)
-    print("\n".join(report(turns, since, a.top)))
+    turns = attribute(paths, PullIndex(parse_pull_log(text)), since, a.until)
+    print("\n".join(report(turns, since, a.top, a.until)))
     return 0
 
 
@@ -334,6 +338,8 @@ def main(argv=None):
     ap.add_argument("--records", action="store_true", help="price tokens per backlog record")
     ap.add_argument("--root", dest="extra_root", action="append",
                     help="with --records: another account's folder for the same project")
+    ap.add_argument("--until", help="with --records: leave out turns at or after this UTC date or "
+                    "timestamp (a bare date is midnight: --until 2026-11-21 ends at 11-20's end)")
     ap.add_argument("--pull-log", help="with --records: the PULL_LOG output (default: stdin)")
     a = ap.parse_args(argv)
     if a.records:

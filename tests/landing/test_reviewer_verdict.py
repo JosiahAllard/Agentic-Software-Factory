@@ -203,11 +203,19 @@ class ReviewerVerdict(GateRepoCase):
             write(new, 'LAND', 1700000600)
             self.assertEqual(AM.verdict(RID, home=self.home), (True, 'LAND', report('LAND')), new)
 
-    def test_a_self_review_or_a_session_name_is_not_looked_up(self):
-        self.plant('a' + '0' * 16, handback_turn(report('SEND BACK')))
-        code, out, _ = self.add(**{'--risk': 'Low', '--reviewer': 'pm-kit:coordinator',
-                                   '--reviewer-id': 'a' + '0' * 16})
-        self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip))
+    def test_a_low_coordinator_review_under_an_agent_id_is_refused(self):
+        """The classifier's case: a coordinator's own Low review queued under an agent id is still
+        its own, so verdict.py refuses it on any host, before its transcript is weighed."""
+        self.plant('a' + '0' * 16, handback_turn(report('LAND', tip=self.tip)))
+        for env in ({}, {'PM_KIT_HOST': 'codex'}):
+            with mock.patch.dict(os.environ, env):
+                out = self.assert_refused(**{'--risk': 'Low', '--reviewer': 'pm-kit:coordinator',
+                                             '--reviewer-id': 'a' + '0' * 16})
+            self.assertTrue(out.startswith('REFUSED: a verdict needs a reviewer other than the '
+                                           'coordinator queueing it'), out)
+            self.assertEqual(out.strip().splitlines()[-1], V.SELF_REVIEW_INSTEAD)
+
+    def test_a_session_name_is_not_looked_up(self):
         code, out, _ = self.add(**{'--reviewer-id': 'demo-coordinator-b7-r1'})
         self.assertEqual((code, out.strip()), (0, 'QUEUED kit/a %s' % self.tip))
 
@@ -294,7 +302,11 @@ class ReviewerVerdict(GateRepoCase):
         self.assertEqual(code, 2, out)
         self.assertIn('REFUSED: the design reviewer %s said REVISE' % RID2, out)
         self.assertIsNone(V.read_design(wt, 'kit/b'))
-        self.design('coord-1')                          # the coordinator's own: no new file or class
+        with open(os.path.join(self.repo.git('rev-parse', '--absolute-git-dir', cwd=wt).strip(),
+                               V.DESIGN_FILE), 'w', encoding='utf-8') as f:   # the coordinator's own, by hand
+            json.dump({'branch': 'kit/b', 'design_reviewer_id': 'coord-1', 'session': 'coord-1',
+                       'approved_utc': '2026-01-01T00:00:00Z'}, f)
+        self.assertEqual(V.read_design(wt, 'kit/b')['design_reviewer_id'], 'coord-1')
         self.assertIn("the coordinator's own (coord-1)", self.assert_refused(**over))
         self.plant(RID2, handback_turn(DESIGN))
         code, out, err = self.design(RID2)
@@ -313,13 +325,27 @@ class ReviewerVerdict(GateRepoCase):
             self.assertEqual(code, 0, (out, err))
             self.assertIn('NOTE: the design review is not checked: this host has no transcript '
                           'reader', out)
-        code, out, err = self.design('coord-1')
-        self.assertEqual((code, out), (0, 'DESIGN APPROVED kit/b by coord-1\n'), err)
-        self.assertEqual(V.read_design(wt, 'kit/b')['design_reviewer_id'], 'coord-1')
-        code, out, _ = self.run_tool('design', '--branch', 'kit/nosuch', '--design-reviewer-id', 'coord-1',
+        self.assertEqual(V.read_design(wt, 'kit/b')['design_reviewer_id'], RID2)
+        code, out, _ = self.run_tool('design', '--branch', 'kit/nosuch', '--design-reviewer-id', RID,
                                      '--session', 'coord-1')
         self.assertEqual(code, 1, out)
         self.assertIn('NOT DONE: no linked worktree has kit/nosuch checked out', out)
+
+    def test_the_coordinators_own_design_approval_is_refused_on_any_host(self):
+        """The classifier's case: `design --design-reviewer-id <the session>` is refused by the tool
+        itself, so a host with no reader and no classifier (Codex) refuses it too."""
+        wt, _, _ = self.new_class_branch()
+        for env in ({}, {'PM_KIT_HOST': 'codex'}):
+            for rid in ('coord-1', ' Coord-1 '):
+                with mock.patch.dict(os.environ, env):
+                    code, out, err = self.design(rid)
+                self.assertEqual(code, 2, (env, rid, out, err))
+                self.assertTrue(out.startswith("REFUSED: the design reviewer %s is the session "
+                                               "recording it, the coordinator's own approval; "
+                                               'nothing was recorded' % rid.strip()), out)
+                self.assertTrue(out.strip().endswith(V.DESIGN_INSTEAD), out)
+                self.assertNotIn('NOTE:', out)
+                self.assertIsNone(V.read_design(wt, 'kit/b'))
 
     def test_new_sources_leaves_out_tests_renames_and_moved_classes(self):
         body = 'class Fresh:\n' + ''.join('    x%d = %d\n' % (i, i) for i in range(12))

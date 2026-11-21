@@ -104,15 +104,19 @@ class ReviewerModel(GateRepoCase):
         self.plant(RID, 'claude-opus-5-5')
         self.assert_queued(self.add(**{'--reviewer-id': '%s,%s' % (RID, RID2)}), notes=[RID2])
 
-    def test_a_self_review_or_a_session_name_is_not_looked_up(self):
-        self.plant('a' + '0' * 16, 'claude-haiku-5-5')
-        self.assert_queued(self.add(**{'--risk': 'Low', '--reviewer': 'pm-kit:coordinator'}))
-        self.assert_queued(self.add(**{'--risk': 'Low', '--reviewer-id': 'coord-1'}))  # --session
+    def test_a_session_name_is_not_looked_up(self):
         self.assert_queued(self.add(**{'--reviewer-id': 'demo-coordinator-b7-r1'}))
         self.assert_queued(self.add(**{'--reviewer-id': 'agent-r1'}))
-        # a self-review is not looked up even when its id has a haiku transcript
-        self.assert_queued(self.add(**{'--risk': 'Low', '--reviewer': 'pm-kit:coordinator',
-                                       '--reviewer-id': 'a' + '0' * 16}))
+
+    def test_a_self_review_is_refused_before_its_model_is_weighed(self):
+        self.plant('a' + '0' * 16, 'claude-haiku-5-5')
+        for over in ({'--reviewer': 'pm-kit:coordinator', '--reviewer-id': 'a' + '0' * 16},
+                     {'--reviewer-id': 'coord-1'}):                        # --session
+            code, out, err = self.add(**dict(over, **{'--risk': 'Low'}))
+            self.assertEqual(code, 2, (out, err))
+            self.assertTrue(out.startswith('REFUSED: a verdict needs a reviewer other than the '
+                                           'coordinator'), out)
+            self.assertEqual(V.scan(self.repo.common_dir()), ([], []))
 
     def test_transcripts_in_two_config_folders_give_the_union_of_their_models(self):
         self.plant(RID, 'claude-opus-5-5', folder='.claude-account1')

@@ -452,7 +452,7 @@ class ConfigCase(TipCase):
         """A branch whose one change is to .kit.json (a gate config file however little of the
         gate it touches), committed by the owner and gated in default mode: (worktree, tip)."""
         wt = self.repo.worktree('feature')
-        kit = dict(self.KIT, gate=self.GATE, landing={'self_review_max_lines': 99})
+        kit = dict(self.KIT, gate=self.GATE, landing={'batch_max': 5})
         self.repo.write('.kit.json', json.dumps(kit, indent=1), root=wt)
         self.repo.git('add', '.kit.json', cwd=wt)
         self.repo.git('-c', 'user.email=%s' % self.OWNER, 'commit', '-q', '-m', 'config', cwd=wt)

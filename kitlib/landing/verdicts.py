@@ -26,10 +26,8 @@ was left by a write that died: scan reports it among the files that are not entr
 entries(); nothing here deletes it.
 
 Errors (all VerdictError): BadEntry for a malformed entry or branch name given, nothing read or
-written; SelfReview (a BadEntry) when add() is given a Medium or High-risk verdict the coordinator queueing
-it reviewed itself (self_review_why), nothing read or written, or, with "landing".
-self_review_max_lines given, a self-read of a branch over that many changed lines or one whose
-size cannot be told (self_review_size_why), nothing written; ModelMismatch (a BadEntry) when
+written; SelfReview (a BadEntry) when add() is given a verdict, of any risk, the coordinator
+queueing it reviewed itself (self_review_why), nothing read or written; ModelMismatch (a BadEntry) when
 add() is given the models the reviewer's transcript shows (seen_models, the host's reader) and one
 is not the reviewer_model stated (model_mismatch_why), nothing written; ReviewerSaid (a BadEntry)
 when add() is given what the reviewer's transcript says (seen_verdicts, the host's reader) and its
@@ -37,7 +35,7 @@ final report says SEND BACK or has no `Verdict:` line, or a transcript found can
 (reviewer_verdict_why), or it does not name the tip (tip_why), or the report's `Checks:` and `Done-when:` lines, the follow-ups or the
 branch's stored design approval for a new source file or class fail (checks_why, done_when_why,
 follow_up_why, approval_why), nothing written, and when record_design() is given a design review
-that is not approved (design_why), nothing written;
+that is not approved or is the coordinator's own (design_why), nothing written;
 LightReview (a BadEntry)
 when add() is given a High-risk verdict whose reviewer_model is not a strong-tier model (tier_why),
 nothing written; TipMismatch when the tip is not the branch's head, or there is no such branch;
@@ -95,7 +93,7 @@ BY_HAND = 'remove it by hand'
 
 
 class SelfReview(ve.BadEntry):
-    """A Medium or High-risk verdict whose reviewer is the coordinator queueing it (self_review_why): its
+    """A verdict, of any risk, whose reviewer is the coordinator queueing it (self_review_why): its
     text ends with the Instead: line (SELF_REVIEW_INSTEAD). Nothing was read or written."""
 
 
@@ -139,14 +137,24 @@ SELF_REVIEW_INSTEAD = ('Instead: dispatch a fresh analyst to review the branch (
 COORDINATOR_RE = re.compile(r'(?<![a-z0-9])coordinator(?![a-z0-9])')
 
 
+def _reviewer_ids(text):
+    """The ids a verdict's `reviewer_id` lists, split as is_author splits them. Pure."""
+    return [i for i in re.split(r'[/,;\s]+', text) if i]
+
+
+def names_session(ids, session):
+    """True when an id the text `ids` lists (_reviewer_ids) is `session`, case and outer space
+    aside: the coordinator naming itself as the reviewer of a verdict or a design. Pure."""
+    own = session.strip().casefold()
+    return any(i.casefold() == own for i in _reviewer_ids(ids))
+
+
 def self_reader(entry):
     """How `entry`'s reviewer is the coordinator queueing it, or None: an id `reviewer_id` lists
-    (split as is_author splits it) is `session`, case and outer space aside, or an agent type
-    the reviewer names (reviewer_types) holds `coordinator` as a word (`pm-kit:coordinator`,
-    `kit-coordinator`). `entry` is well formed (check). Pure."""
-    session = entry['session'].strip().casefold()
-    ids = [i for i in re.split(r'[/,;\s]+', entry['reviewer_id'].casefold()) if i]
-    if session in ids:
+    is `session` (names_session), or an agent type the reviewer names (reviewer_types) holds
+    `coordinator` as a word (`pm-kit:coordinator`, `kit-coordinator`). `entry` is well formed
+    (check). Pure."""
+    if names_session(entry['reviewer_id'], entry['session']):
         return 'its reviewer id %s is the session queueing it' % entry['reviewer_id'].strip()
     if any(COORDINATOR_RE.search(t) for t in ve.reviewer_types(entry['reviewer'])):
         return 'its reviewer %s is the coordinator role' % entry['reviewer'].strip()
@@ -154,89 +162,14 @@ def self_reader(entry):
 
 
 def self_review_why(entry):
-    """Why add() refuses `entry` as a self-review, or None. Refused: a Medium or High-risk
-    verdict whose reviewer is the coordinator queueing it (self_reader). A Low one is not: a
-    coordinator may read a small Low branch itself (skill branch-review, step 3), up to
-    "landing".self_review_max_lines when that is set (self_review_size_why). `entry` is well
-    formed (check). Pure."""
-    if entry['risk'] not in ('Medium', 'High'):
-        return None
+    """Why add() refuses `entry` as a self-review, or None. Refused, at every risk: a verdict
+    whose reviewer is the coordinator queueing it (self_reader); every verdict names an analyst
+    (skill branch-review, step 3). `entry` is well formed (check). Pure."""
     who = self_reader(entry)
     if not who:
         return None
-    return ('a %s-risk verdict needs a reviewer other than the coordinator queueing it, and %s '
-            '(skill branch-review, step 3); nothing was queued\n%s'
-            % (entry['risk'], who, SELF_REVIEW_INSTEAD))
-
-
-def diff_lines(cwd, rng):
-    """`(added, removed, files)` the range `rng` (`<base>..<tip>`) changes, counted as
-    `git diff --numstat --find-renames <base>...<tip>` counts them: from the merge base of the two
-    to the tip, so commits the base gained after the branch left it are not counted. A binary file
-    is one file and no lines. Git runs in `cwd` (a git dir does). VerdictError when git gives no
-    answer or prints a line that is not a numstat row."""
-    base, _, tip = rng.partition('..')
-    for rev in (base, tip):
-        why = refs.bad_rev(rev)
-        if why:
-            raise ve.VerdictError('the range %s: %s' % (rng, why))
-    out, why = gitcmd.run_text(['diff', '--numstat', '--find-renames', '%s...%s' % (base, tip),
-                                '--'], cwd)
-    if out is None:
-        raise ve.VerdictError('git diff --numstat %s...%s: %s' % (base, tip, (why or '').strip()))
-    added = removed = files = 0
-    for row in out.splitlines():
-        a, sep, rest = row.partition('\t')
-        d, sep2, _ = rest.partition('\t')
-        if not (sep and sep2):
-            raise ve.VerdictError('git diff --numstat printed %r, not a numstat row' % row[:80])
-        if (a, d) != ('-', '-'):
-            if not (a.isdigit() and d.isdigit()):
-                raise ve.VerdictError('git diff --numstat printed %r, not a numstat row' % row[:80])
-            added, removed = added + int(a), removed + int(d)
-        files += 1
-    return added, removed, files
-
-
-def self_review_size_why(entry, max_lines, cwd, main, main_why=None):
-    """Why add() refuses `entry` as a self-read too large for the coordinator to give, or None.
-    None whenever `max_lines` ("landing".self_review_max_lines) is None or the reviewer is not the
-    coordinator queueing it (self_reader). Else the size is the larger of two counts (diff_lines,
-    git run in `cwd`): the range given, and `main...<tip>` with `main` main as fetched, so a base
-    stated past most of the branch (`<tip>~1..<tip>`) does not shrink it. Refused when that is
-    more than `max_lines`, or when it cannot be told (`main` None, `main_why` saying why, or git
-    gives no answer): with a cap set, a size that cannot be told is not a small branch. `entry` is
-    well formed (check)."""
-    if max_lines is None:
-        return None
-    who = self_reader(entry)
-    if not who:
-        return None
-    head = ('a verdict the coordinator queueing it reviewed itself covers at most %d changed lines '
-            '("landing".self_review_max_lines), and ' % max_lines)
-    tail = '; %s; nothing was queued\n%s' % (who, SELF_REVIEW_INSTEAD)
-    if not main:
-        return head + ('main as fetched cannot be read (%s), so the size of %s cannot be told'
-                       % (main_why or 'not given', entry['range'])) + tail
-    tip = entry['tip'][:10]
-    counts = []
-    for rng in (entry['range'], '%s..%s' % (main, entry['tip'])):
-        try:
-            counts.append(diff_lines(cwd, rng))
-        except ve.VerdictError as e:
-            return head + 'git cannot tell how many lines %s changes (%s)' % (rng, e) + tail
-    added, removed, files = max(counts, key=lambda c: c[0] + c[1])
-    if added + removed <= max_lines:
-        return None
-    return head + ('%s changes %d (+%d -%d in %d file%s; the larger of the range given and %s...%s '
-                   'from main as fetched)' % (entry['range'], added + removed, added, removed,
-                                              files, '' if files == 1 else 's', main[:10],
-                                              tip)) + tail
-
-
-def _reviewer_ids(text):
-    """The ids a verdict's `reviewer_id` lists, split as is_author splits them. Pure."""
-    return [i for i in re.split(r'[/,;\s]+', text) if i]
+    return ('a verdict needs a reviewer other than the coordinator queueing it, and %s (skill '
+            'branch-review, step 3); nothing was queued\n%s' % (who, SELF_REVIEW_INSTEAD))
 
 
 def seen_models(entry, reader):
@@ -244,9 +177,8 @@ def seen_models(entry, reader):
     id, the models its transcript shows. `reader` is a host's transcript reader (on Claude
     hosts.claude.adapter.agent_models.models): id -> sorted models, [] for an agent id with no
     transcript, None for an id that is not an agent id (a session name), which is left out. {}
-    when there is no reader (a host with none, Codex) or the reviewer is the coordinator queueing
-    it (self_reader): a self-review is no subagent. `entry` is well formed (check)."""
-    if reader is None or self_reader(entry):
+    when there is no reader (a host with none, Codex). `entry` is well formed (check)."""
+    if reader is None:
         return {}
     out = {}
     for rid in _reviewer_ids(entry['reviewer_id']):
@@ -324,9 +256,8 @@ def seen_reports(ids, reader):
 
 def seen_verdicts(entry, reader):
     """seen_reports() for `entry`'s reviewer_id. {} when there is no reader (a host with none,
-    Codex) or the reviewer is the coordinator queueing it (self_reader), as seen_models. `entry`
-    is well formed (check)."""
-    if reader is None or self_reader(entry):
+    Codex). `entry` is well formed (check)."""
+    if reader is None:
         return {}
     return seen_reports(entry['reviewer_id'], reader)
 
@@ -554,23 +485,24 @@ DESIGN_INSTEAD = ('Instead: run the design review: dispatch a fresh analyst with
 
 
 def design_why(design_id, session, design_said):
-    """Why record_design() refuses the design review `design_id` names, or None. An id that is
-    `session` (the coordinator approving the design itself: skill branch-review A.2, or the
-    brief's design at dispatch) is not read. `design_said`: seen_reports() of `design_id`, None when
-    the host has no reader (not checked). Refused: a blank design_id; with a reader, an id that is
-    not an agent id, a transcript found that cannot be read, or a final report whose last
-    `Design:` line is not APPROVE or whose Checks: line lacks a DESIGN_CHECKS id. An id with no
-    transcript is not checked. Pure."""
+    """Why record_design() refuses the design review `design_id` names, or None. `design_said`:
+    seen_reports() of `design_id`, None when the host has no reader (not checked). Refused: a
+    blank design_id; on any host, an id that is `session` (names_session: the coordinator's own
+    approval; every design approval names an analyst, skill branch-review A.2); with a reader, an
+    id that is not an agent id, a transcript found that cannot be read, or a final report whose
+    last `Design:` line is not APPROVE or whose Checks: line lacks a DESIGN_CHECKS id. An id with
+    no transcript is not checked. Pure."""
     ids = _reviewer_ids(design_id)
     if not ids:
         return 'no --design-reviewer-id names the design review; nothing was recorded'
-    session = session.strip().casefold()
+    if names_session(design_id, session):
+        return ('the design reviewer %s is the session recording it, the coordinator\'s own '
+                'approval; nothing was recorded' % design_id.strip())
     parts = []
     if design_said is not None:
-        parts += ['the design reviewer %s is no agent id' % i
-                  for i in ids if i not in design_said and i.casefold() != session]
+        parts += ['the design reviewer %s is no agent id' % i for i in ids if i not in design_said]
         for rid, (found, v, report) in sorted(design_said.items()):
-            if not found or rid.casefold() == session:
+            if not found:
                 continue
             if v == UNREAD:
                 parts.append('a transcript of the design reviewer %s cannot be read' % rid)
@@ -589,14 +521,13 @@ def design_why(design_id, session, design_said):
 def approval_why(new, approval):
     """Why add() refuses a range that adds a new non-test source file or class (`new`,
     new_sources()), or None: the branch's stored design approval (`approval`, read_design()) is
-    missing, or its reviewer is the session that recorded it (a new file or class is never
-    self-reviewed: skill branch-review A.2). Pure."""
+    missing, or its reviewer is the session that recorded it (names_session: record_design refuses
+    one, so only an approval stored before that or written by hand). Pure."""
     if not new:
         return None
     if approval is None:
         why = 'no design approval is recorded for the branch'
-    elif any(i.casefold() == approval['session'].strip().casefold()
-             for i in _reviewer_ids(approval['design_reviewer_id'])):
+    elif names_session(approval['design_reviewer_id'], approval['session']):
         why = 'its recorded design approval is the coordinator\'s own (%s)' % approval['session']
     else:
         return None
@@ -637,8 +568,8 @@ def read_design(root, branch):
 def record_design(root, branch, design_id, session, design_said, now=None):
     """Store the approved design of `branch` (tools/verdict.py design): `(path, approval)`, the
     approval `{branch, design_reviewer_id, session, approved_utc}` written to design_path(),
-    replacing one there. ReviewerSaid when the review is not approved (design_why), nothing
-    written; VerdictError when no linked worktree has `branch` checked out, or git gives no answer.
+    replacing one there. ReviewerSaid when the review is not approved or is the coordinator's own
+    (design_why), nothing written; VerdictError when no linked worktree has `branch` checked out, or git gives no answer.
     `now`: a datetime for approved_utc."""
     why = design_why(design_id, session, design_said)
     if why:
@@ -948,14 +879,12 @@ def head_of(common_dir, branch):
     return sha
 
 
-def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main_why=None,
-        seen=None, said=None, follow_ups=None, new=None, approval=None):
+def add(common_dir, entry, now=None, seen=None, said=None, follow_ups=None, new=None,
+        approval=None):
     """Queue `entry` (the GIVEN_KEYS; nothing else) for its branch, replacing an entry already
     queued for it: `(path, stored entry)`. The tip must be `refs/heads/<branch>` in the repository
-    whose common dir is `common_dir`, else TipMismatch. A Medium or High-risk self-review is SelfReview
-    (self_review_why); so is a self-read of a branch over `self_review_max_lines` changed lines, or
-    one whose size cannot be told, when that cap ("landing".self_review_max_lines) is given
-    (self_review_size_why; `main`: main as fetched, a commit, or None with `main_why`). `seen`:
+    whose common dir is `common_dir`, else TipMismatch. A self-review, of any risk, is SelfReview
+    (self_review_why). `seen`:
     seen_models() for the entry; a model seen that is not its reviewer_model is ModelMismatch
     (model_mismatch_why). `said`: seen_verdicts() for the entry; a reviewer whose final report
     says SEND BACK, or has no `Verdict:` line, is ReviewerSaid (reviewer_verdict_why); so is one
@@ -1001,9 +930,6 @@ def add(common_dir, entry, now=None, self_review_max_lines=None, main=None, main
         raise TipMismatch('there is no branch %s' % branch)
     if head != tip:
         raise TipMismatch('%s is at %s, not the tip given %s' % (branch, head, tip))
-    why = self_review_size_why(entry, self_review_max_lines, common_dir, main, main_why)
-    if why:
-        raise SelfReview(why)
     stored = dict(entry, records=list(entry['records']), queued_utc=utc(now), state=ve.QUEUED,
                   last_result=None)
     with _locked(common_dir):

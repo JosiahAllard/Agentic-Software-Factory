@@ -38,32 +38,27 @@ class Check(unittest.TestCase):
 
 
 class SelfReviewWhy(unittest.TestCase):
-    """A Medium or High-risk verdict the queueing coordinator reviewed itself is refused (verdicts.
-    self_review_why); a Low self-read, or a Medium or High one by another reviewer, is not."""
+    """A verdict of any risk the queueing coordinator reviewed itself is refused (verdicts.
+    self_review_why); one by another reviewer is not."""
 
-    def test_a_medium_or_high_risk_coordinator_self_review_is_refused_with_the_instead_line(self):
+    def test_a_coordinator_self_review_of_any_risk_is_refused_with_the_instead_line(self):
         tip = 'a' * 40
-        for risk in ('Medium', 'High'):
-            why = V.self_review_why(given('kit/a', tip, risk=risk, reviewer_id='coord-1'))
-            self.assertIn('a %s-risk verdict needs a reviewer other than the coordinator' % risk, why or '')
-        for over in ({'reviewer_id': 'coord-1'}, {'reviewer_id': ' Coord-1 '},
-                     {'reviewer_id': 'agent-x / coord-1'},
-                     {'session': ' Coord-1 ', 'reviewer_id': 'coord-1'},
-                     {'reviewer': 'pm-kit:coordinator'}, {'reviewer': 'Coordinator'},
-                     {'reviewer': 'kit-coordinator'}, {'reviewer': 'pm-kit:analyst / pm-kit:coordinator'},
-                     {'reviewer': 'pm-kit:coordinator', 'reviewer_id': 'coord-1'}):
-            with self.subTest(**over):
-                why = V.self_review_why(given('kit/a', tip, risk='High', **over))
-                self.assertIn('a High-risk verdict needs a reviewer other than the coordinator', why or '')
-                self.assertEqual(why.splitlines()[-1], V.SELF_REVIEW_INSTEAD)
-                self.assertIn('--reviewer pm-kit:analyst --reviewer-id <its agent id>', why)
+        for risk in VE.RISKS:
+            for over in ({'reviewer_id': 'coord-1'}, {'reviewer_id': ' Coord-1 '},
+                         {'reviewer_id': 'agent-x / coord-1'},
+                         {'session': ' Coord-1 ', 'reviewer_id': 'coord-1'},
+                         {'reviewer': 'pm-kit:coordinator'}, {'reviewer': 'Coordinator'},
+                         {'reviewer': 'kit-coordinator'}, {'reviewer': 'pm-kit:analyst / pm-kit:coordinator'},
+                         {'reviewer': 'pm-kit:coordinator', 'reviewer_id': 'coord-1'}):
+                with self.subTest(risk=risk, **over):
+                    why = V.self_review_why(given('kit/a', tip, risk=risk, **over))
+                    self.assertIn('a verdict needs a reviewer other than the coordinator', why or '')
+                    self.assertEqual(why.splitlines()[-1], V.SELF_REVIEW_INSTEAD)
+                    self.assertIn('--reviewer pm-kit:analyst --reviewer-id <its agent id>', why)
 
-    def test_a_low_self_read_and_another_reviewer_stay_allowed(self):
+    def test_another_reviewer_stays_allowed(self):
         tip = 'a' * 40
-        for over in ({'reviewer_id': 'coord-1'}, {'reviewer': 'pm-kit:coordinator'}):
-            with self.subTest(risk='Low', **over):
-                self.assertIsNone(V.self_review_why(given('kit/a', tip, risk='Low', **over)))
-        for risk in ('Medium', 'High'):
+        for risk in VE.RISKS:
             for over in ({}, {'reviewer': 'pm-kit:analyst', 'reviewer_id': 'agent-a7'},
                          {'reviewer_id': 'coord-10'}, {'reviewer': 'pm-kit:coordinators-helper'}):
                 with self.subTest(risk=risk, **over):
@@ -205,7 +200,11 @@ class ReportLines(unittest.TestCase):
         self.assertIsNone(V.design_why('d1', 'coord-1', {'d1': (True, None, approve)}))
         self.assertIsNone(V.design_why('d1', 'coord-1', None))            # no reader: not checked
         self.assertIsNone(V.design_why('d1', 'coord-1', {'d1': (False, None, None)}))
-        self.assertIsNone(V.design_why('Coord-1', 'coord-1', {}))         # the coordinator's own: not read
+        self.assertIsNone(V.design_why('coord-10', 'coord-1', None))
+        for said in ({}, None, {'coord-1': (True, None, approve)}):       # the coordinator's own: refused, reader or not
+            for did in ('Coord-1', ' coord-1 '):
+                self.assertIn("the design reviewer %s is the session recording it, the coordinator's "
+                              'own approval' % did.strip(), V.design_why(did, 'coord-1', said) or '')
         cases = [
             (' ', None, 'no --design-reviewer-id names the design review'),
             ('d1', {}, 'the design reviewer d1 is no agent id'),
@@ -270,154 +269,6 @@ class QueueCase(GateRepoCase):
             return []
 
 
-def lines(n, tag='x'):
-    return ''.join('%s %d\n' % (tag, i) for i in range(n))
-
-
-class SelfReviewSize(QueueCase):
-    """With "landing".self_review_max_lines given, add() refuses a verdict of any risk the queueing
-    coordinator reviewed itself when its range changes more lines than that, or git cannot say
-    (verdicts.self_review_size_why); a dispatched reviewer, or no cap, queues as before."""
-    CAP = 4
-
-    def add(self, tip, cap=CAP, base=None, main=None, main_why=None, **over):
-        return V.add(self.common, given('kit/a', tip, base=base or self.main[:10], **over),
-                     self_review_max_lines=cap, main=main or self.main, main_why=main_why)
-
-    def refused(self, tip, cap=CAP, **over):
-        with self.assertRaises(V.SelfReview) as cm:
-            self.add(tip, cap=cap, **over)
-        self.assertEqual(self.folder_names(), [])
-        why = str(cm.exception)
-        self.assertEqual(why.splitlines()[-1], V.SELF_REVIEW_INSTEAD)
-        self.assertIn('("landing".self_review_max_lines)', why)
-        self.assertIn('nothing was queued', why)
-        return why
-
-    def test_a_self_read_over_the_cap_is_refused_with_the_counts(self):
-        _, tip = self.branch('a', {'a.txt': lines(3), 'b.txt': lines(2)})
-        why = self.refused(tip, risk='Low', reviewer_id='coord-1')
-        self.assertIn('covers at most 4 changed lines', why)
-        self.assertIn('changes 5 (+5 -0 in 2 files; the larger of the range given and %s...%s from '
-                      'main as fetched)' % (self.main[:10], tip[:10]), why)
-        self.assertIn('its reviewer id coord-1 is the session queueing it', why)
-
-    def test_the_coordinator_role_as_reviewer_counts_as_a_self_read(self):
-        _, tip = self.branch('a', {'a.txt': lines(5)})
-        why = self.refused(tip, reviewer='pm-kit:coordinator', reviewer_id='agent-z')
-        self.assertIn('its reviewer pm-kit:coordinator is the coordinator role', why)
-        self.assertIn('changes 5 (+5 -0 in 1 file;', why)
-
-    def test_a_self_read_at_the_cap_is_queued(self):
-        wt, _ = self.branch('a', {'a.txt': lines(3)})
-        tip = self.more(wt, 'a', {'a.txt': lines(4)})        # +4 -0 from main in all
-        _, stored = self.add(tip, reviewer_id='coord-1')
-        self.assertEqual(stored['tip'], tip)
-
-    def test_removed_lines_count_too(self):
-        self.repo.write('m.txt', lines(3))
-        main2 = self.repo.commit('main work', 'm.txt')
-        wt = self.repo.worktree('b')
-        self.repo.write('m.txt', lines(1), root=wt)                  # -2 against main2
-        self.repo.write('n.txt', lines(3), root=wt)                  # +3
-        tip = self.repo.commit('work on b', 'm.txt', 'n.txt', cwd=wt)
-        self.assertEqual(V.diff_lines(self.common, '%s..%s' % (main2, tip)), (3, 2, 2))
-        with self.assertRaises(V.SelfReview) as cm:
-            V.add(self.common, given('kit/b', tip, base=main2[:10], reviewer_id='coord-1'),
-                  self_review_max_lines=4, main=main2)
-        self.assertIn('changes 5 (+3 -2 in 2 files;', str(cm.exception))
-
-    def test_commits_the_base_gained_after_the_branch_left_it_are_not_counted(self):
-        _, tip = self.branch('a', {'a.txt': lines(2)})
-        self.repo.write('m.txt', lines(50))
-        main2 = self.repo.commit('main moved on', 'm.txt')
-        _, stored = self.add(tip, base=main2[:10], main=main2, reviewer_id='coord-1')
-        self.assertEqual(stored['tip'], tip)
-
-    def test_a_narrow_stated_base_on_a_big_branch_is_refused(self):
-        wt, first = self.branch('a', {'a.txt': lines(5)})
-        tip = self.more(wt, 'a', {'b.txt': lines(1)})
-        self.assertEqual(V.diff_lines(self.common, '%s..%s' % (first, tip)), (1, 0, 1))
-        why = self.refused(tip, base=first[:10], reviewer_id='coord-1')
-        self.assertIn('%s..%s changes 6 (+6 -0 in 2 files; the larger of the range given and '
-                      '%s...%s from main as fetched)' % (first[:10], tip[:10], self.main[:10],
-                                                         tip[:10]), why)
-
-    def test_a_branch_that_merged_main_in_is_not_over_counted(self):
-        wt, _ = self.branch('a', {'a.txt': lines(2)})
-        self.repo.write('m.txt', lines(50))
-        main2 = self.repo.commit('main moved on', 'm.txt')
-        self.repo.git('merge', '-q', '--no-ff', '--no-edit', main2, cwd=wt)
-        tip = self.repo.git('rev-parse', 'HEAD', cwd=wt).strip()
-        self.assertEqual(V.diff_lines(self.common, '%s..%s' % (main2, tip)), (2, 0, 1))
-        _, stored = self.add(tip, base=main2[:10], main=main2, reviewer_id='coord-1')
-        self.assertEqual(stored['tip'], tip)
-
-    def test_main_as_fetched_unread_is_refused_only_with_a_cap_on_a_self_read(self):
-        _, tip = self.branch('a', {'a.txt': lines(1)})
-        with self.assertRaises(V.SelfReview) as cm:
-            V.add(self.common, given('kit/a', tip, base=self.main[:10], reviewer_id='coord-1'),
-                  self_review_max_lines=self.CAP, main=None, main_why='origin/main: no such ref')
-        why = str(cm.exception)
-        self.assertIn('main as fetched cannot be read (origin/main: no such ref), so the size of '
-                      '%s..%s cannot be told' % (self.main[:10], tip[:10]), why)
-        self.assertEqual(why.splitlines()[-1], V.SELF_REVIEW_INSTEAD)
-        self.assertEqual(self.folder_names(), [])
-        for over, cap in (({'reviewer_id': 'coord-1'}, None),
-                          ({'reviewer': 'pm-kit:analyst', 'reviewer_id': 'a7'}, self.CAP)):
-            with self.subTest(cap=cap, **over):
-                _, stored = V.add(self.common, given('kit/a', tip, base=self.main[:10], **over),
-                                  self_review_max_lines=cap, main=None, main_why='no ref')
-                self.assertEqual(stored['tip'], tip)
-
-    def test_a_binary_file_counts_no_lines(self):
-        _, tip = self.branch('a', {'a.txt': lines(4), 'img.bin': 'PNG\x00\x01\x02' * 40})
-        _, stored = self.add(tip, reviewer_id='coord-1')
-        self.assertEqual(stored['tip'], tip)
-        self.assertEqual(V.diff_lines(self.common, '%s..%s' % (self.main, tip)), (4, 0, 2))
-
-    def test_a_dispatched_reviewer_or_no_cap_queues_any_size(self):
-        _, tip = self.branch('a', {'a.txt': lines(40)})
-        _, stored = self.add(tip, reviewer='pm-kit:analyst', reviewer_id='agent-a7')
-        self.assertEqual(stored['tip'], tip)
-        _, stored = self.add(tip, cap=None, reviewer_id='coord-1')
-        self.assertEqual(stored['reviewer_id'], 'coord-1')
-
-    def test_a_size_git_cannot_tell_is_refused_only_with_a_cap(self):
-        _, tip = self.branch('a', {'a.txt': lines(1)})
-        why = self.refused(tip, base='nosuchbase', reviewer_id='coord-1')
-        self.assertIn('git cannot tell how many lines nosuchbase..%s changes' % tip[:10], why)
-        _, stored = self.add(tip, cap=None, base='nosuchbase', reviewer_id='coord-1')
-        self.assertEqual(stored['tip'], tip)
-        _, stored = self.add(tip, base='nosuchbase', reviewer='pm-kit:analyst', reviewer_id='a7')
-        self.assertEqual(stored['tip'], tip)
-
-    def test_a_medium_or_high_risk_self_review_is_still_refused_whatever_its_size(self):
-        _, tip = self.branch('a', {'a.txt': lines(1)})
-        for risk in ('Medium', 'High'):
-            with self.subTest(risk=risk), self.assertRaises(V.SelfReview) as cm:
-                self.add(tip, risk=risk, reviewer_id='coord-1')
-            self.assertIn('a %s-risk verdict needs a reviewer other than' % risk, str(cm.exception))
-
-
-class SelfReviewSizeRenames(QueueCase):
-    """diff_lines finds renames whatever the repository's diff.renames says, so a moved file
-    counts only its edits towards "landing".self_review_max_lines."""
-
-    def test_a_renamed_file_counts_only_its_edits(self):
-        self.repo.git('config', 'diff.renames', 'false')    # a user's config must not matter
-        self.repo.write('big.txt', lines(30))
-        main2 = self.repo.commit('main work', 'big.txt')
-        wt = self.repo.worktree('r')
-        self.repo.git('mv', 'big.txt', 'moved.txt', cwd=wt)
-        self.repo.write('moved.txt', lines(29) + 'edited\n', root=wt)
-        tip = self.repo.commit('move big', 'moved.txt', cwd=wt)
-        self.assertEqual(V.diff_lines(self.common, '%s..%s' % (main2, tip)), (1, 1, 1))
-        _, stored = V.add(self.common, given('kit/r', tip, base=main2[:10], reviewer_id='coord-1'),
-                          self_review_max_lines=4, main=main2)
-        self.assertEqual(stored['tip'], tip)
-
-
 class Queue(QueueCase):
     def test_add_list_drop_round_trip(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
@@ -451,18 +302,25 @@ class Queue(QueueCase):
                             {'d1': (True, None, ALL_DESIGN + '\nDesign: REVISE')})
         self.assertIsNone(V.read_design(self.repo.root, 'kit/a'))
         with self.assertRaises(VE.VerdictError):
-            V.record_design(self.repo.root, 'kit/nosuch', 'coord-1', 'coord-1', None)
-        path, approval = V.record_design(wt, 'kit/a', 'coord-1', 'coord-1', None)    # the coordinator's own
+            V.record_design(self.repo.root, 'kit/nosuch', 'd1', 'coord-1', None)
+        with self.assertRaises(V.ReviewerSaid) as cm:                                 # the coordinator's own
+            V.record_design(wt, 'kit/a', 'Coord-1', 'coord-1', None)
+        self.assertIn("the coordinator's own approval; nothing was recorded", str(cm.exception))
+        self.assertIsNone(V.read_design(self.repo.root, 'kit/a'))
+        path, approval = V.record_design(wt, 'kit/a', 'd1', 'coord-1', None)
         self.assertEqual(os.path.normcase(os.path.normpath(path)),
                          os.path.normcase(os.path.join(self.common, 'worktrees', os.path.basename(wt), V.DESIGN_FILE)))
         self.assertEqual(V.read_design(self.repo.root, 'kit/a'), approval)
         new = ['a.py']
-        with self.assertRaises(V.ReviewerSaid) as cm:
-            V.add(self.common, given('kit/a', tip), new=new, approval=approval)
-        self.assertIn("the coordinator's own", str(cm.exception))
-        V.record_design(self.repo.root, 'kit/a', 'd1', 'coord-1', None)
-        _, stored = V.add(self.common, given('kit/a', tip), new=new, approval=V.read_design(wt, 'kit/a'))
+        _, stored = V.add(self.common, given('kit/a', tip), new=new, approval=approval)
         self.assertEqual(stored['tip'], tip)
+        own = dict(approval, design_reviewer_id='coord-1')      # stored before the refusal, or by hand
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(own, f)
+        self.assertEqual(V.read_design(wt, 'kit/a'), own)
+        with self.assertRaises(V.ReviewerSaid) as cm:
+            V.add(self.common, given('kit/a', tip), new=new, approval=V.read_design(wt, 'kit/a'))
+        self.assertIn("the coordinator's own", str(cm.exception))
         for text in ('{', '[]', '{"branch": 1, "design_reviewer_id": "d1", "session": "s"}'):
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(text)
@@ -521,16 +379,14 @@ class Queue(QueueCase):
                 V.add(self.common, e)
         self.assertEqual(self.folder_names(), [])
 
-    def test_a_medium_or_high_risk_self_review_is_refused_and_nothing_written(self):
+    def test_a_self_review_of_any_risk_is_refused_and_nothing_written(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
-        for risk in ('Medium', 'High'):
+        for risk in VE.RISKS:
             for over in ({'reviewer_id': 'coord-1'}, {'reviewer': 'pm-kit:coordinator'}):
                 with self.subTest(risk=risk, **over), self.assertRaises(V.SelfReview) as cm:
                     V.add(self.common, given('kit/a', tip, risk=risk, **over))
                 self.assertIsInstance(cm.exception, VE.BadEntry)
         self.assertEqual(self.folder_names(), [])
-        _, stored = V.add(self.common, given('kit/a', tip, risk='Low', reviewer_id='coord-1'))
-        self.assertEqual(stored['reviewer_id'], 'coord-1')       # a small Low self-read is queued
 
     def test_a_windows_device_name_is_refused(self):
         for name in ('con', 'NUL', 'com1', 'aux.x'):

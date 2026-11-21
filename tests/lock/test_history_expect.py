@@ -1,5 +1,6 @@
 """kitlib.lock.store.Store.history_expect: a run's expected time is the median of the finished
-runs of its own repo, kind and mode (land, branch gate, other), not of all of them; a mode with
+runs of its own repo, kind and mode (land, branch gate, merged gate outside a landing, other),
+not of all of them; a mode with
 too few runs has none (book then uses the kind's guide)."""
 import datetime
 import os
@@ -80,20 +81,62 @@ class HistoryExpect(StoreCase):
         self.assertEqual(e("kit", "engine-test"), 300)
         self.assertIsNone(e("kit", "engine-test", "branch"))
 
+    def test_a_promotion_has_its_own_median(self):
+        """A staging promotion's gate (no branch, no land priority, gate_mode merged or full)
+        keeps its time and memory apart from the short test runs of its kind, and its lines
+        leave every other mode's answer as it was. Red before: its lines were "other", so
+        "merged" had none and the 1 s runs' median gave the promotion a 60 s guide."""
+        promote = [(5800, "full"), (5900, "merged"), (6000, "full"), (6100, "full"),
+                   (6200, "merged")]
+        others = dict(peak_commit_mb=900)
+
+        def fill(with_promotions):
+            if with_promotions:
+                for held, mode in promote:
+                    self.add(held, gate=True, gate_mode=mode, peak_commit_mb=6400)
+            self.many(1, n=20, **others)                       # short test runs
+            self.many(0, n=3, gate=True, gate_mode="bisect", **others)
+            self.many(300, gate=True, **others)                # a gate line with no gate_mode
+            self.many(300, gate=True, gate_mode="daily", **others)
+            self.many(700, n=5, gate_mode="merged", peak_commit_mb=2000, **LAND)
+            self.many(720, n=5, gate_mode="full", peak_commit_mb=1500, **BRANCH)
+
+        def answers():
+            return {m: (self.store.history_expect("kit", "engine-test", m),
+                        self.store.history_mem("kit", "engine-test", m))
+                    for m in ("land", "branch", "other")}
+        fill(False)
+        without = answers()
+        self.root = os.path.join(self.tmp, "store-with-promotions")    # a fresh history
+        self.store = self.make_store()
+        fill(True)
+        self.assertEqual(self.store.history_expect("kit", "engine-test", "merged"), 6000)
+        self.assertEqual(self.store.history_mem("kit", "engine-test", "merged"), 6400)
+        self.assertEqual(answers(), without)
+        self.assertEqual(without, {"land": (700, 2000), "branch": (720, 1500), "other": (60, 900)})
+
     def test_run_mode(self):
         m = self.store.run_mode
         self.assertEqual(m("land", None, True), "land")
         self.assertEqual(m(None, "kit/x", True), "branch")
         self.assertEqual(m(None, "kit/x", False), "other")
         self.assertEqual(m(None, None, True), "other")
+        self.assertEqual(m("land", None, True, "merged"), "land")
+        self.assertEqual(m(None, "kit/x", True, "full"), "branch")
+        self.assertEqual(m(None, None, True, "full"), "merged")
+        self.assertEqual(m(None, None, True, "merged"), "merged")
+        for mode in ("daily", "bisect", "rerun", None):
+            self.assertEqual(m(None, None, True, mode), "other", mode)
+        self.assertEqual(m(None, None, False, "merged"), "other")
 
     @windows_only("the lock runs on Windows")
     def test_book_takes_the_estimate_of_its_own_mode(self):
         self.confine(1)
         self.many(700, **LAND)
         self.many(400)
+        self.many(6000, gate=True, gate_mode="full")        # a staging promotion's gate
         for kw, want in (({"priority": "land", "gate": True}, 700), ({"gate": True, "branch": "b"}, None),
-                         ({}, 400)):
+                         ({}, 400), ({"gate": True, "gate_mode": "merged"}, 6000)):
             with rm.book("engine-test", "kit", "t", cores=1, no_wait=True, store=self.store,
                          env=clean_env(), **kw) as slot:
                 rec = self.store.read("active/%s.json" % slot.id)

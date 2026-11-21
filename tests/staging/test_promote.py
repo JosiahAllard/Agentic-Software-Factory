@@ -919,7 +919,7 @@ class PromoteHold(Case):
         tip = self.land()
         out = self.held()
         self.assertEqual(out.code, G.REFUSED, out.lines)
-        self.assertIn('promote: STANDING-HOLD - held by hold', out.lines[0])
+        self.assertIn('promote: %s - held by hold' % R.STANDING.upper(), out.lines[0])
         self.assertNotIn(CU.HANDED, out.lines)
         self.assertEqual(self.remote_main(), before)
         a = self.attempts()[-1]

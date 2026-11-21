@@ -336,7 +336,7 @@ CHECK_RE = re.compile(r'^([a-z][\w-]*)\s*[:=]?\s*(pass|fail|n/a)$', re.IGNORECAS
 # the head but for decoration, separators, one id-like token and one item in parentheses (one level
 # nested), so prose before it (`my earlier UNMET item is now MET`) makes no status.
 _DECOR, _SEP = r'[\s*_`]*', r'[\s*_`:,–—-]*'
-DONE_STATUS_RE = re.compile(_SEP + r'(?:[A-Za-z0-9][\w.-]*' + _DECOR + r')?(?:\((?:[^()]|\([^()]*\))*\)'
+DONE_STATUS_RE = re.compile(_SEP + r'(?:[A-Za-z0-9][\w.-]*' + _SEP + r')?(?:\((?:[^()]|\([^()]*\))*\)'
                             + _DECOR + r')?' + _SEP + r'(?<![\w-])(met|unmet)(?![\w-])',
                             re.IGNORECASE)
 DESIGN_RE = re.compile(DESIGN_HEAD.pattern + r'[*_`\s]*(approve|revise)(?![\w-])', re.IGNORECASE)

@@ -133,10 +133,12 @@ class ReportLines(unittest.TestCase):
                 'Done-when: X-1 (a) now holds (test_b) unmet before, met now\n'
                 '- **Done-when:** X-2 (a) **UNMET** - no test\n'
                 'done-when: x-3 (a) unmet\n'
-                'Done-when: unmet - no id\n'
+                'Done-when: unmet - no id\n'    # the status lookbehind: else id `un`, status `met`
                 'Done-when: X-1 (b): UNMET - colon after the item\n'
                 'Done-when: X-1 — UNMET\n'
-                'Done-when: X-1 (item (b) part) UNMET\n')
+                'Done-when: X-1 (item (b) part) UNMET\n'
+                'Done-when: KIT-X: (a) UNMET\n'
+                'Done-when: KIT-X - (a) UNMET\n')
         self.assertEqual(V.unmet_lines(text), [
             'Done-when: X-1 (b) UNMET - no test',
             'Done-when: X-MET-2 (a) UNMET - an id holding the word does not count',
@@ -145,7 +147,9 @@ class ReportLines(unittest.TestCase):
             'Done-when: unmet - no id',
             'Done-when: X-1 (b): UNMET - colon after the item',
             'Done-when: X-1 — UNMET',
-            'Done-when: X-1 (item (b) part) UNMET'])
+            'Done-when: X-1 (item (b) part) UNMET',
+            'Done-when: KIT-X: (a) UNMET',
+            'Done-when: KIT-X - (a) UNMET'])
         for text, want in (('Design: APPROVE', 'APPROVE'), ('**Design:** revise', 'REVISE'),
                            ('Design: APPROVE\nDesign: maybe', None), ('', None)):
             self.assertEqual(V.design_of(text), want, text)

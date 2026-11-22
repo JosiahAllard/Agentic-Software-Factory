@@ -740,9 +740,13 @@ def unplaced(d, role):
     any rule outside PLACE_RULES (a protected file, the PM data) is returned as it is."""
     if d is None or d.rule not in PLACE_RULES:
         return d
+    return refuse(UNPLACED, role, reason_text(d, role), d.instead, kind=d.verdict)
+
+
+def reason_text(d, role):
+    """The reason of the refusal `d` without its ' Instead: ... [tag]' tail, to make it again."""
     tail = ' Instead: %s %s' % (d.instead, tag(d.rule, role))
-    what = d.reason[:-len(tail)] if d.reason.endswith(tail) else d.reason
-    return refuse(UNPLACED, role, what, d.instead, kind=d.verdict)
+    return d.reason[:-len(tail)] if d.reason.endswith(tail) else d.reason
 
 
 def in_git_dir(target):

@@ -21,6 +21,7 @@ import re
 
 from kitlib.config import user as kuser
 
+from . import cdfail
 from . import paths
 
 BASH, PS, CMD = 'bash', 'ps', 'cmd'
@@ -181,7 +182,7 @@ class Command(object):
     __slots__ = ('words', 'redirects', 'start', 'end', 'source', 'shell', 'depth', 'cwd',
                  'piped_out', 'piped_in', 'subs', 'groups', 'nested_in', 'prev_op', 'next_op',
                  'pipe_from', 'git_env', 'home_env', 'path_env', 'cwd_home', 'home',
-                 'split', 'line', 'cwd_link', 'cwd_home_link')
+                 'split', 'line', 'cwd_link', 'cwd_home_link', 'cwd_alt')
 
     def __init__(self, source, shell, depth, home=None, line=None):
         self.words, self.redirects, self.subs = [], [], []
@@ -194,6 +195,7 @@ class Command(object):
         # Linux bash: cwd (cwd_home) is a real path a cd reached through a link, so the shell's
         # $PWD, which a later cd -L folds `..` from, is another text (track, _linux_cd)
         self.cwd_link = self.cwd_home_link = False
+        self.cwd_alt = ()           # the other folders it may run in: a cd before it may have failed (track, cdfail)
         self.piped_out = self.piped_in = False
         self.groups = ()            # the ( ) or { } groups it is inside, outermost first: (id, '(' or '{')
         self.prev_op = self.next_op = None      # the operators around it: ; && || & newline ( ) { } |
@@ -1392,31 +1394,38 @@ def _keyword_cd(c):
     return 0 < first and k < len(c.words) and is_cd_word(c.words[k].text, c.shell)
 
 
-def track(cmds, cwd, home=None, cwd_home=None, linked=False, linked_home=False):
+def track(cmds, cwd, home=None, cwd_home=None, linked=False, linked_home=False, alts=()):
     """Each command's cwd, in order: a cd changes it for the commands after it. A bash ( ) group
     is a subshell: a cd inside it holds to its end, then the directory before it comes back; a
     bash { } group shares the directory. A cd the text cannot tell, one inside a PowerShell or
-    cmd group, one behind a keyword, one in a pipeline, in the background or beside || makes the
-    directory unknown (None) from there on. Substitutions run in the directory of the command
+    cmd group, one behind a keyword, one in a pipeline, in the background, after || or before one
+    (but `|| exit`) makes the directory unknown (None) from there on. A cd that may fail (not to a
+    literal folder that exists, or one that may not run) leaves the folders before it as the other
+    folders later commands may run in (Command.cwd_alt; `alts`, `cwd`'s), past those it guards
+    (cdfail); a cd that cannot fail moves them. Substitutions run in the directories of the command
     that holds them; a cd inside a PowerShell one makes its holder's directory unknown, and every
     later one's. `~` is `home` (home_folder). cwd_home is the directory tracked from `cwd_home` (default `cwd`) with
     a cd to a home variable read too (cd_target home_vars): only for the rules that deny, since a
     line can set the variable to another folder. `linked` (`linked_home`) says `cwd` (`cwd_home`)
-    was entered through a link (Command.cwd_link, cd_move), carried with each directory."""
+    was entered through a link (Command.cwd_link, cd_move), carried with each directory. The next
+    split of this module would move the cd block (cd_words to here) out."""
     here, here_l = cwd, linked
     here_h, here_hl = (cwd, linked) if cwd_home is None else (cwd_home, linked_home)
-    open_ = []                  # (group, the directory before it, its cwd_home, and their link flags)
+    held = cdfail.Held(alts)
+    open_ = []                  # (group, the directory before it, its cwd_home, their link flags, held.save())
     sub_from = {}               # id(command): (cwd, cwd_home) its substitutions start in
-    for c in cmds:
+    for k, c in enumerate(cmds):
         common = 0
         while common < len(open_) and common < len(c.groups) and open_[common][0] == c.groups[common]:
             common += 1
         while len(open_) > common:
-            g, before, before_h, before_l, before_hl = open_.pop()
+            g, before, before_h, before_l, before_hl, saved = open_.pop()
             if g[1] == '(' and c.shell == BASH:
                 here, here_h, here_l, here_hl = before, before_h, before_l, before_hl
+                held.restore(saved)
+        others = held.at(k)
         for g in c.groups[common:]:
-            open_.append((g, here, here_h, here_l, here_hl))
+            open_.append((g, here, here_h, here_l, here_hl, held.save()))
         sub_from[id(c)] = (here, here_h, here_l, here_hl)
         # PowerShell runs a $( ) or an argument's ( ) in the caller's scope: a cd there moves this
         # command and every one after it (bash's $( ) is a subshell)
@@ -1424,20 +1433,33 @@ def track(cmds, cwd, home=None, cwd_home=None, linked=False, linked_home=False):
             here = here_h = None
         c.cwd, c.cwd_home = here, here_h
         c.cwd_link, c.cwd_home_link = here_l, here_hl
+        c.cwd_alt = _others(here, others)
         changed, to, to_l = cd_move(c, here, home, linked=here_l)
         _, to_h, to_hl = cd_move(c, here_h, home, home_vars=True, linked=here_hl)
         if _keyword_cd(c):
             changed, to, to_h = True, None, None
         if changed:
-            unsure = (c.piped_in or c.piped_out or '||' in (c.prev_op, c.next_op) or (c.next_op == '&' and c.shell == BASH)
-                      or (c.groups and c.shell != BASH))
+            guard = cdfail.guarded(cmds, k)
+            skip = (c.piped_in or c.piped_out or c.prev_op == '||' or (c.next_op == '&' and c.shell == BASH)
+                    or (c.groups and c.shell != BASH))      # the cd may not run, or moves no shell after it
+            unsure = skip or (c.next_op == '||' and not guard)
+            moved = [cd_move(c, a, home)[1] for a in c.cwd_alt]
+            if skip or any(t is None or not os.path.isdir(t) for t in [to] + moved):
+                held.hold([f for f in (here,) + c.cwd_alt if f], guard)
+            held.alts = [] if unsure else [t for t in moved if t]
             here, here_l = (None, False) if unsure or to is None else (to, to_l)
             here_h, here_hl = (None, False) if unsure or to_h is None else (to_h, to_hl)
     for c in cmds:
         if c.subs:
             at, at_h, at_l, at_hl = sub_from[id(c)]
-            track(c.subs, at, home, at_h, at_l, at_hl)
+            track(c.subs, at, home, at_h, at_l, at_hl, c.cwd_alt)
     return cmds
+
+
+def _others(here, folders):
+    """The folders apart from `here`, each once."""
+    keys = [paths.norm(f) for f in folders]
+    return tuple(f for k, f in enumerate(folders) if keys[k] not in keys[:k] and (not here or keys[k] != paths.norm(here)))
 
 
 def flatten(cmds):
@@ -1449,17 +1471,18 @@ def flatten(cmds):
     return out
 
 
-def parse(text, shell, cwd, depth=0, parsed=None, home=None, cwd_home=None, linked=False, linked_home=False):
+def parse(text, shell, cwd, depth=0, parsed=None, home=None, cwd_home=None, linked=False, linked_home=False,
+          alts=()):
     """Parsed for `text` read as `shell` (BASH, PS or CMD), starting in `cwd` (and `cwd_home`,
     default `cwd`: track). `~` is `home` (home_folder). With `parsed`, the commands are added to
-    it (a nested shell's text) and its home is the one read. `linked` (`linked_home`): track."""
+    it (a nested shell's text) and its home is the one read. `linked` (`linked_home`), `alts`: track."""
     parsed = parsed if parsed is not None else Parsed(text, shell, cwd, home)
     if depth > MAX_DEPTH:
         parsed.flag('shells nested deeper than %d' % MAX_DEPTH)
         return parsed, []
     sc = _Scan(text, shell, depth, parsed)
     top = sc.commands()
-    track(top, cwd, home=parsed.home, cwd_home=cwd_home, linked=linked, linked_home=linked_home)
+    track(top, cwd, home=parsed.home, cwd_home=cwd_home, linked=linked, linked_home=linked_home, alts=alts)
     cmds = flatten(top)
     parsed.commands.extend(cmds)
     return parsed, cmds

@@ -412,13 +412,13 @@ ROWS = [
     ('Push-Location chain', lambda w: ps('Push-Location %s; git checkout -b kit/x; Pop-Location' % w.wt, w.main), None, None, None),
 
     # ---------------------------------------------------------------- a cd that may fail (test_cdfail.py)
+    # (test_cdfail.py judges the whole line at the kit's modes: the git init and fetch before the
+    # checkout are unplaced, which this table holds at deny)
     ('failed cd: the line that checked out in a main checkout',
-     lambda w: bash('S="%s/pl"; cd "$S" && git rev-parse --git-dir >/dev/null 2>&1 || git init -q; timeout 280 git fetch -q '
-                    '--depth 1 https://example.com/x.git 6ffa5b1 && git -c core.autocrlf=false checkout -q FETCH_HEAD && '
-                    'ls o | head -60' % W.fwd(w.temp), w.main, sub=True),
+     lambda w: bash('cd "$S" && git rev-parse --git-dir >/dev/null 2>&1; git -c core.autocrlf=false checkout -q FETCH_HEAD '
+                    '&& ls o | head -60', w.main, sub=True),
      'deny', 'git-checkout', 'git -C "<folder>" -c core.autocrlf=false checkout -q FETCH_HEAD'),
-    ('failed cd: the line in PowerShell', lambda w: ps('cd $env:S; git fetch -q https://example.com/x.git 6ffa5b1; '
-                                                     'git checkout -q FETCH_HEAD', w.main, sub=True),
+    ('failed cd: the line in PowerShell', lambda w: ps('cd $env:S; git checkout -q FETCH_HEAD', w.main, sub=True),
      'deny', 'git-checkout', 'git -C "<folder>" checkout -q FETCH_HEAD'),
     ('failed cd: a missing literal folder', lambda w: bash('cd %s/missing; git checkout x' % W.fwd(w.wt), w.main),
      'deny', 'git-checkout', None),

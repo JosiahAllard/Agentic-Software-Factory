@@ -92,7 +92,9 @@ class Rules(unittest.TestCase):
         return d
 
     def test_the_refusal_names_the_failed_cd_and_a_literal_folder(self):
-        line = 'cd "$S" && git rev-parse --git-dir || git init -q; git -c core.autocrlf=false checkout -q FETCH_HEAD'
+        line = ('S="%s/pl"; cd "$S" && git rev-parse --git-dir >/dev/null 2>&1 || git init -q; timeout 280 git fetch -q '
+                '--depth 1 https://example.com/x.git 6ffa5b1 && git -c core.autocrlf=false checkout -q FETCH_HEAD && '
+                'ls o | head -60' % W.fwd(self.w.temp))   # the line a subagent checked out with in a main checkout
         d = self.denied(W.bash(line, self.w.main, sub=True), 'git-checkout')
         self.assertIn('if the cd before it fails', d.reason)
         self.assertIn(W.fwd(self.w.main), d.reason)

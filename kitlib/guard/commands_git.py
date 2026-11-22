@@ -2,12 +2,13 @@
 
 git_call(inv) reads git's global options into a GitCall: the directory it acts on, its
 subcommand and the Words after it, and what points it at a place the text does not show.
+alt_dirs(gc) names the other directories it may act on (a cd before it may have failed).
 git_dyn_word names a computed word where the git rules read one.
 """
 import re
 
 from . import shell as sh
-from .commands import (_git_word, run_dir)
+from .commands import (OWN, _git_word, run_dir)
 
 
 # git's global options read with the next word as their value (-C, --git-dir and --work-tree are
@@ -95,13 +96,22 @@ class GitCall(object):
         return a[len(a) - n:] if n else []
 
 
-def git_call(inv):
+def alt_dirs(gc):
+    """The other directories git may act on: git_call's dir from each folder its Command may run
+    in (Command.cwd_alt), the known ones; none when what points git elsewhere hides the place."""
+    if gc.blind or gc.inv is None:
+        return ()
+    out = (git_call(gc.inv, start=a) for a in gc.inv.cmd.cwd_alt)
+    return tuple(g.dir for g in out if g is not None and g.dir and not g.unknown)
+
+
+def git_call(inv, start=OWN):
     """GitCall for a git invocation, or None when inv is not git or names no subcommand. git
     that xargs runs with no subcommand gets one with sub '' and blind 'xargs': the input xargs
-    appends may hold --git-dir and the subcommand."""
+    appends may hold --git-dir and the subcommand. `start`: run_dir's."""
     if inv is None or inv.name != 'git':
         return None
-    d = run_dir(inv)                            # Start-Process -WorkingDirectory: git starts there
+    d = run_dir(inv, start)                     # Start-Process -WorkingDirectory: git starts there
     git_env = inv.cmd.git_env
     unknown = d is None or bool(git_env)
     # what sets a git dir or work tree the text cannot place: -C never undoes it

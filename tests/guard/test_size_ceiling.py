@@ -18,14 +18,17 @@ import unittest
 GUARD = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                      'kitlib', 'guard')
 SLACK_PERCENT = 5
-TOTAL_CEILING = 18600
+# raised for GUARD-CD-CHAINED-GIT-WRITE (a git write after a cd that may fail): cdfail.py, shell.track's other
+# folders, commands_git.alt_dirs and the git rules' judging in each (rules_gitjail.git_place, git_named_refusal)
+TOTAL_CEILING = 18800
 CEILINGS = {
     '__init__.py': 21,
     'backlogrole.py': 1224,
-    'commands.py': 760,
+    'cdfail.py': 85,
+    'commands.py': 765,
     'commands_env.py': 302,
-    'commands_git.py': 159,
-    'commands_nested.py': 614,
+    'commands_git.py': 169,
+    'commands_nested.py': 615,
     'context.py': 591,
     'delegfile.py': 579,
     'fallback.py': 526,
@@ -39,12 +42,12 @@ CEILINGS = {
     'prepush.py': 582,
     'refusal_log.py': 169,
     'rolepolicy.py': 626,
-    'rules.py': 731,
+    'rules.py': 734,
     'rules_base.py': 491,
     'rules_edit.py': 1183,
     'rules_gitcommit.py': 413,
     'rules_gitcore.py': 641,
-    'rules_gitjail.py': 287,
+    'rules_gitjail.py': 332,
     'rules_gitread.py': 504,
     'rules_gitref.py': 1310,
     'rules_net.py': 429,
@@ -53,7 +56,7 @@ CEILINGS = {
     'rules_run.py': 799,
     'rules_tools.py': 651,
     'rules_write.py': 888,
-    'shell.py': 1465,
+    'shell.py': 1488,
 }
 
 

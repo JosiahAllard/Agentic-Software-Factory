@@ -14,6 +14,7 @@ resets first among those under the limit, else its last account (docs/launcher.m
                                      entry's coordinator (BacklogUnread when the store or the
                                      repo's cap cannot be read)
   session_liveness(sessions, live)   the offer's session liveness from one run's own reads
+  not_running(sessions, live)        [(key, reason)] of every agent entry not running, pure
   last_account(entry, record)        the account a coordinator last ran on, or None
   RestartJob(settings, ...)          its run(ctx): the boot one-shot, then read the state, decide
                                      each entry, start one
@@ -75,6 +76,12 @@ whose boot (now - uptime) is not the one kept, so a late sign-in still gets it a
 the same boot does not. With no boot kept at all (a first install, a lost file) and the machine up
 BOOT_S or more, the boot is only kept: that hub start is not a boot's. A bad state file is read as
 no boot kept and nothing is written. after-reboot logs to after-reboot.log itself.
+
+A run's note names every agent entry (sessions.json `agent` true, key not `_`-prefixed) that is
+not running, neither its name nor another session of its stem live (not_running): one the job
+decides on gets its own `KEY: <reason>`; one it never restarts is in one `left down: KEY
+(autostart off), ...` note, the reason `autostart off`, `no name` (its liveness cannot be read)
+or `no stem`. The note says `every coordinator is running` only when there is none.
 
 State kept across hub restarts, in <launcher.state_dir>/coord-restart.json:
 {key: {seen_at, started_at, account, starts, held}}: the last time a session of the stem was seen
@@ -319,6 +326,24 @@ def decide(key, entry, live, record, last_stop, down_runs, accounts, now, wake=N
     return Decision(True, woke + 'start on account %s' % acct, acct,
                     'restarted-unchecked' if st.usage is None else 'restarted', st.usage is None,
                     wake=wake)
+
+
+def not_running(sessions, live):
+    """[(key, reason)], sorted by key, of each agent entry in `sessions` (a dict whose `agent` is
+    true, key not `_`-prefixed) whose name is not in `live` and no session of whose stem is:
+    reason `no name`, `no stem`, `autostart off` or `down` (the job decides on it), in that order
+    of test. An entry with no name is never taken as running: its liveness cannot be read."""
+    out = []
+    for key in sorted(sessions):
+        e = sessions[key]
+        if key.startswith('_') or not isinstance(e, dict) or not e.get('agent'):
+            continue
+        name, stem = e.get('name'), e.get('stem')
+        if name and (name in live or (stem and any(of_stem(n, stem) for n in live))):
+            continue
+        out.append((key, 'no name' if not name else 'no stem' if not stem
+                    else 'autostart off' if e.get('autostart') is False else 'down'))
+    return out
 
 
 def local_epoch(text, mktime=time.mktime, localtime=time.localtime):
@@ -660,6 +685,10 @@ class RestartJob(object):
                 notes.append('%s: start left for the next run (the hub is closing)' % key)
                 continue
             started = (key, d, entry)
+        idle = not_running(sessions, live)
+        left = ['%s (%s)' % kr for kr in idle if kr[1] != 'down']
+        if left:
+            notes.append('left down: ' + ', '.join(left))
         if started is not None:
             key, d, entry = started
             rec = records.setdefault(key, {})
@@ -683,7 +712,8 @@ class RestartJob(object):
         if changed:
             self._write_records(records)
         if started is None and not booted:
-            return jobs.Skip('; '.join(notes) or 'every coordinator is running')
+            return jobs.Skip('; '.join(notes) or ('left down: ' + ', '.join(k for k, _ in idle)
+                                                  if idle else 'every coordinator is running'))
         return '; '.join(notes)
 
     def _after_reboot(self, records, now):

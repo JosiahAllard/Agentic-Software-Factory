@@ -306,7 +306,47 @@ class JobBase(unittest.TestCase):
         return self.job(self.ctx)
 
 
+class NotRunning(unittest.TestCase):
+    def test_each_agent_entry_not_running_is_listed_with_its_reason(self):
+        sessions = {'_note': 'x', 'plain': {'agent': False, 'name': 'plain-a1', 'stem': 'plain'},
+                    'kit': dict(ENTRY), 'off': dict(ENTRY, name='off-a1', stem='off', autostart=False),
+                    'nameless': {'agent': True, 'stem': 'nameless'},
+                    'stemless': {'agent': True, 'name': 'stemless-a1'},
+                    'live': dict(ENTRY, name='live-a1', stem='live'),
+                    'recycled': dict(ENTRY, name='rec-a1', stem='rec'),
+                    'liveoff': dict(ENTRY, name='liveoff-a1', stem='liveoff', autostart=False),
+                    'bad': 'not an object'}
+        got = C.not_running(sessions, {'live-a1', 'rec-a2', 'liveoff-a1'})
+        self.assertEqual(got, [('kit', 'down'), ('nameless', 'no name'), ('off', 'autostart off'),
+                               ('stemless', 'no stem')])
+
+    def test_nothing_not_running_is_an_empty_list(self):
+        self.assertEqual(C.not_running({'kit': dict(ENTRY)}, {'kit-coord-a1'}), [])
+
+
 class Job(JobBase):
+    def test_every_coordinator_is_running_only_when_none_is_left_down(self):
+        self.live = ['kit-coord-a1']
+        self.assertEqual(self.run_job().note, 'every coordinator is running')
+        self.sessions['pmkit'] = dict(ENTRY, name='pmkit-a1', stem='pmkit', autostart=False)
+        self.sessions['odd'] = {'agent': True, 'stem': 'odd'}
+        self.sessions['bare'] = {'agent': True, 'name': 'bare-a1'}
+        self.write('sessions.json', self.sessions)
+        self.now += 300
+        got = self.run_job()
+        self.assertIsInstance(got, jobs.Skip)
+        self.assertEqual(got.note, 'left down: bare (no stem), odd (no name), pmkit (autostart off)')
+        self.assertEqual(self.calls, [], 'an entry left down is never started')
+
+    def test_the_left_down_note_follows_the_decided_ones(self):
+        self.sessions['pmkit'] = dict(ENTRY, name='pmkit-a1', stem='pmkit', autostart=False)
+        self.write('sessions.json', self.sessions)
+        self.live = []
+        note = self.run_job().note
+        self.assertTrue(note.startswith('kit: '), note)
+        self.assertTrue(note.endswith('; left down: pmkit (autostart off)'), note)
+        self.assertNotIn('every coordinator is running', note)
+
     def test_make_needs_a_state_dir(self):
         class S(object):
             home = self.tmp

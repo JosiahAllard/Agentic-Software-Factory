@@ -43,14 +43,15 @@ A landing not submitted (`land.py` without `--submit`) has no `land_submit` even
 
 ## The state note
 
-`show` renders the note from the log, the judgments file and what the repository already records, held to 8 KB (`render.CAP`) by dropping the oldest lines of the least needed sections: backlog writes first, then reported landings, then landings on the feed. Judgments are never trimmed, so judgments alone can pass the cap. In order:
+`show` renders the note from the log, the judgments file and what the repository already records, held to 8 KB (`render.CAP`) by dropping the oldest lines of the least needed sections: backlog writes first, then reported landings, then landings on the feed. Judgments and open pulls are never trimmed, so they alone can pass the cap. In order:
 
 1. **Judgments**: `judgments-<session>.md`, verbatim.
 2. **Landings to report to the PM**, until `reported` names them.
 3. **Landings in flight**.
 4. **Verdicts queued by this session** that still wait to land (`kitlib.landing.verdicts`, the entries whose `session` is it), or why the queue cannot be read. The queue keeps an entry after its branch lands, so `show` leaves out what `records.verdict_entry.expired` names against main as last fetched, with no network: a tip in main, or a branch that is gone. It only reads: every entry stays on disk. When main as fetched cannot be read, every entry is listed and a line under them says landed ones can be among them.
-5. **Landed and on the hub feed**, and **Reported**: the latest 5 of each.
-6. **Backlog writes**: the latest 15.
+5. **Open pulls**: every pulled record of the live store as last fetched (`kitlib.backlog.opener.pulled_rows`: the store `store_live.live_store_root` finds, no fetch), one line each with its id, branch, `pulled_session` and `pulled_at`, every session's, since a pull's `--session` key need not be the session name. Never trimmed, like judgments: a successor checks each one (skill session-handoff, start step 7). Tools cannot see agents, so the coordinator's judgments carry one `<ID>: agent <name>` line per pull that has a running agent; a pull with none has no known agent. A store that cannot be found or read is one `pulls not read (<why>)` line.
+6. **Landed and on the hub feed**, and **Reported**: the latest 5 of each.
+7. **Backlog writes**: the latest 15.
 
 A landing is the latest `land_submit` of its branch: a new submission replaces the old one and clears its `reported` mark. It is joined with the branch's land result record at the submitted tip (`result.read`, `result.at_tip`) and, once that is final and landed, with the outcome lines of its output file (`submit.outcome_block`):
 

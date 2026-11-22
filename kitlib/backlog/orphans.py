@@ -5,7 +5,9 @@ State per record, from the branch set and the worktree list, never from the prob
 branch name` (empty or invalid `pulled_by`); `no branch`; `remote only` (only `<remote>/<b>`: a
 quiet release needs the local branch); `main checkout is on it`; `NO WORKTREE` (a local branch no
 worktree is on: the probe calls that live, so only a quiet release stops it); `NO LIVE AGENT` (a
-worktree the probe finds dead); `live: <why>`; `unreadable: <why>`."""
+worktree the probe finds dead); `IDLE <h> h` (a live one the quiet probe finds quiet: no
+commit, reflog entry or file change for kitlib/worktree/quiet.py QUIET_AFTER_S, no process, lock
+or queued verdict); `live: <why>`; `unreadable: <why>`."""
 import collections
 
 from kitlib.git import cmd, refs
@@ -16,13 +18,15 @@ from . import plan, plan_claim
 NO_NAME, NO_BRANCH, REMOTE, MAIN, NO_TREE, DEAD = (
     'no branch name', 'no branch', 'remote only', 'main checkout is on it', 'NO WORKTREE',
     'NO LIVE AGENT')
+IDLE = 'IDLE'
 
 # What one run read: `names` every local and remote branch, `local` the local ones, `on` the
 # branches with a linked worktree, `main_on` the main checkout's branch (each None when unread, with
 # `why` saying so), `bad` the invalid `pulled_by` values, `liveness(branch) -> (why live, tip)`,
+# `idle(branch) -> (why not quiet, None) or (None, seconds quiet)` (ctx.quiet; none: not quiet),
 # `info(branch, local) -> (last commit date, commits ahead)`, `quiet(rec)` the caller's session key
 # when it may release `rec`'s pull as quiet (plan_claim.quiet_key_why), else None.
-View = collections.namedtuple('View', 'names local on main_on bad liveness info why quiet')
+View = collections.namedtuple('View', 'names local on main_on bad liveness idle info why quiet')
 
 
 def state(branch, v):
@@ -40,7 +44,10 @@ def state(branch, v):
     if branch not in v.on:
         return NO_TREE
     why, _tip = v.liveness(branch)
-    return DEAD if why is None else 'live: %s' % why
+    if why is None:
+        return DEAD
+    _not, quiet_s = v.idle(branch)
+    return 'live: %s' % why if quiet_s is None else '%s %.1f h' % (IDLE, quiet_s / 3600.0)
 
 
 def route(st, rid, key):
@@ -50,10 +57,15 @@ def route(st, rid, key):
     or the PM."""
     if st in (NO_BRANCH, DEAD):
         return 'backlog.py -C <checkout> release %s --reason "<why>"' % rid
-    if key and (st == NO_TREE or st.startswith('live: ')):
+    if key and (st == NO_TREE or _working(st)):
         return ('backlog.py -C <checkout> --session %s release %s --reason "<why>" (refused unless '
                 'quiet: 4 h, no process, lock or queued verdict)' % (key, rid))
     return 'ask the PM'
+
+
+def _working(st):
+    """Whether `st` is a branch with a worktree some probe calls live (`live:` or `IDLE`)."""
+    return st.startswith('live: ') or st.startswith(IDLE + ' ')
 
 
 def render(recs, v):
@@ -64,7 +76,7 @@ def render(recs, v):
         branch, session = r.get('pulled_by'), r.get('pulled_session')
         st = state(branch, v)
         seen = ''
-        if st in (REMOTE, MAIN, NO_TREE, DEAD) or st.startswith('live: '):
+        if st in (REMOTE, MAIN, NO_TREE, DEAD) or _working(st):
             date, ahead = v.info(branch, branch in v.local)
             seen = '  last %s  ahead %s' % (date, ahead)
         out.append('%s  %s%s  session=%s  %s  -> %s'
@@ -98,8 +110,17 @@ def lines(ctx, snap):
     def no_probe(_branch):          # opener.open_store gives a Context no probe in some modes
         return 'no liveness probe on this Context', None
 
+    main = []                           # the code main's commit, read on the first idle ask
+
+    def idle(branch):
+        if ctx.quiet is None:
+            return 'no quiet probe on this Context', None
+        if not main:
+            main.append(plan_claim._main_commit(ctx))
+        return ctx.quiet(branch, main[0])
+
     def quiet(rec):
         return ctx.session if plan_claim.quiet_key_why(ctx, rec) is None else None
-    v = View(names, local, on, trees[0].branch if trees else None, bad, ctx.liveness or no_probe, info,
-             why or twhy, quiet)
+    v = View(names, local, on, trees[0].branch if trees else None, bad, ctx.liveness or no_probe,
+             idle, info, why or twhy, quiet)
     return render(recs, v)

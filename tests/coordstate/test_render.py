@@ -125,13 +125,19 @@ class Text(unittest.TestCase):
                    for i in range(400)]
         groups = {render.TO_REPORT: [{'branch': 'b1', 'tip': TIP, 'utc': 'u', 'say': 'fail: x',
                                       'batch': [], 'events': [0], 'reported': None}]}
+        pulls = [('P%02d' % i, 'kit/p%02d' % i, None if i else 'coord-x', '2026-11-20')
+                 for i in range(40)]
         note = render.text('coord-x', '/x/events-coord-x.jsonl', groups, backlog, [], None,
-                           'my judgment\n')
+                           'my judgment\n', pulls=pulls)
         self.assertLessEqual(len(note.encode('utf-8')), render.CAP)
         for part in ('# Coordinator state: coord-x', 'my judgment', 'Landings to report to the PM (1)',
-                     '- b1 at aaaaaaaaaa', 'Verdicts queued by coord-x (0)', 'Backlog writes'):
-            self.assertIn(part, note)
+                     '- b1 at aaaaaaaaaa', 'Verdicts queued by coord-x (0)', 'Backlog writes',
+                     'Open pulls (40)', '- P00 kit/p00 session=coord-x pulled 2026-11-20',
+                     '- P39 kit/p39 session=none pulled 2026-11-20'):
+            self.assertIn(part, note)           # every pull is kept: the section is never trimmed
         self.assertIn('R0399', note)            # the newest backlog write is kept
+        note = render.text('s', 'e', {}, [], [], None, '', pulls_why='no store')
+        self.assertIn('## Open pulls\npulls not read (no store)', note)
 
     def test_an_unreadable_queue_is_said(self):
         note = render.text('s', 'e', {}, [], None, 'bad file', '')

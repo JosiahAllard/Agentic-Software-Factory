@@ -296,8 +296,10 @@ class Cli(unittest.TestCase):
             probed.append(branch)
             return (None, 't') if branch == 'dead' else ('process in tree', None)
         view = orphans.View(
-            names={'bare', 'dead', 'busy', 'far', 'main'}, local={'bare', 'dead', 'busy', 'main'},
-            on={'dead', 'busy'}, main_on='main', bad={'bad name'}, liveness=liveness,
+            names={'bare', 'dead', 'busy', 'idle', 'far', 'main'},
+            local={'bare', 'dead', 'busy', 'idle', 'main'}, on={'dead', 'busy', 'idle'}, main_on='main',
+            bad={'bad name'}, liveness=liveness,
+            idle=lambda b: (None, 9 * 3600.0) if b == 'idle' else ('active 1.0 h ago', None),
             info=lambda b, local: ('2026-11-07', 3 if local else 4), why='git said no',
             quiet=lambda r: 'me' if r.get('pulled_session') else None)
         table = [(rec('A', 'gone'), r'^A  gone  session=x  no branch  -> backlog.py -C <checkout> release A --reason'),
@@ -307,13 +309,16 @@ class Cli(unittest.TestCase):
                  (rec('C', 'dead', None), r'session=none  NO LIVE AGENT  -> backlog.py -C <checkout> release C --reason'),
                  (rec('D', 'busy'), r'live: process in tree  -> backlog.py -C <checkout> --session me release D .*quiet'),
                  (rec('D2', 'busy', None), r'live: process in tree  -> ask the PM'),
+                 (rec('I', 'idle'), r'^I  idle  last 2026-11-07  ahead 3  session=x  IDLE 9.0 h'
+                                    r'  -> backlog.py -C <checkout> --session me release I --reason'),
+                 (rec('I2', 'idle', None), r'IDLE 9.0 h  -> ask the PM$'),
                  (rec('E', 'far'), r'ahead 4  session=x  remote only  -> ask the PM'),
                  (rec('F', 'main'), r'main checkout is on it  -> ask the PM'),
                  (rec('G', 'bad name'), r'no branch name  -> ask the PM'),
                  (rec('H', ''), r'no branch name  -> ask the PM')]
         for r, want in table:
             self.assertRegex(orphans.render([r], view)[0], want)
-        self.assertEqual(probed, ['dead', 'busy', 'busy'])      # only a branch with a worktree is probed
+        self.assertEqual(probed, ['dead', 'busy', 'busy', 'idle', 'idle'])      # only a branch with a worktree is probed
         gone = view._replace(on=None)
         self.assertRegex(orphans.render([rec('A', 'bare')], gone)[0],
                          r'unreadable: git said no  -> ask the PM')

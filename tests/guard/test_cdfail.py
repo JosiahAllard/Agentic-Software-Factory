@@ -1,4 +1,4 @@
-"""A cd that may fail (kitlib.guard.cdfail, shell.track; docs/guard-core.md "Parsing"): the folders
+"""A cd that may fail (kitlib.guard.cdfail, cdtrack.track; docs/guard-core.md "Parsing"): the folders
 the shell may be in after it, and the git rules that judge a git write in each of them, the folder
 before the cd included; a subagent's checkout or switch whose folder is computed is refused
 (docs/guard-rules.md, git-checkout). More rows: shell_rows.py, "a cd that may fail"."""

@@ -11,6 +11,7 @@ from kitlib import config as kconfig
 from kitlib.config import user as kuser
 from kitlib.git import repo
 
+from . import cdtrack
 from . import commands_git as cg
 from . import context
 from . import generated
@@ -1160,7 +1161,7 @@ def whole_line(ctx, cmd):
         return src.strip()
     start = top[0].start
     for i, c in enumerate(top):
-        is_cd, where = sh.cd_target(c, outer.cwd)
+        is_cd, where = cdtrack.cd_target(c, outer.cwd)
         if not is_cd:
             break
         place = ctx.place(where) if where else None
@@ -1169,7 +1170,7 @@ def whole_line(ctx, cmd):
                 or after is None or after.strip() not in ('', ';')):
             return bare(cmd)
         start = top[i + 1].start
-    if any(sh.cd_target(c, outer.cwd)[0] for c in cmds if c.start is None or c.start >= start):
+    if any(cdtrack.cd_target(c, outer.cwd)[0] for c in cmds if c.start is None or c.start >= start):
         return bare(cmd)
     end = max(c.end for c in top)
     tail = src[end:]

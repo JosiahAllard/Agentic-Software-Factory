@@ -7,6 +7,7 @@ command) marks the parse unclean. The program each command runs is kitlib.guard.
 """
 import re
 
+from . import cdtrack
 from . import shell as sh
 from .commands import (ASSIGN_RE, BASH_NO_PROGRAM, BASH_SHELLS, PS_KEYWORDS, PS_SHELLS, Unread, _param, env_nested,
                        fill_words, invocation, passed, quoted, run_dir)
@@ -161,7 +162,7 @@ def _shell_text(inv, parsed):
         if not rest:
             return None
         where = None if val.dyn else sh.resolve_path(val.text, inv.cmd.cwd, home=parsed.home)
-        return span_text(inv.cmd, rest), inv.cmd.shell, sh.chdir_real(where, inv.cmd.cwd)
+        return span_text(inv.cmd, rest), inv.cmd.shell, cdtrack.chdir_real(where, inv.cmd.cwd)
     if name in ('source', '.') and inv.cmd.shell == sh.BASH:
         if a and a[0].dyn:
             parsed.flag('a script sourced from text that is not literal')
@@ -527,7 +528,7 @@ MAX_NESTS = 64
 
 
 def _nest(parsed, cmd, text, shell, cwd, cwd_home):
-    """Parse `text` as commands `cmd` runs, at `cwd` (cwd_home: shell.track), into parsed;
+    """Parse `text` as commands `cmd` runs, at `cwd` (cwd_home: cdtrack.track), into parsed;
     returns those commands. A nested shell started in `cmd`'s own directory inherits its $PWD, so
     that directory's link flag (Command.cwd_link) goes with it, and the other folders `cmd` may run
     in (Command.cwd_alt); env -C's real folder has neither."""
@@ -549,7 +550,7 @@ def _nest(parsed, cmd, text, shell, cwd, cwd_home):
 
 
 # literal_programs: what may set a variable unseen (VAR_SETTERS), and the names the shell sets itself
-VAR_SETTERS = EXPORTERS | set(PS_ENV_ITEM_CMDLETS) | BASH_NO_PROGRAM | PS_KEYWORDS | sh.BASH_PREFIX_WORDS | {
+VAR_SETTERS = EXPORTERS | set(PS_ENV_ITEM_CMDLETS) | BASH_NO_PROGRAM | PS_KEYWORDS | cdtrack.BASH_PREFIX_WORDS | {
     'getopts', 'readarray', 'mapfile', 'read', 'printf', 'unset', 'let', 'eval', 'source', '.', 'wait', 'coproc',
     'iex', 'invoke-expression', 'new-variable', 'nv', 'remove-variable', 'rv', 'clear-variable', 'clv',
     'command', 'exec', 'nohup', 'builtin', 'sudo', 'stdbuf', 'caffeinate', 'env', 'nice', 'timeout', 'xargs'}

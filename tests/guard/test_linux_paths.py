@@ -14,6 +14,7 @@ from unittest import mock
 
 from kitlib import guard
 from kitlib.guard import context, jail, modes, paths, rules
+from kitlib.guard import cdtrack
 from kitlib.guard import shell as sh
 from tests.platforms import posix_only
 
@@ -28,7 +29,7 @@ UNKNOWN = [('/', 'ext4'), ('/data', 'somefs')]
 class LinuxCase(unittest.TestCase):
     mounts = [('/', 'ext4')]
     # the folders that exist (posixpath.isdir, by real path): an env -C into any other is unknown
-    # (shell.chdir_real)
+    # (cdtrack.chdir_real)
     dirs = ('/work/repo', '/work/repo/.claude/worktrees/wt', '/work/repo/.claude/worktrees/wt/sub',
             '/home/u', '/d')
     unplaced_denied = False     # hold the rule unplaced at deny (world.deny_unplaced), else its default
@@ -504,7 +505,7 @@ class DotDotAfterALink(LinuxCase):
 
 
 class LogicalCd(LinuxCase):
-    """shell.cd_target on Linux: bash's cd (and pushd) is -L by default, folding `..` in its place
+    """cdtrack.cd_target on Linux: bash's cd (and pushd) is -L by default, folding `..` in its place
     against $PWD, not after the link; only cd -P is physical. With a link in -> x/y in the
     worktree, cd in is the real x/y, entered through a link; the logical reading of in/.. (the
     worktree) is not its physical one (x), and a `..` after cd in folds from a $PWD the guard does
@@ -522,7 +523,7 @@ class LogicalCd(LinuxCase):
 
     def cd(self, text, home_vars=False):
         _parsed, cmds = sh.parse(text, sh.BASH, self.w.wt, home=self.w.home)
-        return sh.cd_target(cmds[-1], self.w.wt, self.w.home, home_vars=home_vars)
+        return cdtrack.cd_target(cmds[-1], self.w.wt, self.w.home, home_vars=home_vars)
 
     def denied(self, command):
         d = self.sub(command)
@@ -556,7 +557,7 @@ class LogicalCd(LinuxCase):
 
 
 class CdRealPath(LinuxCase):
-    """shell.cd_move and the env -C folder on Linux: the folder tracked is a real path. A cd with no
+    """cdtrack.cd_move and the env -C folder on Linux: the folder tracked is a real path. A cd with no
     `..` is the real path of its text, existing or not, and a link on the way marks it entered
     through a link. A cd with a `..` goes where the text cannot tell after one so entered, or when
     the real path of its logical reading (`..` folded from the text) is not that of its text read
@@ -584,7 +585,7 @@ class CdRealPath(LinuxCase):
 
     def test_a_shell_started_by_env_minus_c_through_a_link_starts_at_its_real_path(self):
         self.refused("env -C d bash -c 'cd .. && echo x > f'", 'main-checkout')
-        self.assertEqual(sh.chdir_real(self.w.wt + '/d', self.w.wt), '/work/repo/src')
+        self.assertEqual(cdtrack.chdir_real(self.w.wt + '/d', self.w.wt), '/work/repo/src')
 
     def test_cdpath_on_the_line_reaches_a_nested_shell(self):
         self.unplaced("CDPATH=/work/repo bash -c 'cd docs && echo x > STANDING.md'")
@@ -608,7 +609,7 @@ class CdRealPath(LinuxCase):
             d = guard.decide(action(bash('mkdir x && cd x && touch f', self.w.wt, sub=True)), self.w.ctx())
         self.assertEqual(d.verdict, 'allow', d.reason)
         self.assertNotEqual(d.rule, rules.WARNED, d.reason)
-        self.assertEqual(sh.cd_target(sh.parse('cd x', sh.BASH, self.w.wt)[1][0], self.w.wt), (True, self.w.wt + '/x'))
+        self.assertEqual(cdtrack.cd_target(sh.parse('cd x', sh.BASH, self.w.wt)[1][0], self.w.wt), (True, self.w.wt + '/x'))
 
     def test_a_dot_dot_after_a_cd_into_a_link_is_unknown(self):
         self.unplaced('cd d && cd .. && touch f')
@@ -658,12 +659,12 @@ class UnderTempStrict(LinuxCase):
 
 
 class BashCdOnLinux(LinuxCase):
-    """shell.cd_target on Linux: bash runs `cd` (and pushd, popd) by that exact name, so `CD` or
+    """cdtrack.cd_target on Linux: bash runs `cd` (and pushd, popd) by that exact name, so `CD` or
     `chdir` moves nothing, and `/d` is a folder, not cmd's drive switch."""
 
     def cd(self, text, cwd):
         _parsed, cmds = sh.parse(text, sh.BASH, cwd, home=self.w.home)
-        return sh.cd_target(cmds[0], cwd, self.w.home)
+        return cdtrack.cd_target(cmds[0], cwd, self.w.home)
 
     def test_only_the_exact_verb_is_a_cd(self):
         for verb in ('CD', 'Cd', 'chdir', 'Set-Location', 'sl'):
@@ -683,13 +684,13 @@ class BashCdOnLinux(LinuxCase):
 
 
 class BashCdOnWindows(unittest.TestCase):
-    """shell.cd_target on Windows is unchanged: Git Bash's cd verb in any case, and cmd's /d
+    """cdtrack.cd_target on Windows is unchanged: Git Bash's cd verb in any case, and cmd's /d
     passed over."""
 
     def test_an_upper_case_cd_with_slash_d_is_a_cd(self):
         _parsed, cmds = sh.parse('CD /d C:/x', sh.BASH, 'C:/w')
         with mock.patch('kitlib.platform.NAME', 'windows'):
-            self.assertTrue(sh.cd_target(cmds[0], 'C:/w')[0])
+            self.assertTrue(cdtrack.cd_target(cmds[0], 'C:/w')[0])
 
 
 class MountInfo(unittest.TestCase):
@@ -744,7 +745,7 @@ class Ready(unittest.TestCase):
 
 
 class CdLinkFlag(LinuxCase):
-    """shell._linux_cd's link flag: a cd from a folder entered through a link, or one whose text
+    """cdtrack._linux_cd's link flag: a cd from a folder entered through a link, or one whose text
     passes through a link on the way, keeps the flag, so a later `..` (folded by bash from a $PWD
     the guard does not keep) is unknown. Links: d -> /work/repo/src, /home/u/l -> <wt>/a/b."""
     unplaced_denied = True
@@ -767,7 +768,7 @@ class CdLinkFlag(LinuxCase):
 
 
 class CdUnsureLine(LinuxCase):
-    """shell.cd_move: an unsure name on the line (CDPATH, cdable_vars, set -P, `physical`) leaves a
+    """cdtrack.cd_move: an unsure name on the line (CDPATH, cdable_vars, set -P, `physical`) leaves a
     cd's folder unknown, but not a place starting with `/` and holding no `..`, which none of them
     redirects; a place holding `[` (a pattern) is unknown."""
     unplaced_denied = True
@@ -784,7 +785,7 @@ class CdUnsureLine(LinuxCase):
 
 
 class ChdirRealNone(LinuxCase):
-    """shell.chdir_real's None: the folder does not exist, or it is the starting command's folder
+    """cdtrack.chdir_real's None: the folder does not exist, or it is the starting command's folder
     reached through a link (a bash started there keeps the inherited $PWD)."""
 
     def setUp(self):
@@ -794,11 +795,11 @@ class ChdirRealNone(LinuxCase):
         self.addCleanup(p.stop)
 
     def test_a_missing_folder_is_none(self):
-        self.assertIsNone(sh.chdir_real(self.w.wt + '/nowhere', self.w.wt))
+        self.assertIsNone(cdtrack.chdir_real(self.w.wt + '/nowhere', self.w.wt))
 
     def test_the_outer_folder_through_a_link_is_none(self):
-        self.assertIsNone(sh.chdir_real(self.w.wt + '/sub', self.w.wt + '/d'))
-        self.assertEqual(sh.chdir_real(self.w.wt + '/sub', self.w.wt + '/sub'), self.w.wt + '/sub')
+        self.assertIsNone(cdtrack.chdir_real(self.w.wt + '/sub', self.w.wt + '/d'))
+        self.assertEqual(cdtrack.chdir_real(self.w.wt + '/sub', self.w.wt + '/sub'), self.w.wt + '/sub')
 
 
 class GateResultFolder(LinuxCase):

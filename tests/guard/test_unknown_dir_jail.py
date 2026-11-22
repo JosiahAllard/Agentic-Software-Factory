@@ -17,7 +17,7 @@ PS_FORMS = ("cd $x; [IO.File]::WriteAllText('x.txt', 'y')", 'cd $x; Set-Content 
             'cd $x; New-Item x.txt', 'cd $x; Remove-Item x.txt', 'Set-Location $x; Set-Content x.txt y')
 NET_FORM = PS_FORMS[0]      # .NET reads the path against the process's directory: write-jail
 BASH_FORMS = ('cd $x && echo y > x.txt', 'cd "$x"; touch x.txt', 'cd $x && rm x.txt')
-# other moves the guard cannot follow (shell.cd_target gives None): a computed `( )`, pushd, an
+# other moves the guard cannot follow (cdtrack.cd_target gives None): a computed `( )`, pushd, an
 # environment variable
 PS_MOVES = ('cd (Join-Path $a b); Set-Content x.txt y', 'cd (Get-Item $a).Parent; Set-Content x.txt y',
             'pushd $x; Set-Content x.txt y', 'Push-Location $x; Set-Content x.txt y',

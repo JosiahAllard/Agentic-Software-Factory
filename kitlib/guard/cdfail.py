@@ -1,4 +1,4 @@
-"""The folders a cd that may fail leaves the shell in (docs/guard-core.md "Parsing"; shell.track).
+"""The folders a cd that may fail leaves the shell in (docs/guard-core.md "Parsing"; cdtrack.track).
 
 After a failed cd, bash runs what follows `;`, `||` or a newline in the folder it was in, and so
 does PowerShell after `;`. guarded() names the commands after a cd that run only when it

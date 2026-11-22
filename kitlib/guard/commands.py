@@ -11,6 +11,7 @@ call acts on, commands_git's.
 import ntpath
 import re
 
+from . import cdtrack
 from . import shell as sh
 
 PYTHON_RE = re.compile(r'^(python|pythonw|py)(\d+(\.\d+)*)?$')
@@ -21,7 +22,7 @@ PY_VALUE_OPTS = {'-X', '-W'}
 ASSIGN_RE = re.compile(r'^[A-Za-z_]\w*\+?=')         # FOO=x, and bash's FOO+=x
 # bash words that start a command without being its program, and words that start a construct
 # whose first command is not a program run (for f in ...; select; the closing words)
-BASH_SKIP = sh.BASH_PREFIX_WORDS
+BASH_SKIP = cdtrack.BASH_PREFIX_WORDS
 BASH_NO_PROGRAM = {'for', 'select', 'case', 'fi', 'done', 'esac', 'function', 'in', '}', '{', '[[', ']]'}
 PS_KEYWORDS = {'if', 'elseif', 'else', 'foreach', 'for', 'while', 'do', 'until', 'switch', 'function',
                'filter', 'param', 'begin', 'process', 'end', 'try', 'catch', 'finally', 'trap',
@@ -750,7 +751,7 @@ def run_dir(inv, start=OWN):
     w = inv.workdir
     if w.dyn or sp_workdir_unplaceable(w.text):
         return None
-    return sh.chdir_real(sh.resolve_path(w.text, here, shell=sh.PS, home=inv.cmd.home), here)
+    return cdtrack.chdir_real(sh.resolve_path(w.text, here, shell=sh.PS, home=inv.cmd.home), here)
 
 
 # a splatted argument (@h): a hashtable's keys become parameters the text does not show

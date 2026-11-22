@@ -5,6 +5,7 @@ import os
 from kitlib import config as kconfig
 from kitlib.git import repo
 
+from . import cdtrack
 from . import commands_nested as cn
 from . import jail
 from . import paths
@@ -57,7 +58,7 @@ def lander_alone(event, cmd, gc, home=None):
         return False
     if len(cmds) == 1:
         return True
-    is_cd, where = sh.cd_target(cmds[0], cwd, home)
+    is_cd, where = cdtrack.cd_target(cmds[0], cwd, home)
     if not is_cd or where is None or cmds[1].prev_op not in ('&&', ';') or cmds[0].redirects:
         return False
     return jail.real(where) == jail.real(gc.dir)

@@ -319,7 +319,7 @@ def git_named_dir(gc):
     return ' '.join(x for x in ['git -C "<folder>"'] + opts + [gc.sub, git_rest_text(cmd, gc)] if x)
 
 
-FAILED_CD = 'It runs there if the cd before it fails; name the folder git runs in, so a failed cd cannot move it:'
+FAILED_CD = 'It runs there if the cd before it fails or does not run; name the folder git runs in, so a failed cd cannot move it:'
 COMPUTED_DIR = 'The folder git runs in is computed or cannot be placed, so it may be a main checkout; name it literally:'
 
 

@@ -1379,6 +1379,7 @@ def chdir_real(path, outer=None):
 
 
 BASH_PREFIX_WORDS = {'if', 'then', 'else', 'elif', 'do', 'while', 'until', '!', 'time'}
+BASH_BODY_OPEN, BASH_BODY_CLOSE = {'if', 'while', 'until', 'for', 'select', 'case'}, {'fi', 'done', 'esac'}
 
 
 def _keyword_cd(c):
@@ -1398,9 +1399,10 @@ def track(cmds, cwd, home=None, cwd_home=None, linked=False, linked_home=False, 
     """Each command's cwd, in order: a cd changes it for the commands after it. A bash ( ) group
     is a subshell: a cd inside it holds to its end, then the directory before it comes back; a
     bash { } group shares the directory. A cd the text cannot tell, one inside a PowerShell or
-    cmd group, one behind a keyword, one in a pipeline, in the background, after || or before one
-    (but `|| exit`) makes the directory unknown (None) from there on. A cd that may fail (not to a
-    literal folder that exists, or one that may not run) leaves the folders before it as the other
+    cmd group, one behind a keyword, one in a pipeline, in the background, after ||, or one that may
+    fail before || (but `|| exit`) makes the directory unknown (None) from there on. A cd that may
+    fail (not to a literal folder that exists) or may not run (after &&, in a group entered after &&
+    or ||, in a bash if/while/for/case body) leaves the folders before it as the other
     folders later commands may run in (Command.cwd_alt; `alts`, `cwd`'s), past those it guards
     (cdfail); a cd that cannot fail moves them. Substitutions run in the directories of the command
     that holds them; a cd inside a PowerShell one makes its holder's directory unknown, and every
@@ -1412,20 +1414,23 @@ def track(cmds, cwd, home=None, cwd_home=None, linked=False, linked_home=False, 
     here, here_l = cwd, linked
     here_h, here_hl = (cwd, linked) if cwd_home is None else (cwd_home, linked_home)
     held = cdfail.Held(alts)
-    open_ = []                  # (group, the directory before it, its cwd_home, their link flags, held.save())
-    sub_from = {}               # id(command): (cwd, cwd_home) its substitutions start in
+    open_ = []                  # (group, the directory before it, its cwd_home, their link flags, held.save(), entered
+    sub_from = {}               # after && or ||); id(command): (cwd, cwd_home) its substitutions start in
+    body = 0                    # how deep in bash if/while/until/for/select/case bodies
     for k, c in enumerate(cmds):
         common = 0
         while common < len(open_) and common < len(c.groups) and open_[common][0] == c.groups[common]:
             common += 1
         while len(open_) > common:
-            g, before, before_h, before_l, before_hl, saved = open_.pop()
+            g, before, before_h, before_l, before_hl, saved, _ = open_.pop()
             if g[1] == '(' and c.shell == BASH:
                 here, here_h, here_l, here_hl = before, before_h, before_l, before_hl
                 held.restore(saved)
         others = held.at(k)
         for g in c.groups[common:]:
-            open_.append((g, here, here_h, here_l, here_hl, held.save()))
+            open_.append((g, here, here_h, here_l, here_hl, held.save(), k > 0 and cmds[k - 1].next_op in ('&&', '||')))
+        first = c.words[0].text if c.shell == BASH and c.words else None
+        body = max(0, body + (first in BASH_BODY_OPEN) - (first in BASH_BODY_CLOSE))
         sub_from[id(c)] = (here, here_h, here_l, here_hl)
         # PowerShell runs a $( ) or an argument's ( ) in the caller's scope: a cd there moves this
         # command and every one after it (bash's $( ) is a subshell)
@@ -1442,10 +1447,12 @@ def track(cmds, cwd, home=None, cwd_home=None, linked=False, linked_home=False, 
             guard = cdfail.guarded(cmds, k)
             skip = (c.piped_in or c.piped_out or c.prev_op == '||' or (c.next_op == '&' and c.shell == BASH)
                     or (c.groups and c.shell != BASH))      # the cd may not run, or moves no shell after it
-            unsure = skip or (c.next_op == '||' and not guard)
+            ran = not (c.prev_op == '&&' or body or any(e[6] for e in open_))     # the cd surely runs
             moved = [cd_move(c, a, home)[1] for a in c.cwd_alt]
-            if skip or any(t is None or not os.path.isdir(t) for t in [to] + moved):
+            fails = skip or not ran or any(t is None or not os.path.isdir(t) for t in [to] + moved)
+            if fails:
                 held.hold([f for f in (here,) + c.cwd_alt if f], guard)
+            unsure = skip or (fails and c.next_op == '||' and not guard)
             held.alts = [] if unsure else [t for t in moved if t]
             here, here_l = (None, False) if unsure or to is None else (to, to_l)
             here_h, here_hl = (None, False) if unsure or to_h is None else (to_h, to_hl)

@@ -18,7 +18,7 @@ def guarded(cmds, i):
     return range(i + 1, max(_and_run(cmds, i), _or_exit(cmds, i), _if_ok(cmds, i)) + 1)
 
 
-def _group_end(cmds, j, n, gid):
+def group_end(cmds, j, n, gid):
     """The last index from j on of the commands inside the group `gid` at depth n."""
     while j + 1 < len(cmds) and len(cmds[j + 1].groups) > n and cmds[j + 1].groups[n] == gid:
         j += 1
@@ -30,7 +30,7 @@ def _and_run(cmds, i):
     n, end, op = len(level), i, cmds[i].next_op
     while end + 1 < len(cmds) and op in ('&&', '|') and cmds[end + 1].groups[:n] == level:
         c = cmds[end + 1]
-        end = _group_end(cmds, end + 1, n, c.groups[n]) if len(c.groups) > n else end + 1
+        end = group_end(cmds, end + 1, n, c.groups[n]) if len(c.groups) > n else end + 1
         op = cmds[end].next_op if len(c.groups) == n else (cmds[end + 1].prev_op if end + 1 < len(cmds) else None)
     return end
 
@@ -56,19 +56,21 @@ def _if_ok(cmds, i):
             [w.text for w in cond.words] != ['$?'] or len(cond.groups) != n + 1 or cond.next_op != ')' or \
             len(first.groups) != n + 1 or first.groups[n][1] != '{' or first.prev_op != '{':
         return i
-    return _group_end(cmds, i + 3, n, first.groups[n])
+    return group_end(cmds, i + 3, n, first.groups[n])
 
 
 class Held(object):
     """The other folders the shell may be in (`alts`), and per cd that may fail the folders before
-    it, held until the commands guarded() names have passed (at())."""
+    it, held until the commands guarded() names, or the rest of the body or group that alone may keep
+    a cd from running, have passed (at())."""
 
     def __init__(self, alts=()):
         self.alts, self.wait, self.seq = list(alts), [], 0     # wait: (sequence, last guarded index, folders)
 
-    def hold(self, folders, guard):
+    def hold(self, folders, last):
+        """Hold `folders` until the command after index `last` (the last guarded())."""
         self.seq += 1
-        self.wait.append((self.seq, guard.stop - 1, list(folders)))
+        self.wait.append((self.seq, last, list(folders)))
 
     def at(self, k):
         """The other folders at command k: a hold whose guarded commands are behind joins them for good."""

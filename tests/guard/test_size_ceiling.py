@@ -20,11 +20,11 @@ GUARD = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abs
 SLACK_PERCENT = 5
 # raised for GUARD-CD-CHAINED-GIT-WRITE (a git write after a cd that may fail): cdfail.py, shell.track's other
 # folders, commands_git.alt_dirs and the git rules' judging in each (rules_gitjail.git_place, git_named_refusal)
-TOTAL_CEILING = 18800
+TOTAL_CEILING = 18900
 CEILINGS = {
     '__init__.py': 21,
     'backlogrole.py': 1224,
-    'cdfail.py': 85,
+    'cdfail.py': 87,
     'commands.py': 765,
     'commands_env.py': 302,
     'commands_git.py': 169,
@@ -56,7 +56,7 @@ CEILINGS = {
     'rules_run.py': 799,
     'rules_tools.py': 651,
     'rules_write.py': 888,
-    'shell.py': 1495,
+    'shell.py': 1524,
 }
 
 

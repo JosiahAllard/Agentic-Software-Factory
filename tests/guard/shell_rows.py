@@ -454,6 +454,16 @@ ROWS = [
                                                         w.main, sub=True), None, None, None),
     ('cd in an if body, on its own line', lambda w: bash('if test -d %s; then\ncd %s\nfi\ngit checkout -q FETCH_HEAD'
                                                           % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), 'deny', 'git-checkout', None),
+    ('cd in an if body: git in the same body', lambda w: bash('if test -d %s; then cd %s; git checkout -b kit/x; fi'
+                                                               % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), None, None, None),
+    ('cd in a group after &&: git in the same group', lambda w: bash('test -d %s && { cd %s; git pull --ff-only; }'
+                                                                      % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), None, None, None),
+    ('cd in an if body: git after the fi', lambda w: bash('if test -d %s; then cd %s; git status; fi; git checkout -b kit/x'
+                                                           % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), 'deny', 'git-checkout', None),
+    ('cd in an if body: git in the else block', lambda w: bash('if test -d %s; then cd %s; else git checkout -b kit/x; fi'
+                                                                % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), 'deny', 'git-checkout', None),
+    ('cd in a group after &&: git after the }', lambda w: bash('test -d %s && { cd %s; git pull --ff-only; }; git reset --hard x'
+                                                                % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), 'deny', 'git-reset-hard', None),
     ('a sure cd with || { exit }', lambda w: bash('cd %s || { echo no; exit 1; }; git checkout -b kit/x' % W.fwd(w.wt), w.main,
                                                   sub=True), None, None, None),
     ('a computed cd with || { exit }', lambda w: bash('cd "$S" || { echo no; exit 1; }; git checkout -b kit/x', w.main, sub=True),

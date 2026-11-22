@@ -489,7 +489,10 @@ class Persist(Watch):
             with open(self.path, 'wb') as f:
                 f.write(bad)
             self.job = self.fresh()
-            note = self.run_job()
+            try:
+                note = self.run_job()
+            except lsettings.LaunchError as e:
+                self.fail('a file that is not a JSON object failed the run: %s' % e)
             moved = os.path.join(self.tmp, '_corrupt', W.STATE_FILE)
             self.assertTrue(note.startswith('%s was not a JSON object' % W.STATE_FILE), note)
             self.assertIn(self.tmp, note)

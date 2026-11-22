@@ -607,7 +607,7 @@ class RestartTest(PushCase):
                 f.write(bad)
             self.worker = self.make()
             moved = os.path.join(self.folder, '_corrupt', push.OUTBOX + ('.%d' % i if i else ''))
-            self.assertEqual(self.worker.status()['set_aside'], moved)
+            self.assertEqual(self.worker.status().get('set_aside'), moved)
             with open(moved, 'rb') as f:
                 self.assertEqual(f.read(), bad, 'the bad bytes are kept for the owner')
             self.assertFalse(os.path.exists(path))
@@ -620,6 +620,7 @@ class RestartTest(PushCase):
             self.assertIn('question:%s' % qid, json.load(f), 'the fresh outbox is saved')
 
     def test_a_good_outbox_has_no_set_aside(self):
+        self.assertIn('set_aside', self.worker.status())
         self.assertIsNone(self.worker.status()['set_aside'])
 
     def test_an_outbox_that_cannot_be_moved_is_never_written_over(self):
@@ -629,9 +630,9 @@ class RestartTest(PushCase):
             f.write(bad)
         with mock.patch('kitlib.fs.replace.place_new', side_effect=PermissionError(13, 'denied')):
             self.worker = self.make()
-        said = self.worker.status()['set_aside']
-        self.assertTrue(said.startswith('not moved: '), said)
-        self.assertTrue(said.endswith('; outbox not saved'), said)
+        said = self.worker.status().get('set_aside')
+        self.assertTrue(str(said).startswith('not moved: '), said)
+        self.assertTrue(str(said).endswith('; outbox not saved'), said)
         qid = self.ask(**{'from': 'kit'})
         self.answer(qid)
         self.worker.poll()

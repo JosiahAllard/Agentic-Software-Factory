@@ -182,9 +182,10 @@ from .rules_gitcommit import (COMMIT_HOLDS, COMMIT_KEPT_LONG, COMMIT_LONG_FLAGS,
                               INTERPRETER_LAUNCH_RE, INTERPRETER_VERB_RE, STASH_NAMED, STASH_READS, TYPED_HASH_RE,
                               commit_alternative, commit_scan, git_plain_commit, git_stash_shared, interpreter_git,
                               stash_alternative, stash_shared, typed_hash)
-from .rules_gitjail import (LANDER, LANDER_ARGS, LANDER_NOT_ALONE, LANDER_NO_CONFIG, LANDER_NO_ROLE, LANDER_VERBS,
-                            LANDER_WRAPPED, git_elsewhere, git_in_worktree, git_jail, git_jail_unknown, git_rest_text,
-                            git_retarget, git_unplaced, lander_alone, lander_check, lander_forms, lander_refusal)
+from .rules_gitjail import (COMPUTED_DIR, FAILED_CD, LANDER, LANDER_ARGS, LANDER_NOT_ALONE, LANDER_NO_CONFIG,
+                            LANDER_NO_ROLE, LANDER_VERBS, LANDER_WRAPPED, git_elsewhere, git_in_worktree, git_jail,
+                            git_jail_unknown, git_named_dir, git_named_refusal, git_place, git_rest_text, git_retarget,
+                            git_unplaced, lander_alone, lander_check, lander_forms, lander_refusal)
 from .rules_gitref import (BRANCH_FLAGS, BRANCH_VALUES, CHECKOUT_FLAGS, CHECKOUT_VALUES, FALSE_WORDS, FETCH_FLAGS,
                            FETCH_VALUES, HISTORY_TOOLS, NOTES_READ_VERBS, NOT_STRAY, PER_WORKTREE_REFS,
                            PRUNE_TAGS_KEY_RE, PSEUDOREF_RE, PULL_FLAGS, PULL_VALUES, REBASE_FLAGS, REBASE_VALUES,
@@ -527,15 +528,17 @@ def git_rules(event, ctx, cmd, inv, cwd, role):
         d = git_shared_ref(event, ctx, cmd, gc, cwd, role)    # from any place: every worktree shares refs
         if d:
             return d
-    placed = gc.dir and not gc.unknown
-    place = ctx.place(gc.dir) if placed else \
-        repo.Place(repo.UNKNOWN, None, 'the directory git runs in is unknown', None, None)
+    place, where, failed = git_place(ctx, gc)   # with a cd before git that may fail, every folder it may run in
     if place.kind == repo.LINKED and sub == 'stash':
         return git_stash_shared(event, ctx, cmd, gc, role, place)
     if place.kind not in (repo.MAIN, repo.UNKNOWN):
         return None
     d = git_main_rules(event, ctx, cmd, inv, gc, cwd, role, place)
-    if place.kind == repo.UNKNOWN and not gc.blind and not (placed and in_git_dir(gc.dir)):
+    if failed:
+        return git_named_refusal(d, gc, role, FAILED_CD)
+    if place.kind == repo.UNKNOWN and not gc.blind and not (where and in_git_dir(where)):
+        if d and sub in ('checkout', 'switch') and subagent(event):
+            return git_named_refusal(d, gc, role, COMPUTED_DIR)     # it may be a main checkout: never only a warning
         return unplaced(d, role)                # a computed -C, or a folder git cannot tell
     # gc.blind (GIT_DIR and the like, --git-dir, --work-tree, core.worktree) re-points git on
     # purpose, at a place the line nearly always names literally: its refusal stands

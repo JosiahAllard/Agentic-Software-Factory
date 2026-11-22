@@ -11,6 +11,7 @@ call acts on, commands_git's.
 import ntpath
 import re
 
+from . import cdtrack
 from . import shell as sh
 
 PYTHON_RE = re.compile(r'^(python|pythonw|py)(\d+(\.\d+)*)?$')
@@ -21,7 +22,7 @@ PY_VALUE_OPTS = {'-X', '-W'}
 ASSIGN_RE = re.compile(r'^[A-Za-z_]\w*\+?=')         # FOO=x, and bash's FOO+=x
 # bash words that start a command without being its program, and words that start a construct
 # whose first command is not a program run (for f in ...; select; the closing words)
-BASH_SKIP = sh.BASH_PREFIX_WORDS
+BASH_SKIP = cdtrack.BASH_PREFIX_WORDS
 BASH_NO_PROGRAM = {'for', 'select', 'case', 'fi', 'done', 'esac', 'function', 'in', '}', '{', '[[', ']]'}
 PS_KEYWORDS = {'if', 'elseif', 'else', 'foreach', 'for', 'while', 'do', 'until', 'switch', 'function',
                'filter', 'param', 'begin', 'process', 'end', 'try', 'catch', 'finally', 'trap',
@@ -733,19 +734,24 @@ def sp_workdir_unplaceable(text):
     return sh.msys_to_win(p) != p
 
 
-def run_dir(inv):
-    """The directory the program of `inv` runs in: its Command's (Command.cwd), or for a
-    Start-Process call with a -WorkingDirectory the folder that names (shell.resolve_path from the
-    Command's directory), None when the text is computed or names no one folder exactly
-    (sp_workdir_unplaceable). PowerShell itself still places what Start-Process redirects into
-    (-RedirectStandardOutput, -RedirectStandardError) from its own location, the Command's
-    directory: only what the program reads relative to its directory moves."""
+OWN = object()                                  # run_dir's start: the Command's own directory
+
+
+def run_dir(inv, start=OWN):
+    """The directory the program of `inv` runs in: its Command's (Command.cwd; `start`, one of the
+    other folders it may run in, Command.cwd_alt), or for a Start-Process call with a
+    -WorkingDirectory the folder that names (shell.resolve_path from that directory), None when
+    the text is computed or names no one folder exactly (sp_workdir_unplaceable). PowerShell itself
+    still places what Start-Process redirects into (-RedirectStandardOutput,
+    -RedirectStandardError) from its own location, the Command's directory: only what the program
+    reads relative to its directory moves."""
+    here = inv.cmd.cwd if start is OWN else start
     if inv.via != 'start-process' or inv.workdir is None:
-        return inv.cmd.cwd
+        return here
     w = inv.workdir
     if w.dyn or sp_workdir_unplaceable(w.text):
         return None
-    return sh.chdir_real(sh.resolve_path(w.text, inv.cmd.cwd, shell=sh.PS, home=inv.cmd.home), inv.cmd.cwd)
+    return cdtrack.chdir_real(sh.resolve_path(w.text, here, shell=sh.PS, home=inv.cmd.home), here)
 
 
 # a splatted argument (@h): a hashtable's keys become parameters the text does not show

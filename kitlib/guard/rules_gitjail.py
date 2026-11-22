@@ -1,18 +1,20 @@
 """The guard's git jail (kitlib.guard.rules, which re-exports each name here): the lander's landing
 forms in the main checkout, git that writes a checkout outside the session's own (git_jail), where a
-git line runs, and the text of a git line a refusal quotes."""
+git line runs (git_place: a cd before it may have failed), and the text of a git line a refusal quotes."""
 import os
 from kitlib import config as kconfig
 from kitlib.git import repo
 
+from . import cdtrack
 from . import commands_nested as cn
 from . import jail
 from . import paths
 from . import shell as sh
+from .commands_git import GIT_VALUE_OPTS, alt_dirs
 from .rules_base import SHELLS, UNPLACED, agent_session, bare, fwd, own_worktree, quote, refuse, spelt, subagent
 from .rules_gitcore import git_call_judged
-from .rules_edit import (JAIL_ASK, KIT_JSON, dev_drive_bound, in_dropped, jail_refusal, jail_view, jail_why,
-                         new_worktree, pm_data_unknown)
+from .rules_edit import (JAIL_ASK, KIT_JSON, PLACE_RULES, dev_drive_bound, in_dropped, jail_refusal, jail_view,
+                         jail_why, new_worktree, pm_data_unknown, reason_text)
 from .rules_write import retarget
 from .rules_gitread import git_reads, git_targets
 from .rules_gitcommit import commit_alternative, stash_alternative, stash_shared
@@ -56,7 +58,7 @@ def lander_alone(event, cmd, gc, home=None):
         return False
     if len(cmds) == 1:
         return True
-    is_cd, where = sh.cd_target(cmds[0], cwd, home)
+    is_cd, where = cdtrack.cd_target(cmds[0], cwd, home)
     if not is_cd or where is None or cmds[1].prev_op not in ('&&', ';') or cmds[0].redirects:
         return False
     return jail.real(where) == jail.real(gc.dir)
@@ -285,3 +287,47 @@ def git_unplaced(ctx, cmd, gc, cwd, agent=False):
         return 'Drop %s and run it in your worktree:%s' % (gc.blind, ' ' + note if note else ''), instead
     rest = git_rest_text(cmd, gc)
     return 'Drop %s and run it in your worktree:' % gc.blind, ('git %s %s' % (gc.sub, rest)).rstrip()
+
+
+def git_place(ctx, gc):
+    """(place, folder or None, from a failed cd): where git_rules judges git. gc.dir's place, unless
+    a cd before git may have failed (commands_git.alt_dirs) and left it in a main checkout, or else
+    in a folder git cannot place; a main checkout first."""
+    best = (ctx.place(gc.dir), gc.dir, False) if gc.dir and not gc.unknown else \
+        (repo.Place(repo.UNKNOWN, None, 'the directory git runs in is unknown', None, None), None, False)
+    for a in alt_dirs(gc):
+        p = ctx.place(a)
+        if best[0].kind != repo.MAIN and (p.kind == repo.MAIN or p.kind == repo.UNKNOWN != best[0].kind):
+            best = (p, a, p.kind == repo.MAIN)
+    return best
+
+
+def git_named_dir(gc):
+    """The same git command run in a folder named literally: git -C "<folder>", git's own options
+    as the line writes them but a -C and an alias setting (its value is in sub and rest), the
+    subcommand and its words (git_rest_text)."""
+    cmd, words, keep, k = gc.inv.cmd, gc.before(), [], 0
+    while k < len(words):
+        t = words[k].text
+        pair = t in GIT_VALUE_OPTS and k + 1 < len(words)
+        if t == '-C' or pair and t in ('-c', '--config-env') and words[k + 1].text.lower().startswith('alias.') \
+                or t[:2] == '-c' and t[2:].lower().startswith('alias.'):
+            k += 1 if t[:2] == '-c' and t != '-c' else 2
+            continue
+        keep.extend(words[k:k + 1 + pair])
+        k += 1 + pair
+    opts = [cmd.source[w.start:w.end] if w.start is not None and w.end is not None else spelt(w.text) for w in keep]
+    return ' '.join(x for x in ['git -C "<folder>"'] + opts + [gc.sub, git_rest_text(cmd, gc)] if x)
+
+
+FAILED_CD = 'It runs there if the cd before it fails or does not run; name the folder git runs in, so a failed cd cannot move it:'
+COMPUTED_DIR = 'The folder git runs in is computed or cannot be placed, so it may be a main checkout; name it literally:'
+
+
+def git_named_refusal(d, gc, role, why):
+    """The refusal `d` made again under its rule with `why` (FAILED_CD: a cd before git that may fail
+    leaves it in a main checkout, git_place; COMPUTED_DIR: a subagent's checkout or switch at a place
+    git cannot tell, never softened to unplaced) and the git command in a folder named literally."""
+    if d is None or d.rule not in PLACE_RULES:
+        return d
+    return refuse(d.rule, role, '%s %s. %s' % (reason_text(d, role), d.instead, why), git_named_dir(gc), kind=d.verdict)

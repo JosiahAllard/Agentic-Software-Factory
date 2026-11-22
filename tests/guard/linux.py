@@ -18,14 +18,14 @@ from unittest import mock
 import kitlib.platform
 from kitlib.git import repo
 from kitlib.platform.linux import paths as linux_paths
-from kitlib.guard import (backlogrole, context, delegfile, fallback, generated, hub, jail, paths,
+from kitlib.guard import (backlogrole, cdtrack, context, delegfile, fallback, generated, hub, jail, paths,
                           place, prepush, refusal_log, rolepolicy, rules, rules_base, rules_edit,
                           rules_gitcore, rules_gitjail, rules_gitref, rules_owner, rules_push, rules_run,
                           rules_write, shell)
 
 from .world import FakeGit, SHA_GATED
 
-GUARD_MODULES = (backlogrole, context, delegfile, fallback, generated, hub, jail, paths, place,
+GUARD_MODULES = (backlogrole, cdtrack, context, delegfile, fallback, generated, hub, jail, paths, place,
                  prepush, refusal_log, rolepolicy, rules, rules_base, rules_edit, rules_gitcore,
                  rules_gitjail, rules_gitref, rules_owner, rules_push, rules_run, rules_write, shell)
 

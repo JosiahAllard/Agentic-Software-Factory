@@ -407,9 +407,71 @@ ROWS = [
     ('cd inside a subshell is followed', lambda w: bash('(cd %s && git checkout -b kit/x)' % W.fwd(w.wt), w.main), None, None, None),
     ('subshell cd does not leak', lambda w: bash('(cd %s); git checkout kit/x' % W.fwd(w.wt), w.main), 'deny', 'git-checkout', None),
     ('brace group cd carries', lambda w: bash('{ cd %s; }; git checkout -b kit/x' % W.fwd(w.wt), w.main), None, None, None),
-    ('cd || then git', lambda w: bash('cd %s || true; git stash' % W.fwd(w.wt), w.main), 'deny', 'unplaced', None),
+    ('cd that may fail || then git', lambda w: bash('cd "$WT" || true; git stash', w.wt), 'deny', 'unplaced', None),
+    ('a sure cd || then git', lambda w: bash('cd %s || true; git checkout -b kit/x' % W.fwd(w.wt), w.main), None, None, None),
     ('variable cd in a subshell stays unknown', lambda w: bash('(cd "$WT" && git stash)', w.wt), 'deny', 'unplaced', None),
     ('Push-Location chain', lambda w: ps('Push-Location %s; git checkout -b kit/x; Pop-Location' % w.wt, w.main), None, None, None),
+
+    # ---------------------------------------------------------------- a cd that may fail (test_cdfail.py)
+    # (test_cdfail.py judges the whole line at the kit's modes: the git init and fetch before the
+    # checkout are unplaced, which this table holds at deny)
+    ('failed cd: the line that checked out in a main checkout',
+     lambda w: bash('cd "$S" && git rev-parse --git-dir >/dev/null 2>&1; git -c core.autocrlf=false checkout -q FETCH_HEAD '
+                    '&& ls o | head -60', w.main, sub=True),
+     'deny', 'git-checkout', 'git -C "<folder>" -c core.autocrlf=false checkout -q FETCH_HEAD'),
+    ('failed cd: the line in PowerShell', lambda w: ps('cd $env:S; git checkout -q FETCH_HEAD', w.main, sub=True),
+     'deny', 'git-checkout', 'git -C "<folder>" checkout -q FETCH_HEAD'),
+    ('failed cd: a missing literal folder', lambda w: bash('cd %s/missing; git checkout x' % W.fwd(w.wt), w.main),
+     'deny', 'git-checkout', None),
+    ('failed cd: && after a missing literal folder', lambda w: bash('cd %s/missing && git checkout -b kit/x' % W.fwd(w.wt),
+                                                                    w.main, sub=True), None, None, None),
+    ('failed cd: && git status', lambda w: bash('cd "$S" && git status', w.main, sub=True), None, None, None),
+    ('failed cd: ; git status', lambda w: bash('cd "$S"; git status', w.main, sub=True), None, None, None),
+    ('failed cd: && commit has no other folder', lambda w: bash('cd "$S" && git commit -m x', w.main, sub=True), 'deny', 'unplaced', None),
+    ('failed cd: || exit, a literal folder', lambda w: bash('cd %s || exit 1; git checkout -b kit/x' % W.fwd(w.wt), w.main,
+                                                            sub=True), None, None, None),
+    ('failed cd: || exit guards the rest', lambda w: bash('cd "$S" || exit; git commit -m x', w.main, sub=True), 'deny', 'unplaced', None),
+    ('failed cd: || return guards nothing', lambda w: bash('cd "$S" || return; git commit -m x', w.main, sub=True),
+     'deny', 'git-main-history', None),
+    ('failed cd: if ($?) guards its block', lambda w: ps('cd $env:S; if ($?) { git commit -m x }', w.main, sub=True), 'deny', 'unplaced', None),
+    ('failed cd: if ($?) in a worktree', lambda w: ps('cd %s; if ($?) { git checkout -b kit/x }' % w.wt, w.main, sub=True),
+     None, None, None),
+    ('failed cd: after the if ($?) block', lambda w: ps('cd $env:S; if ($?) { git status }; git checkout x', w.main),
+     'deny', 'git-checkout', None),
+    ('failed cd: the else block', lambda w: ps('cd $env:S; if ($?) { git status } else { git checkout x }', w.main),
+     'deny', 'git-checkout', None),
+    ('failed cd: a sure cd after it', lambda w: bash('cd "$S"; cd %s; git checkout -b kit/x' % W.fwd(w.wt), w.main, sub=True),
+     None, None, None),
+    ('failed cd: a nested shell', lambda w: bash('cd "$S"; bash -c "git checkout x"', w.main), 'deny', 'git-checkout', None),
+    # a cd that may not run: git runs in the folder before it when the command before the cd fails
+    ('cd after &&: checkout', lambda w: bash('test -d %s && cd %s; git checkout -q FETCH_HEAD' % (W.fwd(w.wt), W.fwd(w.wt)),
+                                             w.main, sub=True), 'deny', 'git-checkout', 'git -C "<folder>" checkout -q FETCH_HEAD'),
+    ('cd after &&: reset --hard', lambda w: bash('true && cd %s; git reset --hard x' % W.fwd(w.wt), w.main, sub=True),
+     'deny', 'git-reset-hard', None),
+    ('cd after &&: in a group', lambda w: bash('test -d %s && { cd %s; }; git checkout x' % (W.fwd(w.wt), W.fwd(w.wt)),
+                                               w.main, sub=True), 'deny', 'git-checkout', None),
+    ('cd after &&: && guards the rest', lambda w: bash('test -d %s && cd %s && git checkout -b kit/x' % (W.fwd(w.wt), W.fwd(w.wt)),
+                                                        w.main, sub=True), None, None, None),
+    ('cd in an if body, on its own line', lambda w: bash('if test -d %s; then\ncd %s\nfi\ngit checkout -q FETCH_HEAD'
+                                                          % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), 'deny', 'git-checkout', None),
+    ('cd in an if body: git in the same body', lambda w: bash('if test -d %s; then cd %s; git checkout -b kit/x; fi'
+                                                               % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), None, None, None),
+    ('cd in a group after &&: git in the same group', lambda w: bash('test -d %s && { cd %s; git pull --ff-only; }'
+                                                                      % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), None, None, None),
+    ('cd in an if body: git after the fi', lambda w: bash('if test -d %s; then cd %s; git status; fi; git checkout -b kit/x'
+                                                           % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), 'deny', 'git-checkout', None),
+    ('cd in an if body: git in the else block', lambda w: bash('if test -d %s; then cd %s; else git checkout -b kit/x; fi'
+                                                                % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), 'deny', 'git-checkout', None),
+    ('cd in a group after &&: git after the }', lambda w: bash('test -d %s && { cd %s; git pull --ff-only; }; git reset --hard x'
+                                                                % (W.fwd(w.wt), W.fwd(w.wt)), w.main, sub=True), 'deny', 'git-reset-hard', None),
+    ('a sure cd with || { exit }', lambda w: bash('cd %s || { echo no; exit 1; }; git checkout -b kit/x' % W.fwd(w.wt), w.main,
+                                                  sub=True), None, None, None),
+    ('a computed cd with || { exit }', lambda w: bash('cd "$S" || { echo no; exit 1; }; git checkout -b kit/x', w.main, sub=True),
+     'deny', 'git-checkout', None),
+    ('subagent checkout in a computed folder', lambda w: bash('cd "$WT" && git checkout -b kit/x', w.wt, sub=True),
+     'deny', 'git-checkout', 'git -C "<folder>" checkout -b kit/x'),
+    ('main session checkout in a computed folder', lambda w: bash('cd "$WT" && git checkout -b kit/x', w.wt),
+     'deny', 'unplaced', None),
 
     # ---------------------------------------------------------------- stash in a linked worktree (git-stash-shared)
     ('subagent bare stash in its worktree', lambda w: bash('git stash', w.wt, sub=True), 'deny', 'git-stash-shared', WIP),

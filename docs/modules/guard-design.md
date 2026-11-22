@@ -22,7 +22,7 @@ Low-level design of `kitlib/guard`, `kitlib/hookrun` and `kitlib/agentview`. The
 
 | Path | Holds |
 |---|---|
-| `guard/shell.py`, `commands*.py`, `fallback.py` | Reading a command line; what a parsed command runs, split by tool family; the fallback |
+| `guard/shell.py`, `cdtrack.py`, `cdfail.py`, `commands*.py`, `fallback.py` | Reading a command line; the folder each command runs in, and the others a cd that may fail leaves; what a parsed command runs, split by tool family; the fallback |
 | `guard/context.py`, `place.py`, `paths.py` | The real state the rules read, behind one fake-able object; where a path is, without starting git |
 | `guard/rules.py`, `rules_*.py`, `modes.py` | The rules by family (base, edit, write, run, net, tools, owner, push, and the git families); rule modes |
 | `guard/jail.py`, `rolepolicy.py`, `backlogrole.py`, `gaterole.py`, `delegfile.py`, `generated.py`, `hub.py` | The write jail; role policy; the backlog roles; gate allow; the delegation list; generated files; what the hub rules know |

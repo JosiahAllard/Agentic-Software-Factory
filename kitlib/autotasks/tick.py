@@ -17,7 +17,7 @@ tick.log the tick's own lines (one file of LOG_MAX bytes and one older one).
 Two ticks that overlap never start one task twice. The tick takes tick.lock (kitlib.fs.treelock: an
 OS byte-range lock, which the OS lets go when the holder exits, so a crashed tick leaves no stale
 lock behind, unlike a file made with O_EXCL, which would need an age rule to clear), reads the state,
-writes every start record (a temporary file, then os.replace) and only then starts the programs,
+writes every start record (a temporary file, fsynced, then a replace) and only then starts the programs,
 releasing the lock after. A second tick that finds the lock held starts nothing. A program whose
 start fails keeps its record (`what` failed): it runs again at its next slot, not at every tick.
 
@@ -33,6 +33,7 @@ import sys
 from kitlib import kitroot
 from kitlib import platform
 from kitlib.config import ConfigError, user as kuser
+from kitlib.fs import atomic
 from kitlib.fs.treelock import TreeBusy, TreeLock, TreeLockError
 from kitlib.proc import spawn
 
@@ -196,12 +197,10 @@ def read_state(path):
 
 
 def write_state(path, records):
-    """Write `records` to `path` in one step: a temporary file beside it, then os.replace."""
-    tmp = '%s.%d.tmp' % (path, os.getpid())
-    with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
-        json.dump({'version': 1, 'tasks': records}, f, indent=1, sort_keys=True)
-        f.write('\n')
-    os.replace(tmp, path)
+    """Write `records` to `path` in one step: a temporary file beside it, fsynced, then a
+    replace, so a crash leaves the old file or the new and never NUL bytes (kitlib.fs.atomic)."""
+    atomic.write_text(path, json.dumps({'version': 1, 'tasks': records}, indent=1, sort_keys=True)
+                      + '\n', fsync=True)
 
 
 def baseline(record):

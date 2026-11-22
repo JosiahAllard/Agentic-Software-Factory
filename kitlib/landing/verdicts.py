@@ -868,6 +868,8 @@ def _write(path, entry):
         try:
             with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(json.dumps(entry, sort_keys=True, indent=1) + '\n')
+                f.flush()               # on disk before the replace: a crash never leaves NUL bytes
+                os.fsync(f.fileno())
             fsreplace.replace(tmp, path, wait=REPLACE_WAIT, pause=RETRY_SLEEP)
         finally:
             if os.path.exists(tmp):

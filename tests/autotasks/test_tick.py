@@ -128,6 +128,16 @@ class State(Base):
         self.assertEqual(T.read_state(self.state), ({'a': {'at': '2026-10-21T09:00:00', 'what': 'started'}}, None))
         self.assertEqual(os.listdir(self.folder), [T.STATE_NAME])
 
+    def test_the_temp_file_is_fsynced_before_it_replaces_the_state(self):
+        os.makedirs(self.folder)
+        order = []
+        real = os.replace
+        with mock.patch('os.fsync', side_effect=lambda fd: order.append('fsync')), \
+                mock.patch('os.replace', side_effect=lambda a, b: order.append('replace') or real(a, b)):
+            T.write_state(self.state, {'a': {'at': '2026-10-21T09:00:00', 'what': 'started'}})
+        self.assertEqual(order, ['fsync', 'replace'])
+        self.assertEqual(self.records(), {'a': {'at': '2026-10-21T09:00:00', 'what': 'started'}})
+
     def test_a_broken_state_file_is_empty_with_a_problem(self):
         os.makedirs(self.folder)
         with open(self.state, 'w') as f:

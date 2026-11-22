@@ -188,6 +188,22 @@ class DamagedFileTest(StoreCase):
         self.assertEqual(s.corrupt(), ['todos/T-001.json', 'todos/T-002.json'])
         self.assertEqual(self.sleeps, [store.REPLACE_S] * 2)
 
+    def test_a_document_removed_between_the_listing_and_its_read_is_skipped(self):
+        root = tmpdir(self)
+        write_file(os.path.join(root, 'todos', 'T-001.json'), '{"status": "open", "title": "t"}')
+        gone = os.path.join(root, 'todos', 'T-002.json')
+        write_file(gone, '{"status": "open", "title": "u"}')
+        real = open
+
+        def removed(file, *a, **kw):
+            if os.path.normcase(str(file)) == os.path.normcase(gone):
+                raise FileNotFoundError(2, 'gone')
+            return real(file, *a, **kw)
+        with mock.patch('builtins.open', side_effect=removed):
+            s = self.open(root)
+        self.assertEqual(sorted(s.docs('todos')), ['T-001'])
+        self.assertEqual(s.corrupt(), [])
+
     def test_a_document_that_parses_on_the_second_read_is_kept(self):
         root = tmpdir(self)
         path = os.path.join(root, 'todos', 'T-001.json')

@@ -15,7 +15,11 @@
                    the hub's push worker: what it still owes each recipient, and one line per
                    push that was not written (kitlib.hubsite.push).
   *.log            stop.log and after-reboot.log, one line per action.
-JSON is read with or without a BOM and written UTF-8 without one.
+JSON is read with or without a BOM and written UTF-8 without one, through a temp file that is
+fsynced before it replaces the file (kitlib.fs.atomic): a crash leaves the old copy or the new,
+never a file of NUL bytes. read_json fails loudly on a file it cannot parse (docs/launcher.md
+"State files" says how the owner clears one); the fill watch's cache reads through
+kitlib.fs.quarantine.read_json instead.
 """
 import datetime
 import json
@@ -46,7 +50,7 @@ def read_json(p):
 
 
 def write_json(p, data):
-    atomic.write_text(p, json.dumps(data, indent=4, ensure_ascii=False) + '\n')
+    atomic.write_text(p, json.dumps(data, indent=4, ensure_ascii=False) + '\n', fsync=True)
 
 
 def read_sessions(settings):

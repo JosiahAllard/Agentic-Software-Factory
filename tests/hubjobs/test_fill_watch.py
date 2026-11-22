@@ -473,7 +473,7 @@ class Persist(Watch):
                                                  'since': 1000.0, 'in_flight': 3}})
 
     def test_a_bad_state_file_fails_the_run_and_writes_nothing(self):
-        for bad in ('{not json', '[]', '{"game": {"told": "x"}}', '{"game": 3}',
+        for bad in ('{"game": {"told": "x"}}', '{"game": 3}',
                     '{"game": {"told": [2, ["EX-A"], null], "since": "soon", "in_flight": 3}}'):
             with open(self.path, 'w', encoding='utf-8') as f:
                 f.write(bad)
@@ -482,6 +482,24 @@ class Persist(Watch):
             with open(self.path, encoding='utf-8') as f:
                 self.assertEqual(f.read(), bad)
         self.assertEqual(self.sent, [])
+
+    def test_a_file_that_is_not_a_json_object_is_set_aside_and_the_run_nudges_again(self):
+        self.run_job()                      # told, and written
+        for bad in (b'\0' * 1585, b'{not json', b'[]'):
+            with open(self.path, 'wb') as f:
+                f.write(bad)
+            self.job = self.fresh()
+            try:
+                note = self.run_job()
+            except lsettings.LaunchError as e:
+                self.fail('a file that is not a JSON object failed the run: %s' % e)
+            moved = os.path.join(self.tmp, '_corrupt', W.STATE_FILE)
+            self.assertTrue(note.startswith('%s was not a JSON object' % W.STATE_FILE), note)
+            self.assertIn(self.tmp, note)
+            self.assertEqual(self.saved()['game']['told'], [2, ['EX-A', 'EX-B', 'EX-C'], None])
+        self.assertEqual(len(self.sent), 4)     # each move nudges again, as a removed file does
+        self.assertTrue(os.path.exists(moved))
+        self.assertEqual(len(os.listdir(os.path.dirname(moved))), 3)
 
     def test_since_is_kept_across_a_restart_and_reset_when_in_flight_rises(self):
         self.run_job()

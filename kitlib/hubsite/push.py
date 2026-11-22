@@ -144,9 +144,16 @@ Files, in `folder` (the launcher's state_dir):
                            silent}}}} (a question's also filed_as, record, record_repo, freed,
                            asker_pm, coordinator and standing when they apply: its guidance;
                            done, version and has_it: "Done by the hub"), times in
-                           epoch seconds, replaced whole after each round that changed it. At
+                           epoch seconds, replaced whole after each round that changed it
+                           (a temp file fsynced before its rename: kitlib.fs.atomic). At
                            start an entry whose item changed since is fired afresh; one whose
                            item is gone is dropped; nothing else already pending is sent again.
+                           One that is not a JSON object (a crash's NUL bytes) is moved to
+                           `_corrupt/` beside it (kitlib.fs.quarantine.read_json) and the
+                           worker starts empty, `set_aside` naming where it went. One that
+                           cannot be read or moved is left as it is and never written over
+                           while this worker runs: the worker starts empty, saves nothing,
+                           and `set_aside` says so.
   push-undelivered.jsonl   one line per try that was not written, and per give-up:
                            {ts, kind, id, status, recipient, name, attempt, reason}; reason is the
                            state, `ambiguous` (an extra line, written or not) or `gave-up`;
@@ -167,7 +174,10 @@ timeout). Only that thread touches the worker's state; at most one deliver is in
 stop flag is checked before each. poll() runs one round on the caller's thread, for tests (never
 while the thread runs).
 
-Status (the hub page's push line, Api.push_seen): status() -> {"state", "last", "undelivered"}.
+Status (the hub page's push line, Api.push_seen): status() -> {"state", "last", "undelivered",
+"set_aside"}. set_aside is None, or what start() did with an outbox it could not use: the path
+it was moved to, or `not moved: <why>; outbox not saved` (`not read: ...` when it could not be
+read at all); it holds for the worker's life.
 last is the state of the latest deliver to the PM (PM_KEY; None before the first): another
 session's result never moves it, so a session that has ended (NO_SESSION, routine) does not
 make delivery look down. undelivered is the number of outbox items some recipient has not yet
@@ -187,6 +197,7 @@ import time
 
 from kitlib import pmwatch
 from kitlib.config.user import HomeFenced
+from kitlib.fs import atomic, quarantine
 from kitlib.hubclient import codestale
 from kitlib.hubclient.push import NO_SESSION, NOT_WRITTEN, PM_KEY, UNCERTAIN, WRITTEN, Sent, field
 from kitlib.hubsite.api import HUB_DONE_BY, OWNER_FROM, sessions_once
@@ -580,9 +591,12 @@ class PushWorker(object):
         self._outbox = {}
         self._before = {}               # {key: fingerprint before a question's filing}, _fire
         self._dirty = False
+        self._set_aside = None          # status() set_aside: what _load did with a bad outbox
+        self._keep_outbox = False       # True: the outbox on disk could not be read or moved,
+                                        # so _save never writes over it
         self._last = None               # the latest deliver's state to the PM
         self._started = False           # start() finished: until then status() is 'down'
-        self._status = {'state': 'up', 'last': None, 'undelivered': 0}
+        self._status = {'state': 'up', 'last': None, 'undelivered': 0, 'set_aside': None}
         self._watched = None            # the clock of the latest status read, None before
         self._armed = False             # seen 'up' since the last `watcher down` fired
         self._down = None               # the `watcher down` owed: {attempt, next_at, first_at}
@@ -660,7 +674,8 @@ class PushWorker(object):
         self._summarize()
 
     def status(self):
-        """{"state", "last", "undelivered"} (module docstring "Status"); any thread."""
+        """{"state", "last", "undelivered", "set_aside"} (module docstring "Status"); any
+        thread."""
         out = dict(self._status)
         t = self._thread
         if not self._started or t is None or not t.is_alive():
@@ -810,7 +825,7 @@ class PushWorker(object):
                    if any(st.get('last') != WRITTEN and not st.get('silent')
                           for st in e['recipients'].values()))
         self._status = {'state': 'up' if self._last in (None, WRITTEN) else 'down',
-                        'last': self._last, 'undelivered': owed}
+                        'last': self._last, 'undelivered': owed, 'set_aside': self._set_aside}
 
     # ------------------------------------------------------------------ one round
     def _round(self, changes):
@@ -1401,30 +1416,24 @@ class PushWorker(object):
     def _load(self):
         path = os.path.join(self.folder, OUTBOX)
         try:
-            with open(path, encoding='utf-8-sig') as f:
-                data = json.load(f)
-        except FileNotFoundError:
+            data, moved = quarantine.read_json(path, self.folder)
+        except OSError as e:            # left in place: _save never writes over it
+            what = 'not moved' if isinstance(e, quarantine.SetAsideFailed) else 'not read'
+            self._set_aside, self._keep_outbox = '%s: %s; outbox not saved' % (what, e), True
+            self.log('push: %s %s, starting empty' % (OUTBOX, self._set_aside))
             return {}
-        except (OSError, ValueError) as e:
-            self.log('push: %s unreadable, starting empty: %s' % (OUTBOX, type(e).__name__))
-            return {}
-        if not isinstance(data, dict):
-            return {}
-        good = {}
-        for key, e in data.items():
-            if _entry_ok(key, e):
-                good[key] = e
-        return good
+        if moved is not None:
+            self._set_aside = moved
+            self.log('push: %s was not a JSON object: moved to %s, starting empty' % (OUTBOX, moved))
+        return {key: e for key, e in (data or {}).items() if _entry_ok(key, e)}
 
     def _save(self):
-        if not self._dirty:
+        if not self._dirty or self._keep_outbox:
             return
         path = os.path.join(self.folder, OUTBOX)
-        tmp = path + '.tmp'
         try:
-            with open(tmp, 'w', encoding='utf-8', newline='\n') as f:
-                f.write(json.dumps(self._outbox, indent=1, sort_keys=True) + '\n')
-            os.replace(tmp, path)
+            atomic.write_text(path, json.dumps(self._outbox, indent=1, sort_keys=True) + '\n',
+                              fsync=True)
             self._dirty = False
         except OSError as e:
             self.log('push: could not write %s: %s' % (OUTBOX, e))

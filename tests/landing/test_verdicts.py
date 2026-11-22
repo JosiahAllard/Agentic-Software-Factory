@@ -289,6 +289,17 @@ class QueueCase(GateRepoCase):
 
 
 class Queue(QueueCase):
+    def test_an_entry_is_fsynced_before_it_replaces_the_file(self):
+        _, tip = self.branch('a', {'a.txt': 'a\n'})
+        order = []
+        real = os.replace
+        with mock.patch.object(V.os, 'fsync', side_effect=lambda fd: order.append('fsync')), \
+                mock.patch.object(V.os, 'replace',
+                                  side_effect=lambda a, b: order.append('replace') or real(a, b)):
+            path, stored = V.add(self.common, given('kit/a', tip))
+        self.assertEqual(order[:2], ['fsync', 'replace'])
+        self.assertEqual(V.entries(self.common), [stored])
+
     def test_add_list_drop_round_trip(self):
         _, tip = self.branch('a', {'a.txt': 'a\n'})
         path, stored = V.add(self.common, given('kit/a', tip))

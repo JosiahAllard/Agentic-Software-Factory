@@ -81,5 +81,59 @@ class QuarantineTests(unittest.TestCase):
         self.assertEqual(quarantine.listed(self.root), ['landings/L-0001.json', 'queue.json'])
 
 
+class ReadJsonTests(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.path = os.path.join(self.root, 'state.json')
+
+    def write(self, data):
+        with open(self.path, 'wb') as f:
+            f.write(data)
+
+    def test_an_object_is_read_with_or_without_a_bom(self):
+        for data in (b'{"a": 1}', b'\xef\xbb\xbf{"a": 1}'):
+            self.write(data)
+            self.assertEqual(quarantine.read_json(self.path, self.root), ({'a': 1}, None))
+
+    def test_no_file_is_absent_and_moves_nothing(self):
+        self.assertEqual(quarantine.read_json(self.path, self.root), (None, None))
+        self.assertEqual(quarantine.listed(self.root), [])
+
+    def test_a_file_that_is_not_a_json_object_is_set_aside_and_read_as_absent(self):
+        for data in (b'\0' * 1585, b'{not json', b'[]', b'\xff\xfe{}'):
+            self.write(data)
+            doc, moved = quarantine.read_json(self.path, self.root)
+            self.assertIsNone(doc)
+            self.assertFalse(os.path.exists(self.path))
+            with open(moved, 'rb') as f:
+                self.assertEqual(f.read(), data)
+        self.assertEqual(len(quarantine.listed(self.root)), 4)
+
+    def test_retry_reads_a_non_nul_file_once_more_and_a_nul_file_never(self):
+        sleeps = []
+
+        def finish(s):                  # the write in flight lands during the wait
+            sleeps.append(s)
+            self.write(b'{"a": 2}')
+        self.write(b'{"a": ')
+        with mock.patch('time.sleep', side_effect=finish):
+            self.assertEqual(quarantine.read_json(self.path, self.root, retry_s=0.5), ({'a': 2}, None))
+            self.write(b'\0\0')
+            self.assertIsNone(quarantine.read_json(self.path, self.root, retry_s=0.5)[0])
+            self.write(b'{"a": ')
+            self.assertIsNone(quarantine.read_json(self.path, self.root)[0])
+        self.assertEqual(sleeps, [0.5])
+
+    def test_a_refused_move_raises_set_aside_failed_and_keeps_the_file(self):
+        self.write(b'\0\0')
+        with mock.patch('kitlib.fs.replace.place_new', side_effect=PermissionError(13, 'denied')):
+            with self.assertRaises(quarantine.SetAsideFailed) as cm:
+                quarantine.read_json(self.path, self.root)
+        self.assertIsInstance(cm.exception, OSError)
+        self.assertTrue(cm.exception.why)
+        self.assertTrue(os.path.exists(self.path))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -44,8 +44,9 @@
   before this change, or by another tool) is set aside when the store opens: a file of only NUL
   bytes is moved at once to `<store>/_corrupt/<its path>` (`kitlib.fs.quarantine`, never over an
   earlier copy: `.1`, `.2` added), any other that does not parse is read again after
-  `REPLACE_S` and moved only if it still fails. Its id still counts, so the next id never reuses
-  it. A file that cannot be opened at all, or that cannot be moved, refuses the open
+  `REPLACE_S` and moved only if it still fails (`kitlib.fs.quarantine.read_json`). Its id still
+  counts, so the next id never reuses it. A document removed between the listing and its read is
+  skipped. A file that cannot be opened at all, or that cannot be moved, refuses the open
   (`HubError`), as before. GET health lists what `_corrupt/` holds as `corrupt` (every role; the
   tunnel's fixed health carries none), `hub.py status` prints the line above, and git sync never
   commits `_corrupt/`. The owner reads and removes those files; nothing removes them itself.

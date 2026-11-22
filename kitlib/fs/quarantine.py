@@ -7,8 +7,17 @@ file has another name), so a file of nothing but NUL bytes at a final path means
 dead and the content is lost. all_nul() is that test. quarantine() moves such a file to
 `<root>/_corrupt/<its path under root>`, never over an earlier copy, so the store reads on without
 it and the bytes stay for the owner to look at; listed() names what is there.
+
+read_json() reads a JSON object file that may be damaged: one that is not a JSON object (not
+UTF-8, not JSON, all NUL bytes, another JSON type) is set aside by quarantine() and read as absent,
+so its reader goes on and the bytes are kept. With retry_s, a file that fails and is not all NUL is
+read once more after retry_s first (a write in flight); a NUL file is a dead writer's, never
+retried. The hub store's open and the launcher's cache files (the fill watch's fill-watch.json, the
+hub's push-outbox.json) read through it.
 """
+import json
 import os
+import time
 
 from kitlib.fs import replace as fsreplace
 
@@ -56,3 +65,45 @@ def listed(root):
         for name in files:
             out.append(os.path.relpath(os.path.join(folder, name), base).replace(os.sep, '/'))
     return sorted(out)
+
+
+class SetAsideFailed(OSError):
+    """read_json: the file will not parse (`why`) and could not be moved; it is left in place."""
+
+    def __init__(self, path, why, err):
+        super(SetAsideFailed, self).__init__('cannot read %s (%s) nor set it aside in %s: %s'
+                                             % (path, why, FOLDER, err))
+        self.path, self.why = path, why
+
+
+def _parse(path):
+    """(object, '') or (None, why) for the file at `path`; FileNotFoundError and any other
+    OSError raised."""
+    with open(path, 'rb') as f:
+        data = f.read()
+    try:
+        obj = json.loads(data.decode('utf-8-sig'))
+    except ValueError as e:
+        return None, str(e)
+    return (obj, '') if isinstance(obj, dict) else (None, 'not a JSON object')
+
+
+def read_json(path, root, retry_s=0):
+    """(object, None) for the JSON object in `path` (UTF-8, with or without a BOM); (None, None)
+    when there is no file; (None, where) once a file that is not a JSON object has been moved by
+    quarantine(path, root) to `where`. With retry_s > 0, a failing file that is not all NUL is read
+    once more after retry_s first. OSError when the file cannot be read; SetAsideFailed (an
+    OSError) when it will not parse and cannot be moved."""
+    try:
+        doc, why = _parse(path)
+        if doc is None and retry_s > 0 and not all_nul(path):
+            time.sleep(retry_s)         # once: a file that still fails is not a write in flight
+            doc, why = _parse(path)
+    except FileNotFoundError:
+        return None, None
+    if doc is not None:
+        return doc, None
+    try:
+        return None, quarantine(path, root)
+    except OSError as e:
+        raise SetAsideFailed(path, why, e)

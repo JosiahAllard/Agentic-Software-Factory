@@ -58,8 +58,8 @@ document or _meta.json that will not parse (not JSON, not UTF-8, or not an objec
 file to `_corrupt/` at the same relative path (kitlib.fs.quarantine; `.1`, `.2` added when the name
 is taken) and opens without it, so one damaged item never stops the hub. A file of only NUL bytes
 is a crash's zero-fill and moves at once; any other is read once more after REPLACE_S first. A
-file that cannot be opened (an OSError), or that cannot be moved, still refuses the open, naming
-it. corrupt() lists what `_corrupt/` holds; the hub's health shows it until the owner removes it.
+document removed between the listing and its read is skipped. A file that cannot be opened (an
+OSError), or that cannot be moved, still refuses the open, naming it. corrupt() lists what `_corrupt/` holds; the hub's health shows it until the owner removes it.
 A _meta.json set aside is read as missing.
 
 Store.open also raises each id counter to the highest id on disk or set aside in `_corrupt/`, and
@@ -101,7 +101,6 @@ import json
 import os
 import re
 import threading
-import time
 
 from kitlib import hubvalidate
 from kitlib.fs import atomic, quarantine
@@ -172,21 +171,6 @@ def _replace(path, text):
 
 def _remove(path):
     fsreplace.remove(path, wait=REPLACE_S)
-
-
-def _parse(path):
-    """(object, '') for a file that parses to a JSON object, (None, why) for one that does not;
-    HubError store when it cannot be opened or read."""
-    try:
-        with open(path, 'rb') as f:
-            data = f.read()
-    except OSError as e:
-        raise HubError('store', 'cannot read %s: %s' % (path, e))
-    try:
-        obj = json.loads(data.decode('utf-8-sig'))
-    except ValueError as e:
-        return None, str(e)
-    return (obj, '') if isinstance(obj, dict) else (None, 'not a JSON object')
 
 
 def _set_aside_ids(root):
@@ -306,18 +290,14 @@ class Store(object):
 
     def _read_or_set_aside(self, path):
         """The object at path, or None once a file that will not parse is moved to `_corrupt/`
-        (module docstring, "Damaged files"); HubError store when it cannot be read or moved."""
-        doc, why = _parse(path)
-        if doc is None and not quarantine.all_nul(path):
-            time.sleep(REPLACE_S)       # once: a file that still fails is not a write in flight
-            doc, why = _parse(path)
-        if doc is None:
-            try:
-                quarantine.quarantine(path, self.root)
-            except OSError as e:
-                raise HubError('store', 'cannot read %s (%s) nor set it aside in %s: %s'
-                               % (path, why, quarantine.FOLDER, e))
-        return doc
+        or is gone (module docstring, "Damaged files"; kitlib.fs.quarantine.read_json);
+        HubError store when it cannot be read or moved."""
+        try:
+            return quarantine.read_json(path, self.root, retry_s=REPLACE_S)[0]
+        except quarantine.SetAsideFailed as e:
+            raise HubError('store', str(e))
+        except OSError as e:
+            raise HubError('store', 'cannot read %s: %s' % (path, e))
 
     def corrupt(self):
         """The files set aside in `<root>/_corrupt/`, as sorted paths inside it with '/'

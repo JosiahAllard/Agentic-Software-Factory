@@ -34,7 +34,8 @@ the hub pulls for it (stage 3); the nudge names the auto-pull stand-down when on
   usage_reason(rows, limit=None)     `usage all>=N%` when every account is at the limit, or None
   nudge_text(key, free, ids, reason=None)
                                      the push
-  FileState(path), MemoryState()     the told state's store: read() -> dict, write(dict)
+  FileState(path), MemoryState()     the told state's store: read() -> dict, write(dict),
+                                     `moved`: where the last read set a damaged file aside, or None
 
 Every EVERY_S the job reads sessions.json and the process listing (coord_restart's: a listing
 that times out is a Skip). A coordinator is an entry with a truthy `agent` whose `name` is a live
@@ -117,10 +118,14 @@ nothing offered, or no live session is dropped, so the state coming back nudges 
 usage crossover claims, a key whose store cannot be read, and the keys a hub stop leaves unreached
 keep their state untouched. A deliver that is written or
 uncertain counts as told; one not written, with no live session, with no push object, or that
-raises is tried again next run. The file is written only when it changes. A file that cannot be
-read or does not hold that shape raises LaunchError before anything is sent or written: a failed
-run, which the runner pushes to the PM as `failing` at the third. It is never read as empty, so a
-bad file cannot nudge every coordinator again or restart `since` (the auto-pull's timer).
+raises is tried again next run. The file is written only when it changes, fsynced before its
+rename (kitlib.launcher.state.write_json). A file that is not a JSON object (a crash's NUL bytes,
+not JSON, another JSON type) is moved to `<launcher.state_dir>/_corrupt/` and read as absent
+(kitlib.fs.quarantine.read_json), the run's note naming where it went first: the same as removing
+the file, it nudges every live coordinator once again and restarts each `since` (the auto-pull's
+timer). A JSON object that does not hold that shape, or a file that cannot be read or moved,
+raises LaunchError before anything is sent or written: a failed run, which the runner pushes to
+the PM as `failing` at the third. It is never read as empty.
 
 A coordinator the usage crossover is moving (usage_crossover.claims, the hold coord-restart reads)
 is never nudged, and what was told it stays as it was: it was told to checkpoint and stand down.
@@ -579,6 +584,8 @@ def _check_waits(e, where):
 class MemoryState(object):
     """The told state kept in memory (a test's, or a job with no file)."""
 
+    moved = None                        # nothing is ever set aside
+
     def __init__(self):
         self.data = {}
 
@@ -592,15 +599,22 @@ class MemoryState(object):
 
 
 class FileState(object):
-    """The told state in the JSON file `path` (launcher.state's read_json and write_json: an
-    atomic replace). No file is an empty state; a bad one raises LaunchError."""
+    """The told state in the JSON file `path` (written by launcher.state's write_json: fsynced,
+    then an atomic replace). No file is an empty state; one that is not a JSON object is moved to
+    `_corrupt/` beside it (kitlib.fs.quarantine.read_json), kept in `moved`, and read as empty; a
+    JSON object of another shape, or a file that cannot be read or moved, raises LaunchError."""
 
     def __init__(self, path):
         self.path = path
+        self.moved = None
 
     def read(self):
-        from kitlib.launcher import state
-        data = state.read_json(self.path)
+        from kitlib.fs import quarantine
+        from kitlib.launcher.settings import LaunchError
+        try:
+            data, self.moved = quarantine.read_json(self.path, os.path.dirname(self.path))
+        except OSError as e:
+            raise LaunchError('cannot read %s: %s' % (self.path, e))
         return {} if data is None else check_state(data, self.path)
 
     def write(self, data):
@@ -659,6 +673,8 @@ class FillWatch(object):
         self._hands = _UNSET
         self._started = live if isinstance(live, dict) else {}   # a set of names: no starts
         loaded = self.store.read()      # a bad file raises here: nothing sent, nothing written
+        moved = (['%s was not a JSON object (a crash?): moved to %s and read as empty'
+                  % (STATE_FILE, self.store.moved)] if self.store.moved else [])
         told = copy.deepcopy(loaded)
         told_ok = told_states()
         nudged, notes, seen, reasons, acted, waited = [], [], set(), {}, [], []
@@ -721,7 +737,7 @@ class FillWatch(object):
             del told[WAITS]
         if told != loaded:
             self.store.write(told)
-        note = '; '.join((['nudged %s' % ', '.join(nudged)] if nudged else []) +
+        note = '; '.join(moved + (['nudged %s' % ', '.join(nudged)] if nudged else []) +
                          (['auto-pull %s' % ', '.join(acted)] if acted else []) +
                          (['waits %s' % ', '.join(waited)] if waited else []) + notes)[:NOTE_MAX]
         if not nudged and not acted and not waited:

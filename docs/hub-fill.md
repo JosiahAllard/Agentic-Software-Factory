@@ -90,13 +90,17 @@ key:
 
 A key is dropped when its coordinator is forgotten (above). Its entry stays as it was while its
 store cannot be read, while the usage crossover claims it, and when a hub stop ends the run before
-the job reaches it. The file is written only when it changes, as a temp file then a replace.
+the job reaches it. The file is written only when it changes, as a temp file that is fsynced and
+then replaces it, so a crash leaves the old copy or the new, never NUL bytes.
 
-A file that cannot be read, or whose entries are not that shape, fails the run before anything is
-sent or written: the runner pushes `job fill-watch failing` to the PM at the third failure. It is
-never read as empty, so a bad file cannot nudge every coordinator again or restart `since`. To
-recover, fix the entry the failure names or remove the file: every live coordinator is then nudged
-once more.
+A file that is not a JSON object (a crash's NUL bytes, not JSON, another JSON type) is moved to
+`<launcher.state_dir>/_corrupt/fill-watch.json` (`.1`, `.2` added when the name is taken;
+`kitlib.fs.quarantine.read_json`) and read as absent, and that run's note starts by naming where it
+went. It is the same as removing the file: every live coordinator is nudged once more and each
+`since` starts again. A JSON object whose entries are not that shape, or a file that cannot be
+read or moved, fails the run before anything is sent or written: the runner pushes `job
+fill-watch failing` to the PM at the third failure. Such a file is never read as empty. To
+recover, fix the entry the failure names or remove the file.
 
 ## Stand-down
 

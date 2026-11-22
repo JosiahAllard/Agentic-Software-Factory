@@ -138,7 +138,8 @@ def _session_watch(health, now):
 
 def push_line(health, now=None):
     """[the push and session-watch line] of the hub site, from GET health's `push` ({"state",
-    "last", "undelivered"}, null with no push worker; docs/hub-push.md "Push notifications") and
+    "last", "undelivered", "set_aside"}, null with no push worker; docs/hub-push.md "Push
+    notifications"; set_aside is not read here: hub health shows it) and
     its `jobs` block of the session-watch job (_session_watch). Sessions run no background hub
     wait: the hub pushes each answer and done to-do, so push down or off is a WARN that nothing
     reaches the PM by itself; a session watch not up (and not starting) is a WARN too. Every

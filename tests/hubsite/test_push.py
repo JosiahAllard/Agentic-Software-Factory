@@ -599,12 +599,59 @@ class RestartTest(PushCase):
         self.worker.poll()
         self.assertEqual([g for g in gets if g[0] == 'approvals'], [])
 
-    def test_a_broken_outbox_is_read_as_empty(self):
-        with open(os.path.join(self.folder, push.OUTBOX), 'w', encoding='utf-8') as f:
-            f.write('{"question:Q-001": {"kind": "question"}, "x": 1')
-        self.worker = self.make()
+    def test_a_broken_outbox_is_set_aside_and_read_as_empty(self):
+        path = os.path.join(self.folder, push.OUTBOX)
+        for i, bad in enumerate([b'\0' * 900, b'{"question:Q-001": {"kind": "question"}, "x": 1',
+                                 b'[]']):
+            with open(path, 'wb') as f:
+                f.write(bad)
+            self.worker = self.make()
+            moved = os.path.join(self.folder, '_corrupt', push.OUTBOX + ('.%d' % i if i else ''))
+            self.assertEqual(self.worker.status()['set_aside'], moved)
+            with open(moved, 'rb') as f:
+                self.assertEqual(f.read(), bad, 'the bad bytes are kept for the owner')
+            self.assertFalse(os.path.exists(path))
+            self.worker.poll()
+            self.assertEqual(self.push.calls, [])
+        qid = self.ask(**{'from': 'kit'})
+        self.answer(qid)
         self.worker.poll()
-        self.assertEqual(self.push.calls, [])
+        with open(path, encoding='utf-8') as f:
+            self.assertIn('question:%s' % qid, json.load(f), 'the fresh outbox is saved')
+
+    def test_a_good_outbox_has_no_set_aside(self):
+        self.assertIsNone(self.worker.status()['set_aside'])
+
+    def test_an_outbox_that_cannot_be_moved_is_never_written_over(self):
+        path = os.path.join(self.folder, push.OUTBOX)
+        bad = b'\0' * 900
+        with open(path, 'wb') as f:
+            f.write(bad)
+        with mock.patch('kitlib.fs.replace.place_new', side_effect=PermissionError(13, 'denied')):
+            self.worker = self.make()
+        said = self.worker.status()['set_aside']
+        self.assertTrue(said.startswith('not moved: '), said)
+        self.assertTrue(said.endswith('; outbox not saved'), said)
+        qid = self.ask(**{'from': 'kit'})
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual(len(self.push.calls), 2, 'the worker still delivers')
+        self.worker._save()
+        with open(path, 'rb') as f:
+            self.assertEqual(f.read(), bad, 'the unmoved outbox was written over')
+        self.assertEqual(self.worker.status()['set_aside'], said, 'it holds for the worker\'s life')
+
+    def test_the_outbox_is_fsynced_before_it_replaces_the_file(self):
+        order = []
+        real = os.replace
+        qid = self.ask(**{'from': 'kit'})
+        self.answer(qid)
+        with mock.patch('os.fsync', side_effect=lambda fd: order.append('fsync')), \
+                mock.patch('os.replace', side_effect=lambda a, b: order.append('replace') or real(a, b)):
+            self.worker.poll()
+        self.assertEqual(order[:2], ['fsync', 'replace'])
+        with open(os.path.join(self.folder, push.OUTBOX), encoding='utf-8') as f:
+            self.assertIn('question:%s' % qid, json.load(f))
 
 
 class ResetTest(unittest.TestCase):

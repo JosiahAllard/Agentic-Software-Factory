@@ -3443,14 +3443,16 @@ class PushStatusTest(ApiCase):
 
     def test_a_running_worker_is_up_with_nothing_undelivered(self):
         self.run_worker()
-        self.assertEqual(self.status(), {'state': 'up', 'last': None, 'undelivered': 0})
+        self.assertEqual(self.status(), {'state': 'up', 'last': None, 'undelivered': 0,
+                                         'set_aside': None})
 
     def test_a_worker_whose_start_failed_is_down(self):
         self.assertEqual(self.status()['state'], 'down', 'made, not started')
         with mock.patch.object(self.store, 'snapshot', side_effect=RuntimeError('no')):
             with self.assertRaises(RuntimeError):
                 self.worker.start()
-        self.assertEqual(self.status(), {'state': 'down', 'last': None, 'undelivered': 0})
+        self.assertEqual(self.status(), {'state': 'down', 'last': None, 'undelivered': 0,
+                                         'set_aside': None})
 
     def test_a_delivery_to_the_pm_not_written_is_down_and_counts_the_item(self):
         self.fake.states['pm'] = push.NO_SESSION
@@ -3492,7 +3494,8 @@ class PushStatusTest(ApiCase):
         def broken():
             raise RuntimeError('no')
         self.api.push_status = broken
-        self.assertEqual(self.status(), {'state': 'down', 'last': 'RuntimeError', 'undelivered': None})
+        self.assertEqual(self.status(), {'state': 'down', 'last': 'RuntimeError', 'undelivered': None,
+                                         'set_aside': None})
 
     # the snapshot and health carry the hub's session-watch job as the push worker read it
     def seen(self, role=OWNER):
@@ -3533,7 +3536,7 @@ class PushStatusTest(ApiCase):
 
     def test_health_push_is_up_with_a_running_worker(self):
         self.run_worker()
-        want = {'state': 'up', 'last': None, 'undelivered': 0}
+        want = {'state': 'up', 'last': None, 'undelivered': 0, 'set_aside': None}
         self.assertEqual(self.ok('GET', '/health', AGENT)['push'], want)
         self.assertEqual(self.ok('GET', '/health', OWNER)['push'], self.status())
 

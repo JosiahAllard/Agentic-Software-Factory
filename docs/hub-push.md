@@ -216,16 +216,23 @@ store's git push (the `push` setting).
   code"). It comes once per process, with no detail, and its text carries the owner's restart step
   (`kitlib.hubclient.codestale`). A hub with no push worker pushes nothing.
 - Files, in `launcher.state_dir`: `push-outbox.json` (what is still to send, rewritten after each round
-  that changed it, so a server ended without a clean close loses at most that round; read again at
-  start: an entry whose item changed while the server was down fires afresh, one whose item is gone is
-  dropped) and `push-undelivered.jsonl` (one line per try not written, per `ambiguous` pick and per
+  that changed it, as a temp file fsynced before its rename, so a server ended without a clean close
+  loses at most that round and a crash never leaves NUL bytes; read again at start: an entry whose
+  item changed while the server was down fires afresh, one whose item is gone is dropped; a file that
+  is not a JSON object is moved to `launcher.state_dir/_corrupt/` (`kitlib.fs.quarantine.read_json`)
+  and the worker starts empty, its status's `set_aside` naming where it went; a file that cannot be
+  read or moved is left as it is and never written over while that worker runs, which then saves no
+  outbox at all, `set_aside` reading `not moved: <why>; outbox not saved`) and `push-undelivered.jsonl` (one line per try not written, per `ambiguous` pick and per
   give-up, a `watcher down` try as kind `watcher`, id `down`, a job push as kind `job`, id its name;
   never a token or any item text; rotated
   once to `.1` past 1 MiB, `push.LOG_MAX`).
 - Status: `GET /api/v1/snapshot` carries `push`, null when the server runs no worker, else
   `PushWorker.status()`: `last` (the state of the latest delivery to the PM, null before the first),
   `state` (`down` until the worker's start has finished, once its thread has ended, or when `last` is not
-  `written`; else `up`) and `undelivered` (outbox items some recipient has not yet had a written try of).
+  `written`; else `up`), `undelivered` (outbox items some recipient has not yet had a written try of)
+  and `set_aside` (null, or what the worker's start did with an outbox it could not use: the path it
+  was moved to, or `not moved: <why>; outbox not saved`, `not read: ...` when it could not be read;
+  it holds until the server restarts; see Files).
   Only the PM's result sets `last`: an asking session that has ended (`no-live-session`, routine) counts
   in `undelivered` but never makes delivery `down`. `last` and `state` change only when a delivery to the
   PM is tried, so with an empty outbox the line shows the last state indefinitely, and an item given up
@@ -236,7 +243,7 @@ store's git push (the `push` setting).
   out (docs/hub-serving.md "Serving it"). GET health (local) also carries `jobs`: null with no job, else `{<name>: {every_s,
   runs, failures, running, last_at, ok_at, note, error}}`, which `hub.py status` prints as its `jobs:`
   line. `GET /api/v1/health` also carries `push`, the snapshot's value from
-  `Api.push_seen`: null with no worker, else `{"state", "last", "undelivered"}`.
+  `Api.push_seen`: null with no worker, else `{"state", "last", "undelivered", "set_aside"}`.
 - Stopping: `Hub.close` tells the worker to begin no further send before the store closes and joins it
   after, for at least `push.STOP_S` (15 s), longer than a host's delivery can take (Claude:
   `peer.WRITE_TIMEOUT_S` plus the helper's reap and pump joins), so the last outbox write is not cut off.

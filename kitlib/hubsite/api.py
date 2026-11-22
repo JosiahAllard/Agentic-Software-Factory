@@ -116,9 +116,10 @@ wait for its own answers is not the PM listening). No lock is taken: each note i
 key put into and popped from a dict, which the interpreter does as one step each.
 
 Push status. GET snapshot carries `push`: null when this hub runs no push-notification worker,
-else {"state", "last", "undelivered"} from PushWorker.status (kitlib.hubsite.push docstring
-"Status"): state 'up' or 'down', last the latest delivery to the PM's state (null before the first),
-undelivered the number of items some recipient has not yet had a written try of. The worker
+else {"state", "last", "undelivered", "set_aside"} from PushWorker.status (kitlib.hubsite.push
+docstring "Status"): state 'up' or 'down', last the latest delivery to the PM's state (null before
+the first), undelivered the number of items some recipient has not yet had a written try of,
+set_aside null or what the worker's start did with an outbox it could not use. The worker
 sets Api.push_status when it is made; the snapshot reads it on the request's thread. GET health
 carries the same `push` (Api.push_seen), so a hub with no worker or a dead one shows on health.
 
@@ -801,7 +802,8 @@ class Api(object):
         try:
             got = fn()
         except Exception as e:      # noqa: BLE001 - the snapshot answers whatever the worker does
-            return {'state': 'down', 'last': type(e).__name__, 'undelivered': None}
+            return {'state': 'down', 'last': type(e).__name__, 'undelivered': None,
+                    'set_aside': None}
         return got if isinstance(got, dict) else None
 
     def watcher_seen(self):

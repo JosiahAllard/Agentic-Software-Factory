@@ -80,8 +80,9 @@ no boot kept and nothing is written. after-reboot logs to after-reboot.log itsel
 A run's note names every agent entry (sessions.json `agent` true, key not `_`-prefixed) that is
 not running, neither its name nor another session of its stem live (not_running): one the job
 decides on gets its own `KEY: <reason>`; one it never restarts is in one `left down: KEY
-(autostart off), ...` note, the reason `autostart off`, `no name` (its liveness cannot be read)
-or `no stem`. The note says `every coordinator is running` only when there is none.
+(autostart off), ...` note, with the first reason that holds, tested in this order: `no name`
+(its liveness cannot be read, so it is tested first), `no stem`, `autostart off`. The note says
+`every coordinator is running` only when there is none.
 
 State kept across hub restarts, in <launcher.state_dir>/coord-restart.json:
 {key: {seen_at, started_at, account, starts, held}}: the last time a session of the stem was seen
@@ -712,8 +713,8 @@ class RestartJob(object):
         if changed:
             self._write_records(records)
         if started is None and not booted:
-            return jobs.Skip('; '.join(notes) or ('left down: ' + ', '.join(k for k, _ in idle)
-                                                  if idle else 'every coordinator is running'))
+            # every idle entry is in notes: a `down` one through the loop, the rest left down
+            return jobs.Skip('; '.join(notes) or 'every coordinator is running')
         return '; '.join(notes)
 
     def _after_reboot(self, records, now):

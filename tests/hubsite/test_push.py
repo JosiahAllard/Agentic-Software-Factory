@@ -642,6 +642,22 @@ class RestartTest(PushCase):
             self.assertEqual(f.read(), bad, 'the unmoved outbox was written over')
         self.assertEqual(self.worker.status()['set_aside'], said, 'it holds for the worker\'s life')
 
+    def test_an_outbox_that_cannot_be_read_is_never_written_over(self):
+        path = os.path.join(self.folder, push.OUTBOX)
+        os.mkdir(path)                  # open() fails, not FileNotFoundError: neither read nor moved
+        self.worker = self.make()
+        said = self.worker.status().get('set_aside')
+        self.assertTrue(str(said).startswith('not read: '), said)
+        self.assertTrue(str(said).endswith('; outbox not saved'), said)
+        qid = self.ask(**{'from': 'kit'})
+        self.answer(qid)
+        self.worker.poll()
+        self.assertEqual(len(self.push.calls), 2, 'the worker still delivers')
+        self.worker._save()
+        self.assertTrue(os.path.isdir(path), 'the unread outbox was replaced')
+        self.assertEqual(os.listdir(path), [])
+        self.assertEqual(os.listdir(self.folder), [push.OUTBOX], 'nothing set aside or written')
+
     def test_the_outbox_is_fsynced_before_it_replaces_the_file(self):
         order = []
         real = os.replace

@@ -13,6 +13,9 @@ so nothing a tool can see is written by hand.
   - Verdicts queued by this session and still waiting to land: the queue (kitlib.landing.verdicts,
     entries whose `session` is it) read as it stands, leaving out the ones verdict_entry.expired names
     against main as last fetched. Nothing is dropped from the queue here.
+  - Open pulls: every pulled record of the live store (kitlib.backlog.opener.pulled_rows, which
+    coord_state.py reads and hands in): id, branch, session, pulled_at. Never trimmed: it is what a
+    successor checks each pull against (skill session-handoff, start step 7).
   - The latest backlog writes.
   - The judgments file, verbatim: the one part the coordinator writes.
 
@@ -247,8 +250,15 @@ def _queued_line(e):
                                           e.get('verdict'), e.get('queued_utc'))
 
 
-def text(session, source, groups, backlog, queued, queued_why, judgments, skipped=0, now=None):
-    """The state note, at most CAP bytes when the judgments leave room (module docstring)."""
+def _pull_line(row):
+    rid, branch, session, at = row
+    return '- %s %s session=%s pulled %s' % (rid, branch or '-', session or 'none', at or '?')
+
+
+def text(session, source, groups, backlog, queued, queued_why, judgments, skipped=0, now=None, *,
+         pulls=(), pulls_why=None):
+    """The state note, at most CAP bytes when the judgments and open pulls leave room (module
+    docstring). `pulls`: opener.pulled_rows' rows; `pulls_why`: why they could not be read."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
     stamp = now.astimezone(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     head = [NOTE_HEAD + session, '',
@@ -271,6 +281,12 @@ def text(session, source, groups, backlog, queued, queued_why, judgments, skippe
         sections.append(['## Verdicts queued by %s (%d)' % (session, len(queued))]
                         + [_queued_line(e) for e in queued]
                         + ([_short(queued_why, 300)] if queued_why else []))
+    if pulls_why:
+        sections.append(['## Open pulls', 'pulls not read (%s)' % _short(pulls_why, 300)])
+    else:
+        sections.append(['## Open pulls (%d)' % len(pulls)] + [_pull_line(r) for r in pulls]
+                        + (['Agents: the `<ID>: agent` lines in the judgments; a pull with none '
+                            'has no known agent.'] if pulls else []))
     trimmable = []
     for title, group in (('Landed and on the hub feed', LANDED_POSTED), ('Reported', REPORTED)):
         items = groups.get(group, [])

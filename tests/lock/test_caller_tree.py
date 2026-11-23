@@ -59,34 +59,36 @@ class ExitedShell(unittest.TestCase):
                   HOST: FakeProc(350, GONE, False, 'svchost.exe', opens=False)})
         self.assertEqual(me['role'], 'agent')
 
-    def booked(self, table):
-        """(run_ancestors, origin_value, caller()) of this process under table: what a run
-        booked here records, what a detached start here passes on, and who stop then sees."""
+    def booked(self, table, what=lambda: (run.run_ancestors(False, {}), store.caller(env={}))):
+        """what() of this process under table; by default (run_ancestors, caller()): what a run
+        booked here records and who stop then sees."""
         with patched(table, ME), mock.patch.object(store, 'agent_hosts',
                                                    lambda *a: frozenset({'claude.exe'})):
-            return run.run_ancestors(False, {}), run.origin_value(), store.caller(env={})
+            return what()
 
     def test_a_run_booked_from_a_background_shell_is_its_agent_hosts_to_stop(self):
         # OBSERVED 2026-11-23: a run booked from a background shell (python <- timeout <-
         # timeout <- exited bash <- bash <- claude.exe) recorded ancestors that stopped at the
         # exited bash, so its own session's stop was refused as another session's.
-        anc, origin, me = self.booked({ME: FakeProc(400, SHELL, False, 'python.exe'),
-                                       SHELL: FakeProc(300, HOST, True, 'bash.exe'),
-                                       HOST: FakeProc(200, GONE, False, 'claude.exe')})
+        table = {ME: FakeProc(400, SHELL, False, 'python.exe'),
+                 SHELL: FakeProc(300, HOST, True, 'bash.exe'),
+                 HOST: FakeProc(200, GONE, False, 'claude.exe')}
+        anc, me = self.booked(table)
         self.assertEqual(me['host'], [HOST, 200])
         self.assertIn([HOST, 200], anc)
         self.assertTrue(store.owns(me, {'ancestors': anc}))
+        # A detached start made here passes the same ancestry on (MACHINE_LOCK_ORIGIN).
+        origin = self.booked(table, lambda: run.origin_value())
         self.assertEqual(run.origin_pairs({run.ORIGIN_ENV: origin}), [tuple(a) for a in anc])
 
     def test_an_exited_shells_parent_pid_reused_by_a_newer_agent_host_owns_nothing(self):
         # SHELL's recorded parent pid now names a claude.exe made after it: another session.
-        table = {ME: FakeProc(400, SHELL, False, 'python.exe'),
-                 SHELL: FakeProc(300, HOST, True, None),
-                 HOST: FakeProc(350, GONE, False, 'claude.exe')}
-        anc, _origin, _me = self.booked(table)
+        anc, _me = self.booked({ME: FakeProc(400, SHELL, False, 'python.exe'),
+                                SHELL: FakeProc(300, HOST, True, None),
+                                HOST: FakeProc(350, GONE, False, 'claude.exe')})
         self.assertEqual(anc, [[SHELL, 300]])
-        _anc, _origin, other = self.booked({ME: FakeProc(400, HOST, False, 'python.exe'),
-                                            HOST: FakeProc(350, GONE, False, 'claude.exe')})
+        _anc, other = self.booked({ME: FakeProc(400, HOST, False, 'python.exe'),
+                                   HOST: FakeProc(350, GONE, False, 'claude.exe')})
         self.assertEqual(other['host'], [HOST, 350])
         self.assertFalse(store.owns(other, {'ancestors': anc}))
 

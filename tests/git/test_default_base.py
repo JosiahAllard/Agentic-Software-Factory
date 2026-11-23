@@ -149,8 +149,8 @@ class NetworkEnv(unittest.TestCase):
             self.assertNotIn('GCM_INTERACTIVE', env, args)
 
     def test_only_a_fetch_skips_broken_refs(self):
-        self.assertEqual(cmd.child_env({'PATH': 'p'}, ['-C', 'x', 'fetch', 'o'])['GIT_REF_PARANOIA'],
-                         '0')
+        env = cmd.child_env({'PATH': 'p'}, ['-C', 'x', 'fetch', 'o'])
+        self.assertEqual(env.get('GIT_REF_PARANOIA'), '0')
         for args in (['ls-remote', 'origin'], ['push', 'origin', 'main'], ['log', 'fetch']):
             self.assertNotIn('GIT_REF_PARANOIA', cmd.child_env({'PATH': 'p'}, args), args)
 

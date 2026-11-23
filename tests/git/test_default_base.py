@@ -209,6 +209,8 @@ class HeadsFetchPastABrokenRef(unittest.TestCase):
                 self.addCleanup(repo.cleanup)
                 old = repo.head()
                 repo.git('push', '-q', 'origin', 'HEAD:refs/heads/main', 'HEAD:refs/backlog/main')
+                # The store's refspec, as kit checkouts carry it: with it a bare fetch writes the
+                # broken ref itself (a zero-filled one then fails even with GIT_REF_PARANOIA=0).
                 repo.git('config', '--add', 'remote.origin.fetch',
                          '+refs/backlog/main:refs/backlog/main')
                 repo.git('fetch', '-q', 'origin')

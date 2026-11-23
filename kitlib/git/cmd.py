@@ -168,7 +168,11 @@ def heads_fetch(remote):
     """The args of a fetch of `remote`'s branches alone, into refs/remotes/<remote>/*. It never
     follows another refspec in `remote.<remote>.fetch`, the backlog store's
     (`+refs/backlog/main:refs/backlog/main`) among them, so it never writes a ref that a backlog
-    write force-updates at the same moment."""
+    write force-updates at the same moment. It is also what keeps FETCH_ENV enough in a clone
+    that carries that refspec, as kit checkouts do: there a bare fetch writes refs/backlog/main
+    itself, and a zero-filled one fails "cannot lock ref" even with GIT_REF_PARANOIA=0. In a
+    clone without that refspec a bare fetch writes only branches, and FETCH_ENV alone is
+    enough."""
     return ['fetch', '--quiet', remote, '+refs/heads/*:refs/remotes/%s/*' % remote]
 
 

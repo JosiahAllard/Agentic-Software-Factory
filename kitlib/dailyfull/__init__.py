@@ -127,8 +127,9 @@ def tree_refusal(main, wt, git=git):
 
 
 def fetch(main, remote, git=git):
-    """Why the fetch of `remote` failed, or None."""
-    rc, _, err = git(main, 'fetch', remote, '--quiet')
+    """Why the fetch of `remote`'s branches failed, or None (gitcmd.heads_fetch: no other ref is
+    fetched or written)."""
+    rc, _, err = git(main, *gitcmd.heads_fetch(remote))
     return None if rc == 0 else 'git fetch %s failed: %s' % (remote, err or 'exit %d' % rc)
 
 

@@ -95,7 +95,7 @@ def promote(wt, cfg, sha, staging, git, push=None, ls_remote=None):
     def done(status, why=None):
         got['status'], got['why'] = status, why
         return got
-    rc, _, err = git(wt, 'fetch', remote, '--quiet')
+    rc, _, err = git(wt, *gitcmd.heads_fetch(remote))
     if rc != 0:
         return done('not-promoted', 'git fetch %s failed: %s' % (remote, err or 'exit %d' % rc))
     on = '%s/%s' % (remote, staging)

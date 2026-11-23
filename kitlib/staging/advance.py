@@ -38,6 +38,7 @@ Git reads go through the caller's `git(cwd, *args)` (kitlib.dailyfull.git). Noth
 import os
 import time
 
+from kitlib import dailyfull as D
 from kitlib.dailyfull import promote as P
 from kitlib.landing import push as LP
 from kitlib.records import landing as LL
@@ -110,9 +111,9 @@ class Mover(object):
     def _main_now(self):
         """`(sha, None)` of `<remote>/<main>` after a fetch, or `(None, why)`."""
         remote, m = self.cfg.remote, self.cfg.main_branch
-        rc, _, err = self.git(self.main, 'fetch', remote, '--quiet')
-        if rc != 0:
-            return None, 'git fetch %s failed: %s' % (remote, err or 'exit %d' % rc)
+        why = D.fetch(self.main, remote, self.git)
+        if why:
+            return None, why
         rc, sha, err = self.git(self.main, 'rev-parse', '--verify', '-q',
                                 'refs/remotes/%s/%s' % (remote, m))
         if rc != 0 or not sha:

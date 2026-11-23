@@ -202,7 +202,7 @@ class TheBase(Fixture):
         self.config(repo={'remote': 'upstream'})
         with Spawns() as spawns:
             out = self.run_preflight('--fetch')[1]
-        self.assertIn(['git', 'fetch', 'upstream', '--quiet'], spawns.argvs)
+        self.assertIn(['git'] + cmd.heads_fetch('upstream'), spawns.argvs)
         self.assertIn('fetch     FAILED - git fetch upstream:', out)    # no such remote here
 
     def test_no_fetch_without_the_flag(self):

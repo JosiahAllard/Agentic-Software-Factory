@@ -51,7 +51,7 @@ class GitCallHasATimeout(unittest.TestCase):
         self.assertEqual(got, (0, 'out', 'err'))
 
     def test_fetch_and_tree_writes_get_the_longer_one(self):
-        for args in (('fetch', 'origin', '--quiet'), ('worktree', 'add', 'x'), ('switch', '--detach', 'y'),
+        for args in (tuple(gitcmd.heads_fetch('origin')), ('worktree', 'add', 'x'), ('switch', '--detach', 'y'),
                      ('status', '--porcelain')):
             self.assertEqual(self.seen(*args)[1]['timeout'], D.FETCH_TIMEOUT, args)
         self.assertGreater(D.FETCH_TIMEOUT, gitcmd.GIT_TIMEOUT)
@@ -59,7 +59,7 @@ class GitCallHasATimeout(unittest.TestCase):
     def test_a_timed_out_git_is_a_failed_step_with_the_reason(self):
         r = gitcmd.Result(None, b'', 'git fetch origin timed out after 300 seconds')
         with mock.patch.object(gitcmd, 'call', return_value=r):
-            self.assertEqual(D.git('.', 'fetch', 'origin'),
+            self.assertEqual(D.git('.', *gitcmd.heads_fetch('origin')),
                              (-1, '', 'git fetch origin timed out after 300 seconds'))
 
     def test_a_fetch_keeps_the_network_env(self):
@@ -69,7 +69,7 @@ class GitCallHasATimeout(unittest.TestCase):
             seen.append(kw['env'])
             return 0, b'', b''
         with mock.patch.object(gitcmd, '_run', side_effect=fake):
-            D.git('.', 'fetch', 'origin')
+            D.git('.', *gitcmd.heads_fetch('origin'))
         self.assertEqual(seen[0]['GIT_TERMINAL_PROMPT'], '0')
         self.assertEqual(seen[0]['GCM_INTERACTIVE'], 'never')
 

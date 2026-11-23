@@ -1,7 +1,9 @@
 """The one default-base rule (kitlib.git.refs.default_base, docs/gate-run.md "Default base") and the
-environment of a kit network read (kitlib.git.cmd NETWORK_ENV), against throwaway repositories
+environment of a kit network read (kitlib.git.cmd NETWORK_ENV) and the fetch of a remote's
+branches past a broken local ref (cmd.heads_fetch), against throwaway repositories
 (tests/gitfixture.py), and the callers that use the rule: each measures against origin/main when
 the local main is stale, says so, and keeps a base the caller names."""
+import os
 import unittest
 from unittest import mock
 
@@ -12,6 +14,7 @@ from kitlib.reviewpack import _pack
 from kitlib.worktree import new as newwt
 from tests import gitfixture
 from tests.home import no_machine_owner, result_drive
+from tests.realgit import real_git
 
 TRACKING = 'refs/remotes/origin/main'
 
@@ -183,6 +186,39 @@ class NetworkEnv(unittest.TestCase):
         self.addCleanup(repo.cleanup)
         r = cmd.call(['fetch', 'origin', '--quiet'], repo.root)
         self.assertEqual(r.rc, 0, r.err)
+
+
+@real_git("fetch's connectivity check reads every local ref (rev-list --not --all): the fake does "
+          "not model it, and it refuses a broken loose ref")
+class HeadsFetchPastABrokenRef(unittest.TestCase):
+    """A crash left the backlog store's local ref zero-filled or pointing at a missing object, in
+    a clone whose remote.origin.fetch carries that store's refspec: every plain fetch then died
+    with "fatal: bad object refs/backlog/main"."""
+
+    def test_the_branches_arrive_and_the_broken_ref_is_left_alone(self):
+        for name, damage in (('zero-filled', b'\0' * 41),
+                             ('dangling', b'1234567890123456789012345678901234567890\n')):
+            with self.subTest(name):
+                repo = gitfixture.TempRepo(bare_remote=True)
+                self.addCleanup(repo.cleanup)
+                old = repo.head()
+                repo.git('push', '-q', 'origin', 'HEAD:refs/heads/main', 'HEAD:refs/backlog/main')
+                repo.git('config', '--add', 'remote.origin.fetch',
+                         '+refs/backlog/main:refs/backlog/main')
+                repo.git('fetch', '-q', 'origin')
+                # A new main made in the remote alone: the fetch must bring its objects.
+                tree = repo.git('rev-parse', old + '^{tree}')
+                new = repo.git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid',
+                               'commit-tree', tree, '-p', old, '-m', 'new main', cwd=repo.remote)
+                repo.git('update-ref', 'refs/heads/main', new, cwd=repo.remote)
+                ref = os.path.join(repo.root, '.git', 'refs', 'backlog', 'main')
+                with open(ref, 'wb') as f:
+                    f.write(damage)
+                r = cmd.call(cmd.heads_fetch('origin'), repo.root)
+                self.assertEqual(r.rc, 0, r.err)
+                self.assertEqual(repo.git('rev-parse', TRACKING), new)
+                with open(ref, 'rb') as f:
+                    self.assertEqual(f.read(), damage)
 
 
 if __name__ == '__main__':

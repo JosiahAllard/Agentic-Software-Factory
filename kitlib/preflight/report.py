@@ -59,7 +59,7 @@ def report(top, cfg, kit_root, base=None, fetch=False, lock_reader=lockline.read
     s = st.settings(cfg)
     remote = cfg.remote
     if fetch:
-        done, why = cmd.run(['fetch', remote, '--quiet'], top, timeout=120)
+        done, why = cmd.run(cmd.heads_fetch(remote), top, timeout=120)
         if done is None:
             out.append('fetch     FAILED - git fetch %s: %s' % (remote, why))
     explicit = base

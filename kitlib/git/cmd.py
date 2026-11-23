@@ -153,6 +153,14 @@ def network_env(args, env):
     return with_network_env(env) if subcommand(args) in NETWORK_READS else dict(env)
 
 
+def heads_fetch(remote):
+    """The args of a fetch of `remote`'s branches alone, into refs/remotes/<remote>/*. It never
+    follows another refspec in `remote.<remote>.fetch`, the backlog store's
+    (`+refs/backlog/main:refs/backlog/main`) among them, so it never writes a ref that a backlog
+    write force-updates at the same moment."""
+    return ['fetch', '--quiet', remote, '+refs/heads/*:refs/remotes/%s/*' % remote]
+
+
 def push_never_connected(rc, err):
     """Whether a push that ended with exit `rc` and stderr `err` never connected to the remote,
     so no byte of it can have reached it: git died (exit 128) and every line it printed is

@@ -106,6 +106,7 @@ from kitlib.gate import result
 from kitlib.landing import verdicts
 from kitlib.git import repo
 from kitlib.lock import detach as lockdetach
+from kitlib.lock import run as lockrun
 from kitlib.lock import run_held
 from kitlib.proc import process
 from kitlib.records import gate_ok, verdict_entry
@@ -266,10 +267,7 @@ def child_env(environ=None, token=None):
     env.pop(TOKEN_ENV, None)
     if token is not None:
         env[TOKEN_ENV] = token
-    try:
-        env[run_held.ORIGIN_ENV] = ';'.join('%d:%d' % pc for pc in sorted(process.own_ancestors()))
-    except Exception:       # noqa: BLE001 - the slot then has the detached process's own role
-        env.pop(run_held.ORIGIN_ENV, None)
+    env[run_held.ORIGIN_ENV] = lockrun.origin_value()
     env['PYTHONIOENCODING'] = 'utf-8'
     env['PYTHONUNBUFFERED'] = '1'
     return env

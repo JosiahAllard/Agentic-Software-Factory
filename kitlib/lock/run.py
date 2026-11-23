@@ -164,14 +164,27 @@ def bg_ancestor(env, store=None):
 
 def run_ancestors(detached, env):
     """[[pid, ctime]] of the processes this run was started under (stop's and the API's
-    ownership check). A detached wrapper's parents are WMI's, so it adds its launcher's."""
-    out = _ancestors()
+    ownership check, store.owns). The walk is the one store.caller makes: it climbs past an
+    exited hop (a background shell that exited under its agent host) by the parent that hop's
+    handle records, so the agent host caller() names at stop is among them. [] when the tree
+    cannot be read. A detached wrapper's parents are WMI's, so it adds its launcher's."""
+    try:
+        out = {(int(p), int(c)) for p, c in process.ancestry(
+            os.getpid(), process.own_ctime(), through_exited=True)[0]}
+    except Exception:
+        out = set()
     if detached:
         for item in (env.get(ORIGIN_ENV) or "").split(";"):
             m = re.fullmatch(r"(\d+):(\d+)", item)
             if m:
                 out.add((int(m.group(1)), int(m.group(2))))
     return sorted([p, c] for p, c in out)
+
+
+def origin_value():
+    """ORIGIN_ENV's value for a detached start this process makes: its own run_ancestors as
+    'pid:ctime;...' (origin_pairs reads it back); '' when the tree cannot be read."""
+    return ";".join("%d:%d" % (p, c) for p, c in run_ancestors(False, os.environ))
 
 
 def origin_pairs(env):

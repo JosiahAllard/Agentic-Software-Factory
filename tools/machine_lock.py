@@ -40,13 +40,13 @@ from kitlib.lock import holds as hl                                # noqa: E402
 from kitlib.lock import layout as lay                              # noqa: E402
 from kitlib.lock import status as st                               # noqa: E402
 from kitlib.lock.background import run_background                  # noqa: E402
-from kitlib.lock.run import check_resource, run_command            # noqa: E402
+from kitlib.lock.run import check_resource, origin_value, run_command  # noqa: E402
 from kitlib.lock.run_cmdline import ScriptArgError, path_alias_line, script_command  # noqa: E402
 from kitlib.lock.run_held import ORIGIN_ENV                        # noqa: E402
 from kitlib.lock.store import (EXIT_REQUIRE, EXIT_USAGE, LockError, Settings,  # noqa: E402
                                Store, caller, iso, new_id, utc_now)
 from kitlib.loadnode import box, dispatch                          # noqa: E402
-from kitlib.proc import bash, process                              # noqa: E402
+from kitlib.proc import bash                                       # noqa: E402
 # Not used here: loaded at start because kitlib.proc.daemons imports it inside functions that run
 # at the end of a run, and a first load then could read a checkout a landing has rewritten.
 from kitlib.proc import tcp                                        # noqa: E402, F401
@@ -326,11 +326,7 @@ def detach(argv):
     if why:
         say("could not start the command: --detach: %s" % why)
         return 1
-    env = dict(os.environ)
-    try:
-        env[ORIGIN_ENV] = ";".join("%d:%d" % pc for pc in sorted(process.own_ancestors()))
-    except Exception:
-        env.pop(ORIGIN_ENV, None)
+    env = dict(os.environ, **{ORIGIN_ENV: origin_value()})
     pid, why = dt.create(child, os.getcwd(), env)
     if pid is None:
         say("could not start the command: --detach %s" % why)

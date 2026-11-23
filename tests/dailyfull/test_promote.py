@@ -63,6 +63,19 @@ class PushForm(unittest.TestCase):
         self.assertEqual(seen[0]['env']['GCM_INTERACTIVE'], 'never')
 
 
+class FetchForm(unittest.TestCase):
+    def test_the_daily_and_the_promotion_fetch_the_remotes_branches_alone(self):
+        class Upstream:
+            remote, main_branch = 'upstream', 'main'
+        for name, call in (('dailyfull.fetch', lambda git: D.fetch('.', 'upstream', git)),
+                           ('promote.promote', lambda git: P.promote('.', Upstream(), 'c' * 40,
+                                                                    'staging', git))):
+            with self.subTest(name):
+                git = FakeGit({})           # the fetch fails, so nothing runs after it
+                call(git)
+                self.assertEqual(git.calls, [tuple(gitcmd.heads_fetch('upstream'))])
+
+
 class StagingCase(fixtures.GateRepoCase):
     KIT = {'daily_full': {'enabled': True, 'kind': 'engine-test'}, 'staging': {'branch': 'staging'}}
 

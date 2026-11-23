@@ -47,8 +47,9 @@
   as before. That is safe here because a kit git child runs no auto gc or maintenance
   (AUTO_MAINTENANCE_OFF), so nothing prunes objects behind a skipped ref. For
   kitlib.backlog.store_ref `_fetch`: a dangling refs/backlog/main is now overwritten from the
-  remote; a zero-filled one fails "cannot lock ref" through its lock-retry loop, then raises the
-  same Failure as before. `heads_fetch` gives the args of a fetch of a remote's branches alone.
+  remote. A zero-filled one used to raise its Failure after one try, with git's "bad object"
+  text; now it raises the same Failure class after FETCH_TRIES tries (its lock-retry loop), with
+  git's "cannot lock ref" text. `heads_fetch` gives the args of a fetch of a remote's branches alone.
 - From a parent with no console (the guard hook under pythonw.exe, a scheduled task), git starts
   with CREATE_NO_WINDOW (kitlib.proc.job.no_window_flags), so a git or ssh console prompt goes to
   a hidden console and waits until the call's timeout. A caller that can prompt must run from a

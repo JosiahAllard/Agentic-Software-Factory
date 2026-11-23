@@ -39,6 +39,16 @@
   call's timeout (or forever, under timeout=None). A push keeps the user's own credential prompts
   unless its caller passes `with_network_env()` as its `env` (the landing's push and its
   remote-branch delete, and the daily run's promotion, do: nobody is there to answer one).
+- A fetch also gets `FETCH_ENV`, the caller's `env` too: GIT_REF_PARANOIA=0. After it downloads,
+  git checks the new objects with `rev-list --not --all`, which reads every local ref, and since
+  git 2.36 it no longer skips a broken one there. So a ref a crash left zero-filled or pointing at a
+  missing object (refs/backlog/main, seen) failed every fetch with "fatal: bad object <ref>",
+  whatever its refspec. With it off, git skips only such a broken ref; every readable ref counts
+  as before. That is safe here because a kit git child runs no auto gc or maintenance
+  (AUTO_MAINTENANCE_OFF), so nothing prunes objects behind a skipped ref. For
+  kitlib.backlog.store_ref `_fetch`: a dangling refs/backlog/main is now overwritten from the
+  remote; a zero-filled one fails "cannot lock ref" through its lock-retry loop, then raises the
+  same Failure as before. `heads_fetch` gives the args of a fetch of a remote's branches alone.
 - From a parent with no console (the guard hook under pythonw.exe, a scheduled task), git starts
   with CREATE_NO_WINDOW (kitlib.proc.job.no_window_flags), so a git or ssh console prompt goes to
   a hidden console and waits until the call's timeout. A caller that can prompt must run from a
@@ -67,6 +77,7 @@ READ_ENV = {'GIT_OPTIONAL_LOCKS': '0'}      # a killable read: a belt (the modul
 NETWORK_READS = ('fetch', 'ls-remote')
 NETWORK_ENV = {'GIT_TERMINAL_PROMPT': '0', 'GCM_INTERACTIVE': 'never',
                'GIT_HTTP_LOW_SPEED_LIMIT': '1000', 'GIT_HTTP_LOW_SPEED_TIME': '60'}
+FETCH_ENV = {'GIT_REF_PARANOIA': '0'}   # a fetch skips a broken local ref (the module docstring)
 # git's global options that take a separate value: skipped to find the subcommand.
 _VALUE_OPTIONS = ('-c', '-C', '--git-dir', '--work-tree', '--namespace', '--config-env',
                   '--attr-source', '--shallow-file')
@@ -193,9 +204,12 @@ def config_entries(env, pairs):
 def child_env(env=None, args=()):
     """The environment a git child gets: `env` (None: scrubbed_env()) with LOCALE_ENV set,
     AUTO_MAINTENANCE_OFF appended to its config entries, NETWORK_ENV too when `args` is a
-    network read, and READ_ENV when it is a killable read (killable)."""
+    network read, FETCH_ENV when it is a fetch, and READ_ENV when it is a killable read
+    (killable)."""
     out = network_env(args, scrubbed_env() if env is None else env)
     out.update(LOCALE_ENV)
+    if subcommand(args) == 'fetch':
+        out.update(FETCH_ENV)
     if killable(args):
         out.update(READ_ENV)
     out.update(config_entries(out, AUTO_MAINTENANCE_OFF))

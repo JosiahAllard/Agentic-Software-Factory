@@ -148,6 +148,12 @@ class NetworkEnv(unittest.TestCase):
             self.assertNotIn('GIT_TERMINAL_PROMPT', env, args)
             self.assertNotIn('GCM_INTERACTIVE', env, args)
 
+    def test_only_a_fetch_skips_broken_refs(self):
+        self.assertEqual(cmd.child_env({'PATH': 'p'}, ['-C', 'x', 'fetch', 'o'])['GIT_REF_PARANOIA'],
+                         '0')
+        for args in (['ls-remote', 'origin'], ['push', 'origin', 'main'], ['log', 'fetch']):
+            self.assertNotIn('GIT_REF_PARANOIA', cmd.child_env({'PATH': 'p'}, args), args)
+
     def test_ssh_is_left_to_the_user(self):
         for args in (['fetch', 'origin'], ['ls-remote', 'origin']):
             env = cmd.child_env({'PATH': 'p', 'GIT_SSH_COMMAND': 'plink -batch'}, args)

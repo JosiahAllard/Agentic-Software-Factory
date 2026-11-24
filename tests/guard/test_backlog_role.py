@@ -702,6 +702,9 @@ class LandedBase(unittest.TestCase):
         self.assertEqual((d.verdict, d.rule), ('deny', 'backlog-raw-write'), d.reason)
         return d
 
+    def literal_form(self):
+        return backlogrole.literal_form(context.Ctx(environ={}, home=self.home, tempdir=self.temp))
+
     def put(self, rel, text, root=None, newline='\n'):
         path = os.path.join(root or self.wt, *rel.split('/'))
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -752,7 +755,9 @@ class LandedScript(LandedBase):
 
     def test_an_edited_or_untracked_copy_is_judged(self):
         self.put(self.DAILY, self.SCRIPT + '# edited\n')
-        self.refused(self.daily())
+        d = self.refused(self.daily())
+        # past the jail check: the tool's literal form, not the hand-back of the jailed case
+        self.assertEqual(d.instead, self.literal_form())
         self.put(self.DAILY, self.SCRIPT)
         self.put('tools/copy.py', self.SCRIPT)
         self.refused(self.daily('tools/copy.py'))
@@ -761,6 +766,9 @@ class LandedScript(LandedBase):
         for text in ('python < %s' % self.DAILY, 'cat %s | python' % self.DAILY, 'python - < %s' % self.DAILY):
             with self.subTest(text):
                 self.refused(self.run_line(text))
+        # a here-string has no script path, so it is never the jailed case: the tool's literal form
+        d = self.refused(self.run_line('python /dev/stdin <<< "from kitlib.backlog.store import *"'))
+        self.assertEqual(d.instead, self.literal_form())
 
     def test_a_script_only_on_the_remote_tracking_main_is_judged(self):
         self.put('tools/new.py', self.SCRIPT)
@@ -769,8 +777,13 @@ class LandedScript(LandedBase):
         self.refused(self.daily('tools/new.py'))
 
     def test_a_repository_the_session_may_write_is_judged_before_git_runs(self):
-        self.refused(self.daily(tempdir=self.repo.base))
-        self.assertEqual(self.blob_reads, [])
+        # its Instead hands the run to the caller: no form this session can retry is trusted
+        for name, kw in (('jail covers it', {'tempdir': self.repo.base}), ('main checkout', {'cwd': self.repo.root})):
+            with self.subTest(name):
+                self.blob_reads.clear()
+                d = self.refused(self.daily(**kw))
+                self.assertEqual(d.instead, backlogrole.LANDED_INSTEAD)
+                self.assertEqual(self.blob_reads, [])
 
     def test_a_main_branch_that_does_not_read_is_judged(self):
         self.put('.kit.json', json.dumps({'repo': {'main_branch': 'nosuch'}}) + '\n', root=self.repo.root)

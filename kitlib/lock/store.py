@@ -109,6 +109,7 @@ class Settings:
         "bg_yield_s": 120.0, "bg_yield_margin_s": 15.0, "game_poll_s": 5.0, "game_roll_s": 120.0,
         "gpu_use_cache_s": 5.0, "wait_change_poll_s": 0.25, "child_poll_s": 1.0,
         "stale_scale": 3.0, "stale_min_s": 3600.0, "stale_check_s": 60.0,
+        "sessionless_stop_scale": 2.0,
     }
 
     def __init__(self, pauses=None, **overrides):
@@ -907,7 +908,7 @@ class Store:
                     "expect_from", "since", "held_since", "ended", "code", "how", "cpu_s",
                     "peak_cpu_cores", "peak_mem_mb", "peak_commit_mb", "hold", "parent",
                     "pinned", "given_back", "tree", "gate", "priority", "session", "role",
-                    "stopped_by", "branch", "need_mem_mb", "mem_from", "wait_by", "wait_on",
+                    "scheduled", "stopped_by", "branch", "need_mem_mb", "mem_from", "wait_by", "wait_on",
                     "gate_mode")
 
     def history_append(self, d):

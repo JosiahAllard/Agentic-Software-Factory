@@ -33,6 +33,7 @@ from kitlib.hubsite.cli import task as cli_task
 from kitlib.hubsite.cli import usage as cli_usage
 from kitlib.hubsite import auth, httpd, schema, serve, servesources, serveviews, tunnel
 from kitlib.ownerfiles import approvals
+from kitlib.proc import spawn
 from kitlib.hubvalidate import todosteps
 from kitlib.hubsite.store import Store, StoreBusy
 from tests.home import machine_config, pm_repo
@@ -605,6 +606,15 @@ class ServePriorityCase(CliCase):
                                        stop=stop)
         self.assertEqual((code, err), (0, ''))
         self.assertEqual(self.priority.call_count, 1)
+
+    def test_serve_drops_the_scheduled_jobs_marker_first(self):
+        # Its autostart task starts it under the scheduled jobs' carrier (tools/no_window.py),
+        # which marks all it starts; a lock run a hub click books is no scheduled job's.
+        os.environ[spawn.SCHEDULED_ENV] = '1'       # setUp's patch.dict restores the environment
+        seen = []
+        self.priority.side_effect = lambda: seen.append(os.environ.get(spawn.SCHEDULED_ENV))
+        self.run_cli('serve', '--port', '0')
+        self.assertEqual(seen, [None])
 
     def test_a_refused_serve_has_raised_it_already(self):
         code, _out, err = self.run_cli('serve', '--port', '0')

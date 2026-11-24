@@ -83,9 +83,12 @@ class ScriptOrder(unittest.TestCase):
         return i
 
     def test_env_load_then_clear_then_persist_then_mark_then_account(self):
+        # The scheduled jobs' marker (spawn.SCHEDULED_ENV) is cleared after the user environment
+        # loads: a window the carrier started is no scheduled job (docs/lock-api.md "Who may").
         order = [self.at("$Host.UI.RawUI.WindowTitle = 'alpha-coord-a2'"),
                  self.at(window.USER_ENV),
                  self.at(window.CLEAR_CLAUDE),
+                 self.at("Remove-Item Env:MACHINE_LOCK_SCHEDULED -ErrorAction SilentlyContinue"),
                  self.at(window.PERSIST),
                  self.at("$env:PM_KIT_ROLE = 'coordinator'"),
                  self.at("$env:PM_KIT_SESSION_NAME = 'alpha-coord-a2'"),

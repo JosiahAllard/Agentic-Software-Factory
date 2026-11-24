@@ -319,7 +319,7 @@ def _running(job, targets):
 def request_stop(store, rid, by, session=None, why=None, exclusive=False):
     """Writes run rid's stop request (active/<id>.stop: {by_pid, at, by, session}, and why when
     given; session is the asker's session id or None, why the stale-run reap's reason,
-    kitlib.lock.stale). exclusive (the stale-run reap's) writes it only when no request is there
+    kitlib.lock.stale, or an agent's overdue scheduled-run stop's, api.end_run). exclusive (the stale-run reap's) writes it only when no request is there
     (create_json), so one made at the same moment is never written over. False when no such run
     is live, or with exclusive when a request was already there."""
     if not os.path.exists(store.path("active", rid + ".json")):

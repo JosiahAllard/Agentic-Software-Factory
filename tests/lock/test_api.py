@@ -627,7 +627,17 @@ class Games(ApiCase):
         self.assertEqual(self.pins, [])
 
 
+OVERDUE_S = 5400       # warn_s 1800: max(2 x 1800, 1800 + stale_min_s 3600)
+
+
+def ago(s):
+    return iso(utc_now() - datetime.timedelta(seconds=s))
+
+
 class EndRun(ApiCase):
+    """end_run: the owner ends any run, an agent its own, and any agent a scheduled run held past
+    stale.overdue's bar (docs/lock-api.md "Who may"); every other refusal says which case it is."""
+
     def stop_file(self, rid):
         return self.store.read("active/%s.stop" % rid)
 
@@ -659,6 +669,60 @@ class EndRun(ApiCase):
         self.ok(api.end_run(agent("sess-A"), R_B, self.store))
         self.ok(api.end_run(OWNER, R_B, self.store))
         self.assertEqual(self.stop_file(R_B)["by"], "owner")
+
+    def scheduled_run(self, rid=R_A, held_s=OVERDUE_S + 120, **fields):
+        """A run the owner's scheduled job booked (role owner, scheduled), guide warn_s 1800 s,
+        held held_s seconds: past OVERDUE_S by default."""
+        rec = dict(role="owner", scheduled=True, warn_s=1800, held_since=ago(held_s))
+        rec.update(fields)
+        return self.live_record(rid, **rec)
+
+    def test_any_agent_may_end_a_scheduled_run_past_twice_its_guide(self):
+        # authorize refused every agent here before (owns() is never true of a run with no
+        # agent host above it): red.
+        self.scheduled_run()
+        r = self.ok(api.end_run(agent("sess-B"), R_A, self.store))
+        self.assertEqual(r, {"id": R_A, "requested": True, "overdue": True})
+        stop = self.stop_file(R_A)
+        self.assertEqual((stop["by"], stop["session"]), ("test-agent", "sess-B"))
+        self.assertEqual(stop["why"], (
+            "scheduled run held 92 min, past 90 min (2 x its guide 30 min, at least the guide + "
+            "60 min); asked by agent host pid %d, session sess-B" % claude_of("sess-B")[0]))
+
+    def test_the_owner_ending_a_scheduled_run_is_no_overdue_grant(self):
+        self.scheduled_run()
+        self.assertEqual(self.ok(api.end_run(OWNER, R_A, self.store)),
+                         {"id": R_A, "requested": True})
+        self.assertNotIn("why", self.stop_file(R_A) or {"why": "no stop file"})
+
+    def test_each_refused_case_says_which_it_is(self):
+        cases = (
+            ("an owner run no scheduled job booked", dict(scheduled=False),
+             "is the owner's own: it was booked under no agent session and not by a scheduled "
+             "job; only the owner ends it"),
+            ("a scheduled run inside the bar", dict(held_s=3000),
+             "is a scheduled job's, and an agent may end it only once it is overdue: held 50 "
+             "min, not past 90 min"),
+            ("a scheduled run still waiting", dict(state="waiting", held_since=None),
+             "only once it is overdue: not holding slots (waiting); until then only the owner "
+             "ends it"),
+            ("another session's run past the bar", dict(
+                role="agent", session="sess-A", ancestors=[claude_of("sess-A")],
+                hosts=[claude_of("sess-A")]), "belongs to another session"),
+            ("a scheduled key on an agent's run grants nothing", dict(
+                role="agent", ancestors=[claude_of("sess-A")]), "belongs to another session"))
+        for label, fields, want in cases:
+            with self.subTest(label):
+                self.scheduled_run(**fields)
+                e = self.err(api.end_run(agent("sess-B"), R_A, self.store), "forbidden")
+                self.assertIn(want, e["message"])
+                self.assertIsNone(self.stop_file(R_A))
+
+    def test_with_no_settings_an_overdue_scheduled_run_is_the_owners(self):
+        rec = self.scheduled_run()
+        self.assertIn("with no lock settings to judge it, only the owner ends it",
+                      api.authorize(agent("sess-B"), "end_run", rec))
+        self.assertIsNone(api.authorize(agent("sess-B"), "end_run", rec, self.store.settings))
 
     def test_a_live_record_that_stays_unreadable_is_a_store_error_never_no_run(self):
         self.live_record(R_A)
@@ -789,6 +853,7 @@ class LiveRecords(ApiCase):
         self.assertEqual(set(run), set(api.RUN_KEYS))
         self.assertEqual((run["branch"], run["session"]), ("kit/slug", "s-1"))
         self.assertEqual(set(waiting), set(api.QUEUE_KEYS))
+        self.assertIn("scheduled", api.RUN_KEYS)   # an agent reads which runs it may end late
         self.assertNotIn("tree", api.RUN_KEYS)
         self.assertNotIn("layout", api.RUN_KEYS)
 

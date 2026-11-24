@@ -35,6 +35,7 @@ if os.name == "nt":
     from kitlib.lock import store as store_mod
     from kitlib.lock.store import LockError, utc_now
     from kitlib.proc import process
+    from kitlib.proc.spawn import SCHEDULED_ENV
 
 # A second process booking on the test's store: it holds its slot for a second and prints when.
 BOOK_ONE = """
@@ -881,6 +882,19 @@ class Role(StoreCase):
                 run = rm.Run(self.store, L, "kit", "t", "engine-test", None, None, "waiting",
                              None, True, clean_env(**env))
                 self.assertEqual(run.rec["role"], want)
+
+    def test_only_an_owner_run_booked_under_the_carriers_marker_is_scheduled(self):
+        """`scheduled`: the owner's role, not detached, and spawn.SCHEDULED_ENV set. An agent's
+        run, a detached one (the carrier starts those too) or one with no marker is not."""
+        L = self.layout()
+        mark = {SCHEDULED_ENV: "1"}
+        for role, detached, env, want in (("owner", False, mark, True), ("owner", False, {}, False),
+                                          ("agent", False, mark, False), ("owner", True, mark, False)):
+            with self.subTest(role=role, detached=detached, env=env), \
+                    mock.patch.object(rm, "run_role", return_value=role):
+                run = rm.Run(self.store, L, "kit", "t", "engine-test", None, None, "waiting",
+                             None, detached, clean_env(**env))
+                self.assertIs(run.rec["scheduled"], want)
 
 
 class Settling(StoreCase):

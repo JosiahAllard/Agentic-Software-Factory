@@ -43,20 +43,56 @@ def guide_s(rec):
     return max(vals) if vals else None
 
 
-def due_after_s(rec, settings):
-    """How long the run may hold before it can be stale, or None when it has no guide."""
+def due_after_s(rec, settings, scale=None):
+    """How long the run may hold before it can be stale, or None when it has no guide:
+    max(scale x guide, guide + stale_min_s), scale default settings.stale_scale."""
     g = guide_s(rec)
     if g is None:
         return None
-    return max(settings.stale_scale * g, g + settings.stale_min_s)
+    scale = settings.stale_scale if scale is None else scale
+    return max(scale * g, g + settings.stale_min_s)
+
+
+def held_s(rec, now=None):
+    """How many seconds run record rec has held its slots, or None when its holding does not
+    count: not held (waiting, ended), background, releasing, or a start time that cannot be read."""
+    if not isinstance(rec, dict) or rec.get("state") != "held":
+        return None
+    if rec.get("background") or rec.get("releasing"):
+        return None
+    try:
+        return ((now or utc_now()) - parse_iso(rec.get("held_since") or rec["since"])).total_seconds()
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def overdue(rec, settings, now=None):
+    """(True, why) when run record rec has held past max(sessionless_stop_scale x its guide,
+    guide + stale_min_s), the bar at which any agent may ask a scheduled run to stop
+    (api.authorize); else (False, why not). Either text is a clause for a sentence."""
+    held = held_s(rec, now)
+    if held is None:
+        if not isinstance(rec, dict):
+            return False, "its record cannot be read"
+        if rec.get("state") == "held" and not (rec.get("background") or rec.get("releasing")):
+            return False, "its start time cannot be read"
+        return False, "not holding slots (%s)" % (
+            "background" if rec.get("background") else "releasing" if rec.get("releasing")
+            else rec.get("state"))
+    due = due_after_s(rec, settings, settings.sessionless_stop_scale)
+    if due is None:
+        return False, "no guide (expect_s or warn_s) to be overdue against"
+    text = "held %d min, %s %d min (%g x its guide %d min, at least the guide + %d min)" % (
+        held // 60, "past" if held > due else "not past", due // 60,
+        settings.sessionless_stop_scale, guide_s(rec) // 60, settings.stale_min_s // 60)
+    return held > due, text
 
 
 def reason(store, rec, now=None):
     """Why held run record rec is stale, as a line; None when it is not. Reads only: the
     snapshot shows it, and reap acts on it."""
-    if not isinstance(rec, dict) or rec.get("state") != "held":
-        return None
-    if rec.get("background") or rec.get("releasing"):
+    held = held_s(rec, now)
+    if held is None:
         return None
     if rec.get("role") == "owner":          # the owner's own run is never the lock's to end
         return None
@@ -64,10 +100,6 @@ def reason(store, rec, now=None):
         return None
     due = due_after_s(rec, store.settings)
     if due is None:
-        return None
-    try:
-        held = ((now or utc_now()) - parse_iso(rec.get("held_since") or rec["since"])).total_seconds()
-    except (KeyError, TypeError, ValueError):
         return None
     if held <= due or not hosts_gone(rec):
         return None

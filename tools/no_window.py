@@ -7,7 +7,8 @@ which has no console, so the program gets a hidden one and everything it starts 
 PROGRAM `python` (or `python.exe`) is the python.exe beside the pythonw.exe running this; any other
 PROGRAM is started as named. PROGRAM's TEMP and TMP are AGENT_TEMP when that names a folder that
 is there or can be made (kitlib.proc.spawn.agent_temp_env); else its environment is this one,
-unchanged. It waits for PROGRAM and exits with its exit code, the same 32 bits
+unchanged. Either way it carries MACHINE_LOCK_SCHEDULED=1 (kitlib.proc.spawn.SCHEDULED_ENV): a
+lock run the owner's role books under it is a scheduled one (docs/lock-api.md "Who may"). It waits for PROGRAM and exits with its exit code, the same 32 bits
 whatever they are (a crash's 0xC0000005 too: kitlib.proc.spawn.exit_code). Run from a console
 (python.exe) it changes nothing: PROGRAM shares that console.
 
@@ -45,6 +46,7 @@ def note(argv, why):
 
 
 def main(argv):
+    os.environ[spawn.SCHEDULED_ENV] = '1'     # PROGRAM and all it starts are a scheduled job's
     try:
         code = spawn.carry(argv)
     except Exception as e:

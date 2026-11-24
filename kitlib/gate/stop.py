@@ -13,7 +13,10 @@ comes from its lock record alone, and nothing is ended that the record does not 
                              is never broken here, and one that cannot be read is held. A load
                              node's land gate shows none of these on the node (below)
   another session's          the lock's own rule (api.end_run): the owner, or the agent session
-                             the record's ancestors show it belongs to; refused otherwise
+                             the record's ancestors show it belongs to, or any agent once it is
+                             a scheduled run past twice its guide (docs/lock-api.md "Who may");
+                             refused otherwise. That last grant only asks: a run that has not
+                             ended within settings.stop_s is never forced from here (FAILED)
   ended, or its process gone ALREADY GONE, exit 0, what is left of it settled: a dead run's lock
                              record goes the way any booking moves it (store.live_runs, prune),
                              its running result record is finished `error` (finish_dead)
@@ -275,6 +278,11 @@ def _stop_live(rid, rec, store, actor, say):
         rid, _name(rec), wait_s))
     if _until(lambda: not _live(rid, store), wait_s):
         return _settled(rid, rec, found, store)
+    if (asked.get('result') or {}).get('overdue'):
+        return G.Outcome(G.FAILED, [
+            'STOP FAILED: gate run %s (%s) did not end on its stop request within %d s; it was '
+            "asked as an overdue scheduled run, which only the owner or the run's own session "
+            'may force to end; its stop request stays' % (rid, _name(rec), wait_s)], stopped=False)
     return _force(rid, rec, found, store, say)
 
 

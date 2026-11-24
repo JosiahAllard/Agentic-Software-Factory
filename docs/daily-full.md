@@ -62,6 +62,8 @@ if (-not $py -or $py -match '\\WindowsApps\\' -or -not (Test-Path -LiteralPath $
 Register-ScheduledTask -TaskName '<task name>' -Trigger (New-ScheduledTaskTrigger -Daily -At <HH:mm>) -Action (New-ScheduledTaskAction -Execute $py -Argument '"<kit>\tools\no_window.py" python "<kit>\tools\daily_full.py" -C "<main checkout>"' -WorkingDirectory '<main checkout>') -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable -Priority 7) -User $env:USERNAME -RunLevel Limited
 ```
 
+The carrier also sets MACHINE_LOCK_SCHEDULED for all it starts, so the run's lock booking is a scheduled job's, which any agent may stop once it has held past twice its guide (docs/lock-api.md "Who may").
+
 `-Priority 7` is BELOW_NORMAL, Task Scheduler's own default, stated so it is a choice and not an accident: every process the run starts inherits it, and since the lock's pinned slots keep other lock runs off its cores, it yields only to unpinned work on those cores.
 
 A task that is already registered keeps its trigger and settings and gets only the new action:

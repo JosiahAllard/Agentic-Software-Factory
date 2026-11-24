@@ -366,6 +366,64 @@ class Recorded(Base):
             s.release()
 
 
+class Overdue(Base):
+    """stale.overdue: the bar past which any agent may ask a scheduled run to stop
+    (api.authorize), max(sessionless_stop_scale 2 x guide, guide + stale_min_s), on the same
+    held time (held_s) and guide the stale reap reads."""
+
+    def rec(self, **fields):
+        rec = {"state": "held", "warn_s": GUIDE_S, "expect_s": 600, "since": ago(99999)}
+        rec.update(fields)
+        return rec
+
+    def test_past_twice_the_guide_is_overdue(self):
+        # guide 1800 s: 2 x 1800 = 3600 s, and guide + 3600 s = 5400 s is the larger bar.
+        late, why = stale.overdue(self.rec(held_since=ago(5400 + 120)), self.store.settings)
+        self.assertTrue(late)
+        self.assertEqual(why, "held 92 min, past 90 min (2 x its guide 30 min, at least the "
+                              "guide + 60 min)")
+
+    def test_twice_the_guide_is_the_bar_when_it_is_the_larger(self):
+        guide = 7200                # 2 x 7200 = 14400 s beats guide + 3600 s = 10800 s
+        self.assertFalse(stale.overdue(self.rec(warn_s=guide, held_since=ago(12000)),
+                                       self.store.settings)[0])
+        self.assertTrue(stale.overdue(self.rec(warn_s=guide, held_since=ago(14400 + 120)),
+                                      self.store.settings)[0])
+
+    def test_inside_the_bar_says_how_far(self):
+        late, why = stale.overdue(self.rec(held_since=ago(3000)), self.store.settings)
+        self.assertFalse(late)
+        self.assertIn("held 50 min, not past 90 min", why)
+
+    def test_the_scale_is_a_setting(self):
+        self.store.settings.sessionless_stop_scale = 4.0
+        self.assertFalse(stale.overdue(self.rec(held_since=ago(5400 + 120)),
+                                       self.store.settings)[0])
+
+    def test_a_run_not_holding_with_no_guide_or_no_start_time_is_never_overdue(self):
+        for fields, word in (({"state": "waiting"}, "not holding slots (waiting)"),
+                             ({"background": True}, "not holding slots (background)"),
+                             ({"releasing": True}, "not holding slots (releasing)"),
+                             ({"warn_s": None, "expect_s": None}, "no guide"),
+                             ({"held_since": "not a time"}, "its start time cannot be read")):
+            with self.subTest(fields=fields):
+                late, why = stale.overdue(self.rec(**dict({"held_since": ago(99999)}, **fields)),
+                                          self.store.settings)
+                self.assertFalse(late)
+                self.assertIn(word, why)
+
+    def test_held_s_counts_from_held_since_else_since(self):
+        self.assertAlmostEqual(stale.held_s(self.rec(held_since=ago(600))), 600, delta=30)
+        self.assertAlmostEqual(stale.held_s(self.rec(since=ago(900))), 900, delta=30)
+        self.assertIsNone(stale.held_s(self.rec(held_since="not a time")))
+        self.assertIsNone(stale.held_s(None))
+
+    def test_due_after_s_takes_a_scale(self):
+        rec = self.rec()
+        self.assertEqual(stale.due_after_s(rec, self.store.settings), DUE_S)
+        self.assertEqual(stale.due_after_s(rec, self.store.settings, 4.0), 4 * GUIDE_S)
+
+
 class Shown(Base):
     def test_snapshot_shows_the_reason_and_writes_nothing(self):
         self.stale_record()
@@ -461,6 +519,23 @@ class StopReadLate(Base):
         self.assertTrue(any("was ended by the lock: its booking session has ended" in x
                             for x in self.said), self.said)
         self.assertFalse(any("cancelled by stop" in x for x in self.said), self.said)
+
+    def test_an_agents_stop_with_a_why_names_its_asker_and_why(self):
+        # An agent's stop of an overdue scheduled run (api.end_run) carries a why, which the
+        # wrapper says as the lock's own: before, only the lock's stop was said with its why.
+        self.confine(1)
+        s = rm.book("engine-test", "kit", "late", cores=1, store=self.store, env=clean_env())
+        p = s.start([sys.executable, "-c", "import time; time.sleep(120)"])
+        self.addCleanup(lambda: p.poll() is None and p.kill())
+        why = "scheduled run held 250 min, past 240 min; asked by agent host pid 7, session s-B"
+        run_end.request_stop(self.store, s.id, "test-agent", "s-B", why=why)
+        got = s.wait(p)
+        s.release(*got)
+        self.assertEqual(got, (1, "cancelled"))
+        self.assertIn("run %s was ended by test-agent: %s; its process tree is ended" % (s.id, why),
+                      self.said)
+        self.assertEqual(self.store.read("ended/%s.json" % s.id)["stopped_by"],
+                         {"by": "test-agent", "session": "s-B", "why": why})
 
 
 if __name__ == "__main__":

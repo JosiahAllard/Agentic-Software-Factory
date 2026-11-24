@@ -82,7 +82,7 @@ from kitlib.hubsite import api, auth, control, gitsync, httpd, hublog, serveheal
 from kitlib.hubsite import serve as hubserve
 from kitlib.hubsite.cli import common, task
 from kitlib.launcher import pushdelivery
-from kitlib.proc import process
+from kitlib.proc import process, spawn
 
 
 HEALTH = api.BASE + '/health'
@@ -141,6 +141,9 @@ def push_delivery(out, adapter_module):
 def serve(a, out, stop=None, *, machine_sources, adapter_module):
     """`machine_sources(sync=...)`: the machine's Sources (kitlib.hubjobs, which the tool
     binds); `adapter_module`: as for push_delivery."""
+    # The hub is no scheduled job, though its autostart task starts it under the carrier: what
+    # it starts (a click's lock run) must not be marked one (docs/lock-api.md "Who may").
+    os.environ.pop(spawn.SCHEDULED_ENV, None)
     # First, so every git call it starts runs at normal too: the autostart task's default
     # priority is below normal, and a server below the agents' runs starved under load.
     priority = process.raise_to_normal()

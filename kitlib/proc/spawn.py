@@ -33,6 +33,10 @@ import sys
 from . import job
 
 CARRIER = 'no_window.py'    # the carrier's file name in the kit's tools folder
+# The carrier sets this in its own environment, so everything it starts inherits it: a lock run
+# booked by the owner's role under it is a scheduled one (kitlib.lock.run, docs/lock-api.md "Who
+# may"). The hub server and a launched session's window drop it, as neither is a scheduled job.
+SCHEDULED_ENV = 'MACHINE_LOCK_SCHEDULED'
 EXIT_USAGE = 2          # carry: no program named
 EXIT_NO_START = 127     # carry: the program could not be started
 PYTHON_WORDS = ('python', 'python.exe')

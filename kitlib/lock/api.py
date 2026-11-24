@@ -85,12 +85,14 @@ def is_owner(actor):
         return False                    # fail closed
 
 
-def authorize(actor, action, target=None):
+def authorize(actor, action, target=None, settings=None):
     """None when actor may do `action` to `target` (a hold or run record, or a hold spec), else
     the reason; actor is who() it is. The owner may do everything. An agent may make agent
-    holds, edit and end its own agent holds (store.owns), and end its own runs. Ending another
-    session's run, owner and game holds, the division and the games list are the owner's (a run
-    whose wrapper has died is reaped by the lock itself, not ended by anyone)."""
+    holds, edit and end its own agent holds (store.owns), end its own runs, and end a scheduled
+    run (`scheduled`, run.scheduled) that is overdue by the lock's `settings` (stale.overdue;
+    with no settings it may not). Ending another session's run or the owner's own, owner and
+    game holds, the division and the games list are the owner's (a run whose wrapper has died is
+    reaped by the lock itself, not ended by anyone)."""
     if is_owner(actor):
         return None
     if not isinstance(actor, dict):
@@ -107,6 +109,8 @@ def authorize(actor, action, target=None):
     if action == "end_run":
         if owns(actor, target or {}):
             return None
+        if (target or {}).get("role") == "owner":
+            return _owner_run_refusal(target, settings)
         mine = actor_host(actor)
         return ("run %s (%s/%s) belongs to another session: it was booked under session %s, "
                 "agent host %s; you are session %s, agent host %s, which is not among its "
@@ -118,6 +122,21 @@ def authorize(actor, action, target=None):
     return "unknown action %s" % action
 
 
+def _owner_run_refusal(target, settings):
+    """authorize's answer for an agent ending run `target`, booked by the owner's role: None
+    for a scheduled run past stale.overdue's bar, else which case refused it."""
+    name = "run %s (%s/%s)" % (target["id"], target.get("repo"), target.get("slug"))
+    if not target.get("scheduled"):
+        return ("%s is the owner's own: it was booked under no agent session and not by a "
+                "scheduled job; only the owner ends it" % name)
+    if settings is None:
+        return "%s is a scheduled job's; with no lock settings to judge it, only the owner ends it" % name
+    late, why = stale_mod.overdue(target, settings)
+    return None if late else (
+        "%s is a scheduled job's, and an agent may end it only once it is overdue: %s; until "
+        "then only the owner ends it" % (name, why))
+
+
 def _hosts_text(hosts):
     """'pid 123' or 'pid 1, pid 2' for [[pid, ctime]], 'none' for none."""
     if not isinstance(hosts, (list, tuple)) or not hosts:
@@ -126,8 +145,8 @@ def _hosts_text(hosts):
                      for h in hosts)
 
 
-def _check(actor, action, target=None):
-    why = authorize(actor, action, target)
+def _check(actor, action, target=None, settings=None):
+    why = authorize(actor, action, target, settings)
     if why:
         raise ApiError("forbidden", why)
 
@@ -172,7 +191,8 @@ def _store(store):
 _RUN_ROW = ("id", "state", "repo", "slug", "kind", "note", "pid", "ctime", "since", "held_since",
             "expect_s", "expect_from", "hold", "parent", "need", "has", "shares", "pinned", "pin",
             "pin_note", "threads", "child", "blocked_by", "detached", "session", "releasing",
-            "moved", "resource", "priority", "within", "need_mem_mb", "mem_from")
+            "moved", "resource", "priority", "within", "need_mem_mb", "mem_from",
+            "scheduled")
 # live_records' key sets: a run's (a snapshot row's record keys and its branch) and a waiting
 # queue entry's (a snapshot queue row's record keys).
 RUN_KEYS = _RUN_ROW + ("branch",)
@@ -673,19 +693,28 @@ def set_game_mode(actor, enabled, store=None):
 def end_run(actor, rid, store=None):
     """Asks a live run to end (its stop request: a waiting run leaves the queue, a held run's
     tree is ended, a background run gets settings.bg_stop_grace_s to checkpoint). It does not
-    wait. result: {id, requested}. A record that cannot be read (_active_record) is the store
-    error, never "no live run"."""
+    wait. result: {id, requested}, and overdue: true when only authorize's overdue grant allowed
+    it (an agent ending a scheduled run past its bar, not its own): its stop request then
+    carries `why`, which names the asker's agent host, and nothing may force the run to end
+    (kitlib.gate.stop). A record that cannot be read (_active_record) is the store error, never
+    "no live run"."""
     def go(store):
         me = who(actor, store)
         _id(rid, "r")
         d = _active_record(store, rid)
         if not d or not store.run_live(d):
             raise ApiError("not_found", "no live run %s" % rid, "id")
-        _check(me, "end_run", d)
+        _check(me, "end_run", d, store.settings)
         by = "owner" if is_owner(me) else me.get("name") or me.get("session")
-        if not request_stop(store, rid, by, me.get("session")):
+        why = None
+        if not is_owner(me) and not owns(me, d):    # authorize's one other grant
+            host = actor_host(me)
+            why = "scheduled run %s; asked by agent host %s, session %s" % (
+                stale_mod.overdue(d, store.settings)[1], _hosts_text([host] if host else None),
+                me.get("session"))
+        if not request_stop(store, rid, by, me.get("session"), why=why):
             raise ApiError("not_found", "no live run %s" % rid, "id")
-        return {"id": rid, "requested": True}
+        return dict({"id": rid, "requested": True}, **({"overdue": True} if why else {}))
     return _write(store, go)
 
 

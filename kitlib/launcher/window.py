@@ -5,7 +5,9 @@
   2. every user environment variable read fresh from the registry, but Path, TEMP and TMP (the
      launching process may predate the owner's latest ones);
   3. every inherited CLAUDE*/ANTHROPIC* variable cleared (a window started from a Claude session
-     inherits its child-session marker, which turns transcripts off, and its auth routing), then
+     inherits its child-session marker, which turns transcripts off, and its auth routing), and
+     MACHINE_LOCK_SCHEDULED (spawn.SCHEDULED_ENV: a window started under the scheduled jobs'
+     carrier is no scheduled job, docs/lock-api.md "Who may"), then
      CLAUDE_CODE_FORCE_SESSION_PERSISTENCE=1;
   4. PM_KIT_ROLE, the session mark (kitlib.host.sessionmark; role_for), and PM_KIT_SESSION_NAME;
   5. CLAUDE_CONFIG_DIR for the account (removed for the default folder);
@@ -30,6 +32,7 @@ import subprocess
 
 from kitlib import platform
 from kitlib.host import agentname, sessionmark
+from kitlib.proc.spawn import SCHEDULED_ENV
 
 ROLE_ENV = sessionmark.ENV
 NAME_ENV = 'PM_KIT_SESSION_NAME'
@@ -59,6 +62,7 @@ CONFIG_ENV = 'CLAUDE_CONFIG_DIR'
 CLEAR_CLAUDE = ("Get-ChildItem Env: | Where-Object { $_.Name -match '^(%s)' } | ForEach-Object "
                 "{ [Environment]::SetEnvironmentVariable($_.Name, $null, 'Process') }") % ENV_STEMS
 PERSIST = "$env:%s = '1'" % PERSIST_ENV
+CLEAR_SCHEDULED = 'Remove-Item Env:%s -ErrorAction SilentlyContinue' % SCHEDULED_ENV
 
 
 def role_for(agent, coordinator_agent='coordinator'):
@@ -138,7 +142,8 @@ def script(name, role, folder, command, config_dir=None, agent_temp=None):
     if _linux():
         from kitlib.launcher import linuxwin
         return linuxwin.script(name, role, folder, command, config_dir, agent_temp)
-    lines = ['$Host.UI.RawUI.WindowTitle = %s' % q(name), USER_ENV, CLEAR_CLAUDE, PERSIST,
+    lines = ['$Host.UI.RawUI.WindowTitle = %s' % q(name), USER_ENV, CLEAR_CLAUDE,
+             CLEAR_SCHEDULED, PERSIST,
              '$env:%s = %s' % (ROLE_ENV, q(role)), '$env:%s = %s' % (NAME_ENV, q(name))]
     lines.append('$env:%s = %s' % (CONFIG_ENV, q(config_dir)) if config_dir
                  else 'Remove-Item Env:%s -ErrorAction SilentlyContinue' % CONFIG_ENV)

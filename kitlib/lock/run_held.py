@@ -421,12 +421,15 @@ class Slot:
             if stop or (timeout is not None and time.monotonic() - t0 >= timeout):
                 if stop:
                     # Read again for queue_read_s: a stop file being written (or swapped in) can
-                    # refuse its first read, and its why is the only way to tell the lock's stop.
+                    # refuse its first read, and its why is the only way to tell the lock's stop
+                    # (stale.reap) or an agent's of an overdue scheduled run (api.end_run).
                     req, _there = read_record(self.store.path("active", self.id + ".stop"),
                                               self.store.settings.queue_read_s)
-                    if isinstance(req, dict) and req.get("by") == stale.BY and req.get("why"):
-                        self.store.say("run %s was ended by the lock: %s; its process tree is "
-                                       "ended" % (self.id, req["why"]))
+                    if isinstance(req, dict) and req.get("why"):
+                        self.store.say("run %s was ended by %s: %s; its process tree is ended" % (
+                            self.id, "the lock" if req.get("by") == stale.BY
+                            else req.get("by") or "an unnamed agent",
+                            req["why"]))
                     else:
                         self.store.say("run %s was cancelled by stop; its process tree is ended"
                                        % self.id)

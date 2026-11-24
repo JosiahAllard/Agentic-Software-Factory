@@ -44,6 +44,7 @@ from kitlib.lock.store import (EXIT_HOLD, EXIT_REQUIRE, EXIT_USAGE, LockError, S
                                tree_role, utc_now, write_json)
 from kitlib.platform.linux import process as procfs
 from kitlib.proc import bash, process
+from kitlib.proc.spawn import SCHEDULED_ENV
 from kitlib.platform.windows import cpu
 from kitlib.lock.run_cmdline import bare_hint, script_command, ScriptArgError
 from kitlib.lock.run_end import settle
@@ -206,6 +207,14 @@ def run_role(detached, env):
     return caller()["role"]
 
 
+def scheduled(role, detached, env):
+    """Whether a run is a scheduled job's: booked by the owner's role, not detached, under the
+    carrier's marker (spawn.SCHEDULED_ENV, tools/no_window.py). Any agent may ask such a run to
+    stop once it is overdue (api.authorize, stale.overdue). A detached start runs under the
+    carrier too, whoever made it, so it never counts."""
+    return role == "owner" and not detached and bool(env.get(SCHEDULED_ENV))
+
+
 def check_run_id(rid):
     """Raises LockError (usage, exit 2) unless rid is None or shaped as store.new_id("r") makes a
     run id: a given id names files under the store, so nothing else may reach a path."""
@@ -261,14 +270,14 @@ class Run:
         env = os.environ if env is None else env
         self.store = store
         ancestors = run_ancestors(detached, env)
+        role = run_role(detached, env)
         self.rec = {"id": rid or new_id("r"), "state": state, "repo": repo, "slug": slug,
                     "kind": kind, "note": note, "pid": os.getpid(), "ctime": process.own_ctime(),
                     "since": iso(), "cmd": [str(c) for c in cmd or ()][:20],
                     "detached": bool(detached), "holding": [], "slots": {}, "cores": [],
                     "gpus": [], "shares": {}, "session": session_of(env),
-                    "ancestors": ancestors, "hosts": booking_hosts(ancestors),
-                    "role": run_role(detached, env),
-                    "layout": lay.slot_key(L)}
+                    "ancestors": ancestors, "hosts": booking_hosts(ancestors), "role": role,
+                    "scheduled": scheduled(role, detached, env), "layout": lay.slot_key(L)}
         if kitlib.platform.NAME == "linux":
             self.rec["pidns"] = procfs.pidns()  # its pid is this namespace's (store.record_state)
         self.id = self.rec["id"]

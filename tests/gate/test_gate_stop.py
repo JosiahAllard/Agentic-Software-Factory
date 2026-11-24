@@ -21,7 +21,7 @@ from kitlib.landing import lander as land
 from kitlib.lock import holds as hl
 from kitlib.lock import run as lockrun
 from kitlib.lock import run_end
-from kitlib.lock.store import LockError, utc_now
+from kitlib.lock.store import LockError, iso, utc_now
 from kitlib.proc import process
 from kitlib.records import gate_ok, landing
 from tests.gate import fixtures
@@ -218,6 +218,19 @@ class Sessions(StopCase):
     def test_the_owner_may_stop_any_session_s_run(self):
         self.assertIs(self.stop(R1), FORCED)
         self.assertTrue(os.path.exists(self.stop_file(R1)))
+
+    def test_an_overdue_scheduled_run_is_asked_and_never_forced(self):
+        # The lock lets any agent ask a scheduled run past its bar to stop (api.end_run); a run
+        # that does not end on it stays the owner's to force.
+        held = iso(utc_now() - datetime.timedelta(seconds=99999))
+        self.gate_run(R2, role='owner', scheduled=True, warn_s=1800, held_since=held)
+        out = self.stop(R2, actor=agent('S2'))
+        self.assertEqual(out.code, G.FAILED, out.lines)
+        self.assertIn('asked as an overdue scheduled run, which only the owner or the run\'s own '
+                      'session may force to end; its stop request stays', out.lines[0])
+        self.force.assert_not_called()
+        self.assertTrue(os.path.exists(self.stop_file(R2)))
+        self.assertIs(self.stop(R2), FORCED)        # the owner still may
 
 
 class Gone(StopCase):

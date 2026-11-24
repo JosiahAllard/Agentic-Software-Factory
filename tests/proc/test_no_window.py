@@ -302,6 +302,16 @@ class CarrierTest(_Folder):
         self.assertEqual(self.carry("python", "-c", code, out), 0)
         self.assertEqual(self.read(out), [self.dir, self.dir])
 
+    def test_the_program_is_marked_a_scheduled_jobs(self):
+        """The carried program sees SCHEDULED_ENV though the carrier's caller set none: a lock run
+        the owner's role books under it is a scheduled one (kitlib.lock.run)."""
+        self.env.pop(spawn.SCHEDULED_ENV, None)
+        out = os.path.join(self.dir, "marker.json")
+        code = ("import json, os, sys; json.dump(os.environ.get(%r), open(sys.argv[1], 'w'))"
+                % spawn.SCHEDULED_ENV)
+        self.assertEqual(self.carry("python", "-c", code, out), 0)
+        self.assertEqual(self.read(out), "1")
+
     def test_a_program_named_by_path_is_carried_too(self):
         out = os.path.join(self.dir, "carried.json")
         self.assertEqual(self.carry(python_exe(), self.probe, out, "0"), 0)

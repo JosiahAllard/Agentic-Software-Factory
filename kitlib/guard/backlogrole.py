@@ -636,11 +636,11 @@ def landed_script(event, ctx, cwd, path):
     "Landed scripts"): its whole bytes are the blob at the local refs/heads/<main branch>:<its path>, or that blob (no
     CR) with each LF as CRLF; agents may not write that ref (git-shared-ref, git-push-main). Checked in order, each
     failing to False: a checkout place (MAIN or LINKED, not the PM data worktree) holding `path`; a git common dir the
-    session may not write (jail_roots: one it made or can rewrite is never trusted), before any git runs; a PM data
-    record (rules.pmdata_recorded); the main checkout's .kit.json main_branch, else <remote>/HEAD's, trusted only as
-    main or master; never the linked worktree's own branch; no branch equal to refs/heads/<main> only ignoring case (on
-    NTFS a loose refs/heads/Main shadows a packed main); then `git --no-replace-objects cat-file blob` (no replace ref
-    stands in). Any error is False: the script is judged as before."""
+    session may not write (jail_roots: one it made or can rewrite is never trusted), before any git runs; the main
+    checkout's .kit.json main_branch, else <remote>/HEAD's, trusted only as main or master; never the linked
+    worktree's own branch; no branch equal to refs/heads/<main> only ignoring case (on NTFS a loose refs/heads/Main
+    shadows a packed main); then `git --no-replace-objects cat-file blob` (no replace ref stands in). Any error is
+    False: the script is judged as before."""
     try:
         return _landed(event, ctx, cwd, path)
     except Exception:                           # noqa: BLE001 - no trust read: judged as before
@@ -660,8 +660,6 @@ def _landed(event, ctx, cwd, path):
         return False
     if jail.judge(place.common, rules.jail_roots(event, ctx, cwd))[0] is None:
         return False                            # the session may write its refs or objects
-    if not rules.pmdata_recorded(ctx, path):
-        return False
     cfg = ctx.config(path)
     if cfg is None:
         return False

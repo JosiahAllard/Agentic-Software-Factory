@@ -26,6 +26,10 @@ successor's stop (stop-new) is decided again the same way, on the hand-off recor
 read again, so a check-in or a write since the run began keeps it. A failed step leaves the others to
 run, and the run then fails.
 
+A session's quiet time is read by its name, not its session id: the host's newest_finder matches
+every title its transcript has recorded (launch name, a --name given on resume, a later rename), so
+the PM resumed as pm-session after a reboot is found under that name though its first title differs.
+
 Sign-ins (docs/launcher.md "Accounts"): each account's login is read at each run
 (accounts.account_login). A `no-checkin` marks the crossing's target as possibly needing a sign-in
 (signed_out, once per start: the crossing keeps the start it marked as `marked`, so neither a

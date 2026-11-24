@@ -23,7 +23,7 @@ Refusals: exit 6 busy (`--no-wait`), 8 `--max-wait` out. 11: reservation leaves 
 
 - Heavy work unlocked because busy; env variable as lock proof.
 - Truncate locked run's live output (`head`, first-N filter).
-- Touch others' runs, records, processes; `stop --force`, `hold`, `division`, `game`: report run id + `status` text to coordinator.
+- Touch others' runs, records, processes (one exception: plain `machine_lock.py stop <id>` of a scheduled run held past twice its guide, which the lock allows, <kit>/docs/lock-api.md "Who may"); `stop --force`, `hold`, `division`, `game`: report run id + `status` text to coordinator.
 - Unlabelled measurement under load: label "shared machine".
 
 Details: `<kit>/docs/lock-api.md`; read-only lock tools over MCP: `<kit>/docs/lock-mcp.md`.

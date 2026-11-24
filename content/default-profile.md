@@ -69,7 +69,8 @@ never reviews against nothing.
 
 ## Shared resources that must be serialised
 The machine lock (skill machine-lock-run): the gate takes it itself; other heavy work runs inside
-it. Never pre-empt a holder, and never end a process you did not start. Ports, devices, accounts
+it. Never pre-empt a holder, and never end a process you did not start. The one exception is plain `machine_lock.py stop` of a scheduled run the
+lock allows (held past twice its guide; <kit>/docs/lock-api.md "Who may"). Ports, devices, accounts
 and services the README or the brief names are used one agent at a time, as the brief assigns.
 Temp files go to your session's scratch folder, never the repository.
 

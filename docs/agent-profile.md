@@ -53,7 +53,7 @@ strong- or deep-tier coder whose context is above about 150k tokens.
 
 ## Shared resources that must be serialised
 The machine lock (docs/lock-api.md), through the live install only, never a copy on a branch.
-Never pre-empt a holder. Temp folders: the tools' own (machine config `temp_dir`, docs/kit-json.md "Machine config keys"); do not
+Never pre-empt a holder, except a scheduled run the lock lets any agent stop once it has held past twice its guide (docs/lock-api.md "Who may"). Temp folders: the tools' own (machine config `temp_dir`, docs/kit-json.md "Machine config keys"); do not
 hardcode a temp path.
 
 ## Risk map

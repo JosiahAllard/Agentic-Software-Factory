@@ -38,7 +38,7 @@ fixed surface (a public facade, a wire codec, a fake of an external client).
 
 ## Shared resources that must be serialised
 Locks, ports, devices, accounts and anything else two agents must not use at once, and how each
-is taken and released. Never pre-empt a holder.
+is taken and released. Never pre-empt a holder, except a scheduled run the lock lets any agent stop once it has held past twice its guide (<kit>/docs/lock-api.md "Who may").
 - Default, kept unless the owner deletes it: pages, renders and clips an agent wrote outside the
   repository are deleted by the owner only.
 

@@ -33,7 +33,8 @@ RULES = (
     '- One write per shell call: never chain a commit, merge, reset, backlog write or landing command with '
     'other commands; a kit tool call is bare (no `cd` prefix, pipe or wrapper).',
     '- End only a process you started, by its pid while its start time matches; never by name or command '
-    'line.',
+    'line. The one exception is plain `machine_lock.py stop` of a scheduled run held '
+    'past twice its guide, which the lock allows (<kit>/docs/lock-api.md "Who may").',
     '- A classifier refusal, a permission denial or a tool\'s `REFUSED:` on substance is final: send your '
     'caller the exact command, folder and message and go on with other work; never retry, reword or route '
     'it round. A kit-guard refusal: fix the form its `Instead:` line gives, then retry (skill backlog-ops, '

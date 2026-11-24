@@ -23,6 +23,7 @@ from kitlib.landing import submit, verdicts
 from kitlib.records import verdict_entry
 from kitlib.git import repo
 from kitlib.lock import detach as lockdetach
+from kitlib.lock import run as lockrun
 from kitlib.lock.store import LockError
 from kitlib.proc import process
 from tests import gitfixture, testutil
@@ -127,7 +128,10 @@ class TheLine(SubmitCase):
                                     '--submitted', payload])
         self.assertEqual(cwd, self.repo.root)
         self.assertNotIn('MACHINE_LOCK_RUN', env)   # never a slot nested in the submitter's run
-        self.assertIn('MACHINE_LOCK_ORIGIN', env)   # the submitter's ancestry: its role
+        # the submitter's ancestry (its role, and whose run the landing's is), as a run booked
+        # here would record it
+        self.assertTrue(env['MACHINE_LOCK_ORIGIN'])
+        self.assertEqual(env['MACHINE_LOCK_ORIGIN'], lockrun.origin_value())
         self.assertEqual((env['KEEP'], env['PYTHONIOENCODING']), ('me', 'utf-8'))
         self.assertEqual(self.book_calls, [])       # the submitter books nothing
 

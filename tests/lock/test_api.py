@@ -637,11 +637,18 @@ class EndRun(ApiCase):
 
     def test_another_sessions_run_is_the_owners_to_end_force_or_not(self):
         # The old check let any agent end any run by saying force (stop --force): red.
-        self.live_record(R_A, session="sess-A", ancestors=[claude_of("sess-A")])
+        self.live_record(R_A, session="sess-A", ancestors=[claude_of("sess-A")],
+                         hosts=[claude_of("sess-A")])
         for who in (agent("sess-B"), dict(agent("sess-B"), force=True),
                     dict(agent("sess-B"), session="sess-A")):
             with self.subTest(who=who):
-                self.err(api.end_run(who, R_A, self.store), "forbidden")
+                e = self.err(api.end_run(who, R_A, self.store), "forbidden")
+                # Both sides, so a mismatch reads off: a copied session id is the same text on
+                # both, and the agent hosts, which decide, differ.
+                self.assertIn("booked under session sess-A, agent host pid %d;" % (
+                    claude_of("sess-A")[0]), e["message"])
+                self.assertIn("you are session %s, agent host pid %d," % (
+                    who["session"], claude_of("sess-B")[0]), e["message"])
         self.assertIsNone(self.stop_file(R_A))
         r = self.ok(api.end_run(OWNER, R_A, self.store))
         self.assertEqual(r, {"id": R_A, "requested": True})

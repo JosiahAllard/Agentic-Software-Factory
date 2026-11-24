@@ -1,12 +1,13 @@
 """kitlib.lock.store.caller reads who is asking from this process's tree: a chain that runs into a
 shell that has exited, but that a handle keeps openable, is never the owner's on that account,
-nor is one WMI's provider host tops, and the owner's own chains still are. Fakes only
+nor is one WMI's provider host tops, and the owner's own chains still are; a run booked there
+records the same chain (kitlib.lock.run.run_ancestors), so caller() owns it at stop. Fakes only
 (tests/platform/fakeproc.py): the process calls answer from a table, this process at its head."""
 import os
 import unittest
 from unittest import mock
 
-from kitlib.lock import store
+from kitlib.lock import run, store
 
 from tests.platform.fakeproc import FakeProc, patched
 from tests.platforms import windows_only
@@ -57,6 +58,39 @@ class ExitedShell(unittest.TestCase):
                   SHELL: FakeProc(300, HOST, True, None),
                   HOST: FakeProc(350, GONE, False, 'svchost.exe', opens=False)})
         self.assertEqual(me['role'], 'agent')
+
+    def booked(self, table, what=lambda: (run.run_ancestors(False, {}), store.caller(env={}))):
+        """what() of this process under table; by default (run_ancestors, caller()): what a run
+        booked here records and who stop then sees."""
+        with patched(table, ME), mock.patch.object(store, 'agent_hosts',
+                                                   lambda *a: frozenset({'claude.exe'})):
+            return what()
+
+    def test_a_run_booked_from_a_background_shell_is_its_agent_hosts_to_stop(self):
+        # OBSERVED 2026-11-23: a run booked from a background shell (python <- timeout <-
+        # timeout <- exited bash <- bash <- claude.exe) recorded ancestors that stopped at the
+        # exited bash, so its own session's stop was refused as another session's.
+        table = {ME: FakeProc(400, SHELL, False, 'python.exe'),
+                 SHELL: FakeProc(300, HOST, True, 'bash.exe'),
+                 HOST: FakeProc(200, GONE, False, 'claude.exe')}
+        anc, me = self.booked(table)
+        self.assertEqual(me['host'], [HOST, 200])
+        self.assertIn([HOST, 200], anc)
+        self.assertTrue(store.owns(me, {'ancestors': anc}))
+        # A detached start made here passes the same ancestry on (MACHINE_LOCK_ORIGIN).
+        origin = self.booked(table, lambda: run.origin_value())
+        self.assertEqual(run.origin_pairs({run.ORIGIN_ENV: origin}), [tuple(a) for a in anc])
+
+    def test_an_exited_shells_parent_pid_reused_by_a_newer_agent_host_owns_nothing(self):
+        # SHELL's recorded parent pid now names a claude.exe made after it: another session.
+        anc, _me = self.booked({ME: FakeProc(400, SHELL, False, 'python.exe'),
+                                SHELL: FakeProc(300, HOST, True, None),
+                                HOST: FakeProc(350, GONE, False, 'claude.exe')})
+        self.assertEqual(anc, [[SHELL, 300]])
+        _anc, other = self.booked({ME: FakeProc(400, HOST, False, 'python.exe'),
+                                   HOST: FakeProc(350, GONE, False, 'claude.exe')})
+        self.assertEqual(other['host'], [HOST, 350])
+        self.assertFalse(store.owns(other, {'ancestors': anc}))
 
     def test_an_agent_host_below_an_exited_shell_makes_the_agent_whatever_is_above(self):
         # The walk ends not-exited at a listed parent it cannot open; the host below decides.

@@ -107,10 +107,23 @@ def authorize(actor, action, target=None):
     if action == "end_run":
         if owns(actor, target or {}):
             return None
-        return ("run %s (%s/%s) belongs to another session; only the owner ends another "
-                "session's run" % (
-                    target["id"], target.get("repo"), target.get("slug")))
+        mine = actor_host(actor)
+        return ("run %s (%s/%s) belongs to another session: it was booked under session %s, "
+                "agent host %s; you are session %s, agent host %s, which is not among its "
+                "ancestors (a run is its agent host's, never its session id's); only the owner "
+                "ends another session's run" % (
+                    target["id"], target.get("repo"), target.get("slug"), target.get("session"),
+                    _hosts_text(target.get("hosts")), actor.get("session"),
+                    _hosts_text([mine] if mine else None)))
     return "unknown action %s" % action
+
+
+def _hosts_text(hosts):
+    """'pid 123' or 'pid 1, pid 2' for [[pid, ctime]], 'none' for none."""
+    if not isinstance(hosts, (list, tuple)) or not hosts:
+        return "none"
+    return ", ".join("pid %s" % (h[0] if isinstance(h, (list, tuple)) and h else h)
+                     for h in hosts)
 
 
 def _check(actor, action, target=None):

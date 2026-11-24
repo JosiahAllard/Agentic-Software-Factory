@@ -49,7 +49,8 @@ def session_titles(path):
     name (-n/--remote-control), a --name given on resume and any later rename (the app, Remote
     Control), so a renamed session is still found under each. A file is read whole once, then only
     what is appended; a line not yet ended counts on a later call, and a file that shrank is read
-    again from its start. Empty if the file cannot be read (nothing cached)."""
+    again from its start. A file that cannot be read gives the titles last read from it (empty if
+    none) and changes nothing cached."""
     end, titles = _TITLES.get(path, (0, frozenset()))
     try:
         with open(path, "rb") as f:
@@ -78,7 +79,7 @@ def session_titles(path):
                             and isinstance(r.get("customTitle"), str):
                         found.add(r["customTitle"])
     except OSError:
-        return frozenset()
+        return _TITLES.get(path, (0, frozenset()))[1]
     titles = titles | found
     _TITLES[path] = (end, titles)
     return titles

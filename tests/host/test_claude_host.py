@@ -70,15 +70,32 @@ class SessionTitles(unittest.TestCase):
         self.write(FILLER + title('far') + FILLER * 20 + title('split') + FILLER * 20)
         with mock.patch.object(H, 'CHUNK', len(FILLER) + 7):     # cuts every line, 'far' many reads back
             self.assertEqual(H.session_titles(self.path), {'far', 'split'})
+        self.assertEqual(H._TITLES[self.path][0], os.path.getsize(self.path))
 
     def test_a_line_not_yet_ended_counts_once_it_is_and_an_appended_title_is_seen(self):
         line = title('late')
         self.write(title('first') + line[:10])
         self.assertEqual(H.session_titles(self.path), {'first'})
+        self.assertEqual(H._TITLES[self.path][0], len(title('first')))
         self.write(line[10:])
         self.assertEqual(H.session_titles(self.path), {'first', 'late'})
         self.write(FILLER + title('renamed'))
         self.assertEqual(H.session_titles(self.path), {'first', 'late', 'renamed'})
+
+    def test_an_unchanged_file_is_not_read_again(self):
+        self.write(title('n') + FILLER)
+        H.session_titles(self.path)
+        cached = H._TITLES[self.path]
+        self.assertEqual(H.session_titles(self.path), {'n'})
+        self.assertIs(H._TITLES[self.path], cached)            # no read made, nothing stored again
+
+    def test_a_read_failing_after_a_good_one_keeps_the_titles_read(self):
+        self.write(title('n'))
+        H.session_titles(self.path)
+        cached = H._TITLES[self.path]
+        with mock.patch('builtins.open', side_effect=OSError('locked')):
+            self.assertEqual(H.session_titles(self.path), {'n'})
+        self.assertIs(H._TITLES[self.path], cached)
 
     def test_a_shrunk_file_is_read_again_from_its_start(self):
         self.write(title('old') + FILLER * 3)

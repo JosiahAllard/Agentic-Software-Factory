@@ -226,8 +226,9 @@ def parser():
     t.add_argument("id")
     t.add_argument("--force", action="store_true",
                    help="kept for old scripts; ending another session's run is the owner's "
-                        "and needs no flag (an agent is refused, exit 2), but for a scheduled "
-                        "run past twice its guide, which any agent may end")
+                        "and needs no flag (an agent is refused, exit 2). An agent ends a "
+                        "scheduled run past twice its guide with plain `stop`; --force stays "
+                        "the owner's")
     o = sub.add_parser("top", allow_abbrev=False,
                        help="the owner's: move a waiting run to the front of the queue (runs "
                             "holding slots keep them)")

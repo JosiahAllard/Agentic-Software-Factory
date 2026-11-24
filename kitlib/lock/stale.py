@@ -72,6 +72,10 @@ def overdue(rec, settings, now=None):
     (api.authorize); else (False, why not). Either text is a clause for a sentence."""
     held = held_s(rec, now)
     if held is None:
+        if not isinstance(rec, dict):
+            return False, "its record cannot be read"
+        if rec.get("state") == "held" and not (rec.get("background") or rec.get("releasing")):
+            return False, "its start time cannot be read"
         return False, "not holding slots (%s)" % (
             "background" if rec.get("background") else "releasing" if rec.get("releasing")
             else rec.get("state"))

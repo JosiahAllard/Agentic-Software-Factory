@@ -427,7 +427,8 @@ class Slot:
                                               self.store.settings.queue_read_s)
                     if isinstance(req, dict) and req.get("why"):
                         self.store.say("run %s was ended by %s: %s; its process tree is ended" % (
-                            self.id, "the lock" if req.get("by") == stale.BY else req.get("by"),
+                            self.id, "the lock" if req.get("by") == stale.BY
+                            else req.get("by") or "an unnamed agent",
                             req["why"]))
                     else:
                         self.store.say("run %s was cancelled by stop; its process tree is ended"

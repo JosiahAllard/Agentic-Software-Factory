@@ -400,13 +400,14 @@ class Overdue(Base):
         self.assertFalse(stale.overdue(self.rec(held_since=ago(5400 + 120)),
                                        self.store.settings)[0])
 
-    def test_a_run_not_holding_or_with_no_guide_is_never_overdue(self):
+    def test_a_run_not_holding_with_no_guide_or_no_start_time_is_never_overdue(self):
         for fields, word in (({"state": "waiting"}, "not holding slots (waiting)"),
                              ({"background": True}, "not holding slots (background)"),
                              ({"releasing": True}, "not holding slots (releasing)"),
-                             ({"warn_s": None, "expect_s": None}, "no guide")):
+                             ({"warn_s": None, "expect_s": None}, "no guide"),
+                             ({"held_since": "not a time"}, "its start time cannot be read")):
             with self.subTest(fields=fields):
-                late, why = stale.overdue(self.rec(held_since=ago(99999), **fields),
+                late, why = stale.overdue(self.rec(**dict({"held_since": ago(99999)}, **fields)),
                                           self.store.settings)
                 self.assertFalse(late)
                 self.assertIn(word, why)

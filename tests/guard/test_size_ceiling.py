@@ -24,7 +24,7 @@ SLACK_PERCENT = 5
 TOTAL_CEILING = 18900
 CEILINGS = {
     '__init__.py': 21,
-    'backlogrole.py': 1224,
+    'backlogrole.py': 1230,
     'cdfail.py': 87,
     'cdtrack.py': 282,
     'commands.py': 766,

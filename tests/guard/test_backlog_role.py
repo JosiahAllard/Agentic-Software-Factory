@@ -752,7 +752,10 @@ class LandedScript(LandedBase):
 
     def test_an_edited_or_untracked_copy_is_judged(self):
         self.put(self.DAILY, self.SCRIPT + '# edited\n')
-        self.refused(self.daily())
+        d = self.refused(self.daily())
+        # past the jail check: the tool's literal form, not the hand-back of the jailed case
+        ctx = context.Ctx(environ={}, home=self.home, tempdir=self.temp)
+        self.assertEqual(d.instead, backlogrole.literal_form(ctx))
         self.put(self.DAILY, self.SCRIPT)
         self.put('tools/copy.py', self.SCRIPT)
         self.refused(self.daily('tools/copy.py'))
@@ -769,8 +772,13 @@ class LandedScript(LandedBase):
         self.refused(self.daily('tools/new.py'))
 
     def test_a_repository_the_session_may_write_is_judged_before_git_runs(self):
-        self.refused(self.daily(tempdir=self.repo.base))
-        self.assertEqual(self.blob_reads, [])
+        # its Instead hands the run to the caller: no form this session can retry is trusted
+        for name, kw in (('jail covers it', {'tempdir': self.repo.base}), ('main checkout', {'cwd': self.repo.root})):
+            with self.subTest(name):
+                self.blob_reads.clear()
+                d = self.refused(self.daily(**kw))
+                self.assertEqual(d.instead, backlogrole.LANDED_INSTEAD)
+                self.assertEqual(self.blob_reads, [])
 
     def test_a_main_branch_that_does_not_read_is_judged(self):
         self.put('.kit.json', json.dumps({'repo': {'main_branch': 'nosuch'}}) + '\n', root=self.repo.root)

@@ -640,7 +640,7 @@ def landed_script(event, ctx, cwd, path):
     checkout's .kit.json main_branch, else <remote>/HEAD's, trusted only as main or master; never the linked
     worktree's own branch; no branch equal to refs/heads/<main> only ignoring case (on NTFS a loose refs/heads/Main
     shadows a packed main); then `git --no-replace-objects cat-file blob` (no replace ref stands in). Any error is
-    False: the script is judged as before."""
+    False: the script is judged as before. None, falsy too, when the jail check is the one that fails."""
     try:
         return _landed(event, ctx, cwd, path)
     except Exception:                           # noqa: BLE001 - no trust read: judged as before
@@ -659,7 +659,7 @@ def _landed(event, ctx, cwd, path):
     if rel == '.' or rel.startswith('../') or rel == '..' or os.path.isabs(rel):
         return False
     if jail.judge(place.common, rules.jail_roots(event, ctx, cwd))[0] is None:
-        return False                            # the session may write its refs or objects
+        return None                             # the session may write its refs or objects: LANDED_INSTEAD
     cfg = ctx.config(path)
     if cfg is None:
         return False
@@ -686,6 +686,12 @@ def _landed(event, ctx, cwd, path):
 
 
 LITERAL_WHY = 'Run the tool\'s verb itself, its words literal, directly as a command of its own:'
+LANDED_WHY = ('The script\'s repository keeps its git folder inside your write jail (a root of this session covers it, '
+              'such as the main checkout it started in), so the guard does not trust the script as landed code '
+              '(docs/guard-jail-roles.md "Landed scripts"); if it is the unchanged landed copy, a session started in '
+              'a linked worktree of the repository may run it:')
+LANDED_INSTEAD = ('hand the run to your caller: a session started in a linked worktree of the repository runs python '
+                  '<script> <arguments> there (a cd in this session does not move its write jail)')
 
 
 def literal_form(ctx):
@@ -1014,12 +1020,14 @@ def judge_text(event, ctx, cmd, cwd, role, kind, text, head, path=None, level=1,
     file a command names), its landed code (landed_script). -c code is backlog_code's. A refusal begins with `head`."""
     if kind == 'py':
         why = py_reach(text) if _judged_subagent(event) else None
-        if not why or (path and (_kit_code(ctx, path) or (landed and landed_script(event, ctx, cwd, path)))):
+        trust = not why or (bool(path) and (_kit_code(ctx, path) or (landed and landed_script(event, ctx, cwd, path))))
+        if trust:
             return None
+        # trust None: only the session's jail stopped the landed-script read (landed_script)
+        tail, instead = (LANDED_WHY, LANDED_INSTEAD) if trust is None else (LITERAL_WHY, literal_form(ctx))
         return rules.refuse(RAW_RULE, role, '%s, whose code %s: code that reaches the backlog\'s library or '
                             'runs tools/backlog.py from a script skips the guard\'s role check, so it is a raw '
-                            'write (kitlib/backlog/roles.py). %s' % (head, why, LITERAL_WHY),
-                            literal_form(ctx))
+                            'write (kitlib/backlog/roles.py). %s' % (head, why, tail), instead)
     from . import fallback, gaterole
     p = cn.read(text, kind, cmd.cwd, home=getattr(ctx, 'home', None))
     for c in p.commands:

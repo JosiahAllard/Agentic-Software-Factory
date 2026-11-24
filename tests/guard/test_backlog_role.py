@@ -657,8 +657,9 @@ class LandedBase(unittest.TestCase):
     backlog-raw-write (the owner's ruling, trust landed code; backlogrole.landed_script): seen
     refused live, a repository's `python tools/daily_full.py --kit-tools <kit>/tools --plan` from
     a linked worktree, whose script imports kitlib.platform.windows and prints a backlog.py add
-    line. Its bytes must be the blob at the local main, in a repository with a PM data record whose
-    git common dir the session may not write; every other copy is judged as before."""
+    line. Its bytes must be the blob at the local main, in a repository whose git common dir the
+    session may not write; every other copy is judged as before. The fixture is a repository
+    with no PM data record."""
     DAILY = 'tools/daily_full.py'
     SCRIPT = ('"""The daily run."""\nimport subprocess\nimport sys\n\nfrom kitlib.platform import windows\n\n\n'
               'def main():\n    print(\'python tools/backlog.py add --summary "the daily is red"\')\n'
@@ -674,7 +675,6 @@ class LandedBase(unittest.TestCase):
         self.addCleanup(self.repo.cleanup)
         self.repo.write(self.DAILY, self.SCRIPT)
         self.repo.commit('the daily', self.DAILY)
-        pmdata.write(self.repo.common_dir(), 'pmdata', 'private', self.repo.head())
         self.wt = self.repo.worktree('wk')
         self.temp = tempfile.mkdtemp(prefix='kit-landed-')
         self.addCleanup(shutil.rmtree, self.temp, True)
@@ -711,10 +711,16 @@ class LandedBase(unittest.TestCase):
 
 class LandedScript(LandedBase):
     def test_the_landed_daily_runs_from_a_linked_worktree(self):
-        d = self.daily()
-        self.assertIsNone(d, d and d.reason)
-        self.assertTrue(any('--no-replace-objects' in a and 'refs/heads/main:%s' % self.DAILY in a
-                            for a in self.blob_reads), self.blob_reads)
+        # with or without a PM data record
+        for recorded in (False, True):
+            with self.subTest(recorded=recorded):
+                if recorded:
+                    pmdata.write(self.repo.common_dir(), 'pmdata', 'private', self.repo.head())
+                self.blob_reads.clear()
+                d = self.daily()
+                self.assertIsNone(d, d and d.reason)
+                self.assertTrue(any('--no-replace-objects' in a and 'refs/heads/main:%s' % self.DAILY in a
+                                    for a in self.blob_reads), self.blob_reads)
 
     def test_a_crlf_copy_of_the_landed_script_runs(self):
         self.put(self.DAILY, self.SCRIPT, newline='\r\n')
@@ -762,10 +768,6 @@ class LandedScript(LandedBase):
         self.repo.git('update-ref', 'refs/remotes/origin/main', sha)
         self.refused(self.daily('tools/new.py'))
 
-    def test_a_repository_with_no_pm_data_record_is_judged(self):
-        os.remove(os.path.join(self.repo.common_dir(), pmdata.FILE_NAME))
-        self.refused(self.daily())
-
     def test_a_repository_the_session_may_write_is_judged_before_git_runs(self):
         self.refused(self.daily(tempdir=self.repo.base))
         self.assertEqual(self.blob_reads, [])
@@ -789,6 +791,7 @@ class LandedScript(LandedBase):
 
     def test_the_pm_data_worktree_is_not_trusted(self):
         # the guard answers it as a main checkout on the data branch, which commits there move
+        pmdata.write(self.repo.common_dir(), 'pmdata', 'private', self.repo.head())
         pm = self.repo.worktree('pm', branch='pmdata')
         self.put('.kit.json', json.dumps({'repo': {'name': 'data', 'main_branch': 'pmdata'}}) + '\n', root=pm)
         self.put(self.DAILY, self.SCRIPT + 'import os\n', root=pm)

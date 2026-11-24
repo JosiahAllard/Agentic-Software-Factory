@@ -658,8 +658,8 @@ class LandedBase(unittest.TestCase):
     refused live, a repository's `python tools/daily_full.py --kit-tools <kit>/tools --plan` from
     a linked worktree, whose script imports kitlib.platform.windows and prints a backlog.py add
     line. Its bytes must be the blob at the local main, in a repository whose git common dir the
-    session may not write; every other copy is judged as before. The repository has no PM data
-    record (retribution's shape, seen refused live while the check required one)."""
+    session may not write; every other copy is judged as before. The fixture is a repository
+    with no PM data record."""
     DAILY = 'tools/daily_full.py'
     SCRIPT = ('"""The daily run."""\nimport subprocess\nimport sys\n\nfrom kitlib.platform import windows\n\n\n'
               'def main():\n    print(\'python tools/backlog.py add --summary "the daily is red"\')\n'
@@ -711,7 +711,7 @@ class LandedBase(unittest.TestCase):
 
 class LandedScript(LandedBase):
     def test_the_landed_daily_runs_from_a_linked_worktree(self):
-        # with or without a PM data record (the owner's ruling, Q-2426)
+        # with or without a PM data record
         for recorded in (False, True):
             with self.subTest(recorded=recorded):
                 if recorded:

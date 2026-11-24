@@ -40,29 +40,48 @@ def project_roots(home=None):
     return [os.path.join(h, d, "projects") for d in sorted(os.listdir(h)) if d.startswith(".claude")]
 
 
-_TITLES = {}
+CHUNK = 1024 * 1024                 # session_titles reads a transcript this much at a time
+_TITLES = {}                        # path -> (end of the last complete line read, titles)
 
 
-def session_title(path):
-    """The session's name: the custom-title record in the first lines of its main transcript
-    (the same name --remote-control gives it), or None. Cached per file; a title never changes."""
-    if path not in _TITLES:
-        title = None
-        try:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                for _, line in zip(range(60), f):
-                    if '"custom-title"' in line:
-                        try:
-                            r = json.loads(line)
-                        except ValueError:
-                            continue
-                        if r.get("type") == "custom-title":
-                            title = r.get("customTitle")
-                            break
-        except OSError:
-            return None
-        _TITLES[path] = title
-    return _TITLES[path]
+def session_titles(path):
+    """Every name the session's main transcript has recorded in a custom-title record: its launch
+    name (-n/--remote-control), a --name given on resume and any later rename (the app, Remote
+    Control), so a renamed session is still found under each. A file is read whole once, then only
+    what is appended; a line not yet ended counts on a later call, and a file that shrank is read
+    again from its start. Empty if the file cannot be read (nothing cached)."""
+    end, titles = _TITLES.get(path, (0, frozenset()))
+    try:
+        with open(path, "rb") as f:
+            size = f.seek(0, os.SEEK_END)
+            if size == end:
+                return titles
+            if size < end:
+                end, titles = 0, frozenset()
+            f.seek(end)
+            found, carry = set(), b""
+            while True:
+                chunk = f.read(CHUNK)
+                if not chunk:
+                    break
+                lines = (carry + chunk).split(b"\n")
+                carry = lines.pop()
+                end += sum(len(x) + 1 for x in lines)
+                for line in lines:
+                    if b'"custom-title"' not in line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(r, dict) and r.get("type") == "custom-title" \
+                            and isinstance(r.get("customTitle"), str):
+                        found.add(r["customTitle"])
+    except OSError:
+        return frozenset()
+    titles = titles | found
+    _TITLES[path] = (end, titles)
+    return titles
 
 
 def subagent_transcripts(main):
@@ -72,9 +91,10 @@ def subagent_transcripts(main):
 
 
 def newest_transcript(name, roots):
-    """Newest mtime across the named session's own transcripts: each main <id>.jsonl titled name
-    (in any project folder of any account; a junction reached twice counts once) and the
-    subagent transcripts under <id>/. None if no main transcript carries the name."""
+    """Newest mtime across the named session's own transcripts: each main <id>.jsonl that has
+    recorded name as a title (session_titles; in any project folder of any account; a junction
+    reached twice counts once) and the subagent transcripts under <id>/. None if no main
+    transcript carries the name."""
     seen, newest = set(), None
     for root in roots:
         try:
@@ -92,7 +112,7 @@ def newest_transcript(name, roots):
                 if not fn.endswith(".jsonl"):
                     continue
                 real = os.path.normcase(os.path.realpath(p))
-                if real in seen or session_title(real) != name:
+                if real in seen or name not in session_titles(real):
                     continue
                 seen.add(real)
                 for q in [real] + subagent_transcripts(real):

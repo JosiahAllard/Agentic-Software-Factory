@@ -9,6 +9,7 @@ import threading
 import unittest
 from unittest import mock
 
+from hosts.claude.adapter import claude_host as H
 from kitlib.hubjobs import _crossover_decide as D
 from kitlib.hubjobs import coord_restart as C
 from kitlib.hubjobs import usage_crossover as U
@@ -1807,6 +1808,23 @@ class PmJob(JobBase):
         self.now += 300
         self.run_job()
         self.assertEqual((self.ctx.events, len(self.sent), len(self.calls)), ([], 1, 1))
+
+    def test_a_pm_resumed_under_a_new_name_starts_its_successor_once_its_transcript_is_quiet(self):
+        proj = os.path.join(self.tmp, 'projects', 'Z--pm')
+        os.makedirs(proj)
+        path = os.path.join(proj, 'pm-sid-1.jsonl')
+        with open(path, 'w', encoding='utf-8') as f:      # first launched as pm-a1, resumed as pm-session
+            for title in ('pm-a1', None, 'pm-session'):
+                rec = {'type': 'custom-title', 'customTitle': title} if title else {'type': 'user'}
+                f.write(json.dumps(rec) + '\n')
+        self.host.newest_finder = lambda: H.newest_finder([os.path.dirname(proj)])
+        self.run_job()
+        self.newest = {'pm': self.note(7, NOW + 30)}
+        self.now += 300
+        os.utime(path, (self.now - 600,) * 2)
+        self.run_job()
+        self.assertEqual(self.calls, [['pm-crossover', '--account', '2', '--name', 'pm-a2', '--state',
+                                       self.newest['pm']['state_path']]])
 
     def test_the_old_pm_is_never_pushed_unmanaged_and_its_mark_goes_when_it_ends(self):
         self.crossed()

@@ -10,7 +10,7 @@ Low-level design of `kitlib/lock`, `kitlib/lockui` and `kitlib/lockmcp`. The hig
 - **Kinds** come from one table (`lock/kinds.json`, read through `config.policy`), plus a repository's own `.kit.json` `kinds`; a kit kind wins a name clash. Sizes change only by a reviewed commit of a measured proposal.
 - **`lock.api` is the one API**: read snapshots, a revision number, validated owner writes, versioned and transport-neutral. Every UI uses only it. The status text is rendered from `api.snapshot()` alone.
 - **Agents read; the owner writes.** Holds an owner reserves, the division of slots and game mode change only from the schedule window or an outside terminal. The lock MCP server ships read tools only. `lock` owns the names of its owner-only tools, which the guard reads.
-- **The owner is never pre-empted, and neither is a holder.** A stale run (its sessions gone, far past its guide) is asked to stop, not killed silently.
+- **The owner is never pre-empted, and neither is a holder.** A stale run (its sessions gone, far past its guide) is asked to stop, not killed silently. The one run an agent may end that is not its own is a scheduled job's past twice its guide (docs/lock-api.md "Who may"); that too is only asked to stop, and never forced by an agent.
 - Runs may give back slots they no longer need; a background tier uses what nothing else wants and pauses for anything that does.
 - `lock` knows nothing of gates, landings or the hub: they book through it.
 
